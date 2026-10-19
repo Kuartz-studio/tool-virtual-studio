@@ -28,17 +28,19 @@ export function createAuth({ db, mailer, env, logger = createLogger(env) }: { db
       minPasswordLength: PASSWORD_MIN_LENGTH,
       maxPasswordLength: PASSWORD_MAX_LENGTH,
       autoSignIn: true,
-      // Mot de passe oublié : le lien de l'e-mail est valable une heure. Better Auth attend la fin de l'envoi, puis répond
-      // 200 dans tous les cas, adresse inconnue comprise : un échec d'envoi ne remonte donc pas, il est journalisé ici
-      // (sans l'adresse ni le lien, dont le jeton ouvre le compte). Contrepartie : la réponse est plus lente pour une
-      // adresse qui a un compte que pour une adresse inconnue.
+      // Mot de passe oublié : le lien de l'e-mail est valable une heure, et réinitialiser le mot de passe ferme toutes les
+      // sessions ouvertes du compte (une session volée ne survit pas au changement de mot de passe).
       resetPasswordTokenExpiresIn: 3600,
+      revokeSessionsOnPasswordReset: true,
+      // L'envoi part en arrière-plan : on ne l'attend pas. Better Auth attend la promesse qu'on lui rend, et l'appel à
+      // Resend (une requête réseau) rendrait la réponse bien plus lente pour une adresse qui a un compte que pour une
+      // adresse inconnue : ce délai dirait quelles adresses ont un compte. La réponse est 200 dans tous les cas. Un échec
+      // d'envoi est journalisé ici (sans l'adresse ni le lien, dont le jeton ouvre le compte) ; le `.catch` évite aussi
+      // tout rejet non géré. Si le processus s'arrête pendant l'envoi, l'e-mail est perdu : la personne redemande un lien.
       sendResetPassword: async ({ user, url }) => {
-        try {
-          await mailer.sendPasswordReset({ to: user.email, link: url });
-        } catch (err) {
+        void mailer.sendPasswordReset({ to: user.email, link: url }).catch((err: unknown) => {
           logger.error({ err, userId: user.id }, 'Envoi de l\'e-mail de réinitialisation impossible');
-        }
+        });
       },
     },
     session: { expiresIn: SESSION_TTL_S, updateAge: 86400 },

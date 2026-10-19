@@ -32,14 +32,47 @@ function openLink(t: TestApp, link: string) {
   return request(t.app).get(pathname + search);
 }
 
-// L'e-mail envoyé à cette adresse. On l'attend au lieu de le supposer déjà posé : le rendu du modèle est asynchrone,
-// et rien ne dit que Better Auth attendra toujours la fin de l'envoi avant de répondre.
+// L'envoi de l'e-mail part en arrière-plan : la réponse à la demande ne l'attend pas, et le rendu du modèle est
+// asynchrone. Les tests attendent donc que l'e-mail (ou la ligne du journal) soit là, au lieu de le supposer déjà posé ;
+// le délai est large pour le premier rendu d'un processus, qui charge les modules de React.
+const BACKGROUND_TIMEOUT_MS = 4000;
+
+// L'e-mail envoyé à cette adresse.
 function mailTo(t: TestApp, email: string) {
-  return vi.waitFor(() => {
-    const mail = t.mailer.last(email);
-    expect(mail).toBeDefined();
-    return mail!;
+  return vi.waitFor(
+    () => {
+      const mail = t.mailer.last(email);
+      expect(mail).toBeDefined();
+      return mail!;
+    },
+    { timeout: BACKGROUND_TIMEOUT_MS },
+  );
+}
+
+// Demande une réinitialisation, ouvre le lien reçu par e-mail et renvoie le jeton que la page de l'appli recevrait.
+async function resetTokenFor(t: TestApp, email: string): Promise<string> {
+  expect((await requestReset(t, email)).status).toBe(200);
+  const clicked = await openLink(t, (await mailTo(t, email)).link);
+  expect(clicked.status).toBe(302);
+  const token = new URL(clicked.get('Location') ?? '').searchParams.get('token');
+  expect(token).toBeTruthy();
+  return token!;
+}
+
+// L'adresse du compte à qui appartient ce cookie de session, ou null s'il n'ouvre aucune session.
+async function sessionEmail(t: TestApp, cookie: string): Promise<string | null> {
+  const res = await request(t.app).get('/api/auth/get-session').set('Cookie', cookie);
+  expect(res.status).toBe(200);
+  return (res.body?.user?.email as string | undefined) ?? null;
+}
+
+// Rejette si la promesse n'est pas réglée dans ce délai, pour qu'un test qui attend l'impossible échoue vite et clairement.
+function within<T>(ms: number, promise: PromiseLike<T>, message: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const expired = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
   });
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
 }
 
 // Le cookie d'une réponse de connexion, prêt pour `.set('Cookie', …)`.
@@ -137,7 +170,7 @@ describe('limitation des tentatives', () => {
       expect((await requestReset(t, 'lea@x.fr')).status).toBe(200);
     }
     expect((await requestReset(t, 'lea@x.fr')).status).toBe(429);
-    await vi.waitFor(() => expect(t.mailer.sent).toHaveLength(3));   // la 4e n'a rien envoyé
+    await vi.waitFor(() => expect(t.mailer.sent).toHaveLength(3), { timeout: BACKGROUND_TIMEOUT_MS });   // la 4e n'a rien envoyé
   });
 
   test('limitation coupée (réglage par défaut des tests) : plus de 3 tentatives de suite restent des 401', async () => {
@@ -246,7 +279,7 @@ describe('mot de passe oublié', () => {
     expect(send).toHaveBeenCalledTimes(1);
 
     const message = 'Envoi de l\'e-mail de réinitialisation impossible';
-    await vi.waitFor(() => expect(lines.some((line) => line.msg === message)).toBe(true));
+    await vi.waitFor(() => expect(lines.some((line) => line.msg === message)).toBe(true), { timeout: BACKGROUND_TIMEOUT_MS });
     expect(lines.find((line) => line.msg === message)).toMatchObject({ level: 50, userId, err: { message: 'Resend est indisponible' } });
     // Le lien contient un jeton qui ouvre le compte, et l'adresse est une donnée personnelle : ni l'un ni l'autre dans le journal.
     const { link } = send.mock.calls[0]![0];
@@ -255,6 +288,53 @@ describe('mot de passe oublié', () => {
     expect(journal).not.toContain(new URL(link).pathname.split('/').at(-1)!);
     expect(journal).not.toContain('lea@x.fr');
     expect(t.mailer.sent).toHaveLength(0);
+  });
+
+  // Appeler Resend (une requête réseau) prend des centaines de millisecondes : si la réponse l'attendait, elle serait bien plus
+  // lente pour une adresse qui a un compte que pour une adresse inconnue, et ce délai dirait quelles adresses ont un compte.
+  test('la réponse n\'attend pas l\'envoi de l\'e-mail : un envoi bloqué ne la retarde pas', async () => {
+    const t = await createTestApp();
+    await t.inviteAndAccept('lea@x.fr');
+    // L'envoi reste bloqué tant que le test ne le libère pas : aucune durée à deviner, donc aucun délai à régler.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const deliver = t.mailer.sendPasswordReset;
+    const send = vi.spyOn(t.mailer, 'sendPasswordReset').mockImplementation(async (mail) => {
+      await gate;
+      await deliver(mail);
+    });
+
+    try {
+      const res = await within(3000, requestReset(t, 'lea@x.fr'), 'la réponse attend la fin de l\'envoi de l\'e-mail');
+      expect(res.status).toBe(200);
+      expect(send).toHaveBeenCalledTimes(1);   // l'envoi est lancé…
+      expect(t.mailer.sent).toHaveLength(0);   // …mais il n'est pas fini quand la réponse arrive
+    } finally {
+      release();
+    }
+    expect((await mailTo(t, 'lea@x.fr')).to).toBe('lea@x.fr');   // une fois libéré, l'e-mail part
+  });
+
+  test('la réinitialisation ferme les sessions ouvertes du compte, pas celles des autres', async () => {
+    const t = await createTestApp();
+    const { cookie: opened } = await t.inviteAndAccept('lea@x.fr');   // session ouverte par l'acceptation de l'invitation
+    const signedIn = cookieOf(await signIn(t, 'lea@x.fr', TEST_PASSWORD));   // une autre, ouverte par une connexion
+    const { cookie: other } = await t.inviteAndAccept('tom@x.fr');
+    expect(signedIn).not.toBe(opened);
+    for (const cookie of [opened, signedIn]) expect(await sessionEmail(t, cookie)).toBe('lea@x.fr');
+
+    const token = await resetTokenFor(t, 'lea@x.fr');
+    expect((await resetPassword(t, token, NEW_PASSWORD)).status).toBe(200);
+
+    expect(await sessionEmail(t, opened)).toBeNull();
+    expect(await sessionEmail(t, signedIn)).toBeNull();
+    expect(await sessionEmail(t, other)).toBe('tom@x.fr');
+    // Le nouveau mot de passe ouvre une session toute neuve.
+    const fresh = await signIn(t, 'lea@x.fr', NEW_PASSWORD);
+    expect(fresh.status).toBe(200);
+    expect(await sessionEmail(t, cookieOf(fresh))).toBe('lea@x.fr');
   });
 });
 
