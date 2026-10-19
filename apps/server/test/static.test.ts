@@ -7,10 +7,15 @@ import { createTestApp } from './helpers/test-app';
 
 // Un client compilé de test, comme celui que produit `vite build` : index.html et un fichier sous assets/.
 const INDEX_HTML = '<!doctype html><html lang="fr"><head><title>Bureau virtuel</title></head><body><div id="root"></div></body></html>';
-const distDir = mkdtempSync(join(tmpdir(), 'bureau-client-'));
-writeFileSync(join(distDir, 'index.html'), INDEX_HTML);
-mkdirSync(join(distDir, 'assets'));
-writeFileSync(join(distDir, 'assets', 'index-abc123.js'), 'console.log("bureau");');
+
+function writeClientDist(dir: string): string {
+  mkdirSync(join(dir, 'assets'), { recursive: true });
+  writeFileSync(join(dir, 'index.html'), INDEX_HTML);
+  writeFileSync(join(dir, 'assets', 'index-abc123.js'), 'console.log("bureau");');
+  return dir;
+}
+
+const distDir = writeClientDist(mkdtempSync(join(tmpdir(), 'bureau-client-')));
 afterAll(() => rmSync(distDir, { recursive: true, force: true }));
 
 const clientApp = () => createTestApp({ env: { CLIENT_DIST_DIR: distDir } });
@@ -85,6 +90,25 @@ test('sans CLIENT_DIST_DIR (développement : Vite sert le client), aucune page n
   const res = await request(app).get('/rejoindre');
   expect(res.status).toBe(404);
   expect(res.body).toEqual({ error: 'not_found' });
+});
+
+// Un dossier dont un parent commence par un point : un worktree git (.worktrees/, .claude/worktrees/), un dossier de
+// déploiement caché. Les pages doivent y être servies comme ailleurs, pas seulement les fichiers.
+test('CLIENT_DIST_DIR sous un dossier caché (.worktrees/…) : pages et fichiers servis', async () => {
+  const base = mkdtempSync(join(tmpdir(), 'bureau-'));
+  try {
+    const hiddenDist = writeClientDist(join(base, '.worktrees', 'tache-7', 'apps', 'client', 'dist'));
+    const { app } = await createTestApp({ env: { CLIENT_DIST_DIR: hiddenDist } });
+
+    const page = await request(app).get('/connexion');
+    expect(page.status).toBe(200);
+    expect(page.text).toBe(INDEX_HTML);
+    const asset = await request(app).get('/assets/index-abc123.js');
+    expect(asset.status).toBe(200);
+    expect(asset.text).toBe('console.log("bureau");');
+  } finally {
+    rmSync(base, { recursive: true, force: true });
+  }
 });
 
 test('CLIENT_DIST_DIR sans index.html (client pas compilé) → le serveur refuse de démarrer', async () => {

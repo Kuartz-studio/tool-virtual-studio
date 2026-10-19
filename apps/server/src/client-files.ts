@@ -30,7 +30,9 @@ export function clientFiles(distDir: string): Router {
     }
     // Revalidée à chaque visite : après un déploiement, la page pointe vers les nouveaux fichiers.
     res.set('Cache-Control', 'no-cache');
-    res.sendFile(indexHtml);
+    // Chemin relatif à `root`, comme express.static : send n'applique sa règle des fichiers cachés (dotfiles: 'ignore') qu'au
+    // chemin sous `root`. Avec le chemin absolu, un dossier parent caché (.worktrees/…) ferait répondre 404 à chaque page.
+    res.sendFile('index.html', { root });
   });
   return router;
 }
