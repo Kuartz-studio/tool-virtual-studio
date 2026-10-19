@@ -15,6 +15,22 @@ test('production refuse memory:// et MAILER=memory', () => {
   expect(() => loadEnv({ ...base, DATABASE_URL: 'postgres://x', MAILER: 'memory' })).toThrow(/MAILER/);
 });
 
+// Les routes de test (E2E=1) créent des invitations sans session admin et lisent les e-mails envoyés.
+test('production refuse E2E=1', () => {
+  const production = {
+    NODE_ENV: 'production', APP_URL: 'https://b.fr', BETTER_AUTH_SECRET: 'x'.repeat(32),
+    DATABASE_URL: 'postgres://u:p@db:5432/bureau', MAILER: 'resend', RESEND_API_KEY: 'k', MAIL_FROM: 'a@b.fr',
+  };
+  expect(loadEnv(production).E2E).toBeUndefined();
+  expect(() => loadEnv({ ...production, E2E: '1' })).toThrow(/E2E : interdite en production/);
+});
+
+// Avec Resend, les tests e2e enverraient de vrais e-mails à leurs adresses inventées, et /api/test/mails/last n'aurait rien à lire.
+test('E2E=1 exige MAILER=memory', () => {
+  expect(() => loadEnv({ ...valid, E2E: '1', MAILER: 'resend', RESEND_API_KEY: 'k', MAIL_FROM: 'a@b.fr' })).toThrow(/E2E : exige MAILER=memory/);
+  expect(loadEnv({ ...valid, E2E: '1', MAILER: 'memory' }).E2E).toBe('1');
+});
+
 test('production sans DATABASE_URL → erreur qui la nomme', () => {
   expect(() => loadEnv({ NODE_ENV: 'production', APP_URL: 'https://b.fr', BETTER_AUTH_SECRET: 'x'.repeat(32), MAILER: 'resend' })).toThrow(/DATABASE_URL/);
 });
@@ -88,8 +104,9 @@ test('toutes les erreurs sont signalées ensemble', () => {
   expect(() => loadEnv({})).toThrow(/APP_URL[^]*DATABASE_URL[^]*BETTER_AUTH_SECRET/);
 });
 
+// En développement, APP_URL est l'adresse du serveur Vite (apps/client/vite.config.ts) : c'est l'origine que voit le navigateur.
 test('.env.example est une configuration valide', () => {
   const example = readFileSync(resolve(import.meta.dirname, '../../../.env.example'), 'utf8');
   const env = loadEnv(parseEnv(example));
-  expect(env).toMatchObject({ NODE_ENV: 'development', DATABASE_URL: 'pglite://.data/dev', MAILER: 'memory', APP_URL: 'http://localhost:4000' });
+  expect(env).toMatchObject({ NODE_ENV: 'development', PORT: 4000, DATABASE_URL: 'pglite://.data/dev', MAILER: 'memory', APP_URL: 'http://localhost:5173' });
 });

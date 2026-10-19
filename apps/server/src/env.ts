@@ -39,6 +39,12 @@ const envSchema = z
       if (!env.RESEND_API_KEY) refuse('RESEND_API_KEY', 'obligatoire avec MAILER=resend');
       if (!env.MAIL_FROM) refuse('MAIL_FROM', 'obligatoire avec MAILER=resend');
     }
+    // E2E=1 ouvre les routes de test : inviter sans session admin, lire les e-mails envoyés.
+    if (env.E2E) {
+      if (env.NODE_ENV === 'production') refuse('E2E', 'interdite en production : elle ouvre des routes de test sans contrôle d\'accès');
+      // Avec Resend, les tests enverraient de vrais e-mails à leurs adresses inventées, et n'auraient aucun e-mail à relire.
+      else if (env.MAILER !== 'memory') refuse('E2E', 'exige MAILER=memory');
+    }
   });
 
 export type Env = z.infer<typeof envSchema>;

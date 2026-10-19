@@ -2,7 +2,7 @@ import { DEV_AVATAR_KEYS, SESSION_TTL_S } from '@bureau/shared';
 import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, onTestFinished, test, vi } from 'vitest';
 import { session, user } from '../src/db/schema';
 import { createTestApp } from './helpers/test-app';
 
@@ -304,9 +304,14 @@ describe('prolongation de la session', () => {
     const lea = await t.inviteAndAccept('lea@x.fr');
     // Une panne de la base ne doit pas déconnecter tout le monde : le client ne doit pas lire 401.
     vi.spyOn(t.auth.api, 'getSession').mockRejectedValueOnce(new APIError('INTERNAL_SERVER_ERROR', { message: 'Failed to get session' }));
+    // L'erreur 500 s'écrit sur la sortie d'erreur quand le journal est muet (errors.test.ts) : on la tait ici.
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => {});
+    onTestFinished(() => stderr.mockRestore());
 
     const res = await request(t.app).get('/api/members').set('Cookie', lea.cookie);
     expect(res.status).toBe(500);
+    expect(res.body).toEqual({ error: 'internal' });
+    expect(stderr).toHaveBeenCalledOnce();
   });
 
   test('le cookie d\'une session supprimée : 401, et la réponse efface le cookie du navigateur', async () => {

@@ -9,17 +9,20 @@ import * as schema from '../db/schema';
 import type { Env } from '../env';
 import { createLogger } from '../logger';
 import type { Mailer } from '../mail/mailer';
+import { betterAuthLogger } from './auth-logger';
 import { invitationContext } from './invitation-context';
 
 // Better Auth : comptes par e-mail et mot de passe, sessions en cookie, limitation des tentatives en base.
 // auth.cli.ts construit son instance avec cette même fonction : la CLI de Better Auth en déduit src/db/auth-schema.ts.
-// `mailer` envoie les e-mails de réinitialisation du mot de passe ; `logger` reçoit leurs échecs d'envoi.
+// `mailer` envoie les e-mails de réinitialisation du mot de passe ; `logger` reçoit leurs échecs d'envoi et les journaux de
+// Better Auth.
 export function createAuth({ db, mailer, env, logger = createLogger(env) }: { db: Db; mailer: Mailer; env: Env; logger?: Logger }) {
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.APP_URL,
     basePath: '/api/auth',
     database: drizzleAdapter(db, { provider: 'pg', schema }),
+    logger: betterAuthLogger(logger),
     // `autoSignIn: true` et l'absence de `requireEmailVerification` comptent pour le verrou des invitations : avec
     // `autoSignIn: false` ou `requireEmailVerification: true`, /sign-up/email transforme le 403 du crochet
     // user.create.before en une réponse 200 générique (sans créer de compte, ni ouvrir de session).
