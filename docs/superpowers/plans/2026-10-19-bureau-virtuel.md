@@ -278,7 +278,7 @@ test('avatars', () => { expect(isAvatarKey('dev-red')).toBe(true); expect(isAvat
 | Variable | Règle |
 |---|---|
 | `NODE_ENV` | `development`, `test` ou `production` ; défaut `development` |
-| `PORT` | défaut 3000 |
+| `PORT` | défaut 4000 |
 | `APP_URL` | URL, obligatoire |
 | `DATABASE_URL` | obligatoire ; `memory://` et `pglite://…` refusés en production |
 | `BETTER_AUTH_SECRET` | 32 caractères minimum |
@@ -315,7 +315,7 @@ test('GET /api/health', async () => {
   - `index.ts` enchaîne : charger l'env, créer la base, créer l'app, créer le serveur http, `listen(PORT)`.
   - `migrate.ts` s'exécute aussi directement (`node dist/migrate.js`).
   - tsup compile `src/index.ts`, `src/db/migrate.ts` et `src/cli/*.ts`, avec `noExternal: ['@bureau/shared']`.
-- [ ] **Étape 4 : vérifier le succès.** Même commande → PASS. Puis `pnpm --filter @bureau/server dev`, avec `DATABASE_URL=pglite://.data/dev` → `curl localhost:3000/api/health` doit répondre `{"ok":true}`, et `git status` ne montre pas `.data/`.
+- [ ] **Étape 4 : vérifier le succès.** Même commande → PASS. Puis `pnpm --filter @bureau/server dev`, avec `DATABASE_URL=pglite://.data/dev` → `curl localhost:4000/api/health` doit répondre `{"ok":true}`, et `git status` ne montre pas `.data/`.
 - [ ] **Étape 5 : commit.** `git commit -am "feat(server): configuration, base de données, santé"`
 
 ### Tâche 3 : E-mails
@@ -556,7 +556,7 @@ test('inviteAdmin renvoie un lien d\'invitation admin', /* check(token).invitati
   - supprimer les scènes MainMenu et GameOver ;
   - garder `EventBus.ts` et `PhaserGame.tsx`.
 - Créer :
-  - `vite.config.ts`, avec un proxy de `/api` et de `/socket.io` (WebSocket) vers `http://localhost:3000` ;
+  - `vite.config.ts`, avec un proxy de `/api` et de `/socket.io` (WebSocket) vers `http://localhost:4000`. En développement, `APP_URL` vaut l'adresse du serveur Vite, puisque c'est l'origine vue par le navigateur (cookies, liens des e-mails) ;
   - `src/router.tsx`, `src/lib/auth-client.ts` (`createAuthClient` de `better-auth/react`), `src/lib/api.ts` ;
   - `src/i18n/fr.ts`, qui exporte l'objet `fr` et un helper `t` ;
   - les pages `LoginPage` (`/connexion`), `JoinPage` (`/rejoindre?token=`), `ForgotPasswordPage` (`/mot-de-passe-oublie`), `ResetPasswordPage` (`/reinitialiser?token=`) ;
@@ -567,7 +567,7 @@ test('inviteAdmin renvoie un lien d\'invitation admin', /* check(token).invitati
 - Modifier côté serveur : `apps/server/src/app.ts` sert `CLIENT_DIST_DIR` en statique, et renvoie `index.html` pour tout GET hors `/api` et `/socket.io`.
 - Créer : `e2e/playwright.config.ts`, `e2e/helpers.ts`, `e2e/auth.spec.ts`.
   - Le `webServer` lance `VITE_E2E=1 pnpm build`, puis `node apps/server/dist/index.js`.
-  - Son env : `E2E=1`, `NODE_ENV=test`, `DATABASE_URL=memory://`, `MAILER=memory`, `AUTH_RATE_LIMIT=off`, `PORT=3100`, `APP_URL=http://localhost:3100`, `CLIENT_DIST_DIR=apps/client/dist`, `MAPS_DIR=apps/client/dist/assets/maps`.
+  - Son env : `E2E=1`, `NODE_ENV=test`, `DATABASE_URL=memory://`, `MAILER=memory`, `AUTH_RATE_LIMIT=off`, `BETTER_AUTH_SECRET` (32 caractères ou plus, valeur de test), `PORT=3100`, `APP_URL=http://localhost:3100`, `CLIENT_DIST_DIR=apps/client/dist`, `MAPS_DIR=apps/client/dist/assets/maps`.
 - Test : `apps/client/src/pages/JoinPage.test.tsx` (Vitest, happy-dom, Testing Library), `apps/server/test/static.test.ts`.
 
 **Interfaces :**
@@ -617,7 +617,7 @@ test('lien réutilisé → message « déjà utilisé »', /* … */);
 - [ ] **Étape 1 : écrire le Dockerfile, `.dockerignore` et `railway.json`,** et appliquer les deux modifications ci-dessus.
 - [ ] **Étape 2 : vérifier en local.**
   - `pnpm build` → succès ;
-  - lancer le build de production sans Docker : `node apps/server/dist/migrate.js && node apps/server/dist/index.js`, avec `NODE_ENV=test`, `DATABASE_URL=pglite://.data/smoke`, `APP_URL=http://localhost:3000`, `CLIENT_DIST_DIR=apps/client/dist` → `curl localhost:3000/api/health` répond `{"ok":true}`, et `/connexion` affiche la page de connexion ;
+  - lancer le build de production sans Docker : `node apps/server/dist/migrate.js && node apps/server/dist/index.js`, avec `NODE_ENV=test`, `DATABASE_URL=pglite://.data/smoke`, `APP_URL=http://localhost:4000`, `BETTER_AUTH_SECRET` (32 caractères ou plus), `CLIENT_DIST_DIR=apps/client/dist` → `curl localhost:4000/api/health` répond `{"ok":true}`, et `/connexion` affiche la page de connexion ;
   - le Dockerfile lui-même est vérifié par le build en ligne de Railway (étape 6).
 - [ ] **Étape 3 : vérifier que rien n'a cassé.** `pnpm test` → PASS.
 - [ ] **Étape 4 : commit.** `git commit -am "chore: déploiement Railway"`
