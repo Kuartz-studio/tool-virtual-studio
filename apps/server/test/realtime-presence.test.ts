@@ -1,7 +1,7 @@
-import { SOCKET_CONNECT_RATE } from '@bureau/shared';
+import { SOCKET_CONNECT_RATE, type MovePayload } from '@bureau/shared';
 import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
-import { describe, expect, onTestFinished, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { removeMember } from '../src/admin/remove-member';
 import { session, user } from '../src/db/schema';
 import { createRateLimiter } from '../src/rate-limit';
@@ -11,10 +11,14 @@ import { captureLogs } from './helpers/logs';
 import {
   TEST_GRACE_MS,
   connectError,
+  cutNetwork,
   disconnection,
+  enter,
   nextEvent,
+  nextInit,
   record,
   sleep,
+  slowDatabase,
   startTestServer,
   type ClientSocket,
   type TestServer,
@@ -32,28 +36,6 @@ const SPAWN = { x: 80, y: 240 };
 const EVENT_PACKET = 2;
 const CONNECT_ERROR_PACKET = 4;
 
-// Ouvre une socket avec ce cookie (et ces options du client) et attend son init.
-async function enter(
-  srv: TestServer,
-  cookie: string,
-  opts: Parameters<TestServer['connect']>[1] = {},
-): Promise<{ socket: ClientSocket; id: string; init: Awaited<ReturnType<typeof nextInit>> }> {
-  const socket = srv.connect(cookie, opts);
-  const init = await nextInit(socket);
-  return { socket, id: init.self.id, init };
-}
-
-function nextInit(socket: ClientSocket) {
-  return nextEvent(socket, 'init');
-}
-
-// Une coupure du réseau vue du client : la connexion tombe sans que personne ne l'ait fermée. Le client se reconnecte de lui-même,
-// sauf avec `reconnect: false`.
-function cutNetwork(socket: ClientSocket, { reconnect = true } = {}): void {
-  if (!reconnect) socket.io.reconnection(false);
-  socket.io.engine.close();
-}
-
 // Un client muet : sa connexion reste ouverte et il reçoit encore tout, mais il ne répond plus aux pings du serveur (un ordinateur
 // mis en veille, un réseau tombé sans fermer la connexion). engine.io-client répond à un ping par `_sendPacket('pong')`.
 function silence(socket: ClientSocket): void {
@@ -64,25 +46,11 @@ function silence(socket: ClientSocket): void {
   };
 }
 
-// Une base lente, pour ouvrir à coup sûr les fenêtres de course : après hold(), les requêtes choisies par `which` (toutes par
-// défaut) attendent release(). release() est aussi appelée à la fin du test, avant la fermeture du serveur (qui écrit en base).
-function slowDatabase(srv: TestServer, which: (sql: string) => boolean = () => true) {
-  let release!: () => void;
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  onTestFinished(() => release());
-  const client = (srv.db as unknown as { $client: { query(sql: string, ...rest: unknown[]): Promise<unknown> } }).$client;
-  const query = client.query.bind(client);
-  return {
-    hold(): void {
-      vi.spyOn(client, 'query').mockImplementation(async (sql: string, ...rest: unknown[]) => {
-        if (which(sql)) await held;
-        return query(sql, ...rest);
-      });
-    },
-    release,
-  };
+// Place quelqu'un ailleurs, en mémoire seulement, sans que les autres reçoivent un tick pour ce mouvement : ces tests regardent ce que
+// la présence envoie, et un test qui attend « rien d'autre » ne doit pas voir passer le mouvement de sa mise en place.
+function placeSilently(srv: TestServer, id: string, move: MovePayload): void {
+  expect(srv.realtime.world.applyMove(id, move)).toEqual({ ok: true });
+  srv.realtime.world.drainMoves();
 }
 
 describe('connexion', () => {
@@ -273,7 +241,7 @@ describe('déconnexion et délai de grâce', () => {
     const srv = await startTestServer();
     const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
     const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
-    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+    placeSilently(srv, a.id, { x: 112, y: 240, dir: 'right', moving: false });
     const before = srv.realtime.world.get(a.id);
     const bEvents = record(b.socket);
 
@@ -393,7 +361,7 @@ describe('déconnexion et délai de grâce', () => {
     const cookieA = await srv.inviteAndLogin('a@x.fr');
     const a = await enter(srv, cookieA);
     const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
-    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+    placeSilently(srv, a.id, { x: 112, y: 240, dir: 'right', moving: false });
     const bEvents = record(b.socket);
 
     // La base est lente à écrire : l'enregistrement des positions attend qu'on le libère ; les lectures passent.
@@ -464,6 +432,49 @@ describe('positions', () => {
     await first;
     expect(await loadPosition(srv.db, a.id)).toEqual({ x: 112, y: 240, dir: 'right' });
     expect(await loadPosition(srv.db, b.id)).toEqual({ x: 48, y: 240, dir: 'left' });
+  });
+
+  test('stop() enregistre les positions avant de fermer les sockets : quand un client voit sa connexion tomber, sa dernière position est déjà en base', async () => {
+    const srv = await startTestServer({ saveMs: 60_000 });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    a.socket.emit('move', { x: 112, y: 240, dir: 'right', moving: false });
+    await vi.waitFor(() => expect(srv.realtime.world.get(a.id)).toMatchObject({ x: 112, dir: 'right' }));
+    expect(await loadPosition(srv.db, a.id)).toBeNull();   // en mémoire seulement
+
+    // Un déploiement avec une base lente : les écritures attendent qu'on les libère (les lectures passent). Ce que la base contient
+    // quand le client voit sa connexion tomber, c'est ce que sa reconnexion à la nouvelle instance peut lire.
+    const slow = slowDatabase(srv, (sql) => /^update "user"/i.test(sql));
+    slow.hold();
+    const savedWhenCut = new Promise<Awaited<ReturnType<typeof loadPosition>>>((resolve) => {
+      a.socket.once('disconnect', () => resolve(loadPosition(srv.db, a.id)));
+    });
+
+    const stopping = srv.realtime.stop();
+    await sleep(TEST_GRACE_MS * 2);
+    expect(a.socket.connected).toBe(true);   // l'enregistrement n'est pas fini : les sockets restent ouvertes
+    slow.release();
+    await stopping;
+    expect(await savedWhenCut).toEqual({ x: 112, y: 240, dir: 'right' });
+    expect(a.socket.connected).toBe(false);
+
+    // La nouvelle instance, sur la même base : le client s'y reconnecte et retrouve cette position.
+    const reinit = nextEvent(a.socket, 'init', 5000);
+    await srv.restart();
+    expect((await reinit).self).toMatchObject({ x: 112, y: 240, dir: 'right' });
+  });
+
+  test('une écriture de position qui échoue est journalisée et ne retient pas stop() : les sockets sont fermées quand même', async () => {
+    const { logger, lines } = captureLogs();
+    const srv = await startTestServer({ logger, saveMs: 60_000 });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    vi.spyOn(srv.db, 'update').mockImplementation(() => {
+      throw new Error('base indisponible');
+    });
+    const cut = disconnection(a.socket);
+
+    await srv.realtime.stop();
+    await cut;
+    expect(lines.map((line) => line.msg)).toContain('Enregistrement des positions impossible');
   });
 
   test('savePositions et loadPosition', async () => {

@@ -3,8 +3,10 @@ import type { Server as HttpServer } from 'node:http';
 import { join } from 'node:path';
 import {
   DISCONNECT_GRACE_MS,
+  OFFICE_ROOM,
   POSITION_SAVE_INTERVAL_MS,
   SOCKET_CONNECT_RATE,
+  WORLD_TICK_MS,
   parseOfficeMap,
   type ClientToServerEvents,
   type OfficeMap,
@@ -20,6 +22,7 @@ import type { Env } from '../env';
 import { createLogger } from '../logger';
 import { createRateLimiter } from '../rate-limit';
 import type { ServerEvents } from '../server-events';
+import { registerHandlers, startWorldTicks } from './handlers';
 import { createPresence } from './presence';
 import { socketAuth } from './socket-auth';
 import { World } from './world';
@@ -42,11 +45,14 @@ export interface RealtimeDeps {
   mapKey: string;
   events: ServerEvents;
   env: Env;
-  /** L'horloge du monde, en ms : monotone (performance.now par défaut), jamais Date.now, qui peut sauter. */
+  /**
+   * L'horloge du temps réel, en ms : celle du monde (l'heure de réception des mouvements), de la limite de débit des `move` et de
+   * l'heure `t` des ticks. Monotone (performance.now par défaut), jamais Date.now, qui peut sauter.
+   */
   now?: () => number;
   /** Le délai de grâce à la déconnexion : DISCONNECT_GRACE_MS par défaut. */
   graceMs?: number;
-  /** La période de world:tick (tâche 14). */
+  /** La période de world:tick : WORLD_TICK_MS par défaut. */
   tickMs?: number;
   /** La période du calcul des groupes (tâche 18). */
   groupsMs?: number;
@@ -68,9 +74,9 @@ export interface Realtime {
   /** Les identifiants des sockets connectées de ce compte (au plus une : un nouvel onglet remplace l'ancien). */
   socketsOf(userId: string): string[];
   /**
-   * L'arrêt, pour un redémarrage ou un déploiement : ferme les sockets (les clients se reconnecteront seuls, à la nouvelle
-   * instance), enregistre la position de chaque joueur du monde, y compris en délai de grâce, puis ferme le serveur HTTP auquel
-   * Socket.io est attaché. Appelée plusieurs fois, elle renvoie la même promesse.
+   * L'arrêt, pour un redémarrage ou un déploiement : arrête les ticks, enregistre la position de chaque joueur du monde, y compris
+   * en délai de grâce, puis ferme les sockets (les clients se reconnecteront seuls, à la nouvelle instance, et y liront cette
+   * position) et le serveur HTTP auquel Socket.io est attaché. Appelée plusieurs fois, elle renvoie la même promesse.
    */
   stop(): Promise<void>;
 }
@@ -124,7 +130,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const graceMs = d.graceMs ?? DISCONNECT_GRACE_MS;
   const saveMs = d.saveMs ?? POSITION_SAVE_INTERVAL_MS;
   const logger = d.logger ?? createLogger(d.env);
-  const world = new World(d.map, d.now ?? (() => performance.now()));
+  const now = d.now ?? (() => performance.now());
+  const world = new World(d.map, now);
 
   // Pas de récupération de connexion (connectionStateRecovery) : Socket.io renverrait à une socket revenue les diffusions qu'elle a
   // manquées avant même de repasser les middlewares, si bien qu'un membre retiré pendant sa coupure en recevrait jusqu'à 10 s.
@@ -154,8 +161,18 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     graceMs,
     logger,
   });
-  io.on('connection', (socket) => presence.connect(socket));
+  io.on('connection', (socket) => {
+    presence.connect(socket);
+    registerHandlers(io, socket, { world, env: d.env, now });
+  });
   const offMemberRemoved = d.events.on('member:removed', (userId) => presence.removeMember(userId));
+  // Un profil change (PATCH /api/me) : le monde le retient pour ceux qui arrivent ensuite, et tout le bureau l'apprend, même si la
+  // personne n'est pas là (la liste des membres d'un autre onglet peut la suivre).
+  const offProfileChanged = d.events.on('profile:changed', (profile) => {
+    world.setProfile(profile.id, { name: profile.name, avatarKey: profile.avatarKey });
+    io.to(OFFICE_ROOM).emit('profile:changed', { id: profile.id, name: profile.name, avatarKey: profile.avatarKey });
+  });
+  const stopTicks = startWorldTicks(io, world, d.tickMs ?? WORLD_TICK_MS, now);
 
   const saveTimer = setInterval(() => presence.savePeriodically(), saveMs);
   saveTimer.unref();
@@ -164,12 +181,18 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   function stop(): Promise<void> {
     stopped ??= (async () => {
       offMemberRemoved();
+      offProfileChanged();
       clearInterval(saveTimer);
+      stopTicks();
       presence.halt();
-      // Les sockets d'abord : plus aucun mouvement n'arrive, les positions enregistrées sont les dernières.
-      const closed = closeSocketServer(io);
-      await presence.saveAll();
-      await closed;
+      // Les positions d'abord, les sockets ensuite : un client dont la connexion tombe se reconnecte aussitôt, peut-être à la nouvelle
+      // instance d'un déploiement, et y lit sa position en base. Elle doit y être déjà, même si l'écriture est lente. Un `move` reçu
+      // pendant l'écriture n'est pas enregistré : au plus quelques millisecondes de marche.
+      try {
+        await presence.saveAll();
+      } finally {
+        await closeSocketServer(io);
+      }
     })();
     return stopped;
   }

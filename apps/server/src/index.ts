@@ -26,9 +26,9 @@ function createMailerFromEnv(env: Env, logger: Logger): Mailer {
 }
 
 // L'arrêt propre, sur SIGTERM (Railway, à chaque déploiement) et SIGINT (Ctrl+C). Node tourne en processus 1 dans le conteneur :
-// sans écouteur, il ignorerait SIGTERM. stop() ferme les sockets (les navigateurs se reconnecteront seuls à la nouvelle version)
-// et enregistre la position de chacun, puis ferme le serveur HTTP ; la base est fermée ensuite, et le processus sort avec le code 0.
-// Un second signal pendant l'arrêt ne relance rien.
+// sans écouteur, il ignorerait SIGTERM. stop() enregistre la position de chacun, puis ferme les sockets (les navigateurs se
+// reconnecteront seuls à la nouvelle version, et y liront cette position) et le serveur HTTP ; la base est fermée ensuite, et le
+// processus sort avec le code 0. Un second signal pendant l'arrêt ne relance rien.
 function stopOnSignals({ realtime, closeDb, logger }: { realtime: Realtime; closeDb: () => Promise<void>; logger: Logger }): void {
   let stopping = false;
   const shutdown = (signal: NodeJS.Signals) => {

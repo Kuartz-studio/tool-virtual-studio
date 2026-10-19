@@ -2,7 +2,7 @@ import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { ClientToServerEvents, ServerToClientEvents } from '@bureau/shared';
 import { io as ioClient, type ManagerOptions, type Socket, type SocketOptions } from 'socket.io-client';
-import { onTestFinished } from 'vitest';
+import { onTestFinished, vi } from 'vitest';
 import type { Env } from '../../src/env';
 import { attachRealtime, loadOfficeMap, type RealtimeDeps } from '../../src/realtime/io';
 import { createTestApp } from './test-app';
@@ -204,4 +204,48 @@ export function record(socket: ClientSocket) {
 
 export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// L'`init` que cette socket va recevoir (ou le prochain, après une reconnexion).
+export function nextInit(socket: ClientSocket) {
+  return nextEvent(socket, 'init');
+}
+
+// Ouvre une socket avec ce cookie (et ces options du client) et attend son init.
+export async function enter(
+  srv: TestServer,
+  cookie: string,
+  opts: Parameters<TestServer['connect']>[1] = {},
+): Promise<{ socket: ClientSocket; id: string; init: Awaited<ReturnType<typeof nextInit>> }> {
+  const socket = srv.connect(cookie, opts);
+  const init = await nextInit(socket);
+  return { socket, id: init.self.id, init };
+}
+
+// Une coupure du réseau vue du client : la connexion tombe sans que personne ne l'ait fermée. Le client se reconnecte de lui-même,
+// sauf avec `reconnect: false`.
+export function cutNetwork(socket: ClientSocket, { reconnect = true } = {}): void {
+  if (!reconnect) socket.io.reconnection(false);
+  socket.io.engine.close();
+}
+
+// Une base lente, pour ouvrir à coup sûr les fenêtres de course : après hold(), les requêtes choisies par `which` (toutes par
+// défaut) attendent release(). release() est aussi appelée à la fin du test, avant la fermeture du serveur (qui écrit en base).
+export function slowDatabase(srv: TestServer, which: (sql: string) => boolean = () => true) {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  onTestFinished(() => release());
+  const client = (srv.db as unknown as { $client: { query(sql: string, ...rest: unknown[]): Promise<unknown> } }).$client;
+  const query = client.query.bind(client);
+  return {
+    hold(): void {
+      vi.spyOn(client, 'query').mockImplementation(async (sql: string, ...rest: unknown[]) => {
+        if (which(sql)) await held;
+        return query(sql, ...rest);
+      });
+    },
+    release,
+  };
 }
