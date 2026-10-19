@@ -1,7 +1,9 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"]
+    // Les types de Vite pour import.meta.env, que lit debug.ts.
+    "types": ["node", "vite/client"]
   },
-  "include": ["."]
+  // debug.ts déclare window.__office, que les tests lisent (OfficeDebug).
+  "include": [".", "../apps/client/src/game/debug.ts"]
 }

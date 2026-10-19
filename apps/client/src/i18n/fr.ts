@@ -69,6 +69,7 @@ export const fr = {
     hello: 'Bonjour {name}',
     signOut: 'Se déconnecter',
     signingOut: 'Déconnexion…',
+    mapLoadFailed: 'Impossible de charger la carte du bureau. Recharge la page pour réessayer.',
   },
 };
 

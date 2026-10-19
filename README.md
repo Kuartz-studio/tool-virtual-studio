@@ -48,6 +48,8 @@ pnpm exec playwright install chromium
 
 `pnpm e2e` (ou `pnpm e2e e2e/auth.spec.ts` pour un seul fichier) compile l'appli avec `VITE_E2E=1`, lance le serveur compilé sur le port 3100 avec une base en mémoire et `E2E=1` (`e2e/playwright.config.ts`), puis joue les tests dans Chromium. `E2E=1` ouvre des routes réservées aux tests, sous `/api/test` : créer une invitation sans admin, lire le dernier e-mail envoyé à une adresse. Le serveur la refuse en production, et sans `MAILER=memory`.
 
+Le bureau est dessiné dans un canevas, que Playwright ne sait pas interroger : avec `VITE_E2E=1`, le client expose l'état du jeu dans `window.__office` (`apps/client/src/game/debug.ts` : `ready` quand la carte est construite, puis l'avatar local, les autres joueurs…), que les tests lisent. Un build normal n'expose rien.
+
 ## Premier admin
 
 L'inscription se fait sur invitation, et les invitations se créent depuis le panneau d'administration : le premier admin naît donc d'une commande, qui crée une invitation admin et en affiche le lien.

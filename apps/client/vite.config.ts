@@ -19,6 +19,11 @@ export default defineConfig({
       '/socket.io': { target: API_SERVER, ws: true },
     },
   },
+  build: {
+    // Phaser (1,4 Mo) forme un fichier à lui, que le navigateur ne télécharge qu'avec le bureau (OfficePage). L'alerte de Vite, dès
+    // 500 ko, n'apprendrait rien de plus.
+    chunkSizeWarningLimit: 1500,
+  },
   test: {
     environment: 'happy-dom',
     // L'adresse de la page des tests. Par défaut, happy-dom prend http://localhost:3000, où tourne un autre programme : une

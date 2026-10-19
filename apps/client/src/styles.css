@@ -163,16 +163,45 @@ a {
   margin: 0;
 }
 
-/* Le bureau, provisoire. */
+/* Le bureau : la carte (le canevas de Phaser) occupe toute la page. Le fond est celui du jeu (backgroundColor, game/config.ts), pour
+   qu'il n'y ait pas d'éclair clair pendant le chargement de Phaser. */
 .office {
-  min-height: 100vh;
-  display: grid;
-  place-content: center;
-  justify-items: center;
-  gap: 16px;
-  padding: 24px 16px;
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  background: #1d2030;
 }
 
-.office h1 {
+/* Phaser ajuste le canevas à la taille de ce conteneur. */
+#game-container {
+  position: absolute;
+  inset: 0;
+}
+
+/* Le bonjour et la déconnexion, provisoires, par-dessus la carte. */
+.office-overlay {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 1;
+  max-width: calc(100% - 24px);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+.office-overlay h1 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.office-overlay .alert {
+  flex-basis: 100%;
   margin: 0;
 }

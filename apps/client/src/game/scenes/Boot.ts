@@ -1,13 +1,10 @@
 import { Scene } from 'phaser';
 
-// Charge ce dont la scène de chargement a besoin pour s'afficher, puis lui passe la main.
+// La première scène. La barre de chargement du Preloader n'est faite que de rectangles : il n'y a rien à charger avant elle,
+// et Boot lui passe la main tout de suite.
 export class Boot extends Scene {
   constructor() {
     super('Boot');
-  }
-
-  preload() {
-    this.load.image('background', 'assets/bg.png');
   }
 
   create() {

@@ -1,7 +1,7 @@
 // D'après le modèle officiel phaserjs/template-react-ts (© 2025 Phaser Studio Inc, licence MIT : LICENSE-phaser-template.txt).
 import { forwardRef, useEffect, useLayoutEffect, useRef } from 'react';
+import { startGame } from './config';
 import { EventBus } from './EventBus';
-import StartGame from './main';
 
 export interface IRefPhaserGame {
   game: Phaser.Game | null;
@@ -9,17 +9,19 @@ export interface IRefPhaserGame {
 }
 
 interface IProps {
+  // La carte du bureau : le jeu charge /assets/maps/<mapKey>.json.
+  mapKey: string;
   currentActiveScene?: (sceneInstance: Phaser.Scene) => void;
 }
 
-// Le pont entre React et Phaser : crée le jeu dans #game-container, et expose le jeu et la scène active par la ref.
-// Pas encore monté : le bureau provisoire (OfficePage) n'affiche pas la carte avant la tâche 10.
-export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame({ currentActiveScene }, ref) {
+// Le pont entre React et Phaser : crée le jeu dans #game-container (que le style étend à la page), et expose le jeu et la scène
+// active par la ref. Un autre mapKey recrée le jeu.
+export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame({ mapKey, currentActiveScene }, ref) {
   const game = useRef<Phaser.Game | null>(null);
 
   useLayoutEffect(() => {
     if (game.current === null) {
-      game.current = StartGame('game-container');
+      game.current = startGame('game-container', mapKey);
       if (typeof ref === 'function') ref({ game: game.current, scene: null });
       else if (ref) ref.current = { game: game.current, scene: null };
     }
@@ -27,7 +29,7 @@ export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame
       game.current?.destroy(true);
       game.current = null;
     };
-  }, [ref]);
+  }, [ref, mapKey]);
 
   useEffect(() => {
     EventBus.on('current-scene-ready', (sceneInstance: Phaser.Scene) => {

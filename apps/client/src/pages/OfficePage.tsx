@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { lazy, Suspense, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { fr, t } from '../i18n/fr';
 import { authClient } from '../lib/auth-client';
 import { useSessionUser } from '../RequireSession';
 import { Alert } from './AuthLayout';
 
-// / : le bureau. Provisoire : un bonjour et la déconnexion, en attendant la carte (tâche 10).
+// Phaser pèse lourd, et seul le bureau s'en sert : il n'est téléchargé qu'ici, pas avec les pages de compte.
+const PhaserGame = lazy(() => import('../game/PhaserGame').then((module) => ({ default: module.PhaserGame })));
+
+// La carte du bureau. Le serveur charge la même (MAP_KEY, dev-office par défaut).
+const MAP_KEY = 'dev-office';
+
+// / : le bureau. La carte occupe toute la page ; par-dessus, un bonjour et la déconnexion, provisoires (tâche 16).
 export function OfficePage() {
   const user = useSessionUser();
   const navigate = useNavigate();
@@ -32,11 +38,16 @@ export function OfficePage() {
 
   return (
     <main className="office">
-      <h1>{t(fr.office.hello, { name: user.name })}</h1>
-      <button type="button" className="button" onClick={signOut} disabled={signingOut}>
-        {signingOut ? fr.office.signingOut : fr.office.signOut}
-      </button>
-      {error && <Alert>{error}</Alert>}
+      <Suspense fallback={null}>
+        <PhaserGame mapKey={MAP_KEY} />
+      </Suspense>
+      <div className="office-overlay">
+        <h1>{t(fr.office.hello, { name: user.name })}</h1>
+        <button type="button" className="button" onClick={signOut} disabled={signingOut}>
+          {signingOut ? fr.office.signingOut : fr.office.signOut}
+        </button>
+        {error && <Alert>{error}</Alert>}
+      </div>
     </main>
   );
 }
