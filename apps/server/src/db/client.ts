@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Assume } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
+import * as schema from './schema';
 
 // Le résultat de `execute` n'a pas la même forme avec PGlite et avec node-postgres, mais les deux donnent des `rows`.
 interface Rows<TRow> {
@@ -11,8 +12,8 @@ interface RowsResultHKT extends PgQueryResultHKT {
   type: Rows<Assume<this['row'], Record<string, unknown>>>;
 }
 
-// Base Drizzle commune à PGlite et à node-postgres. Le schéma s'ajoute ici avec la tâche 4.
-export type Db = PgDatabase<RowsResultHKT>;
+// Base Drizzle commune à PGlite et à node-postgres, avec le schéma complet (db.query.user, etc.).
+export type Db = PgDatabase<RowsResultHKT, typeof schema>;
 
 // Le pilote avec lequel createDb a créé une base : runMigrations en déduit le migrateur de Drizzle à utiliser.
 export type DbDriver = 'pglite' | 'pg';
@@ -49,12 +50,12 @@ export async function createDb(url: string): Promise<{ db: Db; close(): Promise<
       mkdirSync(dataDir, { recursive: true });   // PGlite ne crée pas les dossiers parents
     }
     const client = await PGlite.create(dataDir);
-    return { db: withDriver(drizzle(client), 'pglite'), close: () => client.close() };
+    return { db: withDriver(drizzle(client, { schema }), 'pglite'), close: () => client.close() };
   }
 
   const [{ default: pg }, { drizzle }] = await Promise.all([import('pg'), import('drizzle-orm/node-postgres')]);
   const pool = new pg.Pool({ connectionString: url });
   // Sans écouteur, l'erreur d'une connexion inactive (base redémarrée, réseau coupé) ferait tomber le processus.
   pool.on('error', (err) => console.error('Erreur sur une connexion inactive de la base de données :', err.message));
-  return { db: withDriver(drizzle(pool), 'pg'), close: () => pool.end() };
+  return { db: withDriver(drizzle(pool, { schema }), 'pg'), close: () => pool.end() };
 }
