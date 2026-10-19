@@ -24,6 +24,11 @@ export function createGameConfig(parent: string, mapKey: string): Phaser.Types.C
   };
 }
 
+// Une fuite connue de Phaser 4.2, laissée telle quelle : chaque `new Game` (son VisibilityHandler) ajoute sur `document` un écouteur
+// `visibilitychange` que game.destroy() ne retire jamais, et remplace window.onblur et window.onfocus. Chaque entrée au bureau en
+// laisse donc un (deux en développement, où StrictMode monte le jeu deux fois), qui ne retient qu'une fonction et l'émetteur vidé
+// du jeu détruit : quelques centaines d'octets. Une reconnexion ne recrée pas le jeu, et n'en ajoute pas. Le corriger demanderait
+// de modifier Phaser.
 export function startGame(parent: string, mapKey: string): Game {
   return new Game(createGameConfig(parent, mapKey));
 }

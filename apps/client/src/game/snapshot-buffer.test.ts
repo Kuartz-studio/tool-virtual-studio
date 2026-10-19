@@ -52,24 +52,53 @@ test('direction et marche : celles où il va ; il marche tant qu\'il glisse d\'u
   expect(turn.sample(50)).toEqual(at(0, 8, 'down', true));
 });
 
-test('un saut de plus de TELEPORT_SNAP_PX, au-delà de ce que la marche explique, fait sauter directement au second', () => {
-  // En 100 ms, la marche (MAX_SPEED_PX_PER_S) fait 16 px : le saut est ce qui dépasse.
-  const walked = (MAX_SPEED_PX_PER_S * 100) / 1000;
-  const far = new SnapshotBuffer();
-  far.push(0, at(0, 0));
-  far.push(100, at(TELEPORT_SNAP_PX + walked + 1, 0));
-  expect(far.sample(1)!.x).toBe(TELEPORT_SNAP_PX + walked + 1);
+// La règle du saut : distance(a, b) > TELEPORT_SNAP_PX + MAX_SPEED_PX_PER_S × (b.at − a.at) / 1000. Ce que la marche peut expliquer
+// pendant le temps qui sépare deux instantanés glisse ; au-delà de TELEPORT_SNAP_PX de plus, c'est un saut.
+const jumpLimit = (dt: number) => TELEPORT_SNAP_PX + (MAX_SPEED_PX_PER_S * dt) / 1000;
 
+test.each([50, 100, REMOTE_RENDER_DELAY_MS])('saut, à la limite, pour %d ms entre deux instantanés : la limite glisse, un pixel de plus saute', (dt) => {
+  const limit = jumpLimit(dt);
+  const glide = new SnapshotBuffer();
+  glide.push(0, at(0, 0));
+  glide.push(dt, at(limit, 0));
+  expect(glide.sample(dt / 2)!.x).toBe(limit / 2);
+
+  const jump = new SnapshotBuffer();
+  jump.push(0, at(0, 0));
+  jump.push(dt, at(limit + 1, 0));
+  expect(jump.sample(1)!.x).toBe(limit + 1);
+  expect(jump.sample(dt / 2)!.x).toBe(limit + 1);
+});
+
+test('les valeurs de la limite : 104 px en 50 ms, 112 px en 100 ms (le test du brief : 100 px glissent, 200 px sautent)', () => {
+  expect(TELEPORT_SNAP_PX).toBe(96);
+  expect([jumpLimit(50), jumpLimit(100)]).toEqual([104, 112]);
+});
+
+test('la distance du saut est celle du segment, en diagonale aussi', () => {
   const diagonal = new SnapshotBuffer();
   diagonal.push(0, at(0, 0));
-  diagonal.push(100, at(80, 80));                             // 113 px en diagonale
+  diagonal.push(100, at(80, 80));                             // 113 px en diagonale : plus que 112
   expect(diagonal.sample(50)).toMatchObject({ x: 80, y: 80 });
 
-  const near = new SnapshotBuffer();
-  near.push(0, at(0, 0));
-  near.push(100, at(TELEPORT_SNAP_PX + walked, 0));
-  expect(near.sample(50)!.x).toBe((TELEPORT_SNAP_PX + walked) / 2);
+  const glide = new SnapshotBuffer();
+  glide.push(0, at(0, 0));
+  glide.push(100, at(78, 78));                                // 110 px : il glisse
+  expect(glide.sample(50)).toMatchObject({ x: 39, y: 39 });
+});
 
+test('après une attente, le segment dure REMOTE_RENDER_DELAY_MS : la limite du saut est celle de cette durée, pas de toute l\'attente', () => {
+  const limit = jumpLimit(REMOTE_RENDER_DELAY_MS);
+  const glide = new SnapshotBuffer();
+  glide.push(0, at(0, 0));
+  glide.push(5000, at(limit, 0));
+  expect(glide.sample(5000 - REMOTE_RENDER_DELAY_MS / 2)!.x).toBe(limit / 2);
+
+  // Comptée sur toute l'attente (5 s), la marche expliquerait 800 px : la personne était immobile, puis a sauté.
+  const jump = new SnapshotBuffer();
+  jump.push(0, at(0, 0));
+  jump.push(5000, at(limit + 1, 0));
+  expect(jump.sample(5000 - REMOTE_RENDER_DELAY_MS / 2)!.x).toBe(limit + 1);
 });
 
 test('deux instantanés de la même heure (des ticks arrivés ensemble) : le plus récent compte, sans division par zéro', () => {

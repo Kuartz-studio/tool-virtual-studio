@@ -15,9 +15,14 @@ interface Timed {
 
 const copy = (s: Snapshot): Snapshot => ({ x: s.x, y: s.y, dir: s.dir, moving: s.moving });
 
-// Un saut : la part du déplacement de `a` à `b` que la marche n'explique pas (à MAX_SPEED_PX_PER_S, pendant le temps qui les
-// sépare) dépasse TELEPORT_SNAP_PX. Entre deux ticks (100 ms), la marche fait 16 px : un déplacement de 100 px glisse encore, un
-// de 200 px saute.
+// Un saut : la part du déplacement de `a` à `b` que la marche n'explique pas dépasse TELEPORT_SNAP_PX, soit
+//
+//   distance(a, b) > TELEPORT_SNAP_PX + MAX_SPEED_PX_PER_S × (b.at − a.at) / 1000
+//
+// (distance en ligne droite, en pixels ; b.at − a.at en ms). À la limite exacte, l'avatar glisse encore ; un pixel de plus, il saute.
+// Entre deux ticks (100 ms), la marche fait 16 px : 112 px glissent, 113 px sautent (le test du brief : 100 px glissent, 200 px
+// sautent ; TELEPORT_SNAP_PX seul, 96 px, ferait sauter les 100 px). push() ne crée jamais de segment plus long que
+// REMOTE_RENDER_DELAY_MS : une longue attente n'élargit pas la limite (24 px de marche au plus à 150 ms).
 function isJump(a: Timed, b: Timed): boolean {
   const walkable = (MAX_SPEED_PX_PER_S * (b.at - a.at)) / 1000;
   return Math.hypot(b.s.x - a.s.x, b.s.y - a.s.y) > TELEPORT_SNAP_PX + walkable;
@@ -36,7 +41,7 @@ function isJump(a: Timed, b: Timed): boolean {
 //   ticks sans rien dessiner, ne fait pas enfler la mémoire.
 //
 // Le serveur n'envoie une position que quand elle change. Un instantané qui arrive alors que l'heure de rendu a déjà dépassé le
-// précédent (la personne était immobile, ou un tick s'est perdu) ne doit pas faire sauter l'avatar à mi-chemin : on le dessinait
+// précédent (la personne était immobile, ou un tick n'avait rien pour elle) ne doit pas faire sauter l'avatar à mi-chemin : on le dessinait
 // au précédent jusqu'ici. push() date donc une copie du précédent à l'heure de rendu de l'arrivée, et l'avatar glisse de là
 // jusqu'au nouveau en REMOTE_RENDER_DELAY_MS.
 export class SnapshotBuffer {

@@ -6,7 +6,13 @@ export const MOVE_JITTER_MS = 250;
 export const MOVE_SEGMENT_STEP_PX = 8;
 export const CLIENT_MOVE_MAX_HZ = 10;
 export const WORLD_TICK_MS = 100;
-export const REMOTE_RENDER_DELAY_MS = 100;
+// Le retard avec lequel on dessine les autres avatars (la spec : « environ 100 ms »). Pas 100 ms tout juste, la période des ticks :
+// un client envoie au plus 10 `move` par seconde, au rythme de ses images (toutes les 100 ou 117 ms), si bien que certains ticks
+// n'ont rien pour lui, et deux positions reçues sont alors à 200 ms l'une de l'autre. Avec 100 ms de retard, l'avatar arrivait au
+// bout des positions reçues et s'arrêtait 80 à 100 ms, environ une fois toutes les deux secondes : une marche saccadée, l'un des
+// anti-objectifs de la spec. À 150 ms, ces arrêts ne durent plus que 30 à 60 ms (mesures dans le rapport de la tâche 15) ; il
+// faudrait 200 ms pour qu'un tick vide ne se voie plus du tout.
+export const REMOTE_RENDER_DELAY_MS = 150;
 export const TELEPORT_SNAP_PX = 3 * TILE_SIZE;
 export const GROUPS_TICK_MS = 250;
 export const JOIN_DISTANCE_PX = 3 * TILE_SIZE;   // « à moins de 3 cases » : d < JOIN
