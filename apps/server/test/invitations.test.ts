@@ -19,6 +19,7 @@ test('inscription directe sans invitation refusée', async () => {
   const t = await createTestApp();
   const res = await request(t.app).post('/api/auth/sign-up/email').send({ email: 'x@x.fr', password: 'motdepasse1', name: 'X' });
   expect(res.status).toBeGreaterThanOrEqual(400);
+  expect(res.body.code).toBe('INVITATION_REQUIRED');   // le refus vient bien du verrou des invitations
   expect(await countUsers(t.db)).toBe(0);
 });
 
@@ -194,6 +195,7 @@ describe('verrou d\'invitation', () => {
     const { token } = await t.invitations.create({ email: 'lea@x.fr', role: 'admin', invitedBy: null });
     const res = await request(t.app).post('/api/auth/sign-up/email').send({ email: 'lea@x.fr', password: 'motdepasse1', name: 'Léa' });
     expect(res.status).toBe(403);
+    expect(res.body.code).toBe('INVITATION_REQUIRED');
     expect(await countUsers(t.db)).toBe(0);
     expect((await t.invitations.check(token)).status).toBe('valid');
   });
@@ -202,16 +204,18 @@ describe('verrou d\'invitation', () => {
     const t = await createTestApp();
     const res = await request(t.app).post('/api/auth/sign-up/email').send({ email: 'x@x.fr', password: 'motdepasse1', name: 'X', role: 'admin' });
     expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.body.code).toBe('INVITATION_REQUIRED');
     expect(await countUsers(t.db)).toBe(0);
   });
 
   test('signUpEmail côté serveur : refusé hors contexte d\'invitation, ou pour une autre adresse que celle invitée', async () => {
     const t = await createTestApp();
     const body = { email: 'autre@x.fr', password: 'motdepasse1', name: 'Autre' };
-    await expect(t.auth.api.signUpEmail({ body })).rejects.toMatchObject({ statusCode: 403 });
+    const refused = { statusCode: 403, body: { code: 'INVITATION_REQUIRED' } };
+    await expect(t.auth.api.signUpEmail({ body })).rejects.toMatchObject(refused);
     await expect(
       invitationContext.run({ email: 'lea@x.fr', role: 'admin' }, () => t.auth.api.signUpEmail({ body })),
-    ).rejects.toMatchObject({ statusCode: 403 });
+    ).rejects.toMatchObject(refused);
     expect(await countUsers(t.db)).toBe(0);
   });
 
@@ -226,6 +230,7 @@ describe('verrou d\'invitation', () => {
     ]);
     expect(accepted.status).toBe(201);
     expect(otherEmail.status).toBe(403);
+    expect(otherEmail.body.code).toBe('INVITATION_REQUIRED');
     expect(sameEmail.status).toBeGreaterThanOrEqual(400);
     expect(await countUsers(t.db)).toBe(1);
     expect(await findUserByEmail(t.db, 'lea@x.fr')).toMatchObject({ name: 'Léa', role: 'admin' });

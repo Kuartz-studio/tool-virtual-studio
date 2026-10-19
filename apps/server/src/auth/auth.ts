@@ -17,6 +17,9 @@ export function createAuth({ db, env }: { db: Db; mailer: Mailer; env: Env }) {
     baseURL: env.APP_URL,
     basePath: '/api/auth',
     database: drizzleAdapter(db, { provider: 'pg', schema }),
+    // `autoSignIn: true` et l'absence de `requireEmailVerification` comptent pour le verrou des invitations : avec
+    // `autoSignIn: false` ou `requireEmailVerification: true`, /sign-up/email transforme le 403 du crochet
+    // user.create.before en une réponse 200 générique (sans créer de compte, ni ouvrir de session).
     emailAndPassword: {
       enabled: true,
       minPasswordLength: PASSWORD_MIN_LENGTH,

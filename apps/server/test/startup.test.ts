@@ -58,12 +58,16 @@ test('démarrage complet : base en mémoire migrée, santé, inscription directe
     });
     const base = `http://127.0.0.1:${port}`;
     expect(await (await fetch(`${base}/api/health`)).json()).toEqual({ ok: true });
+    // fetch envoie `sec-fetch-mode: cors` sans en-tête Origin : la protection CSRF de Better Auth répondrait alors 403
+    // (MISSING_OR_NULL_ORIGIN) avant même le crochet des invitations. Avec l'origine de confiance (APP_URL du serveur
+    // lancé), la requête passe ce contrôle : le 403 attendu est bien celui du verrou des invitations.
     const signUp = await fetch(`${base}/api/auth/sign-up/email`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', origin: 'http://localhost:4000' },
       body: JSON.stringify({ email: 'x@x.fr', password: 'motdepasse1', name: 'X' }),
     });
     expect(signUp.status).toBe(403);
+    expect(await signUp.json()).toMatchObject({ code: 'INVITATION_REQUIRED' });
     expect((await fetch(`${base}/api/invitations/inconnu`)).status).toBe(404);
   } finally {
     child.kill();
