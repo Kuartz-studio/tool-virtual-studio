@@ -18,4 +18,9 @@ export default defineConfig({
   clean: true,
   // Le paquet partagé est livré en TypeScript : il doit être compilé dans le bundle plutôt que chargé à l'exécution.
   noExternal: ['@bureau/shared'],
+  // Les modèles d'e-mail (src/mail/templates/*.tsx) sont des composants React : JSX « automatique », comme "jsx": "react-jsx"
+  // dans tsconfig.json, sans `import React` dans chaque fichier.
+  esbuildOptions(options) {
+    options.jsx = 'automatic';
+  },
 });
