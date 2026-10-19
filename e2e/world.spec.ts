@@ -1,5 +1,5 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
-import { inviteAndJoin, uniqueEmail } from './helpers';
+import { inviteAndJoin, uniqueEmail, type Account } from './helpers';
 
 type Rgb = readonly [number, number, number];
 
@@ -17,6 +17,14 @@ const MAP_COLORS: Record<string, Rgb> = {
 const BACKGROUND: Rgb = [29, 32, 48];
 // La couleur du message d'échec du chargement (Preloader.ts), qui n'est pas celle de la barre de chargement, blanche.
 const ERROR_TEXT: Rgb = [255, 180, 180];
+// La chemise de l'avatar par défaut, dev-red (gen-dev-assets.ts) : le corps du personnage, hors bras et flancs, d'une seule couleur.
+const SHIRT: Rgb = [214, 64, 64];
+// Toutes les couleurs de ce personnage (chemise, manches, flancs, peau, cheveux, pantalon, chaussures, yeux, contour), qu'aucune
+// tuile de la carte n'a.
+const AVATAR_COLORS: readonly Rgb[] = [
+  [214, 64, 64], [182, 54, 54], [171, 51, 51], [242, 201, 160], [214, 164, 124], [74, 52, 40], [58, 66, 96], [44, 50, 74], [36, 36, 46],
+  [30, 30, 42], [24, 24, 34],
+];
 
 // Le bonjour provisoire, en haut à gauche de la page, cache ce qui est dessous.
 const HIDE_OVERLAY = '.office-overlay { visibility: hidden }';
@@ -27,10 +35,10 @@ async function nextFrames(page: Page): Promise<void> {
 }
 
 // Une capture de la page, jointe au rapport du test (test-results/…/<nom>.png).
-async function screenshot(page: Page, testInfo: TestInfo, name: string): Promise<Buffer> {
+async function screenshot(page: Page, testInfo: TestInfo, name: string, style?: string): Promise<Buffer> {
   await nextFrames(page);
   const path = testInfo.outputPath(`${name}.png`);
-  const png = await page.screenshot({ path });
+  const png = await page.screenshot({ path, style });
   await testInfo.attach(name, { path, contentType: 'image/png' });
   return png;
 }
@@ -62,6 +70,82 @@ async function readPixels(
       return { counts, at };
     },
     { base64: png.toString('base64'), colors, points },
+  );
+}
+
+interface ColorSpread {
+  count: number;
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+// Où sont les pixels de cette couleur dans la capture : combien, et le rectangle qui les contient (maxX = −1 s'il n'y en a pas).
+async function findColor(page: Page, png: Buffer, color: Rgb): Promise<ColorSpread> {
+  return page.evaluate(
+    async ({ base64, color }) => {
+      const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+      const context = new OffscreenCanvas(image.width, image.height).getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, image.width, image.height);
+      const found = { count: 0, minX: Infinity, maxX: -1, minY: Infinity, maxY: -1 };
+      for (let y = 0; y < image.height; y++) {
+        for (let x = 0; x < image.width; x++) {
+          const i = (y * image.width + x) * 4;
+          if (data[i] !== color[0] || data[i + 1] !== color[1] || data[i + 2] !== color[2]) continue;
+          found.count++;
+          found.minX = Math.min(found.minX, x);
+          found.maxX = Math.max(found.maxX, x);
+          found.minY = Math.min(found.minY, y);
+          found.maxY = Math.max(found.maxY, y);
+        }
+      }
+      return found;
+    },
+    { base64: png.toString('base64'), color },
+  );
+}
+
+// Pour cette capture, dans ce rectangle (x0, y0, x1, y1) : parmi les endroits où un pixel d'une de ces couleurs touche un pixel
+// d'une autre de ces couleurs (de n'importe quelles couleurs : null), combien sont sur un x pair ou impair (à gauche d'un pixel qui
+// change), puis sur un y pair ou impair. Un décor ou un personnage agrandi ×2 sans défaut a des pixels de 2 × 2 px à l'écran : ses
+// changements de couleur tombent tous sur la même parité. Des pixels de 1 ou de 3 px de large, qui papillotent, en mélangent les deux.
+async function colorChanges(
+  page: Page,
+  png: Buffer,
+  region: [number, number, number, number],
+  colors: readonly Rgb[] | null,
+): Promise<{ x: [number, number]; y: [number, number] }> {
+  return page.evaluate(
+    async ({ base64, region, colors }) => {
+      const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
+      const context = new OffscreenCanvas(image.width, image.height).getContext('2d')!;
+      context.drawImage(image, 0, 0);
+      const { data } = context.getImageData(0, 0, image.width, image.height);
+      const known = colors && new Set(colors.map((color) => color.join(',')));
+      const colorAt = (x: number, y: number) => {
+        const i = (y * image.width + x) * 4;
+        return `${data[i]},${data[i + 1]},${data[i + 2]}`;
+      };
+      const [x0, y0, x1, y1] = region;
+      const x: [number, number] = [0, 0];
+      const y: [number, number] = [0, 0];
+      for (let row = y0; row < y1; row++) {
+        for (let col = x0 + 1; col < x1; col++) {
+          const [here, before] = [colorAt(col, row), colorAt(col - 1, row)];
+          if (here !== before && (!known || (known.has(here) && known.has(before)))) x[col % 2]!++;
+        }
+      }
+      for (let col = x0; col < x1; col++) {
+        for (let row = y0 + 1; row < y1; row++) {
+          const [here, above] = [colorAt(col, row), colorAt(col, row - 1)];
+          if (here !== above && (!known || (known.has(here) && known.has(above)))) y[row % 2]!++;
+        }
+      }
+      return { x, y };
+    },
+    { base64: png.toString('base64'), region, colors },
   );
 }
 
@@ -104,9 +188,10 @@ test('la carte s\'affiche', async ({ page }, testInfo) => {
   });
 });
 
-test('carte introuvable : un message à la place de la carte', async ({ page }) => {
-  await page.route('**/assets/maps/dev-office.json', (route) => route.fulfill({ status: 404, body: 'introuvable' }));
-  await inviteAndJoin(page, { email: uniqueEmail('anouk'), name: 'Anouk', password: 'motdepasse-d-anouk' });
+// Un fichier dont dépend le bureau manque (404) : le message d'échec remplace le bureau, qui n'est pas prêt.
+async function expectLoadFailure(page: Page, missingFile: string, account: Account): Promise<void> {
+  await page.route(missingFile, (route) => route.fulfill({ status: 404, body: 'introuvable' }));
+  await inviteAndJoin(page, account);
   await expect(page.locator('#game-container canvas')).toBeVisible();
 
   // Le message est dessiné dans le canevas : on le reconnaît à ses pixels.
@@ -119,4 +204,458 @@ test('carte introuvable : un message à la place de la carte', async ({ page }) 
   const { counts } = await readPixels(page, await page.screenshot({ style: HIDE_OVERLAY }), MAP_COLORS);
   expect(Object.values(counts).reduce((total, count) => total + count, 0)).toBe(0);
   expect(await page.evaluate(() => window.__office?.ready ?? false)).toBe(false);
+}
+
+test('carte introuvable : un message à la place de la carte', async ({ page }) => {
+  const account = { email: uniqueEmail('anouk'), name: 'Anouk', password: 'motdepasse-d-anouk' };
+  await expectLoadFailure(page, '**/assets/maps/dev-office.json', account);
+});
+
+test('planche d\'avatar introuvable : le même message à la place de la carte', async ({ page }) => {
+  // dev-blue n'est pas l'avatar de cette personne : le Preloader charge pourtant toutes les planches, pour les autres joueurs.
+  const account = { email: uniqueEmail('axel'), name: 'Axel', password: 'motdepasse-d-axel' };
+  await expectLoadFailure(page, '**/assets/dev/avatars/dev-blue.png', account);
+});
+
+// ---- L'avatar local -------------------------------------------------------------------------------------------------------
+//
+// La carte de développement (packages/shared/src/map/dev-office.ts) : 24 × 16 cases de 32 px. L'apparition est au centre de la case
+// (2, 7), soit (80, 240) en pixels, dans l'open space. Les x et y de l'avatar sont ceux de ses pieds, en pixels de la carte.
+
+// Le temps qu'on laisse à l'avatar pour marcher jusqu'à un endroit (la marche la plus longue : 2 s). Une machine chargée fait tourner le
+// jeu plus lentement que l'horloge (Phaser ne laisse pas une image durer plus de 200 ms) : on ne veut pas d'échec pour cela.
+const WALK_TIMEOUT = 20_000;
+
+// Où est l'avatar local (window.__office.self, tenu à jour par la scène à chaque image).
+async function selfAt(page: Page): Promise<{ id: string; x: number; y: number }> {
+  const self = await page.evaluate(() => window.__office?.self ?? null);
+  if (!self) throw new Error('window.__office.self est vide : le bureau n\'a pas d\'avatar local.');
+  return self;
+}
+
+// Un compte neuf, dans le bureau prêt.
+async function joinOffice(page: Page, name: string): Promise<void> {
+  // L'adresse e-mail n'a pas d'accent : « Zoé » devient zoe.
+  const slug = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  await inviteAndJoin(page, { email: uniqueEmail(slug), name, password: `motdepasse-de-${slug}` });
+  await page.waitForFunction(() => window.__office?.ready);
+  // Les premières images, qui compilent les shaders et envoient les textures à la carte graphique, sont les plus lentes. Une marche
+  // qui commence là serait plus courte que prévu : on attend que le jeu ait tourné un moment.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let frames = 0;
+        const tick = () => (++frames >= 30 ? resolve() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
+// La carte de développement, en pixels.
+const MAP_SIZE = { width: 24 * 32, height: 16 * 32 };
+
+// Où est l'avatar à l'écran, sur un axe, selon les règles de la caméra : elle regarde `target`, sans sortir de la carte. Une vue (la
+// longueur du canevas divisée par le zoom) plus petite que la carte se déplace avec lui, entre sa moitié et la carte moins sa moitié
+// (la caméra est alors contre le bord de la carte, et l'avatar n'est plus au centre). Une vue plus grande montre la carte entière,
+// au milieu : rien à suivre.
+function onScreen(target: number, mapLength: number, canvasLength: number, zoom: number): number {
+  const view = canvasLength / zoom;
+  const center = view >= mapLength ? mapLength / 2 : Math.min(Math.max(target, view / 2), mapLength - view / 2);
+  return canvasLength / 2 + zoom * (target - center);
+}
+
+// Où est le milieu de la chemise de l'avatar dont les pieds sont en `feet`. La caméra regarde le milieu de l'avatar (16 px au-dessus
+// des pieds), et la chemise est 3,5 px de carte plus bas.
+function shirtOnScreen(feet: { x: number; y: number }, canvas: { width: number; height: number }, zoom: number): [number, number] {
+  return [
+    onScreen(feet.x, MAP_SIZE.width, canvas.width, zoom),
+    onScreen(feet.y - 16, MAP_SIZE.height, canvas.height, zoom) + zoom * 3.5,
+  ];
+}
+
+// Garde cette touche enfoncée jusqu'à ce que `reached` soit vrai, puis la relâche.
+async function holdUntil(page: Page, key: string, reached: (feet: { x: number; y: number }) => boolean): Promise<void> {
+  await page.keyboard.down(key);
+  await expect.poll(async () => reached(await selfAt(page)), { intervals: [15], timeout: WALK_TIMEOUT }).toBe(true);
+  await page.keyboard.up(key);
+}
+
+// Garde cette touche enfoncée jusqu'à ce que l'avatar ne bouge plus (un mur l'arrête), puis la relâche. Renvoie où il s'est arrêté.
+async function holdUntilStopped(page: Page, key: string): Promise<{ x: number; y: number }> {
+  await page.keyboard.down(key);
+  let { x, y } = await selfAt(page);
+  for (let still = 0, tries = 0; still < 6; tries++) {
+    if (tries > 300) throw new Error(`L'avatar bouge encore après 30 s, ${key} enfoncée.`);
+    await page.waitForTimeout(100);
+    const now = await selfAt(page);
+    still = now.x === x && now.y === y ? still + 1 : 0;
+    ({ x, y } = now);
+  }
+  await page.keyboard.up(key);
+  return { x, y };
+}
+
+// Où est l'avatar une fois arrêté : l'image qui suit le relâchement d'une touche peut encore le faire avancer de quelques pixels.
+async function restingAt(page: Page): Promise<{ id: string; x: number; y: number }> {
+  let last = await selfAt(page);
+  for (let still = 0, tries = 0; still < 3; tries++) {
+    if (tries > 300) throw new Error('L\'avatar bouge encore après 15 s.');
+    await page.waitForTimeout(50);
+    const now = await selfAt(page);
+    still = now.x === last.x && now.y === last.y ? still + 1 : 0;
+    last = now;
+  }
+  return last;
+}
+
+test('l\'avatar apparaît sur le point d\'apparition, pieds en (80, 240), avec son ombre', async ({ page }, testInfo) => {
+  // Même fenêtre que « la carte s'affiche » : zoom ×2, la carte entière au milieu, à 32 px de marge à gauche et 38 en haut. Un
+  // point de la carte (x, y) est donc à l'écran en (32 + 2x, 38 + 2y).
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  await joinOffice(page, 'Zoé');
+
+  // C'est le compte connecté : son identifiant est celui de la session.
+  const session = (await (await page.request.get('/api/auth/get-session')).json()) as { user: { id: string } };
+  expect(await selfAt(page)).toEqual({ id: session.user.id, x: 80, y: 240 });
+
+  const png = await screenshot(page, testInfo, 'avatar-apparition', HIDE_OVERLAY);
+  const shirt: [number, number] = [32 + 2 * 79 + 1, 38 + 2 * 227 + 1];   // un pixel de la chemise, un peu à gauche du milieu
+  const shadow: [number, number] = [32 + 2 * 80 + 1, 38 + 2 * 241 + 1];   // 1 px sous les pieds, au milieu de l'ombre
+  const floorBesideShadow: [number, number] = [32 + 2 * 80 + 1, 38 + 2 * 244 + 1];   // 4 px sous les pieds, hors de l'ombre (6 px de haut)
+  const { at } = await readPixels(page, png, {}, [shirt, shadow, floorBesideShadow]);
+
+  // Le personnage rouge de dev-red, face à nous.
+  expect(at[0], 'chemise').toEqual(SHIRT);
+  // Le sol, assombri d'un quart par l'ombre noire à 25 % : 0,75 × (222, 216, 202) = (166,5, 162, 151,5). Le sol autour n'est pas touché.
+  expect(at[2], 'sol hors de l\'ombre').toEqual(MAP_COLORS.sol);
+  for (const [channel, expected] of [166.5, 162, 151.5].entries()) {
+    expect(Math.abs(at[1]![channel]! - expected), `ombre, canal ${channel} : ${at[1]}`).toBeLessThanOrEqual(2);
+  }
+});
+
+test('marcher à droite : ArrowRight enfoncée 500 ms fait avancer l\'avatar, qui s\'arrête quand on la relâche', async ({ page }) => {
+  await joinOffice(page, 'Rosa');
+  const x0 = (await selfAt(page)).x;
+
+  const start = Date.now();
+  await page.keyboard.down('ArrowRight');
+  // Une machine chargée peut tarder à dessiner l'image qui voit la touche : les 500 ms commencent quand l'avatar a bougé.
+  await expect.poll(async () => (await selfAt(page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(x0);
+  await page.waitForTimeout(500);
+  await page.keyboard.up('ArrowRight');
+  const heldSeconds = (Date.now() - start) / 1000;
+
+  const walked = await restingAt(page);
+  expect(walked.x - x0).toBeGreaterThan(40);
+  // 160 px/s (MAX_SPEED_PX_PER_S) : une demi-seconde fait 80 px. Jamais plus vite que la vitesse maximale, pendant le temps qu'a
+  // duré l'appui (à quelques pixels près : l'image qui suit le relâchement).
+  expect(walked.x - x0).toBeLessThanOrEqual(160 * heldSeconds + 12);
+  // Une seule direction à la fois : il n'a pas bougé en y.
+  expect(walked.y).toBe(240);
+
+  // Relâchée, il s'arrête et ne repart pas.
+  await page.waitForTimeout(300);
+  expect(await selfAt(page)).toEqual(walked);
+});
+
+test('un mur arrête : depuis l\'apparition, ArrowUp enfoncée 2 s', async ({ page }) => {
+  await joinOffice(page, 'Mia');
+  const start = await selfAt(page);
+
+  await page.keyboard.down('ArrowUp');
+  await page.waitForTimeout(2000);
+  await page.keyboard.up('ArrowUp');
+
+  const end = await selfAt(page);
+  // La ligne 5 est un mur en x = 2 : il commence en y = 160 et finit en y = 192. Les pieds ne peuvent pas le passer.
+  expect(end.y).toBeGreaterThanOrEqual(192);
+  // Mais l'avatar a bien marché jusqu'à lui, et n'a pas dévié.
+  expect(end.y).toBeLessThan(start.y);
+  expect(end.x).toBe(start.x);
+});
+
+test('le corps de l\'avatar a 20 × 12 px aux pieds : il s\'arrête contre les murs et les bureaux sur ses bords', async ({ page }) => {
+  test.slow();
+  await joinOffice(page, 'Gaëlle');
+
+  // Vers la gauche : le mur de la colonne 0 finit en x = 32, et le corps (20 px de large) s'arrête à 10 px de lui.
+  expect(await holdUntilStopped(page, 'ArrowLeft')).toEqual({ x: 42, y: 240 });
+  // Vers le haut : le mur de la ligne 5 finit en y = 192. Le corps (12 px de haut, du bas de l'avatar) s'arrête contre lui, et les
+  // pieds, un pixel au-dessus de son bas, sont 11 px plus bas.
+  expect(await holdUntilStopped(page, 'ArrowUp')).toEqual({ x: 42, y: 203 });
+  // Vers le bas : le mur de la ligne 15 commence en y = 480. Le corps le touche, mais les pieds restent dans leur case (y = 479) :
+  // en y = 480, le serveur les verrait déjà dans le mur.
+  expect(await holdUntilStopped(page, 'ArrowDown')).toEqual({ x: 42, y: 479 });
+});
+
+test('un bureau arrête : vu d\'en haut, comme un mur', async ({ page }) => {
+  await joinOffice(page, 'Théo');
+
+  // Le bureau des colonnes 4 et 5 (x de 128 à 192) commence en y = 288. Il faut être au-dessus : vers la droite jusqu'à x = 150, le
+  // corps (de x − 10 à x + 10) est alors devant lui.
+  await page.keyboard.down('ArrowRight');
+  await expect.poll(async () => (await selfAt(page)).x, { intervals: [20], timeout: WALK_TIMEOUT }).toBeGreaterThanOrEqual(150);
+  await page.keyboard.up('ArrowRight');
+  const above = await restingAt(page);
+  // Le corps recouvre encore les colonnes du bureau tant que x − 10 < 192.
+  expect(above.x).toBeLessThan(200);
+
+  const stopped = await holdUntilStopped(page, 'ArrowDown');
+  expect(stopped.y).toBe(287);
+  expect(stopped.x).toBe(above.x);
+});
+
+test('les touches ZQSD d\'un AZERTY sont celles de WASD : par leur position (KeyW, KeyA, KeyS, KeyD)', async ({ page }) => {
+  await joinOffice(page, 'Inès');
+  const start = await selfAt(page);
+
+  // À droite : « D » (même position sur les deux claviers).
+  await page.keyboard.down('KeyD');
+  await page.waitForTimeout(300);
+  await page.keyboard.up('KeyD');
+  const right = await restingAt(page);
+  expect(right.x).toBeGreaterThan(start.x + 20);
+  expect(right.y).toBe(start.y);
+
+  // En bas : « S » (même position aussi).
+  await page.keyboard.down('KeyS');
+  await page.waitForTimeout(300);
+  await page.keyboard.up('KeyS');
+  const down = await restingAt(page);
+  expect(down.y).toBeGreaterThan(right.y + 20);
+  expect(down.x).toBe(right.x);
+
+  // À gauche : « Q » d'un AZERTY, à la position de KeyA. Un événement tel que l'AZERTY l'envoie : key = 'q', code = 'KeyA'.
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'q', code: 'KeyA' })));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'q', code: 'KeyA' })));
+  const left = await restingAt(page);
+  expect(left.x).toBeLessThan(down.x - 20);
+
+  // Le « A » d'un AZERTY est à la position de KeyQ : il ne déplace pas.
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', code: 'KeyQ' })));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', code: 'KeyQ' })));
+  expect(await restingAt(page)).toEqual(left);
+});
+
+test('dans un champ de saisie, les touches ne déplacent pas l\'avatar', async ({ page }) => {
+  await joinOffice(page, 'Hugo');
+  const start = await selfAt(page);
+
+  // Un champ (le chat, bientôt) qui a le focus.
+  await page.evaluate(() => {
+    const field = document.createElement('input');
+    field.id = 'champ-de-saisie';
+    document.body.append(field);
+    field.focus();
+  });
+  await page.keyboard.down('ArrowRight');
+  await page.keyboard.down('KeyD');
+  await page.waitForTimeout(400);
+  await page.keyboard.up('KeyD');
+  await page.keyboard.up('ArrowRight');
+  expect(await selfAt(page)).toEqual(start);
+  // Les lettres ont bien été tapées dans le champ.
+  await expect(page.locator('#champ-de-saisie')).toHaveValue('d');
+
+  // Le focus quitte le champ : le clavier déplace de nouveau l'avatar.
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await page.keyboard.down('ArrowRight');
+  await page.waitForTimeout(300);
+  await page.keyboard.up('ArrowRight');
+  expect((await selfAt(page)).x).toBeGreaterThan(start.x + 20);
+});
+
+test('la fenêtre perd le focus en pleine marche : l\'avatar s\'arrête, même si la touche est restée enfoncée', async ({ page }) => {
+  await joinOffice(page, 'Lina');
+  const start = await selfAt(page);
+
+  await page.keyboard.down('ArrowRight');
+  await expect.poll(async () => (await selfAt(page)).x).toBeGreaterThan(start.x + 10);
+  // Un relâchement n'arrive pas à une page qui n'a plus le focus : sans cela, la touche resterait « enfoncée ».
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await page.waitForTimeout(200);
+  const stopped = await selfAt(page);
+  await page.waitForTimeout(300);
+  expect(await selfAt(page)).toEqual(stopped);
+  await page.keyboard.up('ArrowRight');
+});
+
+test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, testInfo) => {
+  test.slow();
+  // 1280 × 720 : zoom ×2, la vue (640 × 360 px de carte) est plus petite que la carte (768 × 512).
+  await joinOffice(page, 'Lou');
+  expect(page.viewportSize()).toEqual({ width: 1280, height: 720 });
+  const canvas = { width: 1280, height: 720 };
+
+  // La caméra regarde le milieu de l'avatar sans quitter la carte : horizontalement, le centre de la vue ne peut pas aller plus à
+  // gauche que x = 320 (la moitié de la vue) ni plus à droite que x = 448 (768 − 320). À l'apparition (x = 80), la caméra est donc
+  // contre le bord gauche, et l'avatar à gauche du centre : 640 + 2 × (80 − 320) = 160. Verticalement, la vue (360) tient dans la
+  // carte (512) et l'avatar est au milieu de l'écran : le milieu de sa chemise (3,5 px sous le sien) est à 360 + 2 × 3,5 = 367.
+  const spawn = await findColor(page, await screenshot(page, testInfo, 'camera-apparition', HIDE_OVERLAY), SHIRT);
+  expect(spawn.count).toBeGreaterThan(50);
+  const [spawnX, spawnY] = shirtOnScreen(await selfAt(page), canvas, 2);
+  expect([spawnX, spawnY]).toEqual([160, 367]);
+  expect((spawn.minX + spawn.maxX) / 2).toBeCloseTo(spawnX, -1);   // à 5 px près
+  expect((spawn.minY + spawn.maxY) / 2).toBeCloseTo(spawnY, -1);
+
+  // Plus loin dans la carte (de x = 320 à 448), la caméra le suit : l'avatar reste au centre de l'écran, x = 640.
+  await page.keyboard.down('KeyD');
+  await expect.poll(async () => (await selfAt(page)).x, { intervals: [50], timeout: WALK_TIMEOUT }).toBeGreaterThanOrEqual(380);
+  await page.keyboard.up('KeyD');
+  const middleAt = await restingAt(page);
+  const pngMiddle = await screenshot(page, testInfo, 'camera-milieu', HIDE_OVERLAY);
+  const middle = await findColor(page, pngMiddle, SHIRT);
+  const [middleX, middleY] = shirtOnScreen(middleAt, canvas, 2);
+  expect((middle.minX + middle.maxX) / 2).toBeCloseTo(middleX, -1);
+  expect((middle.minY + middle.maxY) / 2).toBeCloseTo(middleY, -1);
+  // La vue est entièrement dans la carte : pas un pixel du fond du jeu.
+  expect((await readPixels(page, pngMiddle, { fond: BACKGROUND })).counts.fond).toBe(0);
+
+  // Près du bord droit, la caméra s'arrête avec la carte (centre de la vue en x = 448) : l'avatar quitte le centre de l'écran, et le
+  // bord de la carte est celui de l'écran, sans le vide du fond autour.
+  await page.keyboard.down('KeyD');
+  await expect.poll(async () => (await selfAt(page)).x, { intervals: [50], timeout: WALK_TIMEOUT }).toBeGreaterThanOrEqual(600);
+  await page.keyboard.up('KeyD');
+  const rightAt = await restingAt(page);
+  const pngRight = await screenshot(page, testInfo, 'camera-bord-droit', HIDE_OVERLAY);
+  const right = await findColor(page, pngRight, SHIRT);
+  const [rightX, rightY] = shirtOnScreen(rightAt, canvas, 2);
+  expect(rightX).toBeCloseTo(640 + 2 * (rightAt.x - 448), 5);
+  expect((right.minX + right.maxX) / 2).toBeCloseTo(rightX, -1);
+  expect((right.minY + right.maxY) / 2).toBeCloseTo(rightY, -1);
+  const { at, counts } = await readPixels(page, pngRight, { fond: BACKGROUND }, [[1279, 360], [1279, 5], [1279, 714]]);
+  for (const pixel of at) expect(pixel).not.toEqual(BACKGROUND);
+  expect(counts.fond).toBe(0);
+});
+
+test('la caméra continue de suivre l\'avatar quand la fenêtre change de taille', async ({ page }) => {
+  test.slow();
+  await joinOffice(page, 'Eva');
+  // L'avatar s'arrête vers x = 370, loin des bords : à 1280 × 720 comme dans les deux fenêtres qui suivent, la caméra le suit (au
+  // centre de la vue de x = 320 à 448, puis de 350 à 418), même s'il dépasse un peu avant que la touche soit relâchée.
+  await page.keyboard.down('KeyD');
+  await expect.poll(async () => (await selfAt(page)).x, { intervals: [50], timeout: WALK_TIMEOUT }).toBeGreaterThanOrEqual(365);
+  await page.keyboard.up('KeyD');
+  const resting = await restingAt(page);
+
+  const shirtCenter = async () => {
+    const shirt = await findColor(page, await page.screenshot({ style: HIDE_OVERLAY }), SHIRT);
+    return [(shirt.minX + shirt.maxX) / 2, (shirt.minY + shirt.maxY) / 2];
+  };
+  // La chemise est à l'écran là où les règles de la caméra la mettent, dans cette fenêtre, une fois dessinée à sa taille.
+  const expectShirtAt = async (canvas: { width: number; height: number }, zoom: number) => {
+    const [x, y] = shirtOnScreen(resting, canvas, zoom);
+    await expect.poll(async () => (await shirtCenter())[0], { timeout: WALK_TIMEOUT }).toBeCloseTo(x, -1);
+    expect((await shirtCenter())[1]).toBeCloseTo(y, -1);
+    return [x, y];
+  };
+
+  // Plus grande, toujours au zoom ×2 (la vue : 700 × 400 px de carte) : l'avatar est au centre de l'écran, x = 700 tant que x est
+  // entre 350 et 418, et y = 400 + 2 × 3,5.
+  await page.setViewportSize({ width: 1400, height: 800 });
+  const [, bigY] = await expectShirtAt({ width: 1400, height: 800 }, 2);
+  expect(bigY).toBe(407);
+
+  // Plus petite que 1280 × 720 : zoom ×1, la vue (700 × 480 px de carte) est plus petite que la carte (768 × 512). Horizontalement,
+  // l'avatar est toujours suivi. Verticalement, la caméra ne descend pas sous y = 240 (la moitié de la vue) : le milieu de l'avatar
+  // (y = 224) est 16 px au-dessus du centre de l'écran, et la chemise à 240 − 16 + 3,5 = 227,5.
+  await page.setViewportSize({ width: 700, height: 480 });
+  const [, smallY] = await expectShirtAt({ width: 700, height: 480 }, 1);
+  expect(smallY).toBe(227.5);
+
+  // Et il ne s'est pas déplacé pendant ce temps.
+  expect(await selfAt(page)).toEqual(resting);
+});
+
+test('les pixels restent nets pour un avatar arrêté à x entier, dans une fenêtre de largeur impaire', async ({ page }) => {
+  test.slow();
+  // 1283 × 727 : zoom ×2, et le centre de l'écran est entre deux pixels (641,5). Quand la caméra suit l'avatar à un x entier, un
+  // pixel de la carte tombe pile entre deux pixels de l'écran : sans arrondi à l'affichage, des pixels de 1 et de 3 px de large.
+  await page.setViewportSize({ width: 1283, height: 727 });
+  await joinOffice(page, 'Ida');
+
+  // Un x entier, au milieu de la zone que la caméra suit (x de 320 à 448) : l'avatar contre la face est du bureau du milieu (les
+  // colonnes 11 et 12, x de 352 à 416, y de 288 à 320). Le corps (de x − 10 à x + 10) s'arrête en x = 416 + 10 = 426. Pour y
+  // arriver : à droite du bureau (x ≥ 440), en face de lui (y ≥ 295 : le bas du corps, à y + 1, est sous le haut du bureau), puis
+  // vers la gauche.
+  await holdUntil(page, 'ArrowRight', ({ x }) => x >= 440);
+  await holdUntil(page, 'ArrowDown', ({ y }) => y >= 295);
+  const stopped = await holdUntilStopped(page, 'ArrowLeft');
+  expect(stopped.x).toBe(426);
+  expect(stopped.y).toBeGreaterThan(287);
+  expect(stopped.y).toBeLessThan(331);
+  await restingAt(page);
+
+  const png = await page.screenshot({ style: HIDE_OVERLAY });
+  const shirt = await findColor(page, png, SHIRT);
+  const avatar = await colorChanges(page, png, [shirt.minX - 14, shirt.minY - 30, shirt.maxX + 14, shirt.maxY + 40], AVATAR_COLORS);
+  // Un coin de l'écran qui n'a que de la carte : ni l'avatar, ni l'étiquette.
+  const map = await colorChanges(page, png, [1283 - 420, 40, 1283 - 20, 330], null);
+
+  for (const [name, { x, y }] of Object.entries({ avatar, carte: map })) {
+    expect(x[0] + x[1], `${name} : des changements de couleur`).toBeGreaterThan(100);
+    expect(Math.min(...x), `${name}, x pair/impair : ${x}`).toBe(0);
+    expect(Math.min(...y), `${name}, y pair/impair : ${y}`).toBe(0);
+  }
+  expect((await readPixels(page, png, { fond: BACKGROUND })).counts.fond).toBe(0);
+});
+
+test('les pixels restent nets quand la caméra suit l\'avatar, même dans une fenêtre de taille impaire', async ({ page }) => {
+  test.slow();
+  // 1283 × 727 : zoom ×2, et le centre de l'écran est entre deux pixels (641,5) : la caméra, qui suit l'avatar à des positions
+  // quelconques, n'est presque jamais sur un pixel de l'écran. Les objets de la carte et l'avatar sont arrondis à l'affichage.
+  await page.setViewportSize({ width: 1283, height: 727 });
+  await joinOffice(page, 'Ugo');
+
+  // La caméra commence à suivre l'avatar à x = 320 : on regarde la marche de 330 à 700 environ.
+  await page.keyboard.down('KeyD');
+  await expect.poll(async () => (await selfAt(page)).x, { intervals: [20], timeout: WALK_TIMEOUT }).toBeGreaterThan(330);
+  for (let i = 0; i < 8; i++) {
+    await page.waitForTimeout(23 + i * 7);
+    const png = await page.screenshot({ style: HIDE_OVERLAY });
+    const shirt = await findColor(page, png, SHIRT);
+    const { x, y } = await colorChanges(page, png, [shirt.minX - 14, shirt.minY - 30, shirt.maxX + 14, shirt.maxY + 40], AVATAR_COLORS);
+    expect(x[0] + x[1], 'le personnage a des changements de couleur').toBeGreaterThan(100);
+    expect(Math.min(...x), `x pair/impair : ${x}`).toBe(0);
+    expect(Math.min(...y), `y pair/impair : ${y}`).toBe(0);
+    // Ni couture entre les tuiles de la carte, qui laisserait voir le fond.
+    expect((await readPixels(page, png, { fond: BACKGROUND })).counts.fond).toBe(0);
+  }
+  await page.keyboard.up('KeyD');
+});
+
+test('la marche s\'anime sur place, et l\'avatar immobile ne bouge plus', async ({ page }) => {
+  test.slow();
+  // La carte entière est visible (1600 × 1100) : la caméra ne bouge pas, l'avatar est toujours au même endroit de l'écran.
+  await page.setViewportSize({ width: 1600, height: 1100 });
+  await joinOffice(page, 'Noé');
+
+  // ArrowUp jusqu'au mur (les pieds en (80, 203)), puis la touche reste enfoncée : l'avatar marche sur place.
+  await page.keyboard.down('ArrowUp');
+  await expect.poll(async () => (await selfAt(page)).y, { intervals: [50], timeout: WALK_TIMEOUT }).toBe(203);
+
+  // L'avatar, ses pieds en (192, 444) à l'écran, et son ombre.
+  const clip = { x: 160, y: 380, width: 64, height: 72 };
+  // Des captures à intervalles inégaux : le cycle de marche dure 500 ms (4 images de 125 ms), et des captures à intervalles réguliers,
+  // d'une demi-période par exemple, tomberaient toujours sur la même image.
+  const gaps = [0, 37, 71, 113, 29, 97, 53, 131, 17, 89];
+  const looks = async () => {
+    const seen = new Set<string>();
+    for (const gap of gaps) {
+      await page.waitForTimeout(gap);
+      seen.add((await page.screenshot({ clip, style: HIDE_OVERLAY })).toString('base64'));
+    }
+    return seen;
+  };
+
+  // Le cycle fait trois images différentes (immobile, pas 1, pas 2) ; on en voit au moins deux.
+  expect((await looks()).size).toBeGreaterThanOrEqual(2);
+  expect((await selfAt(page)).y).toBe(203);
+
+  // Relâchée : plus une image ne change.
+  await page.keyboard.up('ArrowUp');
+  await page.waitForTimeout(300);
+  expect((await looks()).size).toBe(1);
 });

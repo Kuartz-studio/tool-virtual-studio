@@ -1,4 +1,5 @@
 import { TILE_SIZE, type TiledMapJson, type Zone } from '@bureau/shared';
+import { snapToPixels } from './pixel-snap';
 
 // Les profondeurs d'affichage. Les calques de tuiles ont les leurs ; un avatar ou un objet a pour profondeur le y de ses pieds
 // (plus il est bas dans la carte, plus il est devant), donc toujours entre `meublesBas` et `dessus`. Le calque `dessus` et les
@@ -44,8 +45,10 @@ export function buildMapLayers(scene: Phaser.Scene, map: Phaser.Tilemaps.Tilemap
 
   // Sans 5e argument, createLayer crée un TilemapLayer (et non un TilemapGPULayer) ; il renvoie null, en le signalant dans la
   // console, si la carte n'a pas ce calque.
-  const createLayer = (name: string): Phaser.Tilemaps.TilemapLayer | null =>
-    map.createLayer(name, tilesets, 0, 0) as Phaser.Tilemaps.TilemapLayer | null;
+  const createLayer = (name: string): Phaser.Tilemaps.TilemapLayer | null => {
+    const layer = map.createLayer(name, tilesets, 0, 0) as Phaser.Tilemaps.TilemapLayer | null;
+    return layer && snapToPixels(layer);
+  };
 
   // Un calque visible absent n'empêche pas de jouer : la carte n'a simplement rien à cet étage.
   createLayer('sol')?.setDepth(DEPTH.sol);
@@ -72,6 +75,7 @@ const LABEL_DEPTH = DEPTH.meublesBas + 0.5;
 export function addZoneLabels(scene: Phaser.Scene, zones: readonly Zone[]): void {
   for (const zone of zones) {
     if (zone.type !== 'label' || zone.text === null) continue;
-    scene.add.text(zone.x + zone.width / 2, zone.y + zone.height / 2, zone.text, LABEL_STYLE).setOrigin(0.5).setDepth(LABEL_DEPTH);
+    const label = scene.add.text(zone.x + zone.width / 2, zone.y + zone.height / 2, zone.text, LABEL_STYLE).setOrigin(0.5);
+    snapToPixels(label).setDepth(LABEL_DEPTH);
   }
 }

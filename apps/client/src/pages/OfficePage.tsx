@@ -39,7 +39,8 @@ export function OfficePage() {
   return (
     <main className="office">
       <Suspense fallback={null}>
-        <PhaserGame mapKey={MAP_KEY} />
+        {/* Le choix d'un avatar n'est pas encore dans la session (tâche 23) : l'avatar par défaut. */}
+        <PhaserGame mapKey={MAP_KEY} self={{ id: user.id, avatarKey: null }} />
       </Suspense>
       <div className="office-overlay">
         <h1>{t(fr.office.hello, { name: user.name })}</h1>

@@ -1,6 +1,7 @@
 import type { TiledMapJson } from '@bureau/shared';
 import { Scale, Scene, Scenes } from 'phaser';
 import { fr } from '../../i18n/fr';
+import { AVATARS, createAvatarAnimations } from '../avatars';
 import { tilesetImages } from '../map-layers';
 
 // Largeur de la barre de chargement, et marge entre son contour et sa partie pleine.
@@ -16,8 +17,8 @@ const MESSAGE_STYLE = {
   wordWrap: { width: BAR_WIDTH },
 };
 
-// Charge la carte, puis les images de ses tilesets, avec une barre de progression, et lance le bureau. (Les avatars s'ajoutent
-// ici avec leur registre.)
+// Charge la carte, puis les images de ses tilesets et les planches de tous les avatars du registre, avec une barre de
+// progression. Crée les animations des avatars (une fois, pour tout le jeu) et lance le bureau.
 export class Preloader extends Scene {
   private readonly mapUrl: string;
   private bar: Phaser.GameObjects.GameObject[] = [];
@@ -51,16 +52,22 @@ export class Preloader extends Scene {
     this.load.once(`filecomplete-tilemapJSON-${this.mapKey}`, (_key: string, _type: string, json: TiledMapJson) => {
       for (const { key, url } of tilesetImages(json, this.mapUrl)) this.load.image(key, url);
     });
+    // Toutes les planches : les autres joueurs peuvent avoir n'importe lequel des avatars.
+    for (const { key, url, frameWidth, frameHeight } of Object.values(AVATARS)) {
+      this.load.spritesheet(key, url, { frameWidth, frameHeight });
+    }
   }
 
   create() {
-    if (!this.mapLoaded()) {
-      // Sans la carte ou l'une de ses images (fichier absent, réseau coupé, JSON illisible), le bureau ne s'afficherait pas, ou
-      // qu'à moitié : on le dit au lieu de laisser un écran vide.
+    if (!this.mapLoaded() || !this.avatarsLoaded()) {
+      // Sans la carte, l'une de ses images ou l'une des planches d'avatars (fichier absent, réseau coupé, JSON illisible), le
+      // bureau ne s'afficherait pas, ou qu'à moitié : on le dit au lieu de laisser un écran vide.
       this.bar.forEach((part) => part.destroy());
       this.add.text(0, 0, fr.office.mapLoadFailed, MESSAGE_STYLE).setOrigin(0.5);
       return;
     }
+    // Le gestionnaire d'animations est celui du jeu : les scènes suivantes s'en servent sans les recréer.
+    for (const spec of Object.values(AVATARS)) createAvatarAnimations(this.anims, spec);
     this.scene.start('Office');
   }
 
@@ -69,5 +76,9 @@ export class Preloader extends Scene {
   private mapLoaded(): boolean {
     const cached = this.cache.tilemap.get(this.mapKey) as { data: TiledMapJson } | undefined;
     return cached !== undefined && tilesetImages(cached.data, this.mapUrl).every(({ key }) => this.textures.exists(key));
+  }
+
+  private avatarsLoaded(): boolean {
+    return Object.values(AVATARS).every(({ key }) => this.textures.exists(key));
   }
 }

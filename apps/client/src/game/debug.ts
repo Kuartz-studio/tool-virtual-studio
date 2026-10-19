@@ -7,6 +7,8 @@
 export interface OfficeDebug {
   // La carte est construite et la scène tourne.
   ready: boolean;
+  // L'avatar local : l'identifiant du compte et ses pieds, en pixels de la carte, entiers (c'est ce que le serveur reçoit). Mis à jour à
+  // chaque image ; null tant que la scène n'a pas d'avatar.
   self: { id: string; x: number; y: number } | null;
   players: Record<string, { x: number; y: number; avatarKey: string | null }>;
   media: { room: string | null; tiles: number };
