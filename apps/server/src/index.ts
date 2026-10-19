@@ -32,6 +32,9 @@ async function main(): Promise<void> {
     logger.info({ port: env.PORT }, 'Serveur démarré');
   } catch (err) {
     logger.fatal({ err }, 'Démarrage impossible');
+    // Le logger est muet avec NODE_ENV=test, mode dans lequel les tests e2e et le smoke test lancent le serveur compilé :
+    // sans ceci, un port occupé ou une migration cassée feraient sortir le processus sans rien afficher.
+    if (logger.level === 'silent') console.error('Démarrage impossible :', err);
     process.exit(1);
   }
 }
