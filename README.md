@@ -68,3 +68,33 @@ pnpm db:generate                                                                
 ```
 
 Avec PGlite (`memory://`, `pglite://`), le serveur applique les migrations au démarrage. Avec PostgreSQL, `node dist/migrate.js` les applique avant le lancement du serveur, et échoue si le dossier `drizzle/` manque.
+
+## Déployer
+
+L'appli tourne sur Railway : un service construit depuis le `Dockerfile` de la racine (l'API, le temps réel et le client compilé dans un seul processus, comme avec `pnpm build`), et une base PostgreSQL. Railway construit l'image lui-même : Docker n'est nécessaire nulle part en local.
+
+- **Image (`Dockerfile`).** Une première étape installe les dépendances (`pnpm install --frozen-lockfile`, avec le pnpm du champ `packageManager`), lance `pnpm build`, puis `pnpm deploy --legacy --prod` réunit les dépendances de production du serveur : tsup les laisse hors de `dist/`, le serveur les charge à l'exécution. Une seconde étape, sur `node:24-slim`, ne garde que `apps/server/dist`, `apps/server/drizzle`, `apps/client/dist` et ces `node_modules`, dans la même disposition que le dépôt. L'image fixe `NODE_ENV=production`, `CLIENT_DIST_DIR` et `MAPS_DIR`.
+- **Démarrage (`railway.json`).** `node apps/server/dist/migrate.js` applique les migrations en attente (et échoue si `drizzle/` manque, ce qui arrête le démarrage), puis `node apps/server/dist/index.js` lance le serveur. Railway attend que `/api/health` réponde avant de mettre la nouvelle version en service. La commande est enveloppée dans `/bin/sh -c` : pour une image Docker, Railway exécute la commande de démarrage sans shell, et `&&` n'y serait qu'un argument de plus.
+- **Derrière le proxy de Railway.** Express fait confiance à un seul saut de proxy (`trust proxy` vaut 1). Pour limiter les tentatives de connexion par adresse, Better Auth lit l'adresse du client dans `X-Real-IP` (`src/auth/auth.ts`), l'en-tête que Railway documente pour cela et que son proxy réécrit à chaque requête (d'après le support de Railway). `X-Forwarded-For` n'est pas lu : l'appelant peut y mettre l'adresse de son choix. Si un autre service (un CDN, Cloudflare) venait se placer devant Railway, vérifier que `X-Real-IP` porte toujours l'adresse du visiteur.
+
+### Première mise en ligne
+
+1. Pousser `main` sur un dépôt GitHub privé, que Railway est autorisé à lire.
+2. Dans Railway, créer un service à partir de ce dépôt (il trouve le `Dockerfile` et `railway.json`), puis ajouter une base PostgreSQL au même projet.
+3. Renseigner les variables du service :
+
+   | Variable | Valeur |
+   | --- | --- |
+   | `APP_URL` | l'adresse publique de l'appli, `https://<domaine>`, sans barre finale : c'est l'origine des cookies et des liens des e-mails |
+   | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`, la référence à la base du projet (remplacer « Postgres » par le nom du service de la base) |
+   | `BETTER_AUTH_SECRET` | une valeur propre à la production : `openssl rand -base64 32` |
+   | `MAILER` | `resend`, le seul mode d'envoi accepté en production |
+   | `RESEND_API_KEY`, `MAIL_FROM` | la clé d'API de Resend, et l'expéditeur (`Bureau virtuel <bureau@…>`) sur un domaine d'envoi vérifié dans Resend |
+   | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | facultatives pour l'instant : sans elles, l'audio et la vidéo restent désactivés |
+
+   `PORT` vient de Railway ; `NODE_ENV`, `CLIENT_DIST_DIR` et `MAPS_DIR` ont déjà leur valeur de production dans l'image (les définir sur Railway n'est utile que pour en changer). `E2E` ne doit pas être définie : le serveur la refuse en production. Une configuration invalide arrête le démarrage, et le journal du déploiement nomme les variables fautives.
+4. Ajouter le domaine personnalisé (réseau public du service, puis l'enregistrement DNS que Railway indique ; le certificat HTTPS vient de Railway), et mettre `APP_URL` à jour avec ce domaine : Better Auth n'accepte que cette origine.
+5. Vérifier : le journal de build se termine sans erreur, et `curl https://<domaine>/api/health` répond `{"ok":true}`.
+6. Créer le premier admin, avec la CLI de Railway liée au projet : `railway run pnpm --filter @bureau/server admin:invite <adresse e-mail>` (voir « Premier admin »). Tant que son adresse est en `….railway.internal`, la base n'est joignable que depuis le réseau privé de Railway : si la commande ne l'atteint pas depuis le poste, la lancer dans le conteneur du service (`railway ssh -- node /app/apps/server/dist/cli/admin-invite.js <adresse e-mail>`), ou lui donner l'adresse publique de la base (`DATABASE_PUBLIC_URL`, variable du service PostgreSQL).
+
+Ensuite, chaque `git push` sur `main` redéploie : l'image est reconstruite et les migrations passent avant le serveur. Une version dont le démarrage échoue (configuration invalide, migration en erreur) ne répond pas à `/api/health` et n'est pas mise en service.

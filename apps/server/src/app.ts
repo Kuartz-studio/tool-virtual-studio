@@ -32,6 +32,11 @@ export function createApp(deps: AppDeps): express.Express {
   const app = express();
   const logger = deps.logger ?? createLogger(deps.env);
 
+  // En production, le proxy de Railway se tient devant le serveur : on lui fait confiance, à lui seul (un saut), pour le
+  // protocole et l'hôte d'origine (X-Forwarded-Proto, X-Forwarded-Host) et pour req.ip. La limitation des tentatives de Better
+  // Auth ne passe pas par req.ip : elle lit son propre en-tête, réglé dans auth/auth.ts.
+  app.set('trust proxy', 1);
+
   // Better Auth lit lui-même le corps de ses requêtes : son gestionnaire passe avant express.json().
   app.all('/api/auth/{*any}', toNodeHandler(deps.auth));
   app.use(express.json());

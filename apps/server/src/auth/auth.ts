@@ -64,7 +64,15 @@ export function createAuth({ db, mailer, env, logger = createLogger(env) }: { db
     // la liste des avatars. Le changement d'adresse et la suppression de compte n'existent pas en V1 (désactivés par défaut :
     // on ferme aussi la route, pour qu'une option activée plus tard ne l'ouvre pas sans que quelqu'un le décide).
     disabledPaths: ['/update-user', '/change-email', '/delete-user'],
-    advanced: { useSecureCookies: env.NODE_ENV === 'production' },
+    advanced: {
+      useSecureCookies: env.NODE_ENV === 'production',
+      // L'adresse du client, clé de la limitation des tentatives. Railway documente X-Real-IP comme l'adresse du client, et son
+      // support confirme que le proxy public l'écrase à chaque requête (forum Railway, octobre 2026). X-Forwarded-For n'est pas
+      // lu : l'appelant peut y mettre l'adresse de son choix. Better Auth 1.7 n'accepte qu'un en-tête à une seule valeur : avec
+      // plusieurs adresses (un X-Real-IP envoyé en double, par exemple), la requête tombe dans le seau commun des requêtes sans
+      // adresse, et non dans un seau que l'appelant aurait choisi. Hors production, une requête sans adresse compte pour 127.0.0.1.
+      ipAddress: { ipAddressHeaders: ['x-real-ip'] },
+    },
     rateLimit: {
       enabled: env.AUTH_RATE_LIMIT === 'on',
       storage: 'database',

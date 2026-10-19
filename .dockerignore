@@ -1,0 +1,22 @@
+# Ce que Railway n'envoie pas à Docker avec le contexte de build (`COPY . .` du Dockerfile).
+# L'image refait elle-même ses installations et ses compilations : celles de ce poste ne lui serviraient pas
+# (node_modules est propre à la machine qui l'a installé), et dist/ ferait croire à un build à jour.
+**/node_modules
+**/dist
+
+# Jamais dans une image : bases PGlite locales, variables d'environnement, historique git.
+**/.data
+**/.env
+**/.env.*
+!**/.env.example
+.git
+
+# Inutiles à la compilation.
+.superpowers
+.worktrees
+docs
+e2e
+test-results
+playwright-report
+coverage
+**/.DS_Store
