@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "admin:invite": "tsx --env-file-if-exists=../../.env src/cli/admin-invite.ts",
-    "map:check": "tsx src/cli/map-check.ts"
+    "map:check": "tsx --env-file-if-exists=../../.env src/cli/map-check.ts"
   },
   "dependencies": {
     "@bureau/shared": "workspace:*",

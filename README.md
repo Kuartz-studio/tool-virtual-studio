@@ -58,6 +58,24 @@ pnpm --filter @bureau/server admin:invite <adresse e-mail>
 
 Elle lit la même configuration que le serveur : les variables d'environnement, et le `.env` de la racine quand elle est lancée par `pnpm`. Avec `MAILER=resend`, l'e-mail part ; avec `MAILER=memory`, rien ne part, et le lien affiché est la seule porte d'entrée. Avec une base `pglite://`, arrêter d'abord `pnpm dev` : deux processus sur le même dossier perdent des écritures. Compilée (`pnpm build`), elle se lance avec `node apps/server/dist/cli/admin-invite.js <adresse e-mail>`, sans lire de `.env`.
 
+## Cartes
+
+La carte du bureau est un fichier Tiled exporté en JSON (tilesets intégrés, calques en CSV) : `MAPS_DIR/<MAP_KEY>.json`. Tant que la carte définitive n'est pas dessinée, `MAP_KEY` vaut `dev-office` : 24 × 16 cases, trois pièces dont une salle de réunion (zone privée), un open space avec trois bureaux (zones de bureau), une étiquette et le point d'apparition. Cette carte n'est pas dessinée dans Tiled : son plan est du code, `DEV_OFFICE` (`packages/shared/src/map/dev-office.ts`), un dessin en ASCII et des zones, que `buildTiledMap` convertit en JSON Tiled.
+
+```sh
+pnpm --filter @bureau/client gen:dev-assets
+```
+
+écrit ce JSON (`apps/client/public/assets/maps/dev-office.json`), les 5 tuiles (`public/assets/dev/tiles.png`) et les 4 avatars de développement (`public/assets/dev/avatars/`). Le résultat est commité, et le script est déterministe : relancé sans rien changer, il ne modifie aucun fichier. Un test (`apps/client/scripts/gen-dev-assets.test.ts`) échoue quand les fichiers commités ne correspondent plus au plan ou au script : après une modification, relancer la commande et commiter le résultat.
+
+Pour vérifier qu'une carte (la carte définitive, plus tard) est lisible par le serveur :
+
+```sh
+pnpm --filter @bureau/server map:check ../client/public/assets/maps/dev-office.json
+```
+
+Le chemin est relatif à `apps/server`. La commande affiche la taille de la carte, ses cases bloquantes, le nombre de zones par type et le point d'apparition. Sinon elle sort avec le code 1 et le code de l'erreur : calque `collisions` ou `zones` absent (`missing_layer`), tileset externe (`external_tileset`), calque compressé ou pas en CSV (`compressed_layer`), aucune zone `spawn` (`missing_spawn`), zone inutilisable, deux apparitions ou apparition sur une case bloquante (`bad_zone`). Compilée (`pnpm build`), elle se lance avec `node apps/server/dist/cli/map-check.js <fichier>`.
+
 ## Base de données
 
 Le schéma est dans `apps/server/src/db/schema.ts`. Les tables de Better Auth (`src/db/auth-schema.ts`) sont générées par sa CLI à partir de `src/auth/auth.cli.ts` : ce fichier ne se modifie pas à la main. Après un changement de schéma, depuis `apps/server` :
