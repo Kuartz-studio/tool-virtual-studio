@@ -28,9 +28,17 @@ const DAY_MS = 24 * 3600 * 1000;
 // à une case de l'apparition, à droite et à gauche ; la salle de réunion (zone private) couvre x de 256 à 447 et y de 32 à 159.
 const SPAWN = { x: 80, y: 240 };
 
-// Ouvre une socket avec ce cookie et attend son init.
-async function enter(srv: TestServer, cookie: string): Promise<{ socket: ClientSocket; id: string; init: Awaited<ReturnType<typeof nextInit>> }> {
-  const socket = srv.connect(cookie);
+// Les types de paquets Socket.io (socket.io-parser) que les tests lisent sur le fil.
+const EVENT_PACKET = 2;
+const CONNECT_ERROR_PACKET = 4;
+
+// Ouvre une socket avec ce cookie (et ces options du client) et attend son init.
+async function enter(
+  srv: TestServer,
+  cookie: string,
+  opts: Parameters<TestServer['connect']>[1] = {},
+): Promise<{ socket: ClientSocket; id: string; init: Awaited<ReturnType<typeof nextInit>> }> {
+  const socket = srv.connect(cookie, opts);
   const init = await nextInit(socket);
   return { socket, id: init.self.id, init };
 }
@@ -44,6 +52,16 @@ function nextInit(socket: ClientSocket) {
 function cutNetwork(socket: ClientSocket, { reconnect = true } = {}): void {
   if (!reconnect) socket.io.reconnection(false);
   socket.io.engine.close();
+}
+
+// Un client muet : sa connexion reste ouverte et il reçoit encore tout, mais il ne répond plus aux pings du serveur (un ordinateur
+// mis en veille, un réseau tombé sans fermer la connexion). engine.io-client répond à un ping par `_sendPacket('pong')`.
+function silence(socket: ClientSocket): void {
+  const engine = socket.io.engine as unknown as { _sendPacket(type: string, ...rest: unknown[]): void };
+  const send = engine._sendPacket.bind(engine);
+  engine._sendPacket = (type: string, ...rest: unknown[]) => {
+    if (type !== 'pong') send(type, ...rest);
+  };
 }
 
 // Une base lente, pour ouvrir à coup sûr les fenêtres de course : après hold(), les requêtes choisies par `which` (toutes par
@@ -89,6 +107,26 @@ describe('connexion', () => {
     const { id } = (await findUserByEmail(srv.db, 'a@x.fr'))!;
     await srv.db.update(user).set({ disabledAt: new Date() }).where(eq(user.id, id));
     expect(await connectError(srv.connect(cookie))).toBe('disabled');
+  });
+
+  test('Origin d\'une autre page que l\'appli → connect_error forbidden_origin, sans même lire la session', async () => {
+    const srv = await startTestServer();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    const getSession = vi.spyOn(srv.auth.api, 'getSession');
+    // Un autre site, un autre port du même hôte (un sous-domaine voisin partage le cookie SameSite=Lax), une page sans origine.
+    for (const origin of ['https://pirate.example', 'http://localhost:4001', 'http://bureau.localhost:4000', 'null']) {
+      expect(await connectError(srv.connect(cookie, { extraHeaders: { cookie, origin } })), origin).toBe('forbidden_origin');
+    }
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  test('Origin de l\'appli, ou pas d\'Origin du tout (client hors navigateur) : la connexion passe', async () => {
+    const srv = await startTestServer();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    // testEnv : APP_URL vaut http://localhost:4000.
+    const fromApp = await enter(srv, cookie, { extraHeaders: { cookie, origin: 'http://localhost:4000' } });
+    fromApp.socket.disconnect();
+    await enter(srv, cookie);   // les autres tests aussi : aucun en-tête Origin
   });
 
   test('Better Auth lève une 401 → unauthorized ; une autre erreur → unavailable, journalisée, et le serveur continue', async () => {
@@ -139,6 +177,7 @@ describe('connexion', () => {
     expect(aInit.mapKey).toBe('dev-office');
     expect(aInit.chatHistory).toEqual([]);
 
+    const aEvents = record(a);
     const b = srv.connect(await srv.inviteAndLogin('b@x.fr'));
     const bEvents = record(b);
     const [bInit, joined] = await Promise.all([nextInit(b), nextEvent(a, 'player:joined')]);
@@ -146,9 +185,11 @@ describe('connexion', () => {
     expect(bInit.players).toEqual([aInit.self]);
     expect(joined).toEqual(bInit.self);
 
-    // B n'apprend pas sa propre arrivée.
+    // B n'apprend pas sa propre arrivée. Une diffusion n'a qu'un argument, sa charge utile : pas d'identifiant de reprise de
+    // connexion à la fin (la récupération de connexion de Socket.io est désactivée).
     await sleep(50);
     expect(bEvents.names()).toEqual(['init']);
+    expect(aEvents.received).toEqual([{ event: 'player:joined', args: [bInit.self] }]);
     expect(srv.realtime.socketsOf(aInit.self.id)).toEqual([a.id]);
   });
 
@@ -231,7 +272,7 @@ describe('déconnexion et délai de grâce', () => {
   test('coupure brève (< grâce) : pas de player:left, même position au retour', async () => {
     const srv = await startTestServer();
     const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
-    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));   // A reçoit player:joined(B)
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
     expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
     const before = srv.realtime.world.get(a.id);
     const bEvents = record(b.socket);
@@ -239,11 +280,34 @@ describe('déconnexion et délai de grâce', () => {
     const again = nextInit(a.socket);
     cutNetwork(a.socket);   // le Wi-Fi saute : le client se reconnecte de lui-même, avant la fin du délai de grâce
     expect((await again).self).toEqual(before);
-    expect(a.socket.recovered).toBe(true);   // la récupération de connexion de Socket.io a repris la session
+    // Une nouvelle session Socket.io (pas de récupération de connexion) : c'est le délai de grâce qui a gardé l'avatar, et le nouvel
+    // init qui redonne tout l'état.
+    expect(a.socket.recovered).toBeFalsy();
 
     await sleep(TEST_GRACE_MS * 2);
     expect(bEvents.names()).toEqual([]);   // ni départ ni nouvelle arrivée : l'avatar n'a pas bougé chez B
     expect(srv.realtime.world.get(a.id)).toEqual(before);
+  });
+
+  test('client muet (ordinateur en veille) : coupé faute de réponse aux pings, puis player:left à la fin du délai de grâce', async () => {
+    // Pings toutes les 100 ms, 200 ms pour répondre : un client muet est coupé en 300 ms au plus.
+    const srv = await startTestServer({ pingIntervalMs: 100, pingTimeoutMs: 200 });
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    const cookieB = await srv.inviteAndLogin('b@x.fr');
+    const a = await enter(srv, cookieA, { reconnection: false });   // un ordinateur en veille ne se reconnecte pas
+    const b = await enter(srv, cookieB);
+    const dropped = new Promise<{ reason: string; at: number }>((resolve) => {
+      srv.realtime.io.sockets.sockets.get(a.socket.id!)!.once('disconnect', (reason) => resolve({ reason, at: performance.now() }));
+    });
+
+    silence(a.socket);
+    const { reason, at: droppedAt } = await dropped;
+    expect(reason).toBe('ping timeout');   // vu par le serveur seul : le client n'a rien fermé
+    expect(srv.realtime.world.get(a.id)).toBeDefined();   // l'avatar reste, le temps du délai de grâce
+    const { payload, at } = await nextEvent(b.socket, 'player:left').then((payload) => ({ payload, at: performance.now() }));
+    expect(payload).toEqual({ id: a.id });
+    expect(at - droppedAt).toBeGreaterThanOrEqual(TEST_GRACE_MS - 10);
+    expect(b.socket.connected).toBe(true);   // B, qui répond aux pings, est toujours là
   });
 
   test('coupure longue (> grâce) : player:left et position enregistrée', async () => {
@@ -377,12 +441,12 @@ describe('positions', () => {
     expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
     expect(srv.realtime.world.applyMove(b.id, { x: 48, y: 240, dir: 'left', moving: false })).toEqual({ ok: true });
 
-    const reinit = [nextEvent(a.socket, 'init', 5000), nextEvent(b.socket, 'init', 5000)];
-    await srv.restart();   // un déploiement : nouvelle instance, monde vide, même base
-    const [aInit, bInit] = await Promise.all(reinit);   // les clients se sont reconnectés seuls
+    const reinit = Promise.all([nextEvent(a.socket, 'init', 5000), nextEvent(b.socket, 'init', 5000)]);
+    // Un déploiement : nouvelle instance, monde vide, même base. Les clients se reconnectent seuls.
+    const [, [aInit, bInit]] = await Promise.all([srv.restart(), reinit]);
 
-    expect(aInit!.self).toMatchObject({ id: a.id, x: 112, y: 240, dir: 'right' });
-    expect(bInit!.self).toMatchObject({ id: b.id, x: 48, y: 240, dir: 'left' });
+    expect(aInit.self).toMatchObject({ id: a.id, x: 112, y: 240, dir: 'right' });
+    expect(bInit.self).toMatchObject({ id: b.id, x: 48, y: 240, dir: 'left' });
     expect(srv.realtime.world.list().map((p) => p.id).sort()).toEqual([a.id, b.id].sort());
   });
 
@@ -438,8 +502,8 @@ describe('membre retiré', () => {
     const left = nextEvent(b.socket, 'player:left').then((payload) => ({ payload, at: performance.now() }));
     const removedAt = performance.now();
     srv.events.emit('member:removed', a.id);
-    expect(await cut).toBe('io server disconnect');   // coupée par le serveur : le client ne se reconnecte pas
-    const { payload, at } = await left;
+    const [reason, { payload, at }] = await Promise.all([cut, left]);
+    expect(reason).toBe('io server disconnect');   // coupée par le serveur : le client ne se reconnecte pas
     expect(payload).toEqual({ id: a.id });
     expect(at - removedAt).toBeLessThan(TEST_GRACE_MS);   // sans délai de grâce
     expect(a.socket.active).toBe(false);
@@ -459,6 +523,30 @@ describe('membre retiré', () => {
     await vi.waitFor(() => expect(bEvents.payloadsOf('player:left')).toEqual([{ id: a.id }]));
     await sleep(TEST_GRACE_MS * 2);
     expect(bEvents.payloadsOf('player:left')).toEqual([{ id: a.id }]);
+  });
+
+  test('retiré pendant sa coupure : en revenant, il ne reçoit aucune des diffusions qu\'il a manquées', async () => {
+    // Un long délai de grâce : A est encore dans le monde quand il revient (une reprise de connexion serait encore possible).
+    const srv = await startTestServer({ graceMs: 5_000 });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));   // A reçoit player:joined(B)
+    const cookieC = await srv.inviteAndLogin('c@x.fr');
+    // Les paquets Socket.io que reçoit le client de A, décodés, avant même qu'un événement n'en sorte.
+    const wire: Array<{ type: number }> = [];
+    a.socket.io.on('packet', (packet) => wire.push(packet));
+
+    cutNetwork(a.socket, { reconnect: false });
+    await vi.waitFor(() => expect(srv.realtime.socketsOf(a.id)).toEqual([]));
+    wire.length = 0;
+    // Diffusé au bureau pendant la coupure de A : l'arrivée de C, puis le départ de A, retiré par un admin.
+    await enter(srv, cookieC);
+    expect(await removeMember({ db: srv.db, events: srv.events }, { actorId: b.id, targetId: a.id })).toBe('removed');
+
+    const refused = connectError(a.socket);
+    a.socket.connect();   // le même client revient, sur la même socket
+    expect(['unauthorized', 'disabled']).toContain(await refused);
+    expect(wire.map((packet) => packet.type)).toEqual([CONNECT_ERROR_PACKET]);   // le refus, et rien d'autre
+    expect(wire.map((packet) => packet.type)).not.toContain(EVENT_PACKET);
   });
 
   test('retiré pendant que sa connexion s\'établit : il n\'entre pas', async () => {

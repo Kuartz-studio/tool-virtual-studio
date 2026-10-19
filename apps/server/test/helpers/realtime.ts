@@ -188,17 +188,17 @@ export function disconnection(socket: ClientSocket, ms = 3000): Promise<string> 
   return waitFor<string>(socket, 'disconnect', ms);
 }
 
-// Tous les événements du serveur reçus par cette socket à partir de maintenant, dans l'ordre, avec leur charge utile (le premier
-// argument : socket.io ajoute aux diffusions un second argument, l'identifiant qui sert à la récupération de connexion).
+// Tous les événements du serveur reçus par cette socket à partir de maintenant, dans l'ordre, avec tous leurs arguments
+// (`payloadsOf` : le premier, la charge utile).
 export function record(socket: ClientSocket) {
-  const received: Array<{ event: string; payload: unknown }> = [];
-  socket.onAny((event: string, payload: unknown) => {
-    received.push({ event, payload });
+  const received: Array<{ event: string; args: unknown[] }> = [];
+  socket.onAny((event: string, ...args: unknown[]) => {
+    received.push({ event, args });
   });
   return {
     received,
     names: () => received.map((r) => r.event),
-    payloadsOf: (event: keyof ServerToClientEvents) => received.filter((r) => r.event === event).map((r) => r.payload),
+    payloadsOf: (event: keyof ServerToClientEvents) => received.filter((r) => r.event === event).map((r) => r.args[0]),
   };
 }
 

@@ -125,8 +125,6 @@ export function createPresence(d: PresenceDeps) {
       welcome(socket, false);
       return;
     }
-    // Une socket reprise par la récupération de connexion retrouve ses salles : elle ne rentre au bureau qu'avec son init.
-    void socket.leave(OFFICE_ROOM);
     void arrive(socket);
   }
 

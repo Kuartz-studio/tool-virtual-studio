@@ -54,6 +54,10 @@ export interface RealtimeDeps {
   saveMs?: number;
   /** Les zones où une conversation a lieu (tâche 18) : on n'y fait pas réapparaître quelqu'un. Aucune par défaut. */
   busyZones?: () => ReadonlySet<string>;
+  /** L'intervalle des pings du serveur : PING_INTERVAL_MS par défaut. */
+  pingIntervalMs?: number;
+  /** Le délai de réponse à un ping, au-delà duquel la connexion est coupée : PING_TIMEOUT_MS par défaut. */
+  pingTimeoutMs?: number;
   /** Le journal des erreurs du temps réel. Par défaut, celui de createLogger(env). */
   logger?: Logger;
 }
@@ -70,6 +74,13 @@ export interface Realtime {
    */
   stop(): Promise<void>;
 }
+
+// Le serveur envoie un ping toutes les PING_INTERVAL_MS et coupe une connexion qui n'y a pas répondu en PING_TIMEOUT_MS : un
+// client muet (ordinateur mis en veille, réseau tombé sans fermer la connexion) est vu parti en 15 s au plus, puis le délai de
+// grâce s'applique. Les valeurs par défaut de Socket.io (25 s + 20 s) l'éloigneraient trop des 10 s de la spec. Un onglet en
+// arrière-plan répond quand même : ce sont des messages reçus, que les navigateurs ne ralentissent pas comme les minuteurs.
+export const PING_INTERVAL_MS = 10_000;
+export const PING_TIMEOUT_MS = 5_000;
 
 // Au-delà, stop() n'attend plus la fermeture du serveur HTTP : un client injoignable (ordinateur en veille) peut retenir celle
 // de sa WebSocket 30 s, et une connexion HTTP gardée ouverte se ferme d'elle-même en 5 s (keepAliveTimeout de Node).
@@ -115,14 +126,23 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const logger = d.logger ?? createLogger(d.env);
   const world = new World(d.map, d.now ?? (() => performance.now()));
 
+  // Pas de récupération de connexion (connectionStateRecovery) : Socket.io renverrait à une socket revenue les diffusions qu'elle a
+  // manquées avant même de repasser les middlewares, si bien qu'un membre retiré pendant sa coupure en recevrait jusqu'à 10 s.
+  // Le délai de grâce garde l'avatar en place, et chaque reconnexion reçoit un init neuf, qui dit tout l'état du moment.
   const io: TypedServer = new Server(server, {
-    // Un client revenu pendant le délai de grâce reprend sa session Socket.io (salles, diffusions manquées) ; au-delà, c'est une
-    // nouvelle arrivée. Les middlewares repassent à chaque reprise : un compte retiré entre-temps ne revient pas.
-    connectionStateRecovery: { maxDisconnectionDuration: graceMs, skipMiddlewares: false },
+    pingInterval: d.pingIntervalMs ?? PING_INTERVAL_MS,
+    pingTimeout: d.pingTimeoutMs ?? PING_TIMEOUT_MS,
     // Le client vient du paquet npm (Vite) : pas de /socket.io/socket.io.js.
     serveClient: false,
   });
-  io.use(socketAuth({ auth: d.auth, limiter: createRateLimiter(SOCKET_CONNECT_RATE), logger }));
+  io.use(
+    socketAuth({
+      auth: d.auth,
+      appOrigin: new URL(d.env.APP_URL).origin,
+      limiter: createRateLimiter(SOCKET_CONNECT_RATE),
+      logger,
+    }),
+  );
 
   const presence = createPresence({
     io,

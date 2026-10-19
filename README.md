@@ -26,7 +26,7 @@ Copier `.env.example` en `.env` à la racine, puis lancer `pnpm dev`. Deux serve
 - le serveur de l'appli sur le port 4000 (API, Better Auth) ;
 - Vite sur le port 5173, qui sert le client et relaie `/api` et `/socket.io` vers le port 4000.
 
-On ouvre l'appli sur http://localhost:5173. Le navigateur ne voit que Vite : `APP_URL` doit donc valoir `http://localhost:5173`, et non l'adresse du serveur, car c'est l'origine des cookies de session et des liens des e-mails (`.env.example` le fait déjà). Le port 5173 est fixe : s'il est occupé, Vite s'arrête au lieu d'en prendre un autre.
+On ouvre l'appli sur http://localhost:5173. Le navigateur ne voit que Vite : `APP_URL` doit donc valoir `http://localhost:5173`, et non l'adresse du serveur, car c'est l'origine des cookies de session et des liens des e-mails, et la seule page d'où le temps réel accepte une connexion (`.env.example` le fait déjà). Le port 5173 est fixe : s'il est occupé, Vite s'arrête au lieu d'en prendre un autre.
 
 ## Appli compilée
 
@@ -106,7 +106,7 @@ L'appli tourne sur Railway : un service construit depuis le `Dockerfile` de la r
 
    | Variable | Valeur |
    | --- | --- |
-   | `APP_URL` | l'adresse publique de l'appli, `https://<domaine>`, sans barre finale : c'est l'origine des cookies et des liens des e-mails |
+   | `APP_URL` | l'adresse publique de l'appli, `https://<domaine>`, sans barre finale : c'est l'origine des cookies et des liens des e-mails, et la seule page d'où le temps réel accepte une connexion (en-tête `Origin`) |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`, la référence à la base du projet (remplacer « Postgres » par le nom du service de la base) |
    | `BETTER_AUTH_SECRET` | une valeur propre à la production : `openssl rand -base64 32` |
    | `MAILER` | `resend`, le seul mode d'envoi accepté en production |
