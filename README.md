@@ -48,7 +48,9 @@ pnpm exec playwright install chromium
 
 `pnpm e2e` (ou `pnpm e2e e2e/auth.spec.ts` pour un seul fichier) compile l'appli avec `VITE_E2E=1`, lance le serveur compilé sur le port 3100 avec une base en mémoire et `E2E=1` (`e2e/playwright.config.ts`), puis joue les tests dans Chromium. `E2E=1` ouvre des routes réservées aux tests, sous `/api/test` : créer une invitation sans admin, lire le dernier e-mail envoyé à une adresse. Elle active aussi l'événement temps réel `debug:teleport`, qui pose l'avatar de la socket à une case praticable. Le serveur la refuse en production, et sans `MAILER=memory`.
 
-Le bureau est dessiné dans un canevas, que Playwright ne sait pas interroger : avec `VITE_E2E=1`, le client expose l'état du jeu dans `window.__office` (`apps/client/src/game/debug.ts` : `ready` quand la carte est construite, `self` pour l'avatar local, ses pieds en pixels de la carte, puis les autres joueurs…), que les tests lisent. Un build normal n'expose rien.
+Le bureau est dessiné dans un canevas, que Playwright ne sait pas interroger : avec `VITE_E2E=1`, le client expose l'état du jeu dans `window.__office` (`apps/client/src/game/debug.ts` : `ready` quand la carte est construite, `self` pour l'avatar local, ses pieds en pixels de la carte, `players` pour les autres joueurs tels qu'on les dessine, `teleport(x, y)`, qui passe par `debug:teleport`, `avatarsOf(id)` pour compter les avatars dessinés d'un joueur, et `showOthers(false)`, qui cache les autres joueurs…), que les tests lisent. Un build normal n'expose rien.
+
+Tous les tests partagent le serveur et son bureau : les joueurs d'un test apparaissent chez tous les autres, au même point d'apparition. Un test ne regarde donc les autres que par leur identifiant, et ceux qui regardent l'avatar local à l'écran (`e2e/world.spec.ts`) cachent les autres joueurs.
 
 ## Premier admin
 

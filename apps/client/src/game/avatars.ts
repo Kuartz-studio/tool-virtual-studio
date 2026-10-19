@@ -45,6 +45,10 @@ function devAvatar(key: string): AvatarSpec {
 // Tous les avatars que ce build connaît. La galerie (tâche 23) s'ajoute ici, avec les lignes de ses planches.
 export const AVATARS: Record<string, AvatarSpec> = Object.fromEntries(DEV_AVATAR_KEYS.map((key) => [key, devAvatar(key)]));
 
+// Le nom des objets d'avatar dans la scène (local ou distant) : `player:<identifiant>`. Les tests de bout en bout comptent ainsi les
+// avatars dessinés pour un joueur (window.__office.avatarsOf).
+export const avatarObjectName = (id: string): string => `player:${id}`;
+
 // La clé de l'animation d'un avatar : `dev-red-walk-left`.
 export function animKey(avatarKey: string, kind: 'idle' | 'walk', dir: Direction): string {
   return `${avatarKey}-${kind}-${dir}`;
@@ -54,6 +58,12 @@ export function animKey(avatarKey: string, kind: 'idle' | 'walk', dir: Direction
 // choisi, ou la clé vient d'une galerie que ce client n'a pas).
 export function resolveAvatarKey(avatarKey: string | null | undefined): string {
   return avatarKey != null && Object.hasOwn(AVATARS, avatarKey) ? avatarKey : DEFAULT_AVATAR_KEY;
+}
+
+// La fiche de l'avatar à afficher pour cette clé (resolveAvatarKey) : celle de l'avatar par défaut pour une clé inconnue. L'avatar
+// local et ceux des autres passent par elle.
+export function avatarSpec(avatarKey: string | null | undefined): AvatarSpec {
+  return AVATARS[resolveAvatarKey(avatarKey)]!;
 }
 
 // Crée les 8 animations de cet avatar (immobile et marche, dans les 4 directions), qui bouclent. Le gestionnaire d'animations est

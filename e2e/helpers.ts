@@ -51,3 +51,90 @@ export async function signIn(page: Page, { email, password, name }: Account): Pr
   await page.getByRole('button', { name: 'Se connecter' }).click();
   await expect(page.getByText(`Bonjour ${name}`)).toBeVisible();
 }
+
+// ---- Le bureau ----------------------------------------------------------------------------------------------------------------
+//
+// La carte de développement (packages/shared/src/map/dev-office.ts) : 24 × 16 cases de 32 px. L'apparition est au centre de la case
+// (2, 7), soit (80, 240) en pixels, dans l'open space. Les x et y d'un avatar sont ceux de ses pieds, en pixels de la carte. Le jeu
+// expose son état dans window.__office (apps/client/src/game/debug.ts).
+
+// Le temps qu'on laisse à l'avatar pour marcher jusqu'à un endroit (la marche la plus longue : 2 s). Une machine chargée fait tourner le
+// jeu plus lentement que l'horloge (Phaser ne laisse pas une image durer plus de 200 ms) : on ne veut pas d'échec pour cela.
+export const WALK_TIMEOUT = 20_000;
+
+// Où est l'avatar local (window.__office.self, tenu à jour par la scène à chaque image).
+export async function selfAt(page: Page): Promise<{ id: string; x: number; y: number }> {
+  const self = await page.evaluate(() => window.__office?.self ?? null);
+  if (!self) throw new Error('window.__office.self est vide : le bureau n\'a pas d\'avatar local.');
+  return self;
+}
+
+// Un compte neuf, dans le bureau prêt. Renvoie le compte (pour se reconnecter).
+export async function joinOffice(page: Page, name: string): Promise<Account> {
+  // L'adresse e-mail n'a pas d'accent : « Zoé » devient zoe.
+  const slug = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const account = { email: uniqueEmail(slug), name, password: `motdepasse-de-${slug}` };
+  await inviteAndJoin(page, account);
+  await waitForOffice(page);
+  return account;
+}
+
+// Attend le bureau prêt (le serveur a envoyé son état, la carte est construite), puis un moment de jeu.
+export async function waitForOffice(page: Page): Promise<void> {
+  await page.waitForFunction(() => window.__office?.ready);
+  // Les premières images, qui compilent les shaders et envoient les textures à la carte graphique, sont les plus lentes. Une marche
+  // qui commence là serait plus courte que prévu : on attend que le jeu ait tourné un moment.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let frames = 0;
+        const tick = () => (++frames >= 30 ? resolve() : requestAnimationFrame(tick));
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
+// Garde cette touche enfoncée jusqu'à ce que `reached` soit vrai, puis la relâche.
+export async function holdUntil(page: Page, key: string, reached: (feet: { x: number; y: number }) => boolean): Promise<void> {
+  await page.keyboard.down(key);
+  await expect.poll(async () => reached(await selfAt(page)), { intervals: [15], timeout: WALK_TIMEOUT }).toBe(true);
+  await page.keyboard.up(key);
+}
+
+// Garde cette touche enfoncée jusqu'à ce que l'avatar ne bouge plus (un mur l'arrête), puis la relâche. Renvoie où il s'est arrêté.
+export async function holdUntilStopped(page: Page, key: string): Promise<{ x: number; y: number }> {
+  await page.keyboard.down(key);
+  let { x, y } = await selfAt(page);
+  for (let still = 0, tries = 0; still < 6; tries++) {
+    if (tries > 300) throw new Error(`L'avatar bouge encore après 30 s, ${key} enfoncée.`);
+    await page.waitForTimeout(100);
+    const now = await selfAt(page);
+    still = now.x === x && now.y === y ? still + 1 : 0;
+    ({ x, y } = now);
+  }
+  await page.keyboard.up(key);
+  return { x, y };
+}
+
+// Où est l'avatar une fois arrêté : l'image qui suit le relâchement d'une touche peut encore le faire avancer de quelques pixels.
+export async function restingAt(page: Page): Promise<{ id: string; x: number; y: number }> {
+  let last = await selfAt(page);
+  for (let still = 0, tries = 0; still < 3; tries++) {
+    if (tries > 300) throw new Error('L\'avatar bouge encore après 15 s.');
+    await page.waitForTimeout(50);
+    const now = await selfAt(page);
+    still = now.x === last.x && now.y === last.y ? still + 1 : 0;
+    last = now;
+  }
+  return last;
+}
+
+// Un autre joueur tel que cette page le dessine (window.__office.players), ou null s'il n'y est pas.
+export async function playerSeenBy(page: Page, id: string): Promise<{ x: number; y: number; avatarKey: string | null } | null> {
+  return page.evaluate((playerId) => window.__office?.players[playerId] ?? null, id);
+}
+
+// Le nombre d'avatars que cette page dessine pour ce joueur.
+export async function avatarsOf(page: Page, id: string): Promise<number> {
+  return page.evaluate((playerId) => window.__office?.avatarsOf(playerId) ?? 0, id);
+}

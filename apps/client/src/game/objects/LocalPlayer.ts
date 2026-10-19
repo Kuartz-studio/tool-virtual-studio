@@ -1,7 +1,9 @@
-import { MAX_SPEED_PX_PER_S, type Direction, type MovePayload } from '@bureau/shared';
+import { MAX_SPEED_PX_PER_S, type Direction, type MovePayload, type PublicPlayer, type Status } from '@bureau/shared';
 import { GameObjects, Physics, Scenes, type Scene } from 'phaser';
-import { animKey, AVATARS, feetBody } from '../avatars';
+import { animKey, avatarObjectName, avatarSpec, feetBody, type AvatarSpec } from '../avatars';
+import { feetPayload } from '../move-sender';
 import { snapToPixels } from '../pixel-snap';
+import { NameTag } from './NameTag';
 import { addShadow, placeShadow } from './shadow';
 
 // Le sens de chaque direction à l'écran : y augmente vers le bas.
@@ -19,41 +21,45 @@ const STILL = { x: 0, y: 0 };
 // - Seuls les pieds butent contre les murs et les meubles : la zone de collision fait 20 × 12 px, au bas de l'image (feetBody).
 // - Il marche à MAX_SPEED_PX_PER_S dans une seule des 4 directions, ou il est immobile : step() est appelé à chaque image avec la
 //   direction demandée.
-// - Sa profondeur est le y de ses pieds : plus il est bas dans la carte, plus il est devant. Son ombre est juste derrière.
+// - Sa profondeur est le y de ses pieds : plus il est bas dans la carte, plus il est devant. Son ombre est juste derrière, son
+//   étiquette (nom et statut) au-dessus de sa tête.
 export class LocalPlayer extends Physics.Arcade.Sprite {
-  private readonly avatarKey: string;
+  private spec: AvatarSpec;
   private readonly shadow: GameObjects.Ellipse;
-  // Vers où il regarde : la dernière direction prise, gardée à l'arrêt. Il apparaît de face.
-  private facing: Direction = 'down';
+  private readonly tag: NameTag;
+  // Vers où il regarde : la dernière direction prise, gardée à l'arrêt.
+  private facing: Direction;
   // Une touche de déplacement est enfoncée. Contre un mur, l'avatar marche donc sur place : sa demande est de marcher.
   private moving = false;
 
-  constructor(scene: Scene, x: number, y: number, avatarKey: string) {
-    super(scene, x, y, avatarKey, AVATARS[avatarKey]!.idle.down[0]);
-    this.avatarKey = avatarKey;
-    this.setOrigin(0.5, 1);
+  // `p` : soi-même, tel que le serveur l'a placé (init) ; `zoom` : celui de la caméra, pour l'étiquette.
+  constructor(scene: Scene, p: Pick<PublicPlayer, 'id' | 'x' | 'y' | 'dir' | 'avatarKey' | 'name' | 'status'>, zoom: number) {
+    const spec = avatarSpec(p.avatarKey);
+    super(scene, p.x, p.y, spec.key, spec.idle[p.dir][0]);
+    this.spec = spec;
+    this.facing = p.dir;
+    this.setOrigin(0.5, 1).setName(avatarObjectName(p.id));
     snapToPixels(this);
     scene.add.existing(this);
     scene.physics.add.existing(this);
 
-    const feet = feetBody(AVATARS[avatarKey]!);
-    const body = this.arcadeBody();
-    body.setSize(feet.width, feet.height);
-    body.setOffset(feet.offsetX, feet.offsetY);
+    this.fitBody();
     // La carte est entourée de murs, mais un trou dans ses bords ne doit pas laisser sortir l'avatar.
-    body.setCollideWorldBounds(true);
+    this.arcadeBody().setCollideWorldBounds(true);
 
-    this.shadow = addShadow(scene, x, y);
-    this.setDepth(y);
-    this.play(animKey(avatarKey, 'idle', 'down'));
+    this.shadow = addShadow(scene, p.x, p.y);
+    this.tag = new NameTag(scene, p.name, p.status, zoom);
+    this.play(animKey(spec.key, 'idle', this.facing));
+    this.followFeet();
 
-    // La physique déplace le sprite après la mise à jour de la scène (POST_UPDATE, où elle est abonnée avant nous) : l'ombre et la
-    // profondeur suivent alors la position de cette image, et non de la précédente.
+    // La physique déplace le sprite après la mise à jour de la scène (POST_UPDATE, où elle est abonnée avant nous) : l'ombre, la
+    // profondeur et l'étiquette suivent alors la position de cette image, et non de la précédente.
     const { events } = scene;
     events.on(Scenes.Events.POST_UPDATE, this.followFeet, this);
     this.once(GameObjects.Events.DESTROY, () => {
       events.off(Scenes.Events.POST_UPDATE, this.followFeet, this);
       this.shadow.destroy();
+      this.tag.destroy();
     });
   }
 
@@ -64,13 +70,59 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
     const heading = dir === null ? STILL : HEADING[dir];
     this.arcadeBody().setVelocity(heading.x * MAX_SPEED_PX_PER_S, heading.y * MAX_SPEED_PX_PER_S);
     // `true` : une animation déjà en cours n'est pas relancée à chaque image.
-    this.play(animKey(this.avatarKey, this.moving ? 'walk' : 'idle', this.facing), true);
+    this.play(animKey(this.spec.key, this.moving ? 'walk' : 'idle', this.facing), true);
   }
 
-  // Ce que le serveur doit savoir : les pieds, en pixels entiers, la direction et la marche. (Pas `state()` : tout objet de Phaser
-  // a déjà une propriété `state`, que son constructeur met à 0 et qui masquerait la méthode.)
+  // Ce que le serveur doit savoir : les pieds, en pixels entiers arrondis vers le bas (feetPayload), la direction et la marche. (Pas
+  // `state()` : tout objet de Phaser a déjà une propriété `state`, que son constructeur met à 0 et qui masquerait la méthode.)
   movePayload(): MovePayload {
-    return { x: Math.round(this.x), y: Math.round(this.y), dir: this.facing, moving: this.moving };
+    return feetPayload(this.x, this.y, this.facing, this.moving);
+  }
+
+  // Pose l'avatar ailleurs (la position que donne le serveur : init, move:correct, ou une téléportation de test). La direction
+  // regardée change si on la donne. La demande de marche reste celle du clavier : une touche toujours enfoncée le fait repartir de
+  // là à l'image suivante.
+  placeAt(x: number, y: number, dir?: Direction): void {
+    // reset() arrête le corps et le replace avec le sprite (la physique le recale sur ses pieds à l'image suivante).
+    this.arcadeBody().reset(x, y);
+    if (dir) this.facing = dir;
+    this.play(animKey(this.spec.key, this.moving ? 'walk' : 'idle', this.facing), true);
+    this.followFeet();
+  }
+
+  // Un autre avatar (le profil a changé) : l'image, les animations et la zone de collision, qui suit la taille de son image.
+  setAvatar(avatarKey: string | null): void {
+    const spec = avatarSpec(avatarKey);
+    if (spec === this.spec) return;
+    this.spec = spec;
+    this.stop();
+    this.setTexture(spec.key, spec.idle[this.facing][0]);
+    this.fitBody();
+    this.play(animKey(spec.key, this.moving ? 'walk' : 'idle', this.facing), true);
+    this.followFeet();
+  }
+
+  setDisplayedName(name: string): void {
+    this.tag.setName(name);
+  }
+
+  setStatus(status: Status): void {
+    this.tag.setStatus(status);
+  }
+
+  setSpeaking(speaking: boolean): void {
+    this.tag.setSpeaking(speaking);
+  }
+
+  setZoom(zoom: number): void {
+    this.tag.setZoom(zoom);
+  }
+
+  private fitBody(): void {
+    const feet = feetBody(this.spec);
+    const body = this.arcadeBody();
+    body.setSize(feet.width, feet.height);
+    body.setOffset(feet.offsetX, feet.offsetY);
   }
 
   private arcadeBody(): Physics.Arcade.Body {
@@ -80,5 +132,6 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
   private followFeet(): void {
     this.setDepth(this.y);
     placeShadow(this.shadow, this.x, this.y);
+    this.tag.placeAbove(this.x, this.y - this.spec.frameHeight);
   }
 }

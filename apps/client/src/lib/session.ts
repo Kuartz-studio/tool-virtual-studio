@@ -46,3 +46,30 @@ export function useCurrentSession(): { state: SessionState; refresh: () => Promi
 
   return { state, refresh };
 }
+
+// Toutes les 12 heures, tant que le bureau est ouvert.
+export const SESSION_REFRESH_INTERVAL_MS = 12 * 3600 * 1000;
+
+// Garde la session en vie tant que la page est ouverte : on peut rester des jours au bureau sans recharger la page, et seule une
+// lecture par HTTP prolonge la session (et son cookie) ; la poignée de main du temps réel ne la prolonge jamais (le serveur la lit
+// sans la renouveler, faute de réponse où poser le cookie). Better Auth la prolonge quand elle a plus d'un jour : une lecture toutes
+// les 12 heures suffit. Plus de session (expirée, ou fermée par une réinitialisation du mot de passe) : `signedOut`. Un serveur
+// injoignable ne dit rien : on réessaiera la fois suivante.
+export function useSessionKeepAlive(signedOut: () => void): void {
+  const latest = useRef(signedOut);
+  useEffect(() => {
+    latest.current = signedOut;
+  }, [signedOut]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      authClient.getSession().then(
+        ({ data, error }) => {
+          if (!error && !data) latest.current();
+        },
+        () => {},
+      );
+    }, SESSION_REFRESH_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
+}

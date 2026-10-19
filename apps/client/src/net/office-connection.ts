@@ -1,0 +1,166 @@
+import type { InitPayload, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { StoreApi } from 'zustand';
+import type { OfficeState } from '../state/office-store';
+import type { OfficeSocket } from './socket';
+
+// Les événements du bus (game/EventBus.ts) entre la connexion et le jeu. `net:*` va de la connexion au jeu ; `local:*`, du jeu à la
+// connexion, qui l'envoie au serveur.
+export interface OfficeBusEvents {
+  'net:init': (p: InitPayload) => void;
+  'net:tick': (p: WorldTick) => void;
+  'net:joined': (p: PublicPlayer) => void;
+  'net:left': (p: { id: string }) => void;
+  'net:correct': (p: { x: number; y: number }) => void;
+  'net:status': (p: { id: string; status: Status }) => void;
+  'net:profile': (p: { id: string; name: string; avatarKey: string | null }) => void;
+  'local:move': (p: MovePayload) => void;
+  // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
+  'local:teleport': (p: { x: number; y: number }) => void;
+}
+
+// Un écouteur, typé comme ceux d'eventemitter3 : ce que l'événement porte, il le reçoit (emitOnBus et listenOnBus le typent).
+type Listener = (...args: any[]) => void;
+
+// Le bus : EventBus (un EventEmitter d'eventemitter3, celui de Phaser), ou n'importe quel émetteur qui en a ces trois méthodes (les
+// tests).
+export interface OfficeBus {
+  on(event: string, fn: Listener): unknown;
+  off(event: string, fn: Listener): unknown;
+  emit(event: string, ...args: unknown[]): unknown;
+}
+
+// Émet sur le bus, avec la charge utile de l'événement.
+export function emitOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, event: E, ...args: Parameters<OfficeBusEvents[E]>): void {
+  bus.emit(event, ...args);
+}
+
+// Écoute un événement du bus ; renvoie la fonction qui arrête d'écouter.
+export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, event: E, fn: OfficeBusEvents[E]): () => void {
+  bus.on(event, fn);
+  return () => bus.off(event, fn);
+}
+
+// Branche la connexion sur l'état de l'interface (le magasin) et sur le jeu (le bus) :
+// - ce que le serveur dit va au magasin (arrivées, départs, statuts, médias, profils, onglet remplacé), puis au jeu, qui le lit déjà
+//   à jour ; les positions (`world:tick`) ne vont qu'au jeu ;
+// - ce que le jeu produit (`local:move`, `local:teleport`) part au serveur, mais seulement quand la connexion est prête : connectée,
+//   et l'`init` de cette connexion reçu. Avant, le serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure,
+//   Socket.io garderait les messages et les enverrait au retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
+//
+// La connexion elle-même (connect, refus, nouveaux essais) est l'affaire de l'appelant (superviseConnection). Renvoie la fonction
+// qui retire tous les écouteurs posés ici.
+export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>, bus: OfficeBus): () => void {
+  const state = () => store.getState();
+  let ready = false;
+
+  const handlers: { [E in keyof ServerToClientEvents]?: ServerToClientEvents[E] } = {
+    init: (p) => {
+      state().applyInit(p);
+      ready = true;
+      emitOnBus(bus, 'net:init', p);
+    },
+    'world:tick': (p) => emitOnBus(bus, 'net:tick', p),
+    'player:joined': (p) => {
+      state().upsertPlayer(p);
+      emitOnBus(bus, 'net:joined', p);
+    },
+    'player:left': (p) => {
+      state().removePlayer(p.id);
+      emitOnBus(bus, 'net:left', p);
+    },
+    'move:correct': (p) => emitOnBus(bus, 'net:correct', p),
+    'status:changed': (p) => {
+      state().setStatus(p.id, p.status);
+      emitOnBus(bus, 'net:status', p);
+    },
+    'media:changed': (p) => state().setMedia(p.id, p.media),
+    'profile:changed': (p) => {
+      state().setProfile(p);
+      emitOnBus(bus, 'net:profile', p);
+    },
+    'session:replaced': () => state().setReplaced(true),
+  };
+  const onDisconnect = () => {
+    ready = false;
+  };
+
+  // Les écouteurs de Socket.io sont typés événement par événement : la boucle passe par un type plus lâche.
+  const loose = socket as unknown as { on(event: string, fn: Listener): unknown; off(event: string, fn: Listener): unknown };
+  const entries = Object.entries(handlers) as Array<[string, Listener]>;
+  for (const [event, fn] of entries) loose.on(event, fn);
+  socket.on('disconnect', onDisconnect);
+  const unlisten = [
+    listenOnBus(bus, 'local:move', (m) => {
+      if (ready) socket.emit('move', m);
+    }),
+    listenOnBus(bus, 'local:teleport', (p) => {
+      if (ready) socket.emit('debug:teleport', p);
+    }),
+  ];
+
+  return () => {
+    for (const [event, fn] of entries) loose.off(event, fn);
+    socket.off('disconnect', onDisconnect);
+    for (const off of unlisten) off();
+  };
+}
+
+// Les nouveaux essais après un refus du serveur : 1 s, 2 s, 4 s… au plus 30 s.
+const RETRY_FIRST_MS = 1000;
+const RETRY_MAX_MS = 30_000;
+
+export function retryDelay(attempt: number): number {
+  return Math.min(RETRY_FIRST_MS * 2 ** attempt, RETRY_MAX_MS);
+}
+
+// Veille sur la connexion, une fois ouverte (socket.connect()) :
+// - une panne du réseau, ou le serveur qui redémarre : Socket.io réessaie seul (la socket reste « active ») ;
+// - un refus du serveur (connect_error de son middleware) : Socket.io ne réessaie pas. `unauthorized` (pas de session valable) et
+//   `disabled` (compte retiré) renvoient à la connexion (signedOut) ; `forbidden_origin` (la page n'est pas celle de l'appli) ne se
+//   règle pas en réessayant (forbidden) ; `unavailable` (le serveur n'a pas pu lire la session), `rate_limited` (trop de connexions
+//   dans la minute) ou tout autre refus : nouvel essai, après retryDelay ;
+// - le serveur ferme la connexion exprès : après `session:replaced`, jamais de reconnexion (un autre onglet a pris la place ; l'écran
+//   « Ouvert dans un autre onglet » propose de la reprendre). Sinon (compte retiré pendant la visite, arrivée impossible), un nouvel
+//   essai : le serveur dira pourquoi (`disabled`), ou nous laissera revenir.
+//
+// Renvoie la fonction qui arrête de veiller (et annule l'essai prévu).
+export function superviseConnection(
+  socket: OfficeSocket,
+  store: StoreApi<OfficeState>,
+  on: { signedOut(): void; forbidden(): void },
+): () => void {
+  let attempt = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const retryLater = () => {
+    if (timer !== undefined) return;   // un essai est déjà prévu
+    timer = setTimeout(() => {
+      timer = undefined;
+      if (!socket.active) socket.connect();
+    }, retryDelay(attempt++));
+  };
+
+  const onConnect = () => {
+    attempt = 0;
+  };
+  const onConnectError = (err: Error) => {
+    if (socket.active) return;
+    if (err.message === 'unauthorized' || err.message === 'disabled') on.signedOut();
+    else if (err.message === 'forbidden_origin') on.forbidden();
+    else retryLater();
+  };
+  const onDisconnect = (reason: string) => {
+    if (reason === 'io server disconnect' && !store.getState().replaced) retryLater();
+  };
+
+  socket.on('connect', onConnect);
+  socket.on('connect_error', onConnectError);
+  socket.on('disconnect', onDisconnect);
+  return () => {
+    clearTimeout(timer);
+    timer = undefined;
+    socket.off('connect', onConnect);
+    socket.off('connect_error', onConnectError);
+    socket.off('disconnect', onDisconnect);
+  };
+}

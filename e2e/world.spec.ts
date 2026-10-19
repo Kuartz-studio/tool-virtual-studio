@@ -1,5 +1,15 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
-import { inviteAndJoin, uniqueEmail, type Account } from './helpers';
+import {
+  holdUntil,
+  holdUntilStopped,
+  inviteAndJoin,
+  joinOffice,
+  restingAt,
+  selfAt,
+  uniqueEmail,
+  WALK_TIMEOUT,
+  type Account,
+} from './helpers';
 
 type Rgb = readonly [number, number, number];
 
@@ -158,6 +168,7 @@ test('la carte s\'affiche', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1600, height: 1100 });
   await inviteAndJoin(page, { email: uniqueEmail('carla'), name: 'Carla', password: 'motdepasse-de-carla' });
   await page.waitForFunction(() => window.__office?.ready);
+  await page.evaluate(() => window.__office!.showOthers(false));
 
   // Le canevas remplit la fenêtre (scale.mode RESIZE).
   const canvas = page.locator('#game-container canvas');
@@ -219,36 +230,16 @@ test('planche d\'avatar introuvable : le même message à la place de la carte',
 
 // ---- L'avatar local -------------------------------------------------------------------------------------------------------
 //
-// La carte de développement (packages/shared/src/map/dev-office.ts) : 24 × 16 cases de 32 px. L'apparition est au centre de la case
-// (2, 7), soit (80, 240) en pixels, dans l'open space. Les x et y de l'avatar sont ceux de ses pieds, en pixels de la carte.
+// La carte de développement et les aides (joinOffice, selfAt, holdUntil…) : helpers.ts.
+//
+// Tous les tests partagent le serveur, et ceux des autres fichiers tournent en même temps : leurs avatars apparaissent au même point
+// d'apparition et se promènent dans la même carte. Les tests de ce fichier regardent l'avatar local, souvent à l'écran : ils cachent
+// les autres joueurs (window.__office.showOthers).
 
-// Le temps qu'on laisse à l'avatar pour marcher jusqu'à un endroit (la marche la plus longue : 2 s). Une machine chargée fait tourner le
-// jeu plus lentement que l'horloge (Phaser ne laisse pas une image durer plus de 200 ms) : on ne veut pas d'échec pour cela.
-const WALK_TIMEOUT = 20_000;
-
-// Où est l'avatar local (window.__office.self, tenu à jour par la scène à chaque image).
-async function selfAt(page: Page): Promise<{ id: string; x: number; y: number }> {
-  const self = await page.evaluate(() => window.__office?.self ?? null);
-  if (!self) throw new Error('window.__office.self est vide : le bureau n\'a pas d\'avatar local.');
-  return self;
-}
-
-// Un compte neuf, dans le bureau prêt.
-async function joinOffice(page: Page, name: string): Promise<void> {
-  // L'adresse e-mail n'a pas d'accent : « Zoé » devient zoe.
-  const slug = name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
-  await inviteAndJoin(page, { email: uniqueEmail(slug), name, password: `motdepasse-de-${slug}` });
-  await page.waitForFunction(() => window.__office?.ready);
-  // Les premières images, qui compilent les shaders et envoient les textures à la carte graphique, sont les plus lentes. Une marche
-  // qui commence là serait plus courte que prévu : on attend que le jeu ait tourné un moment.
-  await page.evaluate(
-    () =>
-      new Promise<void>((resolve) => {
-        let frames = 0;
-        const tick = () => (++frames >= 30 ? resolve() : requestAnimationFrame(tick));
-        requestAnimationFrame(tick);
-      }),
-  );
+// Un compte neuf, dans le bureau prêt, où l'on ne voit que soi.
+async function joinOfficeAlone(page: Page, name: string): Promise<void> {
+  await joinOffice(page, name);
+  await page.evaluate(() => window.__office!.showOthers(false));
 }
 
 // La carte de développement, en pixels.
@@ -273,46 +264,11 @@ function shirtOnScreen(feet: { x: number; y: number }, canvas: { width: number; 
   ];
 }
 
-// Garde cette touche enfoncée jusqu'à ce que `reached` soit vrai, puis la relâche.
-async function holdUntil(page: Page, key: string, reached: (feet: { x: number; y: number }) => boolean): Promise<void> {
-  await page.keyboard.down(key);
-  await expect.poll(async () => reached(await selfAt(page)), { intervals: [15], timeout: WALK_TIMEOUT }).toBe(true);
-  await page.keyboard.up(key);
-}
-
-// Garde cette touche enfoncée jusqu'à ce que l'avatar ne bouge plus (un mur l'arrête), puis la relâche. Renvoie où il s'est arrêté.
-async function holdUntilStopped(page: Page, key: string): Promise<{ x: number; y: number }> {
-  await page.keyboard.down(key);
-  let { x, y } = await selfAt(page);
-  for (let still = 0, tries = 0; still < 6; tries++) {
-    if (tries > 300) throw new Error(`L'avatar bouge encore après 30 s, ${key} enfoncée.`);
-    await page.waitForTimeout(100);
-    const now = await selfAt(page);
-    still = now.x === x && now.y === y ? still + 1 : 0;
-    ({ x, y } = now);
-  }
-  await page.keyboard.up(key);
-  return { x, y };
-}
-
-// Où est l'avatar une fois arrêté : l'image qui suit le relâchement d'une touche peut encore le faire avancer de quelques pixels.
-async function restingAt(page: Page): Promise<{ id: string; x: number; y: number }> {
-  let last = await selfAt(page);
-  for (let still = 0, tries = 0; still < 3; tries++) {
-    if (tries > 300) throw new Error('L\'avatar bouge encore après 15 s.');
-    await page.waitForTimeout(50);
-    const now = await selfAt(page);
-    still = now.x === last.x && now.y === last.y ? still + 1 : 0;
-    last = now;
-  }
-  return last;
-}
-
 test('l\'avatar apparaît sur le point d\'apparition, pieds en (80, 240), avec son ombre', async ({ page }, testInfo) => {
   // Même fenêtre que « la carte s'affiche » : zoom ×2, la carte entière au milieu, à 32 px de marge à gauche et 38 en haut. Un
   // point de la carte (x, y) est donc à l'écran en (32 + 2x, 38 + 2y).
   await page.setViewportSize({ width: 1600, height: 1100 });
-  await joinOffice(page, 'Zoé');
+  await joinOfficeAlone(page, 'Zoé');
 
   // C'est le compte connecté : son identifiant est celui de la session.
   const session = (await (await page.request.get('/api/auth/get-session')).json()) as { user: { id: string } };
@@ -334,7 +290,7 @@ test('l\'avatar apparaît sur le point d\'apparition, pieds en (80, 240), avec s
 });
 
 test('marcher à droite : ArrowRight enfoncée 500 ms fait avancer l\'avatar, qui s\'arrête quand on la relâche', async ({ page }) => {
-  await joinOffice(page, 'Rosa');
+  await joinOfficeAlone(page, 'Rosa');
   const x0 = (await selfAt(page)).x;
 
   const start = Date.now();
@@ -359,7 +315,7 @@ test('marcher à droite : ArrowRight enfoncée 500 ms fait avancer l\'avatar, qu
 });
 
 test('un mur arrête : depuis l\'apparition, ArrowUp enfoncée 2 s', async ({ page }) => {
-  await joinOffice(page, 'Mia');
+  await joinOfficeAlone(page, 'Mia');
   const start = await selfAt(page);
 
   await page.keyboard.down('ArrowUp');
@@ -376,7 +332,7 @@ test('un mur arrête : depuis l\'apparition, ArrowUp enfoncée 2 s', async ({ pa
 
 test('le corps de l\'avatar a 20 × 12 px aux pieds : il s\'arrête contre les murs et les bureaux sur ses bords', async ({ page }) => {
   test.slow();
-  await joinOffice(page, 'Gaëlle');
+  await joinOfficeAlone(page, 'Gaëlle');
 
   // Vers la gauche : le mur de la colonne 0 finit en x = 32, et le corps (20 px de large) s'arrête à 10 px de lui.
   expect(await holdUntilStopped(page, 'ArrowLeft')).toEqual({ x: 42, y: 240 });
@@ -389,7 +345,7 @@ test('le corps de l\'avatar a 20 × 12 px aux pieds : il s\'arrête contre les m
 });
 
 test('un bureau arrête : vu d\'en haut, comme un mur', async ({ page }) => {
-  await joinOffice(page, 'Théo');
+  await joinOfficeAlone(page, 'Théo');
 
   // Le bureau des colonnes 4 et 5 (x de 128 à 192) commence en y = 288. Il faut être au-dessus : vers la droite jusqu'à x = 150, le
   // corps (de x − 10 à x + 10) est alors devant lui.
@@ -406,7 +362,7 @@ test('un bureau arrête : vu d\'en haut, comme un mur', async ({ page }) => {
 });
 
 test('les touches ZQSD d\'un AZERTY sont celles de WASD : par leur position (KeyW, KeyA, KeyS, KeyD)', async ({ page }) => {
-  await joinOffice(page, 'Inès');
+  await joinOfficeAlone(page, 'Inès');
   const start = await selfAt(page);
 
   // À droite : « D » (même position sur les deux claviers).
@@ -440,7 +396,7 @@ test('les touches ZQSD d\'un AZERTY sont celles de WASD : par leur position (Key
 });
 
 test('dans un champ de saisie, les touches ne déplacent pas l\'avatar', async ({ page }) => {
-  await joinOffice(page, 'Hugo');
+  await joinOfficeAlone(page, 'Hugo');
   const start = await selfAt(page);
 
   // Un champ (le chat, bientôt) qui a le focus.
@@ -468,7 +424,7 @@ test('dans un champ de saisie, les touches ne déplacent pas l\'avatar', async (
 });
 
 test('la fenêtre perd le focus en pleine marche : l\'avatar s\'arrête, même si la touche est restée enfoncée', async ({ page }) => {
-  await joinOffice(page, 'Lina');
+  await joinOfficeAlone(page, 'Lina');
   const start = await selfAt(page);
 
   await page.keyboard.down('ArrowRight');
@@ -485,7 +441,7 @@ test('la fenêtre perd le focus en pleine marche : l\'avatar s\'arrête, même s
 test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, testInfo) => {
   test.slow();
   // 1280 × 720 : zoom ×2, la vue (640 × 360 px de carte) est plus petite que la carte (768 × 512).
-  await joinOffice(page, 'Lou');
+  await joinOfficeAlone(page, 'Lou');
   expect(page.viewportSize()).toEqual({ width: 1280, height: 720 });
   const canvas = { width: 1280, height: 720 };
 
@@ -532,7 +488,7 @@ test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, test
 
 test('la caméra continue de suivre l\'avatar quand la fenêtre change de taille', async ({ page }) => {
   test.slow();
-  await joinOffice(page, 'Eva');
+  await joinOfficeAlone(page, 'Eva');
   // L'avatar s'arrête vers x = 370, loin des bords : à 1280 × 720 comme dans les deux fenêtres qui suivent, la caméra le suit (au
   // centre de la vue de x = 320 à 448, puis de 350 à 418), même s'il dépasse un peu avant que la touche soit relâchée.
   await page.keyboard.down('KeyD');
@@ -574,7 +530,7 @@ test('les pixels restent nets pour un avatar arrêté à x entier, dans une fen�
   // 1283 × 727 : zoom ×2, et le centre de l'écran est entre deux pixels (641,5). Quand la caméra suit l'avatar à un x entier, un
   // pixel de la carte tombe pile entre deux pixels de l'écran : sans arrondi à l'affichage, des pixels de 1 et de 3 px de large.
   await page.setViewportSize({ width: 1283, height: 727 });
-  await joinOffice(page, 'Ida');
+  await joinOfficeAlone(page, 'Ida');
 
   // Un x entier, au milieu de la zone que la caméra suit (x de 320 à 448) : l'avatar contre la face est du bureau du milieu (les
   // colonnes 11 et 12, x de 352 à 416, y de 288 à 320). Le corps (de x − 10 à x + 10) s'arrête en x = 416 + 10 = 426. Pour y
@@ -607,7 +563,7 @@ test('les pixels restent nets quand la caméra suit l\'avatar, même dans une fe
   // 1283 × 727 : zoom ×2, et le centre de l'écran est entre deux pixels (641,5) : la caméra, qui suit l'avatar à des positions
   // quelconques, n'est presque jamais sur un pixel de l'écran. Les objets de la carte et l'avatar sont arrondis à l'affichage.
   await page.setViewportSize({ width: 1283, height: 727 });
-  await joinOffice(page, 'Ugo');
+  await joinOfficeAlone(page, 'Ugo');
 
   // La caméra commence à suivre l'avatar à x = 320 : on regarde la marche de 330 à 700 environ.
   await page.keyboard.down('KeyD');
@@ -630,7 +586,7 @@ test('la marche s\'anime sur place, et l\'avatar immobile ne bouge plus', async 
   test.slow();
   // La carte entière est visible (1600 × 1100) : la caméra ne bouge pas, l'avatar est toujours au même endroit de l'écran.
   await page.setViewportSize({ width: 1600, height: 1100 });
-  await joinOffice(page, 'Noé');
+  await joinOfficeAlone(page, 'Noé');
 
   // ArrowUp jusqu'au mur (les pieds en (80, 203)), puis la touche reste enfoncée : l'avatar marche sur place.
   await page.keyboard.down('ArrowUp');

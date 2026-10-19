@@ -201,7 +201,15 @@ a {
   font-size: 1rem;
 }
 
-.office-overlay .alert {
+.office-overlay .alert,
+.office-overlay .notice {
   flex-basis: 100%;
   margin: 0;
+}
+
+/* La connexion au bureau, en attendant le premier état du serveur. */
+.office-status {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-muted);
 }

@@ -1,6 +1,6 @@
 import { DEFAULT_AVATAR_KEY, DEV_AVATAR_KEYS, DIRECTIONS } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { animKey, AVATARS, createAvatarAnimations, feetBody, resolveAvatarKey } from './avatars';
+import { animKey, avatarObjectName, avatarSpec, AVATARS, createAvatarAnimations, feetBody, resolveAvatarKey } from './avatars';
 
 test('chaque avatar a immobile et marche dans les 4 directions', () => {
   for (const k of DEV_AVATAR_KEYS) for (const d of DIRECTIONS) { expect(AVATARS[k].idle[d].length).toBeGreaterThan(0); expect(AVATARS[k].walk[d].length).toBeGreaterThan(1); }
@@ -49,6 +49,23 @@ describe('resolveAvatarKey', () => {
 
   test('l\'avatar par défaut est dans le registre', () => {
     expect(AVATARS[DEFAULT_AVATAR_KEY]).toBeDefined();
+  });
+});
+
+test('avatarObjectName : le nom de l\'objet d\'un avatar dans la scène, par joueur', () => {
+  expect(avatarObjectName('u-lea')).toBe('player:u-lea');
+});
+
+describe('avatarSpec', () => {
+  test('la fiche de l\'avatar du registre', () => {
+    expect(avatarSpec('dev-green')).toBe(AVATARS['dev-green']);
+  });
+
+  test('pas d\'avatar choisi, ou un avatar que ce build ne connaît pas : la fiche de l\'avatar par défaut', () => {
+    for (const unknown of [null, undefined, '', 'avatar-99', 'constructor', '__proto__']) {
+      expect(avatarSpec(unknown)).toBe(AVATARS[DEFAULT_AVATAR_KEY]);
+      expect(avatarSpec(unknown).key).toBe(DEFAULT_AVATAR_KEY);
+    }
   });
 });
 

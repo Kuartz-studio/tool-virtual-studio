@@ -1,7 +1,15 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { exposeDebug, type OfficeDebug } from './debug';
 
-const debug = (): OfficeDebug => ({ ready: true, self: null, players: {}, media: { room: null, tiles: 0 }, teleport: () => {} });
+const debug = (): OfficeDebug => ({
+  ready: true,
+  self: null,
+  players: {},
+  media: { room: null, tiles: 0 },
+  teleport: () => {},
+  showOthers: () => {},
+  avatarsOf: () => 0,
+});
 
 afterEach(() => {
   delete window.__office;

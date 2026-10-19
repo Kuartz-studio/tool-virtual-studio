@@ -70,6 +70,11 @@ export const fr = {
     signOut: 'Se déconnecter',
     signingOut: 'Déconnexion…',
     mapLoadFailed: 'Impossible de charger la carte du bureau. Recharge la page pour réessayer.',
+    connecting: 'Connexion au bureau…',
+    replaced: 'Ouvert dans un autre onglet',
+    errors: {
+      forbiddenOrigin: 'Le bureau refuse la connexion depuis cette page : ouvre l\'appli à son adresse habituelle.',
+    },
   },
 };
 
