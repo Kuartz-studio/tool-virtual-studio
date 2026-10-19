@@ -1,5 +1,6 @@
 import type { Role } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
+import type { Logger } from 'pino';
 import request from 'supertest';
 import { createApp } from '../../src/app';
 import { createAuth } from '../../src/auth/auth';
@@ -16,11 +17,12 @@ export const TEST_PASSWORD = 'motdepasse1';
 
 // L'application complète sur une base PGlite neuve : Better Auth, invitations et e-mails en mémoire.
 // `env` remplace des variables de testEnv(), par exemple { AUTH_RATE_LIMIT: 'on' } pour tester la limitation des tentatives.
-export async function createTestApp(o: { env?: Partial<Env> } = {}) {
+// `logger` remplace le journal muet des tests, pour vérifier ce que l'authentification journalise (un échec d'envoi d'e-mail).
+export async function createTestApp(o: { env?: Partial<Env>; logger?: Logger } = {}) {
   const env = testEnv(o.env);
   const db = await createTestDb();
   const mailer = createMemoryMailer();
-  const auth = createAuth({ db, mailer, env });
+  const auth = createAuth({ db, mailer, env, logger: o.logger });
   const invitations = createInvitationService(db);
   const app = createApp({ env, db, auth, invitations });
 

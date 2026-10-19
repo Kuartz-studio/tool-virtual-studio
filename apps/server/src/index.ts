@@ -40,7 +40,7 @@ async function main(): Promise<void> {
     if (isPgliteUrl(env.DATABASE_URL)) await runMigrations(db);
 
     const mailer = createMailerFromEnv(env, logger);
-    const auth = createAuth({ db, mailer, env });
+    const auth = createAuth({ db, mailer, env, logger });
     const invitations = createInvitationService(db);
 
     const server = createServer(createApp({ env, db, auth, invitations }));

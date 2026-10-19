@@ -39,7 +39,7 @@ test('échec au démarrage hors test : une ligne fatal du journal, sans doublon 
   expect(stderr).toBe('');
 }, 30_000);
 
-test('démarrage complet : base en mémoire migrée, santé, inscription directe refusée', async () => {
+test('démarrage complet : base en mémoire migrée, santé, inscription directe refusée, redirection de réinitialisation limitée à l\'appli', async () => {
   // NODE_ENV=development : le journal écrit une ligne JSON par événement, dont « Serveur démarré » avec le port réel.
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: serverDir,
@@ -69,6 +69,21 @@ test('démarrage complet : base en mémoire migrée, santé, inscription directe
     expect(signUp.status).toBe(403);
     expect(await signUp.json()).toMatchObject({ code: 'INVITATION_REQUIRED' });
     expect((await fetch(`${base}/api/invitations/inconnu`)).status).toBe(404);
+
+    // Le lien de réinitialisation renvoie le jeton vers `redirectTo` : sans contrôle, quelqu'un pourrait demander la
+    // réinitialisation d'un autre compte avec l'adresse de son propre site, et le lien reçu par ce compte lui livrerait le
+    // jeton. Better Auth ne contrôle les adresses de redirection que hors NODE_ENV=test : les tests en processus ne le
+    // voient pas, ce serveur lancé en développement si.
+    const requestReset = (redirectTo: string) =>
+      fetch(`${base}/api/auth/request-password-reset`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', origin: 'http://localhost:4000' },
+        body: JSON.stringify({ email: 'x@x.fr', redirectTo }),
+      });
+    expect((await requestReset('http://localhost:4000/reinitialiser')).status).toBe(200);
+    const foreign = await requestReset('https://pirate.example/reinitialiser');
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toMatchObject({ code: 'INVALID_REDIRECT_URL' });
   } finally {
     child.kill();
   }

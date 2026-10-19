@@ -2,16 +2,19 @@ import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, SESSION_TTL_S } from '@bureau
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
+import { eq } from 'drizzle-orm';
+import type { Logger } from 'pino';
 import type { Db } from '../db/client';
 import * as schema from '../db/schema';
 import type { Env } from '../env';
+import { createLogger } from '../logger';
 import type { Mailer } from '../mail/mailer';
 import { invitationContext } from './invitation-context';
 
 // Better Auth : comptes par e-mail et mot de passe, sessions en cookie, limitation des tentatives en base.
 // auth.cli.ts construit son instance avec cette même fonction : la CLI de Better Auth en déduit src/db/auth-schema.ts.
-// `mailer` servira aux e-mails de réinitialisation du mot de passe.
-export function createAuth({ db, env }: { db: Db; mailer: Mailer; env: Env }) {
+// `mailer` envoie les e-mails de réinitialisation du mot de passe ; `logger` reçoit leurs échecs d'envoi.
+export function createAuth({ db, mailer, env, logger = createLogger(env) }: { db: Db; mailer: Mailer; env: Env; logger?: Logger }) {
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.APP_URL,
@@ -25,6 +28,18 @@ export function createAuth({ db, env }: { db: Db; mailer: Mailer; env: Env }) {
       minPasswordLength: PASSWORD_MIN_LENGTH,
       maxPasswordLength: PASSWORD_MAX_LENGTH,
       autoSignIn: true,
+      // Mot de passe oublié : le lien de l'e-mail est valable une heure. Better Auth attend la fin de l'envoi, puis répond
+      // 200 dans tous les cas, adresse inconnue comprise : un échec d'envoi ne remonte donc pas, il est journalisé ici
+      // (sans l'adresse ni le lien, dont le jeton ouvre le compte). Contrepartie : la réponse est plus lente pour une
+      // adresse qui a un compte que pour une adresse inconnue.
+      resetPasswordTokenExpiresIn: 3600,
+      sendResetPassword: async ({ user, url }) => {
+        try {
+          await mailer.sendPasswordReset({ to: user.email, link: url });
+        } catch (err) {
+          logger.error({ err, userId: user.id }, 'Envoi de l\'e-mail de réinitialisation impossible');
+        }
+      },
     },
     session: { expiresIn: SESSION_TTL_S, updateAge: 86400 },
     user: {
@@ -40,7 +55,16 @@ export function createAuth({ db, env }: { db: Db; mailer: Mailer; env: Env }) {
     },
     trustedOrigins: [env.APP_URL],
     advanced: { useSecureCookies: env.NODE_ENV === 'production' },
-    rateLimit: { enabled: env.AUTH_RATE_LIMIT === 'on', storage: 'database' },
+    rateLimit: {
+      enabled: env.AUTH_RATE_LIMIT === 'on',
+      storage: 'database',
+      // Par adresse IP et par route : 3 connexions par 10 s, 3 demandes de réinitialisation par minute. Ce sont aussi les
+      // règles par défaut de Better Auth 1.7 ; on les écrit pour ne pas dépendre d'un défaut qui pourrait changer.
+      customRules: {
+        '/sign-in/email': { window: 10, max: 3 },
+        '/request-password-reset': { window: 60, max: 3 },
+      },
+    },
     databaseHooks: {
       user: {
         create: {
@@ -54,6 +78,16 @@ export function createAuth({ db, env }: { db: Db; mailer: Mailer; env: Env }) {
               throw new APIError('FORBIDDEN', { code: 'INVITATION_REQUIRED', message: 'Un compte ne peut être créé que sur invitation.' });
             }
             return { data: { ...user, emailVerified: true, role: invitation.role } };
+          },
+        },
+      },
+      session: {
+        create: {
+          // Un compte désactivé (disabledAt renseigné) n'ouvre plus de session, même avec le bon mot de passe. Les sessions
+          // déjà ouvertes ne passent pas par ici : c'est à la désactivation de les supprimer.
+          before: async (session) => {
+            const [account] = await db.select({ disabledAt: schema.user.disabledAt }).from(schema.user).where(eq(schema.user.id, session.userId));
+            if (account?.disabledAt) throw new APIError('FORBIDDEN', { code: 'ACCOUNT_DISABLED', message: 'Ce compte est désactivé.' });
           },
         },
       },
