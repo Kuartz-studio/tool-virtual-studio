@@ -42,7 +42,7 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 
 // Branche la connexion sur l'état de l'interface (le magasin) et sur le jeu (le bus) :
 // - ce que le serveur dit va au magasin (arrivées, départs, statuts, médias, profils, onglet remplacé), puis au jeu, qui le lit déjà
-//   à jour ; les positions (`world:tick`) ne vont qu'au jeu ;
+//   à jour ; les positions (`world:tick`) vont au jeu, et aux dernières positions du magasin, que React ne voit pas changer ;
 // - ce que le jeu produit (`local:move`, `local:teleport`) part au serveur, mais seulement quand la connexion est prête : connectée,
 //   et l'`init` de cette connexion reçu. Avant, le serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure,
 //   Socket.io garderait les messages et les enverrait au retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
@@ -59,7 +59,12 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       ready = true;
       emitOnBus(bus, 'net:init', p);
     },
-    'world:tick': (p) => emitOnBus(bus, 'net:tick', p),
+    // Les positions vont aussi au magasin, hors de son état réactif : un jeu qui démarre plus tard (encore en chargement, ou recréé
+    // pour une autre carte) y lit où sont les autres, au lieu de leur position de l'init.
+    'world:tick': (p) => {
+      state().recordMoves(p.moves);
+      emitOnBus(bus, 'net:tick', p);
+    },
     'player:joined': (p) => {
       state().upsertPlayer(p);
       emitOnBus(bus, 'net:joined', p);

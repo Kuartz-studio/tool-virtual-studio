@@ -44,12 +44,20 @@ describe('connectOffice', () => {
     expect(seenByGame).toEqual(['a']);
   });
 
-  test('world:tick : au jeu seulement (net:tick) ; le magasin ne suit pas les positions', () => {
+  test('world:tick : au jeu (net:tick), et aux dernières positions du magasin, sans toucher à son état réactif', () => {
     connectOffice(socket.asSocket(), store, bus);
     socket.receive('init', init([A]));
+    let seenByGame: unknown = null;
+    bus.on('net:tick', () => {
+      seenByGame = store.getState().positions.get('a');
+    });
     const tick = { t: 1234, moves: [{ id: 'a', x: 120, y: 240, dir: 'right' as const, moving: true }] };
     socket.receive('world:tick', tick);
     expect(bus.emittedOf('net:tick')).toEqual([tick]);
+    // Un jeu qui démarre après ce tick (il chargeait encore) y lit la position : elle n'est pas perdue.
+    expect(store.getState().positions.get('a')).toEqual({ x: 120, y: 240, dir: 'right', moving: true });
+    expect(seenByGame).toEqual({ x: 120, y: 240, dir: 'right', moving: true });
+    // L'état réactif (players) ne suit pas les positions : React ne se redessine pas 10 fois par seconde.
     expect(store.getState().players.a!.x).toBe(80);
   });
 

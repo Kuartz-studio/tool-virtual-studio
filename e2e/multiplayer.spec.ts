@@ -1,5 +1,15 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { avatarsOf, joinOffice, playerSeenBy, restingAt, selfAt, waitForOffice, WALK_TIMEOUT } from './helpers';
+import {
+  avatarsOf,
+  createInvitation,
+  joinOffice,
+  playerSeenBy,
+  restingAt,
+  selfAt,
+  uniqueEmail,
+  waitForOffice,
+  WALK_TIMEOUT,
+} from './helpers';
 
 // Plusieurs personnes dans le bureau, chacune dans son navigateur : un contexte par personne (ses cookies, donc sa session).
 //
@@ -151,6 +161,46 @@ test('A marche contre un mur en gardant la touche : B ne le dessine jamais dans 
   });
   // Dessiné jusqu'au mur, jamais dedans (l'extrapolation est bornée par la carte).
   expect(maxX).toBe(726);
+});
+
+test('A marche puis s\'arrête pendant que le jeu de B charge : B le voit à sa position d\'arrêt, arrêté', async ({ browser }) => {
+  test.slow();
+  const a = await arrive(browser, 'Aurèle');
+
+  // B : la carte du jeu n'arrive qu'au signal du test. Le jeu ne démarre qu'avec l'init (c'est lui qui dit la carte) : quand la
+  // carte est demandée, l'init de B est arrivé, et le bureau n'a pas encore de scène pour suivre les positions.
+  const contextB = await browser.newContext();
+  contexts.push(contextB);
+  const pageB = await contextB.newPage();
+  let mapRequested!: () => void;
+  const requested = new Promise<void>((resolve) => (mapRequested = resolve));
+  let releaseMap!: () => void;
+  const released = new Promise<void>((resolve) => (releaseMap = resolve));
+  await pageB.route('**/assets/maps/*.json', async (route) => {
+    mapRequested();
+    await released;
+    await route.continue();
+  });
+  await pageB.goto(await createInvitation(pageB.request, uniqueEmail('beatrice')));
+  await pageB.getByLabel('Nom affiché', { exact: true }).fill('Béatrice');
+  await pageB.getByLabel('Mot de passe', { exact: true }).fill('motdepasse-de-beatrice');
+
+  // A marche déjà quand le serveur construit l'init de B : B l'y reçoit « en marche ».
+  await a.page.keyboard.down('ArrowRight');
+  await pageB.getByRole('button', { name: 'Créer mon compte' }).click();
+  await requested;
+  // Puis A s'arrête pendant que le jeu de B charge : son arrêt, et son renvoi 500 ms plus tard, arrivent avant la scène de B.
+  await a.page.waitForTimeout(300);
+  await a.page.keyboard.up('ArrowRight');
+  const stopped = await restingAt(a.page);
+  await pageB.waitForTimeout(900);
+  releaseMap();
+  await waitForOffice(pageB);
+
+  // B le voit là où il s'est arrêté (et non à sa position de l'init, en marchant sur place), et l'y voit encore ensuite.
+  await expect.poll(() => playerSeenBy(pageB, a.id), { timeout: WALK_TIMEOUT }).toMatchObject({ x: stopped.x, y: stopped.y });
+  await pageB.waitForTimeout(600);
+  expect(await playerSeenBy(pageB, a.id)).toMatchObject({ x: stopped.x, y: stopped.y });
 });
 
 test('A recharge la page : B voit toujours un seul A', async ({ browser }) => {

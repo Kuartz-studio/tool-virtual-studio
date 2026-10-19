@@ -118,6 +118,57 @@ test('reset : l\'état de départ (une autre session, un autre compte)', () => {
   expect(store.getState()).toMatchObject({ selfId: null, self: null, mapKey: null, players: {}, replaced: false });
 });
 
+// ---- Les dernières positions (pour un jeu qui démarre après des ticks) ----------------------------------------------------------
+
+const move = (id: string, x: number, moving = true) => ({ id, x, y: 240, dir: 'right' as const, moving });
+
+test('positions : celles de l\'init pour les autres joueurs (pas soi-même), avec direction et marche', () => {
+  store.getState().applyInit(init({ ...SELF, x: 1 }, [{ ...A, x: 100, dir: 'left', moving: true }, B]));
+  expect(Object.fromEntries(store.getState().positions)).toEqual({
+    a: { x: 100, y: 240, dir: 'left', moving: true },
+    b: { x: 80, y: 240, dir: 'down', moving: false },
+  });
+});
+
+test('recordMoves : la dernière position de chaque joueur connu ; soi-même et les inconnus sont ignorés', () => {
+  store.getState().applyInit(init(SELF, [A, B]));
+  store.getState().recordMoves([move('a', 120), move('moi', 300), move('inconnu', 50)]);
+  store.getState().recordMoves([move('a', 136, false)]);
+  const { positions } = store.getState();
+  expect(positions.get('a')).toEqual({ x: 136, y: 240, dir: 'right', moving: false });
+  expect(positions.get('b')).toEqual({ x: 80, y: 240, dir: 'down', moving: false });
+  expect(positions.has('moi')).toBe(false);
+  expect(positions.has('inconnu')).toBe(false);
+});
+
+test('recordMoves ne prévient personne : aucun abonné (React) n\'est appelé, l\'état reste le même objet', () => {
+  store.getState().applyInit(init(SELF, [A]));
+  const before = store.getState();
+  let calls = 0;
+  const unsubscribe = store.subscribe(() => calls++);
+  store.getState().recordMoves([move('a', 120)]);
+  unsubscribe();
+  expect(calls).toBe(0);
+  expect(store.getState()).toBe(before);
+  expect(store.getState().positions.get('a')!.x).toBe(120);
+});
+
+test('arrivée, départ, nouvel init et reset tiennent les positions à jour (rien ne s\'y accumule)', () => {
+  store.getState().applyInit(init(SELF, [A]));
+  store.getState().upsertPlayer({ ...B, x: 200 });
+  expect(store.getState().positions.get('b')!.x).toBe(200);
+  store.getState().upsertPlayer({ ...SELF, x: 999 });
+  expect(store.getState().positions.has('moi')).toBe(false);
+  store.getState().removePlayer('a');
+  expect(store.getState().positions.has('a')).toBe(false);
+
+  store.getState().recordMoves([move('b', 250)]);
+  store.getState().applyInit(init(SELF, [{ ...A, x: 90 }]));
+  expect(Object.fromEntries(store.getState().positions)).toEqual({ a: { x: 90, y: 240, dir: 'down', moving: false } });
+  store.getState().reset();
+  expect(store.getState().positions.size).toBe(0);
+});
+
 test('useOfficeStore est le magasin de l\'appli', () => {
   useOfficeStore.getState().reset();
   useOfficeStore.getState().applyInit(init(SELF, [A]));

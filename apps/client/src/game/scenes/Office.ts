@@ -71,7 +71,7 @@ export class Office extends Scene {
 
     // Là où le serveur nous a placés (le dernier init). Sans lui (le magasin vidé pendant le chargement : la page se ferme), au point
     // d'apparition.
-    const { self, players } = useOfficeStore.getState();
+    const { self, players, positions } = useOfficeStore.getState();
     const { spawn } = this.officeMap;
     const me = self ?? { id: '', name: '', avatarKey: null, x: spawn.x, y: spawn.y, dir: 'down' as const, status: 'available' as const };
     this.selfId = me.id;
@@ -80,8 +80,10 @@ export class Office extends Scene {
     this.debug.self = { id: me.id, ...this.feet() };
     this.moveSender = new MoveSender();
 
+    // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
+    // qui n'existait pas encore, n'a pas reçu).
     const now = clock();
-    for (const player of Object.values(players)) this.addRemote(player, now);
+    for (const player of Object.values(players)) this.addRemote({ ...player, ...positions.get(player.id) }, now);
 
     this.directions = new DirectionInput();
     const unbindKeyboard = bindKeyboard(this.directions);
