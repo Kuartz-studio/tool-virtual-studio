@@ -50,6 +50,6 @@ COPY --from=build /app/apps/client/dist apps/client/dist
 USER node
 
 # Les migrations, puis le serveur. `exec` fait de Node le processus principal du conteneur : c'est lui qui reçoit SIGTERM de
-# Railway, mais comme processus 1 il ne s'arrête sur ce signal que s'il l'écoute (index.ts ne le fait pas encore).
-# railway.json donne la même commande, que Railway préfère à celle-ci.
+# Railway, et comme processus 1 il ne s'arrête sur ce signal que parce qu'index.ts l'écoute (positions enregistrées, serveur et
+# base fermés, puis sortie avec le code 0). railway.json donne la même commande, que Railway préfère à celle-ci.
 CMD ["sh", "-c", "node apps/server/dist/migrate.js && exec node apps/server/dist/index.js"]

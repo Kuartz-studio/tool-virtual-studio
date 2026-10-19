@@ -1,7 +1,14 @@
-import { execFile, spawn } from 'node:child_process';
-import { resolve } from 'node:path';
+import { execFile, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import { expect, test } from 'vitest';
+import type { ClientToServerEvents, InitPayload, ServerToClientEvents } from '@bureau/shared';
+import { eq } from 'drizzle-orm';
+import { io as ioClient, type Socket } from 'socket.io-client';
+import { expect, onTestFinished, test } from 'vitest';
+import { createDb } from '../src/db/client';
+import { user } from '../src/db/schema';
 
 const execFileAsync = promisify(execFile);
 const serverDir = resolve(import.meta.dirname, '..');
@@ -39,24 +46,29 @@ test('échec au démarrage hors test : une ligne fatal du journal, sans doublon 
   expect(stderr).toBe('');
 }, 30_000);
 
-test('démarrage complet : base en mémoire migrée, santé, inscription directe refusée, redirection de réinitialisation limitée à l\'appli', async () => {
-  // NODE_ENV=development : le journal écrit une ligne JSON par événement, dont « Serveur démarré » avec le port réel.
+// Lance le vrai point d'entrée en arrière-plan, avec NODE_ENV=development : le journal écrit une ligne JSON par événement, dont
+// « Serveur démarré » avec le port réel (PORT=0). Renvoie le processus et l'adresse du serveur, une fois démarré.
+async function spawnServer(env: Record<string, string>): Promise<{ child: ChildProcessWithoutNullStreams; base: string }> {
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
     cwd: serverDir,
-    env: { PATH: process.env.PATH ?? '', NODE_ENV: 'development', APP_URL: 'http://localhost:4000', BETTER_AUTH_SECRET: 'x'.repeat(32), DATABASE_URL: 'memory://', PORT: '0' },
+    env: { PATH: process.env.PATH ?? '', NODE_ENV: 'development', APP_URL: 'http://localhost:4000', BETTER_AUTH_SECRET: 'x'.repeat(32), PORT: '0', ...env },
   });
-  try {
-    const port = await new Promise<number>((resolve, reject) => {
-      let stdout = '';
-      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
-        stdout += chunk;
-        for (const line of stdout.split('\n')) {
-          if (line.includes('Serveur démarré')) resolve((JSON.parse(line) as { port: number }).port);
-        }
-      });
-      child.once('exit', (code) => reject(new Error(`le serveur s'est arrêté (code ${code}) : ${stdout}`)));
+  const port = await new Promise<number>((resolve, reject) => {
+    let stdout = '';
+    child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+      stdout += chunk;
+      for (const line of stdout.split('\n')) {
+        if (line.includes('Serveur démarré')) resolve((JSON.parse(line) as { port: number }).port);
+      }
     });
-    const base = `http://127.0.0.1:${port}`;
+    child.once('exit', (code) => reject(new Error(`le serveur s'est arrêté (code ${code}) : ${stdout}`)));
+  });
+  return { child, base: `http://127.0.0.1:${port}` };
+}
+
+test('démarrage complet : base en mémoire migrée, santé, inscription directe refusée, redirection de réinitialisation limitée à l\'appli', async () => {
+  const { child, base } = await spawnServer({ DATABASE_URL: 'memory://' });
+  try {
     expect(await (await fetch(`${base}/api/health`)).json()).toEqual({ ok: true });
     // fetch envoie `sec-fetch-mode: cors` sans en-tête Origin : la protection CSRF de Better Auth répondrait alors 403
     // (MISSING_OR_NULL_ORIGIN) avant même le crochet des invitations. Avec l'origine de confiance (APP_URL du serveur
@@ -94,4 +106,58 @@ test('configuration invalide : les variables fautives sont nommées sur stderr',
   expect(code).toBe(1);
   expect(stderr).toMatch(/Configuration invalide[^]*APP_URL[^]*BETTER_AUTH_SECRET/);
   expect(stdout).toBe('');
+}, 30_000);
+
+test('carte introuvable : démarrage impossible, le message donne le chemin de la carte', async () => {
+  const { code, stderr } = await startServer({ ...config, NODE_ENV: 'test', DATABASE_URL: 'memory://', MAPS_DIR: '/nulle-part' });
+  expect(code).toBe(1);
+  expect(stderr).toMatch(/Démarrage impossible/);
+  expect(stderr).toMatch(/Carte du bureau illisible : \/nulle-part\/dev-office\.json/);
+}, 30_000);
+
+// Railway arrête l'ancienne version par SIGTERM à chaque déploiement ; Ctrl+C envoie SIGINT. Le serveur enregistre alors la position
+// de chaque personne présente, ferme le serveur HTTP et la base, et sort avec le code 0. Une base PGlite dans un dossier : on la
+// relit après la sortie du processus.
+test.each(['SIGTERM', 'SIGINT'] as const)('%s : positions enregistrées, serveur et base fermés, sortie avec le code 0', async (signal) => {
+  const dataDir = mkdtempSync(join(tmpdir(), 'bureau-arret-'));
+  onTestFinished(() => rmSync(dataDir, { recursive: true, force: true }));
+  // E2E=1 : la route de test crée l'invitation, sans admin ni e-mail.
+  const { child, base } = await spawnServer({ DATABASE_URL: `pglite://${dataDir}`, E2E: '1' });
+  const exited = new Promise<number | null>((resolve) => child.once('exit', (code) => resolve(code)));
+  try {
+    const invited = await fetch(`${base}/api/test/invitations`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'lea@x.fr' }),
+    });
+    const token = new URL(((await invited.json()) as { link: string }).link).searchParams.get('token');
+    const accepted = await fetch(`${base}/api/invitations/accept`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ token, name: 'Léa', password: 'motdepasse1' }),
+    });
+    expect(accepted.status).toBe(201);
+    const cookie = accepted.headers.getSetCookie().map((setCookie) => setCookie.split(';')[0]).join('; ');
+
+    // Léa entre au bureau, au point d'apparition : sa position n'est encore qu'en mémoire.
+    const socket: Socket<ServerToClientEvents, ClientToServerEvents> = ioClient(base, { transports: ['websocket'], extraHeaders: { cookie }, reconnection: false });
+    onTestFinished(() => {
+      socket.close();
+    });
+    const init = await new Promise<InitPayload>((resolve) => socket.once('init', resolve));
+    expect(init.self).toMatchObject({ x: 80, y: 240, dir: 'down' });
+
+    child.kill(signal);
+    expect(await exited).toBe(0);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+  }
+
+  const { db, close } = await createDb(`pglite://${dataDir}`);
+  try {
+    const [saved] = await db.select({ lastX: user.lastX, lastY: user.lastY, lastDir: user.lastDir }).from(user).where(eq(user.email, 'lea@x.fr'));
+    expect(saved).toEqual({ lastX: 80, lastY: 240, lastDir: 'down' });
+  } finally {
+    await close();
+  }
 }, 30_000);

@@ -1,0 +1,487 @@
+import { SOCKET_CONNECT_RATE } from '@bureau/shared';
+import { APIError } from 'better-auth/api';
+import { eq } from 'drizzle-orm';
+import { describe, expect, onTestFinished, test, vi } from 'vitest';
+import { removeMember } from '../src/admin/remove-member';
+import { session, user } from '../src/db/schema';
+import { createRateLimiter } from '../src/rate-limit';
+import { loadOfficeMap } from '../src/realtime/io';
+import { loadPosition, savePositions } from '../src/realtime/positions';
+import { captureLogs } from './helpers/logs';
+import {
+  TEST_GRACE_MS,
+  connectError,
+  disconnection,
+  nextEvent,
+  record,
+  sleep,
+  startTestServer,
+  type ClientSocket,
+  type TestServer,
+} from './helpers/realtime';
+import { createTestApp, findUserByEmail } from './helpers/test-app';
+import { testEnv } from './helpers/test-env';
+
+const DAY_MS = 24 * 3600 * 1000;
+
+// La carte de développement : l'apparition est en (80, 240), sur la ligne 7, du sol de bout en bout. (112, 240) et (48, 240) sont
+// à une case de l'apparition, à droite et à gauche ; la salle de réunion (zone private) couvre x de 256 à 447 et y de 32 à 159.
+const SPAWN = { x: 80, y: 240 };
+
+// Ouvre une socket avec ce cookie et attend son init.
+async function enter(srv: TestServer, cookie: string): Promise<{ socket: ClientSocket; id: string; init: Awaited<ReturnType<typeof nextInit>> }> {
+  const socket = srv.connect(cookie);
+  const init = await nextInit(socket);
+  return { socket, id: init.self.id, init };
+}
+
+function nextInit(socket: ClientSocket) {
+  return nextEvent(socket, 'init');
+}
+
+// Une coupure du réseau vue du client : la connexion tombe sans que personne ne l'ait fermée. Le client se reconnecte de lui-même,
+// sauf avec `reconnect: false`.
+function cutNetwork(socket: ClientSocket, { reconnect = true } = {}): void {
+  if (!reconnect) socket.io.reconnection(false);
+  socket.io.engine.close();
+}
+
+// Une base lente, pour ouvrir à coup sûr les fenêtres de course : après hold(), les requêtes choisies par `which` (toutes par
+// défaut) attendent release(). release() est aussi appelée à la fin du test, avant la fermeture du serveur (qui écrit en base).
+function slowDatabase(srv: TestServer, which: (sql: string) => boolean = () => true) {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  onTestFinished(() => release());
+  const client = (srv.db as unknown as { $client: { query(sql: string, ...rest: unknown[]): Promise<unknown> } }).$client;
+  const query = client.query.bind(client);
+  return {
+    hold(): void {
+      vi.spyOn(client, 'query').mockImplementation(async (sql: string, ...rest: unknown[]) => {
+        if (which(sql)) await held;
+        return query(sql, ...rest);
+      });
+    },
+    release,
+  };
+}
+
+describe('connexion', () => {
+  test('sans cookie → connect_error unauthorized', async () => {
+    const srv = await startTestServer();
+    const anonymous = srv.connect();
+    expect(await connectError(anonymous)).toBe('unauthorized');
+    // Un refus du serveur est définitif pour le client : il ne réessaie pas tout seul.
+    expect(anonymous.active).toBe(false);
+  });
+
+  test('cookie d\'une session qui n\'existe plus → unauthorized', async () => {
+    const srv = await startTestServer();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    await srv.db.delete(session);
+    expect(await connectError(srv.connect(cookie))).toBe('unauthorized');
+  });
+
+  test('compte désactivé dont la session a survécu → connect_error disabled', async () => {
+    const srv = await startTestServer();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    const { id } = (await findUserByEmail(srv.db, 'a@x.fr'))!;
+    await srv.db.update(user).set({ disabledAt: new Date() }).where(eq(user.id, id));
+    expect(await connectError(srv.connect(cookie))).toBe('disabled');
+  });
+
+  test('Better Auth lève une 401 → unauthorized ; une autre erreur → unavailable, journalisée, et le serveur continue', async () => {
+    const { logger, lines } = captureLogs();
+    const srv = await startTestServer({ logger });
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    vi.spyOn(srv.auth.api, 'getSession')
+      // La session a disparu entre sa lecture et sa prolongation : Better Auth lève une 401 au lieu de répondre « aucune session ».
+      .mockRejectedValueOnce(new APIError('UNAUTHORIZED', { message: 'Failed to get session' }))
+      // La base est tombée : ce n'est pas une session absente.
+      .mockRejectedValueOnce(new APIError('INTERNAL_SERVER_ERROR', { message: 'Failed to get session' }));
+
+    expect(await connectError(srv.connect(cookie))).toBe('unauthorized');
+    expect(await connectError(srv.connect(cookie))).toBe('unavailable');
+    expect(lines.filter((line) => line.level === 50)).toHaveLength(1);
+
+    await enter(srv, cookie);   // la panne passée, on entre
+  });
+
+  test('la connexion ne prolonge pas la session : la prolongation reste aux routes HTTP, qui renvoient le cookie', async () => {
+    const srv = await startTestServer();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    const { id } = (await findUserByEmail(srv.db, 'a@x.fr'))!;
+    // Il reste 29 jours sur 30 : Better Auth prolongerait la session en base, mais la poignée de main ne peut pas poser de cookie.
+    const due = new Date(Date.now() + 29 * DAY_MS);
+    await srv.db.update(session).set({ expiresAt: due }).where(eq(session.userId, id));
+
+    await enter(srv, cookie);
+    const [row] = await srv.db.select({ expiresAt: session.expiresAt }).from(session).where(eq(session.userId, id));
+    expect(row!.expiresAt.getTime()).toBe(due.getTime());
+  });
+
+  test('arrivée : init puis player:joined chez les autres', async () => {
+    const srv = await startTestServer();
+    const a = srv.connect(await srv.inviteAndLogin('a@x.fr'));
+    const aInit = await nextInit(a);
+    expect(aInit.self).toEqual({
+      id: aInit.self.id,
+      name: 'a',
+      avatarKey: null,
+      ...SPAWN,
+      dir: 'down',
+      moving: false,
+      status: 'available',
+      media: { mic: false, cam: false, screen: false },
+    });
+    expect(aInit.players).toEqual([]);
+    expect(aInit.mapKey).toBe('dev-office');
+    expect(aInit.chatHistory).toEqual([]);
+
+    const b = srv.connect(await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b);
+    const [bInit, joined] = await Promise.all([nextInit(b), nextEvent(a, 'player:joined')]);
+    expect(bInit.self).toMatchObject({ name: 'b', ...SPAWN });
+    expect(bInit.players).toEqual([aInit.self]);
+    expect(joined).toEqual(bInit.self);
+
+    // B n'apprend pas sa propre arrivée.
+    await sleep(50);
+    expect(bEvents.names()).toEqual(['init']);
+    expect(srv.realtime.socketsOf(aInit.self.id)).toEqual([a.id]);
+  });
+
+  test('11e connexion dans la minute → rate_limited', async () => {
+    const srv = await startTestServer();
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    for (let n = 1; n <= SOCKET_CONNECT_RATE.max; n++) {
+      const { socket } = await enter(srv, cookieA);
+      socket.disconnect();
+    }
+    expect(await connectError(srv.connect(cookieA))).toBe('rate_limited');
+    // La limite est propre à chaque compte.
+    await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+  });
+});
+
+test('createRateLimiter : max par fenêtre, puis nouvelle fenêtre', () => {
+  const clock = { t: 0 };
+  const limiter = createRateLimiter({ max: 3, windowMs: 1000, now: () => clock.t });
+  expect([limiter.take('a'), limiter.take('a'), limiter.take('a'), limiter.take('a')]).toEqual([true, true, true, false]);
+  expect(limiter.take('b')).toBe(true);   // chaque clé a sa fenêtre
+  clock.t = 999;
+  expect(limiter.take('a')).toBe(false);
+  clock.t = 1000;   // la fenêtre de « a » ouverte à 0 est finie
+  expect([limiter.take('a'), limiter.take('a'), limiter.take('a'), limiter.take('a')]).toEqual([true, true, true, false]);
+  expect([limiter.take('b'), limiter.take('b'), limiter.take('b')]).toEqual([true, true, true]);   // ouverte à 0 aussi : neuve
+  expect(limiter.take('b')).toBe(false);
+});
+
+describe('plusieurs onglets', () => {
+  test('2e onglet : le premier reçoit session:replaced, B ne voit aucun départ', async () => {
+    const srv = await startTestServer();
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    const a1 = await enter(srv, cookieA);
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b.socket);
+    const a1Events: string[] = [];
+    a1.socket.on('session:replaced', () => a1Events.push('session:replaced'));
+    a1.socket.on('disconnect', (reason) => a1Events.push(`disconnect: ${reason}`));
+
+    const a2 = srv.connect(cookieA);
+    const a2Init = await nextInit(a2);
+    // Le même joueur, à la même place : un onglet de plus n'est pas une arrivée.
+    expect(a2Init.self).toEqual(a1.init.self);
+    expect(a2Init.players).toEqual([b.init.self]);
+    await vi.waitFor(() => expect(a1Events).toEqual(['session:replaced', 'disconnect: io server disconnect']));
+
+    await sleep(TEST_GRACE_MS * 2);   // un départ à tort tomberait à la fin du délai de grâce
+    expect(bEvents.names()).toEqual([]);
+    expect(a1.socket.active).toBe(false);   // l'ancien onglet ne se reconnecte pas pour reprendre la place
+    expect(srv.realtime.socketsOf(a1.id)).toEqual([a2.id]);
+    expect(srv.realtime.world.list().map((p) => p.id)).toEqual([a1.id, b.id]);
+  });
+
+  test('deux connexions simultanées du même compte : une seule reste, une seule arrivée annoncée', async () => {
+    const srv = await startTestServer();
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b.socket);
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    const { id: aId } = (await findUserByEmail(srv.db, 'a@x.fr'))!;
+
+    const sockets = [srv.connect(cookieA), srv.connect(cookieA)];
+    const events = sockets.map(record);
+    await vi.waitFor(() => {
+      expect(events.filter((e) => e.names().includes('session:replaced'))).toHaveLength(1);
+      expect(srv.realtime.socketsOf(aId)).toHaveLength(1);
+    });
+    const survivor = sockets.find((s) => s.id === srv.realtime.socketsOf(aId)[0])!;
+    await vi.waitFor(() => expect(events[sockets.indexOf(survivor)]!.names()).toContain('init'));
+
+    await sleep(TEST_GRACE_MS * 2);
+    expect(bEvents.payloadsOf('player:joined')).toEqual([expect.objectContaining({ id: aId })]);
+    expect(bEvents.names()).not.toContain('player:left');
+    expect(survivor.connected).toBe(true);
+    expect(srv.realtime.world.list().map((p) => p.id)).toEqual([b.id, aId]);
+  });
+});
+
+describe('déconnexion et délai de grâce', () => {
+  test('coupure brève (< grâce) : pas de player:left, même position au retour', async () => {
+    const srv = await startTestServer();
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));   // A reçoit player:joined(B)
+    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+    const before = srv.realtime.world.get(a.id);
+    const bEvents = record(b.socket);
+
+    const again = nextInit(a.socket);
+    cutNetwork(a.socket);   // le Wi-Fi saute : le client se reconnecte de lui-même, avant la fin du délai de grâce
+    expect((await again).self).toEqual(before);
+    expect(a.socket.recovered).toBe(true);   // la récupération de connexion de Socket.io a repris la session
+
+    await sleep(TEST_GRACE_MS * 2);
+    expect(bEvents.names()).toEqual([]);   // ni départ ni nouvelle arrivée : l'avatar n'a pas bougé chez B
+    expect(srv.realtime.world.get(a.id)).toEqual(before);
+  });
+
+  test('coupure longue (> grâce) : player:left et position enregistrée', async () => {
+    const srv = await startTestServer();
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+
+    const left = nextEvent(b.socket, 'player:left').then((payload) => ({ payload, at: performance.now() }));
+    const cutAt = performance.now();
+    cutNetwork(a.socket, { reconnect: false });
+    const { payload, at } = await left;
+    expect(payload).toEqual({ id: a.id });
+    expect(at - cutAt).toBeGreaterThanOrEqual(TEST_GRACE_MS - 10);   // pas avant la fin du délai de grâce (à 10 ms près)
+
+    // Enregistrée avant l'annonce du départ : elle est en base quand B l'apprend.
+    const [row] = await srv.db.select({ lastX: user.lastX, lastY: user.lastY, lastDir: user.lastDir }).from(user).where(eq(user.id, a.id));
+    expect(row).toEqual({ lastX: 112, lastY: 240, lastDir: 'right' });
+    expect(srv.realtime.world.get(a.id)).toBeUndefined();
+  });
+
+  test('départ : la position est enregistrée au départ, sans attendre la sauvegarde périodique', async () => {
+    const srv = await startTestServer({ saveMs: 60_000 });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    expect(srv.realtime.world.applyMove(a.id, { x: 48, y: 240, dir: 'left', moving: false })).toEqual({ ok: true });
+
+    const left = nextEvent(b.socket, 'player:left');
+    a.socket.disconnect();   // l'onglet est fermé
+    expect(await left).toEqual({ id: a.id });
+    expect(await loadPosition(srv.db, a.id)).toEqual({ x: 48, y: 240, dir: 'left' });
+    expect(await loadPosition(srv.db, b.id)).toBeNull();   // la sauvegarde périodique n'est pas passée
+  });
+
+  test('on revient à sa position enregistrée, ou au point d\'apparition si sa zone est occupée', async () => {
+    const busy = new Set<string>();
+    const srv = await startTestServer({ busyZones: () => busy });
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    const { id } = (await findUserByEmail(srv.db, 'a@x.fr'))!;
+    await savePositions(srv.db, [{ id, x: 336, y: 80, dir: 'left' }]);   // dans la salle de réunion
+
+    const first = await enter(srv, cookie);
+    expect(first.init.self).toMatchObject({ x: 336, y: 80, dir: 'left' });
+
+    first.socket.disconnect();
+    await vi.waitFor(() => expect(srv.realtime.world.get(id)).toBeUndefined());   // parti, au bout du délai de grâce
+    busy.add(srv.map.zones.find((zone) => zone.type === 'private')!.id);   // une réunion a commencé dans la salle
+    expect((await enter(srv, cookie)).init.self).toMatchObject({ ...SPAWN, dir: 'down' });
+  });
+
+  test('connexion fermée pendant la lecture de sa position : personne n\'entre, aucun avatar fantôme', async () => {
+    const srv = await startTestServer();
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b.socket);
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    const { id: aId } = (await findUserByEmail(srv.db, 'a@x.fr'))!;
+
+    // La base devient lente à la connexion de A, après l'écouteur de la présence : les lectures de son arrivée (position, compte),
+    // pas encore lancées, attendent qu'on les libère.
+    const slow = slowDatabase(srv);
+    srv.realtime.io.once('connection', () => slow.hold());
+
+    const a = srv.connect(cookieA, { reconnection: false });
+    const aEvents = record(a);
+    // L'onglet est fermé aussitôt ouvert. Quand le client voit `connect`, le serveur a déjà enregistré la socket.
+    await new Promise<void>((resolve) => {
+      a.once('connect', () => {
+        a.disconnect();
+        resolve();
+      });
+    });
+    await vi.waitFor(() => expect(srv.realtime.socketsOf(aId)).toEqual([]));   // le serveur a vu la socket partir
+    slow.release();
+
+    await sleep(TEST_GRACE_MS * 2);
+    expect(aEvents.names()).toEqual([]);
+    expect(srv.realtime.world.get(aId)).toBeUndefined();   // un joueur sans socket ni délai de grâce ne partirait jamais
+    expect(bEvents.names()).toEqual([]);
+  });
+
+  test('retour pendant l\'enregistrement de son départ : on revient là où on était parti, départ puis retour annoncés', async () => {
+    const srv = await startTestServer({ saveMs: 60_000 });
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    const a = await enter(srv, cookieA);
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+    const bEvents = record(b.socket);
+
+    // La base est lente à écrire : l'enregistrement des positions attend qu'on le libère ; les lectures passent.
+    const slow = slowDatabase(srv, (sql) => /^update "user"/i.test(sql));
+    slow.hold();
+
+    a.socket.disconnect();
+    await vi.waitFor(() => expect(srv.realtime.world.get(a.id)).toBeUndefined());   // délai écoulé : parti, position en cours d'écriture
+    const back = srv.connect(cookieA);
+    const backEvents = record(back);
+    await sleep(100);
+    expect(backEvents.names()).toEqual([]);   // l'arrivée attend l'écriture avant de lire la position
+    slow.release();
+
+    await vi.waitFor(() => expect(backEvents.names()).toEqual(['init']));
+    expect(backEvents.payloadsOf('init')[0]).toMatchObject({ self: { id: a.id, x: 112, y: 240, dir: 'right' } });
+    await vi.waitFor(() => expect(bEvents.names()).toEqual(['player:left', 'player:joined']));
+  });
+
+  test('statut retenu : on revient avec le statut qu\'on avait en partant', async () => {
+    const srv = await startTestServer();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    const a = await enter(srv, cookie);
+    srv.realtime.world.setStatus(a.id, 'dnd');
+    a.socket.disconnect();
+    await vi.waitFor(() => expect(srv.realtime.world.get(a.id)).toBeUndefined());
+    expect((await enter(srv, cookie)).init.self.status).toBe('dnd');
+  });
+});
+
+describe('positions', () => {
+  test('positions enregistrées toutes les saveMs, sans attendre un départ', async () => {
+    const srv = await startTestServer({ saveMs: 100 });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+    await vi.waitFor(async () => expect(await loadPosition(srv.db, a.id)).toEqual({ x: 112, y: 240, dir: 'right' }));
+    expect(srv.realtime.world.get(a.id)).toBeDefined();
+  });
+
+  test('redémarrage du serveur : reconnexion automatique, position enregistrée restaurée', async () => {
+    const srv = await startTestServer();
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    // Les positions du moment, en mémoire seulement : aucune n'est encore en base.
+    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+    expect(srv.realtime.world.applyMove(b.id, { x: 48, y: 240, dir: 'left', moving: false })).toEqual({ ok: true });
+
+    const reinit = [nextEvent(a.socket, 'init', 5000), nextEvent(b.socket, 'init', 5000)];
+    await srv.restart();   // un déploiement : nouvelle instance, monde vide, même base
+    const [aInit, bInit] = await Promise.all(reinit);   // les clients se sont reconnectés seuls
+
+    expect(aInit!.self).toMatchObject({ id: a.id, x: 112, y: 240, dir: 'right' });
+    expect(bInit!.self).toMatchObject({ id: b.id, x: 48, y: 240, dir: 'left' });
+    expect(srv.realtime.world.list().map((p) => p.id).sort()).toEqual([a.id, b.id].sort());
+  });
+
+  test('stop() enregistre toutes les positions, y compris pendant le délai de grâce, et peut être appelé deux fois', async () => {
+    const srv = await startTestServer({ saveMs: 60_000, graceMs: 60_000 });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    expect(srv.realtime.world.applyMove(a.id, { x: 112, y: 240, dir: 'right', moving: false })).toEqual({ ok: true });
+    expect(srv.realtime.world.applyMove(b.id, { x: 48, y: 240, dir: 'left', moving: false })).toEqual({ ok: true });
+    b.socket.disconnect();
+    await vi.waitFor(() => expect(srv.realtime.socketsOf(b.id)).toEqual([]));   // B est en délai de grâce
+
+    const first = srv.realtime.stop();
+    expect(srv.realtime.stop()).toBe(first);
+    await first;
+    expect(await loadPosition(srv.db, a.id)).toEqual({ x: 112, y: 240, dir: 'right' });
+    expect(await loadPosition(srv.db, b.id)).toEqual({ x: 48, y: 240, dir: 'left' });
+  });
+
+  test('savePositions et loadPosition', async () => {
+    const t = await createTestApp();
+    const a = await t.inviteAndAccept('a@x.fr');
+    const b = await t.inviteAndAccept('b@x.fr');
+    expect(await loadPosition(t.db, a.userId)).toBeNull();   // jamais venu
+    expect(await loadPosition(t.db, 'inconnu')).toBeNull();
+
+    await savePositions(t.db, []);
+    await savePositions(t.db, [
+      { id: a.userId, x: 112, y: 240, dir: 'right' },
+      { id: b.userId, x: 400, y: 400, dir: 'up' },
+    ]);
+    expect(await loadPosition(t.db, a.userId)).toEqual({ x: 112, y: 240, dir: 'right' });
+    expect(await loadPosition(t.db, b.userId)).toEqual({ x: 400, y: 400, dir: 'up' });
+
+    // Une direction illisible en base ne fait pas échouer l'arrivée : l'avatar regarde vers le bas.
+    await t.db.update(user).set({ lastDir: 'nulle-part' }).where(eq(user.id, a.userId));
+    expect(await loadPosition(t.db, a.userId)).toEqual({ x: 112, y: 240, dir: 'down' });
+  });
+
+  test('loadOfficeMap lit MAPS_DIR/<MAP_KEY>.json ; une carte absente arrête tout avec son chemin', () => {
+    expect(loadOfficeMap(testEnv()).spawn).toEqual(SPAWN);
+    expect(() => loadOfficeMap({ MAPS_DIR: '/nulle-part', MAP_KEY: 'absente' })).toThrow('/nulle-part/absente.json');
+  });
+});
+
+describe('membre retiré', () => {
+  test('membre retiré : socket coupée, player:left immédiat', async () => {
+    const srv = await startTestServer();
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+
+    const cut = disconnection(a.socket);
+    const left = nextEvent(b.socket, 'player:left').then((payload) => ({ payload, at: performance.now() }));
+    const removedAt = performance.now();
+    srv.events.emit('member:removed', a.id);
+    expect(await cut).toBe('io server disconnect');   // coupée par le serveur : le client ne se reconnecte pas
+    const { payload, at } = await left;
+    expect(payload).toEqual({ id: a.id });
+    expect(at - removedAt).toBeLessThan(TEST_GRACE_MS);   // sans délai de grâce
+    expect(a.socket.active).toBe(false);
+    expect(srv.realtime.world.get(a.id)).toBeUndefined();
+    expect(srv.realtime.socketsOf(a.id)).toEqual([]);
+  });
+
+  test('retiré pendant le délai de grâce : player:left tout de suite, et une seule fois', async () => {
+    const srv = await startTestServer();
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b.socket);
+    cutNetwork(a.socket, { reconnect: false });
+    await vi.waitFor(() => expect(srv.realtime.socketsOf(a.id)).toEqual([]));   // A est en délai de grâce
+
+    srv.events.emit('member:removed', a.id);
+    await vi.waitFor(() => expect(bEvents.payloadsOf('player:left')).toEqual([{ id: a.id }]));
+    await sleep(TEST_GRACE_MS * 2);
+    expect(bEvents.payloadsOf('player:left')).toEqual([{ id: a.id }]);
+  });
+
+  test('retiré pendant que sa connexion s\'établit : il n\'entre pas', async () => {
+    const srv = await startTestServer();
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b.socket);
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    const { id: aId } = (await findUserByEmail(srv.db, 'a@x.fr'))!;
+
+    // La session de A est lue, valide ; un admin le retire juste après, avant que sa connexion n'arrive au bureau.
+    const getSession = srv.auth.api.getSession;
+    vi.spyOn(srv.auth.api, 'getSession').mockImplementationOnce((async (...args: Parameters<typeof getSession>) => {
+      const found = await getSession(...args);
+      expect(await removeMember({ db: srv.db, events: srv.events }, { actorId: b.id, targetId: aId })).toBe('removed');
+      return found;
+    }) as typeof getSession);
+
+    const a = srv.connect(cookieA);
+    const aEvents = record(a);
+    expect(await disconnection(a)).toBe('io server disconnect');
+    expect(aEvents.names()).toEqual([]);   // aucun init
+    expect(srv.realtime.world.get(aId)).toBeUndefined();
+    await sleep(50);
+    expect(bEvents.names()).toEqual([]);
+  });
+});
