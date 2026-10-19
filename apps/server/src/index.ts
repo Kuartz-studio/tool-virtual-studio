@@ -9,6 +9,7 @@ import { runMigrations } from './db/migrate';
 import { loadEnv, type Env } from './env';
 import { createLogger } from './logger';
 import { createMemoryMailer, createResendMailer, type Mailer } from './mail/mailer';
+import { createServerEvents } from './server-events';
 
 // Resend en production. Avec MAILER=memory rien ne part : en développement, l'objet et le lien de chaque e-mail
 // s'affichent dans le journal, pour pouvoir suivre une invitation ou une réinitialisation sans boîte mail.
@@ -42,8 +43,9 @@ async function main(): Promise<void> {
     const mailer = createMailerFromEnv(env, logger);
     const auth = createAuth({ db, mailer, env, logger });
     const invitations = createInvitationService(db);
+    const events = createServerEvents({ onError: (err) => logger.error({ err }, 'Un écouteur d\'événement a échoué') });
 
-    const server = createServer(createApp({ env, db, auth, invitations }));
+    const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger }));
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       server.listen(env.PORT, () => {

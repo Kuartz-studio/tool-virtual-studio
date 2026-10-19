@@ -1,6 +1,7 @@
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, displayNameSchema } from '@bureau/shared';
 import { Router } from 'express';
 import { z } from 'zod';
+import { oneAtATimePerKey } from '../one-at-a-time';
 import type { Auth } from './auth';
 import { invitationContext } from './invitation-context';
 import type { InvitationService } from './invitations';
@@ -10,24 +11,6 @@ const acceptSchema = z.object({
   name: displayNameSchema,
   password: z.string().min(PASSWORD_MIN_LENGTH).max(PASSWORD_MAX_LENGTH),
 });
-
-// Exécute l'une après l'autre les tâches d'une même clé ; celles de clés différentes restent simultanées.
-function oneAtATimePerKey() {
-  const queues = new Map<string, Promise<void>>();
-  return async <T>(key: string, task: () => Promise<T>): Promise<T> => {
-    const result = (queues.get(key) ?? Promise.resolve()).then(task);
-    const queue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    queues.set(key, queue);
-    try {
-      return await result;
-    } finally {
-      if (queues.get(key) === queue) queues.delete(key);
-    }
-  };
-}
 
 // Montées sous /api/invitations, après express.json().
 export function invitationRoutes({ auth, invitations }: { auth: Auth; invitations: InvitationService }): Router {

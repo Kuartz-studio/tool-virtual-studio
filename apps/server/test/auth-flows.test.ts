@@ -1,10 +1,9 @@
-import { Writable } from 'node:stream';
 import { eq } from 'drizzle-orm';
-import { pino } from 'pino';
 import request, { type Response } from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 import { rateLimit, session, user, verification } from '../src/db/schema';
 import { resetPasswordSubject } from '../src/mail/templates/reset-password-email';
+import { captureLogs } from './helpers/logs';
 import { createTestApp, TEST_PASSWORD } from './helpers/test-app';
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
@@ -78,18 +77,6 @@ function within<T>(ms: number, promise: PromiseLike<T>, message: string): Promis
 // Le cookie d'une réponse de connexion, prêt pour `.set('Cookie', …)`.
 function cookieOf(res: Response): string {
   return (res.get('Set-Cookie') ?? []).map((setCookie) => setCookie.split(';')[0]).join('; ');
-}
-
-// Un journal pino dont on garde les lignes (objets JSON), pour vérifier ce que le serveur journalise.
-function captureLogs() {
-  const lines: Array<Record<string, unknown>> = [];
-  const stream = new Writable({
-    write(chunk: Buffer, _encoding, done) {
-      lines.push(JSON.parse(chunk.toString()) as Record<string, unknown>);
-      done();
-    },
-  });
-  return { logger: pino({ level: 'info' }, stream), lines };
 }
 
 describe('connexion', () => {

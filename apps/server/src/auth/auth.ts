@@ -56,6 +56,11 @@ export function createAuth({ db, mailer, env, logger = createLogger(env) }: { db
       },
     },
     trustedOrigins: [env.APP_URL],
+    // Les routes de Better Auth qui changent le profil ou le compte répondent 404. PATCH /api/me est le seul chemin pour changer
+    // son nom et son avatar : /update-user accepte n'importe quel nom (un nom de 41 caractères passe), sans displayNameSchema ni
+    // la liste des avatars. Le changement d'adresse et la suppression de compte n'existent pas en V1 (désactivés par défaut :
+    // on ferme aussi la route, pour qu'une option activée plus tard ne l'ouvre pas sans que quelqu'un le décide).
+    disabledPaths: ['/update-user', '/change-email', '/delete-user'],
     advanced: { useSecureCookies: env.NODE_ENV === 'production' },
     rateLimit: {
       enabled: env.AUTH_RATE_LIMIT === 'on',

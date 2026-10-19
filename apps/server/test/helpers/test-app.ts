@@ -9,6 +9,7 @@ import type { Db } from '../../src/db/client';
 import { user } from '../../src/db/schema';
 import type { Env } from '../../src/env';
 import { createMemoryMailer } from '../../src/mail/mailer';
+import { createServerEvents } from '../../src/server-events';
 import { createTestDb } from './test-db';
 import { testEnv } from './test-env';
 
@@ -17,14 +18,16 @@ export const TEST_PASSWORD = 'motdepasse1';
 
 // L'application complète sur une base PGlite neuve : Better Auth, invitations et e-mails en mémoire.
 // `env` remplace des variables de testEnv(), par exemple { AUTH_RATE_LIMIT: 'on' } pour tester la limitation des tentatives.
-// `logger` remplace le journal muet des tests, pour vérifier ce que l'authentification journalise (un échec d'envoi d'e-mail).
+// `logger` remplace le journal muet des tests, pour vérifier ce que le serveur journalise (un échec d'envoi d'e-mail).
+// `events` reçoit ce que les routes disent au temps réel : t.events.on('member:removed', …).
 export async function createTestApp(o: { env?: Partial<Env>; logger?: Logger } = {}) {
   const env = testEnv(o.env);
   const db = await createTestDb();
   const mailer = createMemoryMailer();
   const auth = createAuth({ db, mailer, env, logger: o.logger });
   const invitations = createInvitationService(db);
-  const app = createApp({ env, db, auth, invitations });
+  const events = createServerEvents();
+  const app = createApp({ env, db, auth, invitations, mailer, events, logger: o.logger });
 
   // Invite `email`, accepte l'invitation par la vraie route, et renvoie l'id du compte créé avec son cookie de session,
   // prêt pour `.set('Cookie', cookie)`. Par défaut : rôle membre, nom tiré de l'adresse, mot de passe TEST_PASSWORD.
@@ -40,7 +43,7 @@ export async function createTestApp(o: { env?: Partial<Env>; logger?: Logger } =
     return { cookie, userId: created.id };
   }
 
-  return { app, db, env, auth, mailer, invitations, inviteAndAccept };
+  return { app, db, env, auth, mailer, invitations, events, inviteAndAccept };
 }
 
 export function countUsers(db: Db): Promise<number> {

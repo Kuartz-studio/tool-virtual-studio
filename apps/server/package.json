@@ -7,7 +7,7 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "admin:invite": "tsx src/cli/admin-invite.ts",
+    "admin:invite": "tsx --env-file-if-exists=../../.env src/cli/admin-invite.ts",
     "map:check": "tsx src/cli/map-check.ts"
   },
   "dependencies": {
