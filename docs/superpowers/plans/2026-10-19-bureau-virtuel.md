@@ -147,6 +147,7 @@ export const MOVE_SEGMENT_STEP_PX = 8;
 export const CLIENT_MOVE_MAX_HZ = 10;
 export const WORLD_TICK_MS = 100;
 export const REMOTE_RENDER_DELAY_MS = 150;   // 100 à l'origine ; 150 depuis la tâche 15 (marche saccadée à 100, voir constants.ts)
+export const EXTRAPOLATION_MAX_MS = 60;      // ajouté à la tâche 15 : extrapolation courte d'un avatar distant en marche
 export const TELEPORT_SNAP_PX = 3 * TILE_SIZE;
 export const GROUPS_TICK_MS = 250;
 export const JOIN_DISTANCE_PX = 3 * TILE_SIZE;   // « à moins de 3 cases » : d < JOIN
@@ -1034,7 +1035,7 @@ export function connectOffice(socket, store, bus): () => void;
 
 **Règles de `SnapshotBuffer` :**
 - interpolation linéaire en `renderAt = now − REMOTE_RENDER_DELAY_MS` ;
-- avant le premier instantané, on renvoie le premier ; après le dernier, le dernier (pas d'extrapolation) ;
+- avant le premier instantané, on renvoie le premier ; après le dernier, le dernier (pas d'extrapolation) ; *remplacé à la tâche 15 : après le dernier, s'il marche, extrapolation à sa vitesse (plafonnée à `MAX_SPEED_PX_PER_S`) pendant `EXTRAPOLATION_MAX_MS` au plus, puis il attend ; arrêté, jamais* ;
 - un saut de plus de `TELEPORT_SNAP_PX` entre deux instantanés consécutifs fait sauter directement au second ;
 - au plus `capacity` instantanés sont gardés.
 

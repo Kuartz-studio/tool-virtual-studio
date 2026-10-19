@@ -1,11 +1,14 @@
-import { MAX_SPEED_PX_PER_S, REMOTE_RENDER_DELAY_MS, TELEPORT_SNAP_PX } from '@bureau/shared';
+import { EXTRAPOLATION_MAX_MS, MAX_SPEED_PX_PER_S, REMOTE_RENDER_DELAY_MS, TELEPORT_SNAP_PX, WORLD_TICK_MS } from '@bureau/shared';
 import { expect, test } from 'vitest';
 import { SnapshotBuffer, type Snapshot } from './snapshot-buffer';
 
 test('SnapshotBuffer : interpolation, bornes, téléportation, capacité', () => {
   const b = new SnapshotBuffer(); const s = (x: number): Snapshot => ({ x, y: 0, dir: 'right', moving: true });
   b.push(0, s(0)); b.push(100, s(100));
-  expect(b.sample(50)!.x).toBe(50); expect(b.sample(-10)!.x).toBe(0); expect(b.sample(500)!.x).toBe(100);
+  expect(b.sample(50)!.x).toBe(50); expect(b.sample(-10)!.x).toBe(0);
+  // Le brief disait `sample(500) === 100` (pas d'extrapolation). Décision du contrôleur (tâche 15) : au-delà du dernier instantané,
+  // en marche, l'avatar continue au plus EXTRAPOLATION_MAX_MS, à MAX_SPEED_PX_PER_S au plus, puis reste là : 100 + 9,6 px.
+  expect(b.sample(500)!.x).toBeCloseTo(100 + EXTRAPOLATED_PX);
   b.snapToLatest(); expect(b.sample(50)!.x).toBe(100);       // retour sur l'onglet
   const t = new SnapshotBuffer(); t.push(0, s(0)); t.push(100, s(200)); expect(t.sample(50)!.x).toBe(200);
   const c = new SnapshotBuffer(20); for (let i = 0; i < 1000; i++) c.push(i * 100, s(i)); expect(c.size()).toBeLessThanOrEqual(20); // Point de vigilance 4
@@ -90,13 +93,13 @@ test('la distance du saut est celle du segment, en diagonale aussi', () => {
 test('après une attente, le segment dure REMOTE_RENDER_DELAY_MS : la limite du saut est celle de cette durée, pas de toute l\'attente', () => {
   const limit = jumpLimit(REMOTE_RENDER_DELAY_MS);
   const glide = new SnapshotBuffer();
-  glide.push(0, at(0, 0));
+  glide.push(0, at(0, 0, 'right', false));
   glide.push(5000, at(limit, 0));
   expect(glide.sample(5000 - REMOTE_RENDER_DELAY_MS / 2)!.x).toBe(limit / 2);
 
   // Comptée sur toute l'attente (5 s), la marche expliquerait 800 px : la personne était immobile, puis a sauté.
   const jump = new SnapshotBuffer();
-  jump.push(0, at(0, 0));
+  jump.push(0, at(0, 0, 'right', false));
   jump.push(5000, at(limit + 1, 0));
   expect(jump.sample(5000 - REMOTE_RENDER_DELAY_MS / 2)!.x).toBe(limit + 1);
 });
@@ -113,7 +116,7 @@ test('deux instantanés de la même heure (des ticks arrivés ensemble) : le plu
 
 test('la capacité garde les plus récents', () => {
   const b = new SnapshotBuffer(3);
-  for (let i = 0; i < 10; i++) b.push(i * 100, at(i, 0));
+  for (let i = 0; i < 10; i++) b.push(i * 100, at(i, 0, 'right', false));
   expect(b.size()).toBe(3);
   expect(b.sample(-1)!.x).toBe(7);                            // le plus ancien gardé
   expect(b.sample(850)!.x).toBe(8.5);
@@ -142,9 +145,9 @@ test('après une attente (personne immobile, tick en retard ou perdu) : il repar
 
 test('l\'arrêt sur image ne garde que le dernier instantané ; les suivants repartent de lui', () => {
   const b = new SnapshotBuffer();
-  b.push(0, at(0, 0));
-  b.push(100, at(16, 0));
-  b.push(200, at(32, 0));
+  b.push(0, at(0, 0, 'right', false));
+  b.push(100, at(16, 0, 'right', false));
+  b.push(200, at(32, 0, 'right', false));
   b.snapToLatest();
   expect(b.size()).toBe(1);
   expect(b.sample(0)!.x).toBe(32);
@@ -169,4 +172,128 @@ test('l\'instantané rendu est une copie : le modifier ne change pas le tampon',
   const sampled = b.sample(0)!;
   sampled.x = 99;
   expect(b.sample(0)!.x).toBe(5);
+});
+
+// ---- Extrapolation courte (décision du contrôleur, tâche 15) -------------------------------------------------------------------
+
+// Ce que l'avatar parcourt au plus au-delà du dernier instantané : EXTRAPOLATION_MAX_MS à MAX_SPEED_PX_PER_S, soit 9,6 px.
+const EXTRAPOLATED_PX = (MAX_SPEED_PX_PER_S * EXTRAPOLATION_MAX_MS) / 1000;
+const walking = () => {
+  const b = new SnapshotBuffer();
+  b.push(0, at(0, 0));
+  b.push(100, at(16, 0));                                     // 160 px/s vers la droite
+  return b;
+};
+
+test('EXTRAPOLATION_MAX_MS couvre l\'attente que laisse un tick vide (deux positions à 200 ms d\'écart, dessinées avec 150 ms de retard)', () => {
+  expect(EXTRAPOLATION_MAX_MS).toBe(60);
+  expect(EXTRAPOLATION_MAX_MS).toBeGreaterThanOrEqual(2 * WORLD_TICK_MS - REMOTE_RENDER_DELAY_MS);
+  expect(EXTRAPOLATED_PX).toBeCloseTo(9.6);
+});
+
+test('en marche, au-delà du dernier instantané : il continue à la vitesse des deux derniers', () => {
+  const b = walking();
+  const s = b.sample(130)!;
+  expect(s.x).toBeCloseTo(16 + 0.16 * 30);
+  expect(s).toMatchObject({ y: 0, dir: 'right', moving: true });
+
+  // Plus lent que la marche (un rattrapage, un segment étiré) : sa vitesse à lui.
+  const slow = new SnapshotBuffer();
+  slow.push(0, at(0, 100, 'up'));
+  slow.push(100, at(0, 92, 'up'));                            // 80 px/s vers le haut
+  expect(slow.sample(150)!.y).toBeCloseTo(92 - 0.08 * 50);
+});
+
+test('au plus EXTRAPOLATION_MAX_MS, puis il reste au point extrapolé', () => {
+  const b = walking();
+  expect(b.sample(100 + EXTRAPOLATION_MAX_MS)!.x).toBeCloseTo(16 + EXTRAPOLATED_PX);
+  expect(b.sample(100 + EXTRAPOLATION_MAX_MS + 1)!.x).toBeCloseTo(16 + EXTRAPOLATED_PX);
+  expect(b.sample(60_000)!.x).toBeCloseTo(16 + EXTRAPOLATED_PX);
+});
+
+test('arrêté, jamais extrapolé', () => {
+  const b = new SnapshotBuffer();
+  b.push(0, at(0, 0));
+  b.push(100, at(16, 0, 'right', false));
+  expect(b.sample(130)).toEqual(at(16, 0, 'right', false));
+  expect(b.sample(60_000)).toEqual(at(16, 0, 'right', false));
+});
+
+test('en marche sans avancer (contre un mur : deux instantanés au même endroit) : pas d\'extrapolation', () => {
+  const b = new SnapshotBuffer();
+  b.push(0, at(16, 0));
+  b.push(100, at(16, 0));
+  expect(b.sample(500)!.x).toBe(16);
+});
+
+test.each([
+  ['up', 0, -1],
+  ['down', 0, 1],
+  ['left', -1, 0],
+  ['right', 1, 0],
+] as const)('un seul instantané connu, en marche (%s) : dans sa direction, à MAX_SPEED_PX_PER_S', (dir, dx, dy) => {
+  const b = new SnapshotBuffer();
+  b.push(0, at(100, 100, dir));
+  const s = b.sample(30)!;
+  expect(s.x).toBeCloseTo(100 + dx * 0.16 * 30);
+  expect(s.y).toBeCloseTo(100 + dy * 0.16 * 30);
+  expect(b.sample(1000)!.x).toBeCloseTo(100 + dx * EXTRAPOLATED_PX);
+  expect(b.sample(1000)!.y).toBeCloseTo(100 + dy * EXTRAPOLATED_PX);
+});
+
+test('la vitesse des deux derniers est plafonnée à MAX_SPEED_PX_PER_S, sans changer de direction', () => {
+  const fast = new SnapshotBuffer();
+  fast.push(0, at(0, 0));
+  fast.push(100, at(50, 0));                                  // 500 px/s : un rattrapage
+  expect(fast.sample(1000)!.x).toBeCloseTo(50 + EXTRAPOLATED_PX);
+
+  const diagonal = new SnapshotBuffer();
+  diagonal.push(0, at(0, 0));
+  diagonal.push(100, at(30, 40));                             // 500 px/s en diagonale (3, 4)
+  const s = diagonal.sample(1000)!;
+  expect(s.x).toBeCloseTo(30 + EXTRAPOLATED_PX * 0.6);
+  expect(s.y).toBeCloseTo(40 + EXTRAPOLATED_PX * 0.8);
+});
+
+test('les deux derniers à la même heure, ou un saut entre eux : pas de vitesse à lire, sa direction à MAX_SPEED_PX_PER_S', () => {
+  const bunched = new SnapshotBuffer();
+  bunched.push(0, at(0, 0));
+  bunched.push(0, at(8, 0, 'down'));
+  expect(bunched.sample(30)).toMatchObject({ x: 8, y: expect.closeTo(0.16 * 30) });
+
+  const jumped = new SnapshotBuffer();
+  jumped.push(0, at(0, 0, 'right'));
+  jumped.push(100, at(300, 0, 'left'));                       // un saut : sa « vitesse » ne veut rien dire
+  expect(jumped.sample(130)!.x).toBeCloseTo(300 - 0.16 * 30);
+});
+
+test('le suivant arrive : il repart du point dessiné, sans retour en arrière, puis suit les vrais instantanés', () => {
+  const b = walking();
+  expect(b.sample(130)!.x).toBeCloseTo(20.8);                 // extrapolé
+  // Le suivant arrive à 280 : l'heure de rendu de l'arrivée est 130 (avec 150 ms de retard).
+  b.push(130 + REMOTE_RENDER_DELAY_MS, at(32, 0));
+  expect(b.sample(130)!.x).toBeCloseTo(20.8);                 // toujours là : pas de retour à 16
+  expect(b.sample(130 + REMOTE_RENDER_DELAY_MS / 2)!.x).toBeCloseTo((20.8 + 32) / 2);
+  expect(b.sample(130 + REMOTE_RENDER_DELAY_MS)!.x).toBe(32);
+});
+
+test('une téléportation saute toujours, même après une extrapolation', () => {
+  const b = walking();
+  expect(b.sample(250)!.x).toBeCloseTo(16 + EXTRAPOLATED_PX);  // dessiné au point extrapolé, jusqu'à l'arrivée de la suite
+  // La téléportation arrive : l'heure de rendu de son arrivée est 250. Dès là, l'avatar est à 300, sans glisser.
+  b.push(250 + REMOTE_RENDER_DELAY_MS, at(300, 0, 'right', false));
+  expect(b.sample(250)!.x).toBe(300);
+  expect(b.sample(300)!.x).toBe(300);
+  expect(b.sample(60_000)!.x).toBe(300);
+});
+
+test('un arrêt reçu en retard : l\'avatar a dépassé le point d\'arrêt de 9,6 px au plus, et y revient en glissant', () => {
+  const b = walking();
+  // L'arrêt, au même endroit que le dernier instantané en marche, arrive 300 ms plus tard (son tick s'est perdu).
+  b.push(400, at(16, 0, 'right', false));
+  const renderAtArrival = 400 - REMOTE_RENDER_DELAY_MS;
+  expect(b.sample(renderAtArrival)!.x).toBeCloseTo(16 + EXTRAPOLATED_PX);
+  expect(b.sample(renderAtArrival + REMOTE_RENDER_DELAY_MS / 2)!.x).toBeCloseTo(16 + EXTRAPOLATED_PX / 2);
+  expect(b.sample(400)).toEqual(at(16, 0, 'right', false));
+  expect(b.sample(60_000)).toEqual(at(16, 0, 'right', false));
 });
