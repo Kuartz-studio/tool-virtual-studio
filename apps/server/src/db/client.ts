@@ -14,6 +14,19 @@ interface RowsResultHKT extends PgQueryResultHKT {
 // Base Drizzle commune à PGlite et à node-postgres. Le schéma s'ajoute ici avec la tâche 4.
 export type Db = PgDatabase<RowsResultHKT>;
 
+// Le pilote avec lequel createDb a créé une base : runMigrations en déduit le migrateur de Drizzle à utiliser.
+export type DbDriver = 'pglite' | 'pg';
+const drivers = new WeakMap<Db, DbDriver>();
+
+export function driverOf(db: Db): DbDriver | undefined {
+  return drivers.get(db);
+}
+
+function withDriver(db: Db, driver: DbDriver): Db {
+  drivers.set(db, driver);
+  return db;
+}
+
 const MEMORY_PREFIX = 'memory://';
 const PGLITE_PREFIX = 'pglite://';
 
@@ -36,12 +49,12 @@ export async function createDb(url: string): Promise<{ db: Db; close(): Promise<
       mkdirSync(dataDir, { recursive: true });   // PGlite ne crée pas les dossiers parents
     }
     const client = await PGlite.create(dataDir);
-    return { db: drizzle(client), close: () => client.close() };
+    return { db: withDriver(drizzle(client), 'pglite'), close: () => client.close() };
   }
 
   const [{ default: pg }, { drizzle }] = await Promise.all([import('pg'), import('drizzle-orm/node-postgres')]);
   const pool = new pg.Pool({ connectionString: url });
   // Sans écouteur, l'erreur d'une connexion inactive (base redémarrée, réseau coupé) ferait tomber le processus.
   pool.on('error', (err) => console.error('Erreur sur une connexion inactive de la base de données :', err.message));
-  return { db: drizzle(pool), close: () => pool.end() };
+  return { db: withDriver(drizzle(pool), 'pg'), close: () => pool.end() };
 }

@@ -1,8 +1,8 @@
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { readMigrationFiles } from 'drizzle-orm/migrator';
-import type { PgDialect, PgSession } from 'drizzle-orm/pg-core';
-import { createDb, type Db } from './client';
+import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
+import type { PgliteDatabase } from 'drizzle-orm/pglite';
+import { createDb, driverOf, type Db } from './client';
 
 // Dossier des migrations générées par drizzle-kit (apps/server/drizzle) : deux niveaux au-dessus de src/db/
 // quand le code tourne sous tsx, un seul niveau au-dessus de dist/ une fois compilé par tsup.
@@ -10,14 +10,23 @@ const DEFAULT_FOLDERS = [resolve(import.meta.dirname, '../../drizzle'), resolve(
 
 const hasJournal = (folder: string) => existsSync(join(folder, 'meta', '_journal.json'));
 
-// Applique les migrations en attente, sur PGlite comme sur PostgreSQL. Tant que drizzle-kit n'a rien généré
-// (pas de drizzle/meta/_journal.json), il n'y a rien à faire.
+// Applique les migrations en attente avec le migrateur de Drizzle qui correspond au pilote de createDb.
+// Tant que drizzle-kit n'a rien généré (pas de drizzle/meta/_journal.json), il n'y a rien à faire.
 export async function runMigrations(db: Db, migrationsFolder = DEFAULT_FOLDERS.find(hasJournal)): Promise<void> {
   if (migrationsFolder === undefined || !hasJournal(migrationsFolder)) return;
-  // Les migrateurs de drizzle-orm pour PGlite et pour node-postgres font exactement ceci ; le faire ici évite
-  // de choisir un migrateur selon le pilote.
-  const { dialect, session } = db as unknown as { dialect: PgDialect; session: PgSession };
-  await dialect.migrate(readMigrationFiles({ migrationsFolder }), session, { migrationsFolder });
+  const config = { migrationsFolder };
+  switch (driverOf(db)) {
+    case 'pglite': {
+      const { migrate } = await import('drizzle-orm/pglite/migrator');
+      return migrate(db as PgliteDatabase, config);
+    }
+    case 'pg': {
+      const { migrate } = await import('drizzle-orm/node-postgres/migrator');
+      return migrate(db as NodePgDatabase, config);
+    }
+    default:
+      throw new Error('runMigrations : la base de données doit avoir été créée par createDb.');
+  }
 }
 
 async function main(): Promise<void> {

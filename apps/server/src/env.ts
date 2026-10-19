@@ -8,7 +8,7 @@ const DEFAULT_MAPS_DIR = resolve(import.meta.dirname, '../../client/public/asset
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], { error: 'doit valoir development, test ou production' }).default('development'),
-    PORT: z.coerce.number({ error: 'doit être un numéro de port (entier de 0 à 65535)' }).int().min(0).max(65535).default(3000),
+    PORT: z.coerce.number({ error: 'doit être un numéro de port (entier de 0 à 65535)' }).int().min(0).max(65535).default(4000),
     // Sans barre finale : les liens sont construits avec `${APP_URL}/chemin`.
     APP_URL: z
       .url({ protocol: /^https?$/, error: 'obligatoire, une URL http(s) comme https://bureau.exemple.fr' })

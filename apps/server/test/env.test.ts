@@ -4,7 +4,7 @@ import { parseEnv } from 'node:util';
 import { expect, test } from 'vitest';
 import { loadEnv } from '../src/env';
 
-const valid = { APP_URL: 'http://localhost:3000', DATABASE_URL: 'memory://', BETTER_AUTH_SECRET: 'x'.repeat(32) };
+const valid = { APP_URL: 'http://localhost:4000', DATABASE_URL: 'memory://', BETTER_AUTH_SECRET: 'x'.repeat(32) };
 
 test('APP_URL manquante → erreur qui la nomme', () =>
   expect(() => loadEnv({ DATABASE_URL: 'memory://', BETTER_AUTH_SECRET: 'x'.repeat(32) })).toThrow(/APP_URL/));
@@ -30,8 +30,8 @@ test('production valide : PostgreSQL et Resend', () => {
 test('valeurs par défaut', () => {
   const env = loadEnv(valid);
   expect(env).toMatchObject({
-    NODE_ENV: 'development', PORT: 3000, MAILER: 'memory', MAP_KEY: 'dev-office', AUTH_RATE_LIMIT: 'on',
-    APP_URL: 'http://localhost:3000', DATABASE_URL: 'memory://',
+    NODE_ENV: 'development', PORT: 4000, MAILER: 'memory', MAP_KEY: 'dev-office', AUTH_RATE_LIMIT: 'on',
+    APP_URL: 'http://localhost:4000', DATABASE_URL: 'memory://',
   });
   expect(env.MAPS_DIR).toBe(resolve(import.meta.dirname, '../../client/public/assets/maps'));
   for (const name of ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API_SECRET', 'CLIENT_DIST_DIR', 'E2E', 'RESEND_API_KEY', 'MAIL_FROM'] as const) {
@@ -52,7 +52,7 @@ test('valeurs fournies', () => {
 
 test('une variable vide vaut une variable absente', () => {
   const env = loadEnv({ ...valid, PORT: '', MAP_KEY: '', MAPS_DIR: '  ', LIVEKIT_URL: '', CLIENT_DIST_DIR: '', E2E: '', MAILER: '', AUTH_RATE_LIMIT: '' });
-  expect(env).toMatchObject({ PORT: 3000, MAP_KEY: 'dev-office', MAILER: 'memory', AUTH_RATE_LIMIT: 'on' });
+  expect(env).toMatchObject({ PORT: 4000, MAP_KEY: 'dev-office', MAILER: 'memory', AUTH_RATE_LIMIT: 'on' });
   expect([env.LIVEKIT_URL, env.CLIENT_DIST_DIR, env.E2E]).toEqual([undefined, undefined, undefined]);
   expect(() => loadEnv({ ...valid, APP_URL: '' })).toThrow(/APP_URL/);
 });
@@ -60,7 +60,7 @@ test('une variable vide vaut une variable absente', () => {
 test('APP_URL : barre finale retirée, http(s) seulement', () => {
   expect(loadEnv({ ...valid, APP_URL: 'https://bureau.exemple.fr/' }).APP_URL).toBe('https://bureau.exemple.fr');
   expect(() => loadEnv({ ...valid, APP_URL: 'ftp://bureau.exemple.fr' })).toThrow(/APP_URL/);
-  expect(() => loadEnv({ ...valid, APP_URL: 'localhost:3000' })).toThrow(/APP_URL/);
+  expect(() => loadEnv({ ...valid, APP_URL: 'localhost:4000' })).toThrow(/APP_URL/);
 });
 
 test('MAILER=resend exige RESEND_API_KEY et MAIL_FROM', () => {
@@ -91,5 +91,5 @@ test('toutes les erreurs sont signalées ensemble', () => {
 test('.env.example est une configuration valide', () => {
   const example = readFileSync(resolve(import.meta.dirname, '../../../.env.example'), 'utf8');
   const env = loadEnv(parseEnv(example));
-  expect(env).toMatchObject({ NODE_ENV: 'development', DATABASE_URL: 'pglite://.data/dev', MAILER: 'memory', APP_URL: 'http://localhost:3000' });
+  expect(env).toMatchObject({ NODE_ENV: 'development', DATABASE_URL: 'pglite://.data/dev', MAILER: 'memory', APP_URL: 'http://localhost:4000' });
 });

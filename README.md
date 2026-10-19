@@ -13,3 +13,5 @@ pnpm install     # installer les dépendances
 pnpm test        # lancer les tests (Vitest)
 pnpm typecheck   # vérifier les types (TypeScript)
 ```
+
+Les tests du serveur tournent sur 2 processus Vitest au plus (`apps/server/vitest.config.ts`) : chaque base PGlite en mémoire occupe environ 1 Go de RAM, et sans cette limite une machine à beaucoup de cœurs sature la mémoire.

@@ -6,7 +6,7 @@ export function testEnv(overrides: Partial<Env> = {}): Env {
   return {
     ...loadEnv({
       NODE_ENV: 'test',
-      APP_URL: 'http://localhost:3000',
+      APP_URL: 'http://localhost:4000',
       DATABASE_URL: 'memory://',
       BETTER_AUTH_SECRET: 'secret-de-test-secret-de-test-0123456789',
       MAILER: 'memory',
