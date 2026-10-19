@@ -30,6 +30,15 @@ const HEADING: Record<Direction, { x: number; y: number }> = {
   right: { x: 1, y: 0 },
 };
 
+// La zone de collision d'un avatar tient-elle là (pieds en x, y) ? avatarBodyFits sur la carte du bureau.
+export type BodyFits = (x: number, y: number) => boolean;
+
+// Le pas avec lequel l'extrapolation avance le long de son segment (1 px), et la précision avec laquelle elle trouve le bord d'un
+// mur (1/1000 de pixel). validateMove avance par pas de MOVE_SEGMENT_STEP_PX (8 px) : assez pour un point, qui ne peut pas sauter
+// une case de 32 px ; pas pour une zone de 20 × 12 px en diagonale, qui peut accrocher le coin d'une case entre deux de ces pas.
+const BODY_STEP_PX = 1;
+const EDGE_PRECISION_PX = 0.001;
+
 // Un saut : la part du déplacement de `a` à `b` que la marche n'explique pas dépasse TELEPORT_SNAP_PX, soit
 //
 //   distance(a, b) > TELEPORT_SNAP_PX + MAX_SPEED_PX_PER_S × (b.at − a.at) / 1000
@@ -54,8 +63,11 @@ function isJump(a: Timed, b: Timed): boolean {
 //   plan). L'avatar continue à la vitesse des deux derniers instantanés, plafonnée à MAX_SPEED_PX_PER_S (ou, sans vitesse à lire,
 //   dans sa direction à MAX_SPEED_PX_PER_S), pendant EXTRAPOLATION_MAX_MS au plus, puis attend au point atteint. Arrêté, il reste
 //   au dernier. C'est ce qui couvre les 50 ms sans position que laisse un tick vide (voir EXTRAPOLATION_MAX_MS). Le prix : une
-//   personne qui s'arrête juste après sa dernière position reçue, ou qui marche contre un mur, peut être dessinée jusqu'à 9,6 px
-//   plus loin, jusqu'à la position suivante.
+//   personne qui s'arrête juste après sa dernière position reçue peut être dessinée jusqu'à 9,6 px plus loin, jusqu'à la position
+//   suivante. Avec la carte (`bodyFits`), l'extrapolation ne fait jamais entrer la zone de collision de l'avatar dans une case
+//   bloquante : elle avance le long de son segment pas à pas, comme la vérification des mouvements du serveur, et s'arrête au bord
+//   du premier obstacle (cherché par dichotomie), pas avant. Sans cela, une personne qui garde une touche enfoncée contre un mur
+//   (elle n'envoie plus rien : sa position ne change plus) serait dessinée 10 px dans le mur.
 // - Un saut de plus de TELEPORT_SNAP_PX entre deux instantanés consécutifs (une téléportation, un retour au point d'apparition) ne
 //   se fait pas en glissant : on passe directement au second. Le saut est ce que la marche n'explique pas (isJump).
 // - Au plus `capacity` instantanés sont gardés, les plus récents : un onglet en arrière-plan pendant des heures, qui reçoit les
@@ -68,7 +80,11 @@ function isJump(a: Timed, b: Timed): boolean {
 export class SnapshotBuffer {
   private items: Timed[] = [];
 
-  constructor(private readonly capacity: number = 20) {}
+  // `bodyFits` : la carte, pour borner l'extrapolation (sans elle, rien ne l'arrête).
+  constructor(
+    private readonly capacity: number = 20,
+    private readonly bodyFits?: BodyFits,
+  ) {}
 
   push(at: number, s: Snapshot): void {
     const last = this.items.at(-1);
@@ -115,7 +131,39 @@ export class SnapshotBuffer {
     const ahead = Math.min(renderAt - last.at, EXTRAPOLATION_MAX_MS);
     if (!last.s.moving || ahead <= 0) return copy(last.s);
     const v = this.lastVelocity();
-    return { x: last.s.x + v.x * ahead, y: last.s.y + v.y * ahead, dir: last.s.dir, moving: true };
+    const reached = this.withinMap(last.s, { x: last.s.x + v.x * ahead, y: last.s.y + v.y * ahead });
+    return { x: reached.x, y: reached.y, dir: last.s.dir, moving: true };
+  }
+
+  // Le point le plus loin du segment `from` → `to` où la zone de collision tient sans interruption depuis `from`. Comme la
+  // vérification des mouvements du serveur (validateMove), on avance pas à pas (BODY_STEP_PX au plus) ; au premier pas où elle ne
+  // tient plus, une dichotomie entre ce pas et le précédent trouve le bord, à EDGE_PRECISION_PX près, du côté où elle tient. Si
+  // elle ne tient pas déjà en `from` (une position venue d'une autre version de la carte), on ne devine rien : on n'avance pas.
+  private withinMap(from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number } {
+    const fits = this.bodyFits;
+    if (!fits) return to;
+    if (!fits(from.x, from.y)) return { x: from.x, y: from.y };
+    const pointAt = (t: number) => ({ x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t });
+    const length = Math.hypot(to.x - from.x, to.y - from.y);
+    const steps = Math.max(1, Math.ceil(length / BODY_STEP_PX));
+    let free = 0;   // la fraction du segment où la zone tient encore
+    for (let k = 1; k <= steps; k++) {
+      const t = k / steps;
+      const p = pointAt(t);
+      if (fits(p.x, p.y)) {
+        free = t;
+        continue;
+      }
+      let blocked = t;
+      while ((blocked - free) * length > EDGE_PRECISION_PX) {
+        const middle = (free + blocked) / 2;
+        const m = pointAt(middle);
+        if (fits(m.x, m.y)) free = middle;
+        else blocked = middle;
+      }
+      return pointAt(free);
+    }
+    return to;
   }
 
   // La vitesse des deux derniers instantanés, en px/ms, plafonnée à celle de la marche (un rattrapage peut aller plus vite que

@@ -2,7 +2,7 @@ import { REMOTE_RENDER_DELAY_MS, type PublicPlayer, type Status } from '@bureau/
 import type { GameObjects, Scene } from 'phaser';
 import { animKey, avatarObjectName, avatarSpec, type AvatarSpec } from '../avatars';
 import { snapToPixels } from '../pixel-snap';
-import { SnapshotBuffer, type Snapshot } from '../snapshot-buffer';
+import { SnapshotBuffer, type BodyFits, type Snapshot } from '../snapshot-buffer';
 import { NameTag } from './NameTag';
 import { addShadow, placeShadow } from './shadow';
 
@@ -11,7 +11,7 @@ import { addShadow, placeShadow } from './shadow';
 // appelé à chaque image. Comme l'avatar local, ses pieds sont son origine et sa profondeur est leur y.
 export class RemotePlayer {
   readonly id: string;
-  private snapshots = new SnapshotBuffer();
+  private snapshots: SnapshotBuffer;
   private spec: AvatarSpec;
   private readonly sprite: GameObjects.Sprite;
   private readonly shadow: GameObjects.Ellipse;
@@ -19,15 +19,21 @@ export class RemotePlayer {
   // La position dessinée à la dernière image.
   private drawn: Snapshot;
 
-  constructor(scene: Scene, p: PublicPlayer, now: number, zoom: number) {
+  // La carte, qui borne l'extrapolation de ses positions : jamais dans un mur.
+  private readonly bodyFits: BodyFits;
+
+  // `zoom` : celui de la caméra, pour l'étiquette ; `bodyFits` : la carte (avatarBodyFits).
+  constructor(scene: Scene, p: PublicPlayer, now: number, options: { zoom: number; bodyFits: BodyFits }) {
     this.id = p.id;
+    this.bodyFits = options.bodyFits;
+    this.snapshots = new SnapshotBuffer(undefined, this.bodyFits);
     this.spec = avatarSpec(p.avatarKey);
     this.drawn = { x: p.x, y: p.y, dir: p.dir, moving: p.moving };
     this.sprite = snapToPixels(scene.add.sprite(p.x, p.y, this.spec.key, this.spec.idle[p.dir][0]))
       .setOrigin(0.5, 1)
       .setName(avatarObjectName(p.id));
     this.shadow = addShadow(scene, p.x, p.y);
-    this.tag = new NameTag(scene, p.name, p.status, zoom);
+    this.tag = new NameTag(scene, p.name, p.status, options.zoom);
     this.snapshots.push(now, this.drawn);
     this.render(now);
   }
@@ -39,7 +45,7 @@ export class RemotePlayer {
 
   // L'état que donne un nouvel init (reconnexion, redémarrage du serveur) : il remplace tout, sans glisser depuis l'ancien.
   reset(p: PublicPlayer, now: number): void {
-    this.snapshots = new SnapshotBuffer();
+    this.snapshots = new SnapshotBuffer(undefined, this.bodyFits);
     this.snapshots.push(now, { x: p.x, y: p.y, dir: p.dir, moving: p.moving });
     this.setProfile(p.name, p.avatarKey);
     this.setStatus(p.status);

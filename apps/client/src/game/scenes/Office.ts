@@ -1,4 +1,13 @@
-import { parseOfficeMap, type InitPayload, type OfficeMap, type PublicPlayer, type Status, type TiledMapJson, type WorldTick } from '@bureau/shared';
+import {
+  avatarBodyFits,
+  parseOfficeMap,
+  type InitPayload,
+  type OfficeMap,
+  type PublicPlayer,
+  type Status,
+  type TiledMapJson,
+  type WorldTick,
+} from '@bureau/shared';
 import { Scale, Scene, Scenes } from 'phaser';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { useOfficeStore } from '../../state/office-store';
@@ -32,6 +41,8 @@ export class Office extends Scene {
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
   private othersVisible = true;
+  // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
+  private readonly bodyFits = (x: number, y: number): boolean => avatarBodyFits(this.officeMap, x, y);
 
   constructor(private readonly mapKey: string) {
     super('Office');
@@ -218,7 +229,7 @@ export class Office extends Scene {
 
   private addRemote(p: PublicPlayer, now: number): void {
     if (p.id === this.selfId || this.remotes.has(p.id)) return;
-    const remote = new RemotePlayer(this, p, now, this.cameras.main.zoom);
+    const remote = new RemotePlayer(this, p, now, { zoom: this.cameras.main.zoom, bodyFits: this.bodyFits });
     remote.setVisible(this.othersVisible);
     this.remotes.set(p.id, remote);
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };

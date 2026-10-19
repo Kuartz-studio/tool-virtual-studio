@@ -112,6 +112,47 @@ test('A passe en arrière-plan en pleine marche : il s\'arrête là, et B le voi
   await a.page.keyboard.up('ArrowRight');
 });
 
+test('A marche contre un mur en gardant la touche : B ne le dessine jamais dans le mur', async ({ browser }) => {
+  test.slow();
+  const a = await arrive(browser, 'Achille');
+  const b = await arrive(browser, 'Blanche');
+  await expectToSee(b.page, a.id);
+  // B relève, à chaque image, le x le plus à droite où il dessine A.
+  await b.page.evaluate((id) => {
+    const w = window as unknown as { __maxX: number; __recording: boolean };
+    w.__maxX = Number.NEGATIVE_INFINITY;
+    w.__recording = true;
+    const tick = () => {
+      if (!w.__recording) return;
+      const p = window.__office?.players[id];
+      if (p) w.__maxX = Math.max(w.__maxX, p.x);
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }, a.id);
+
+  // Trois fois : jusqu'au mur de droite (la colonne 23 commence en x = 736 ; le corps, de x − 10 à x + 10, s'arrête en x = 726),
+  // touche gardée contre lui (A n'envoie plus rien : sa position ne change plus), puis un peu en arrière.
+  for (let i = 0; i < 3; i++) {
+    await a.page.keyboard.down('ArrowRight');
+    await a.page.waitForFunction(() => window.__office!.self!.x >= 726, null, { timeout: WALK_TIMEOUT });
+    await a.page.waitForTimeout(800);
+    await a.page.keyboard.up('ArrowRight');
+    await a.page.keyboard.down('ArrowLeft');
+    await a.page.waitForTimeout(150 + 150 * i);
+    await a.page.keyboard.up('ArrowLeft');
+  }
+  await restingAt(a.page);
+  await b.page.waitForTimeout(500);
+  const maxX = await b.page.evaluate(() => {
+    const w = window as unknown as { __maxX: number; __recording: boolean };
+    w.__recording = false;
+    return w.__maxX;
+  });
+  // Dessiné jusqu'au mur, jamais dedans (l'extrapolation est bornée par la carte).
+  expect(maxX).toBe(726);
+});
+
 test('A recharge la page : B voit toujours un seul A', async ({ browser }) => {
   test.slow();
   const a = await arrive(browser, 'Aline');

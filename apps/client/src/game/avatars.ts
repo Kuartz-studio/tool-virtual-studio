@@ -1,4 +1,4 @@
-import { DEFAULT_AVATAR_KEY, DEV_AVATAR_KEYS, DIRECTIONS, type Direction } from '@bureau/shared';
+import { AVATAR_BODY, DEFAULT_AVATAR_KEY, DEV_AVATAR_KEYS, DIRECTIONS, type Direction } from '@bureau/shared';
 import type { Animations } from 'phaser';
 
 // Un avatar : sa planche d'images (une image par pose) et les images de ses animations, pour chacune des 4 directions.
@@ -81,13 +81,13 @@ export function createAvatarAnimations(anims: Animations.AnimationManager, spec:
 
 // La zone de collision de l'avatar, aux pieds : 20 × 12 px. Le reste du personnage (la tête, le corps) passe devant les murs et les
 // meubles ; seuls les pieds butent.
-const BODY_WIDTH = 20;
-const BODY_HEIGHT = 12;
+// Ses dimensions sont celles du paquet partagé (AVATAR_BODY), que l'extrapolation des autres avatars applique aussi.
+//
 // Le bas de la zone dépasse d'un pixel sous les pieds (le bas de l'image, où est l'origine du sprite). Arrêtés contre un obstacle
 // au sud, le bas de la zone touche son bord : y = 480, par exemple, pour le mur de la dernière ligne. Les pieds sont alors en
 // y = 479, dans leur case. Sans ce pixel, ils seraient en y = 480 : le serveur, qui place des pieds dans la case floor(y / 32),
 // les verrait déjà dans le mur et refuserait la position.
-const BODY_BELOW_FEET = 1;
+const { width: BODY_WIDTH, height: BODY_HEIGHT, belowFeet: BODY_BELOW_FEET } = AVATAR_BODY;
 
 // La zone de collision d'un avatar dont l'image est de cette taille, et son décalage dans l'image (celui de Body.setOffset).
 export function feetBody({ frameWidth, frameHeight }: Pick<AvatarSpec, 'frameWidth' | 'frameHeight'>): {

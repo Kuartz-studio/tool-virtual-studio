@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
+  AVATAR_BODY,
   DEV_OFFICE,
   MapError,
   ZONE_TYPES,
+  avatarBodyFits,
   buildTiledMap,
   isWalkablePoint,
   isWalkableTile,
@@ -281,6 +283,45 @@ describe('cases praticables', () => {
     expect(isWalkableTile(parsed, 1, 2)).toBe(false);
     expect(isWalkableTile(parsed, 0, 0)).toBe(true);
     expect(isWalkableTile(parsed, 1, 0)).toBe(true);
+  });
+});
+
+describe('avatarBodyFits : la zone de collision d\'un avatar (20 × 12 px aux pieds) ne touche aucune case bloquante', () => {
+  test('la zone : 20 × 12 px, centrée sur les pieds en largeur, son bas un pixel sous les pieds', () => {
+    expect(AVATAR_BODY).toEqual({ width: 20, height: 12, belowFeet: 1 });
+  });
+
+  test('au milieu d\'une case libre : oui ; sur une case bloquante : non', () => {
+    expect(avatarBodyFits(map, 80, 240)).toBe(true);          // l'apparition
+    expect(avatarBodyFits(map, ...c(4, 9))).toBe(false);      // un bureau
+    expect(avatarBodyFits(map, ...c(0, 7))).toBe(false);      // le mur de gauche
+  });
+
+  // Les bords sont ceux où l'avatar local s'arrête (la physique Arcade) : toucher un mur n'est pas le chevaucher.
+  test.each([
+    ['le mur de gauche (colonne 0, jusqu\'à x = 32) : x − 10 ≥ 32', 42, 240, 41.99, 240],
+    ['le mur de droite (colonne 23, dès x = 736) : x + 10 ≤ 736', 726, 240, 726.01, 240],
+    ['le mur du bas (ligne 15, dès y = 480) : y + 1 ≤ 480', 80, 479, 80, 479.01],
+    ['le mur de la ligne 5 (jusqu\'à y = 192), par-dessous : y − 11 ≥ 192', 80, 203, 80, 202.99],
+    ['le dessus d\'un bureau (ligne 9, dès y = 288) : y + 1 ≤ 288', 150, 287, 150, 287.01],
+    ['le côté est du bureau du milieu (colonnes 11 et 12, jusqu\'à x = 416) : x − 10 ≥ 416', 426, 300, 425.99, 300],
+  ])('%s', (_edge, x, y, pastX, pastY) => {
+    expect(avatarBodyFits(map, x, y)).toBe(true);
+    expect(avatarBodyFits(map, pastX, pastY)).toBe(false);
+  });
+
+  test('une porte (case libre entre deux murs) : le corps de 20 px y passe au milieu, pas contre un montant', () => {
+    // La porte de la colonne 3, ligne 5 (x de 96 à 128) : le corps tient si x − 10 ≥ 96 et x + 10 ≤ 128.
+    expect(avatarBodyFits(map, 112, 176)).toBe(true);
+    expect(avatarBodyFits(map, 105.99, 176)).toBe(false);
+    expect(avatarBodyFits(map, 118.01, 176)).toBe(false);
+  });
+
+  test('hors carte, ou coordonnées qui ne sont pas des nombres : non', () => {
+    expect(avatarBodyFits(map, -50, 240)).toBe(false);
+    expect(avatarBodyFits(map, 80, 10_000)).toBe(false);
+    expect(avatarBodyFits(map, Number.NaN, 240)).toBe(false);
+    expect(avatarBodyFits(map, 80, Number.POSITIVE_INFINITY)).toBe(false);
   });
 });
 

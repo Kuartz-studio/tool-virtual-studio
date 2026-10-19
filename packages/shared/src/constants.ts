@@ -1,5 +1,10 @@
 // Valeurs de la spec : une seule source pour le client et le serveur.
 export const TILE_SIZE = 32;
+// La zone de collision d'un avatar, aux pieds : 20 × 12 px, centrée sur ses pieds en largeur, son bas un pixel sous les pieds (contre
+// un mur au sud, les pieds restent ainsi dans leur case). Seule elle bute contre les murs et les meubles : l'avatar local la reçoit
+// de la physique Arcade (feetBody, dans le client), et l'extrapolation des autres avatars ne la fait pas entrer dans un mur
+// (avatarBodyFits).
+export const AVATAR_BODY = { width: 20, height: 12, belowFeet: 1 } as const;
 export const MAX_SPEED_PX_PER_S = 160;
 export const MOVE_TOLERANCE = 1.5;
 export const MOVE_JITTER_MS = 250;

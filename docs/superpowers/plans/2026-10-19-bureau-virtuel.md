@@ -1035,7 +1035,7 @@ export function connectOffice(socket, store, bus): () => void;
 
 **Règles de `SnapshotBuffer` :**
 - interpolation linéaire en `renderAt = now − REMOTE_RENDER_DELAY_MS` ;
-- avant le premier instantané, on renvoie le premier ; après le dernier, le dernier (pas d'extrapolation) ; *remplacé à la tâche 15 : après le dernier, s'il marche, extrapolation à sa vitesse (plafonnée à `MAX_SPEED_PX_PER_S`) pendant `EXTRAPOLATION_MAX_MS` au plus, puis il attend ; arrêté, jamais* ;
+- avant le premier instantané, on renvoie le premier ; après le dernier, le dernier (pas d'extrapolation) ; *remplacé à la tâche 15 : après le dernier, s'il marche, extrapolation à sa vitesse (plafonnée à `MAX_SPEED_PX_PER_S`) pendant `EXTRAPOLATION_MAX_MS` au plus, puis il attend ; arrêté, jamais ; bornée par la carte : sa zone de collision (`AVATAR_BODY`) n'entre jamais dans une case bloquante (`avatarBodyFits`)* ;
 - un saut de plus de `TELEPORT_SNAP_PX` entre deux instantanés consécutifs fait sauter directement au second ;
 - au plus `capacity` instantanés sont gardés.
 

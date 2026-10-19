@@ -1,4 +1,15 @@
-import { EXTRAPOLATION_MAX_MS, MAX_SPEED_PX_PER_S, REMOTE_RENDER_DELAY_MS, TELEPORT_SNAP_PX, WORLD_TICK_MS } from '@bureau/shared';
+import {
+  DEV_OFFICE,
+  EXTRAPOLATION_MAX_MS,
+  MAX_SPEED_PX_PER_S,
+  REMOTE_RENDER_DELAY_MS,
+  TELEPORT_SNAP_PX,
+  WORLD_TICK_MS,
+  avatarBodyFits,
+  buildTiledMap,
+  parseOfficeMap,
+  type Direction,
+} from '@bureau/shared';
 import { expect, test } from 'vitest';
 import { SnapshotBuffer, type Snapshot } from './snapshot-buffer';
 
@@ -296,4 +307,105 @@ test('un arrêt reçu en retard : l\'avatar a dépassé le point d\'arrêt de 9,
   expect(b.sample(renderAtArrival + REMOTE_RENDER_DELAY_MS / 2)!.x).toBeCloseTo(16 + EXTRAPOLATED_PX / 2);
   expect(b.sample(400)).toEqual(at(16, 0, 'right', false));
   expect(b.sample(60_000)).toEqual(at(16, 0, 'right', false));
+});
+
+// ---- L'extrapolation bornée par la carte (décision du contrôleur, tâche 15) -----------------------------------------------------
+//
+// Avec la carte, un point extrapolé n'est pris que si la zone de collision de l'avatar (20 × 12 px aux pieds, AVATAR_BODY) n'y
+// chevauche aucune case bloquante : l'avatar s'arrête au bord du mur, jamais au-delà, ni avant.
+
+const devMap = parseOfficeMap(buildTiledMap({ ...DEV_OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
+const bodyFits = (x: number, y: number) => avatarBodyFits(devMap, x, y);
+const STEP: Record<Direction, [number, number]> = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] };
+
+// Un avatar qui marche dans cette direction, dont la dernière position reçue est (x, y), 16 px plus loin que la précédente.
+function walkingTo(x: number, y: number, dir: Direction, buffer = new SnapshotBuffer(20, bodyFits)): SnapshotBuffer {
+  const [dx, dy] = STEP[dir];
+  buffer.push(0, at(x - 16 * dx, y - 16 * dy, dir));
+  buffer.push(100, at(x, y, dir));
+  return buffer;
+}
+
+test.each([
+  ['à droite, contre le mur de droite (x + 10 ≤ 736)', 726, 240, 'right'],
+  ['à gauche, contre le mur de gauche (x − 10 ≥ 32)', 42, 240, 'left'],
+  ['en bas, contre le mur du bas (y + 1 ≤ 480)', 80, 479, 'down'],
+  ['en haut, contre le mur de la ligne 5 (y − 11 ≥ 192)', 80, 203, 'up'],
+  ['en bas, contre le dessus d\'un bureau (y + 1 ≤ 288)', 150, 287, 'down'],
+] as const)('arrivé contre un mur en marchant %s : jamais dessiné au-delà, même longtemps après', (_wall, x, y, dir) => {
+  const b = walkingTo(x, y, dir);
+  for (const renderAt of [101, 130, 100 + EXTRAPOLATION_MAX_MS, 60_000]) {
+    const s = b.sample(renderAt)!;
+    expect(s.x).toBeCloseTo(x, 2);
+    expect(s.y).toBeCloseTo(y, 2);
+    expect(bodyFits(s.x, s.y)).toBe(true);
+    expect(s).toMatchObject({ dir, moving: true });
+  }
+});
+
+test.each([
+  ['à droite, 5 px avant le mur de droite', 721, 240, 'right', 726, 240],
+  ['à gauche, 3 px avant le mur de gauche', 45, 240, 'left', 42, 240],
+  ['en bas, 4 px avant le mur du bas', 80, 475, 'down', 80, 479],
+  ['en haut, 2 px avant le mur de la ligne 5', 80, 205, 'up', 80, 203],
+] as const)('en marchant %s : l\'extrapolation s\'arrête au bord, pas avant', (_case, x, y, dir, edgeX, edgeY) => {
+  const b = walkingTo(x, y, dir);
+  const s = b.sample(100 + EXTRAPOLATION_MAX_MS)!;
+  expect(s.x).toBeCloseTo(edgeX, 2);
+  expect(s.y).toBeCloseTo(edgeY, 2);
+  expect(bodyFits(s.x, s.y)).toBe(true);
+  // Avant d'y arriver, elle avance comme en plein espace.
+  const early = b.sample(110)!;
+  expect(early.x).toBeCloseTo(x + STEP[dir][0] * 0.16 * 10);
+  expect(early.y).toBeCloseTo(y + STEP[dir][1] * 0.16 * 10);
+});
+
+test('en diagonale (un rattrapage), le long d\'un montant de porte : elle ne passe pas sur son coin', () => {
+  // La porte de la colonne 3, ligne 5 (x de 96 à 128) ; son montant droit est la case (4, 5), de x = 128 et jusqu'à y = 192. Les
+  // pieds en (121, 203) : le corps (x de 111 à 131, y de 192 à 204) touche le bas du montant sans le chevaucher. Vers le haut à
+  // gauche, il le chevaucherait tout de suite (x + 10 > 128 et y − 11 < 192), puis le dépasserait : les deux bouts du segment
+  // tiennent, pas son début. Par pas de 8 px, on ne le verrait pas.
+  const b = new SnapshotBuffer(20, bodyFits);
+  b.push(0, at(121 + 16 / Math.SQRT2, 203 + 16 / Math.SQRT2, 'up'));
+  b.push(100, at(121, 203, 'up'));
+  const end = { x: 121 - 9.6 / Math.SQRT2, y: 203 - 9.6 / Math.SQRT2 };
+  expect(bodyFits(end.x, end.y)).toBe(true);
+  expect(bodyFits(121 - 1, 203 - 1)).toBe(false);
+  const s = b.sample(1000)!;
+  expect(s.x).toBeCloseTo(121, 2);
+  expect(s.y).toBeCloseTo(203, 2);
+});
+
+test('en plein espace, la carte ne change rien à l\'extrapolation', () => {
+  const bounded = walkingTo(316, 240, 'right');
+  const free = walkingTo(316, 240, 'right', new SnapshotBuffer());
+  for (const renderAt of [50, 100, 130, 160, 60_000]) expect(bounded.sample(renderAt)).toEqual(free.sample(renderAt));
+});
+
+test('un seul instantané, en marche contre un mur : pas au-delà non plus', () => {
+  const b = new SnapshotBuffer(20, bodyFits);
+  b.push(0, at(726, 240, 'right'));
+  expect(b.sample(1000)!.x).toBeCloseTo(726, 2);
+});
+
+test('une dernière position où le corps ne tient déjà pas (une autre version de la carte) : pas d\'extrapolation, même vers la sortie', () => {
+  const deeper = new SnapshotBuffer(20, bodyFits);
+  deeper.push(0, at(30, 240, 'left'));
+  deeper.push(100, at(20, 240, 'left'));                      // dans le mur de gauche, en s'y enfonçant
+  expect(deeper.sample(1000)).toEqual(at(20, 240, 'left'));
+
+  // Le corps chevauche le mur (x − 10 = 30 < 32) ; 2 px plus loin, il tiendrait. On ne devine pas pour autant : on attend la suite.
+  const leaving = new SnapshotBuffer(20, bodyFits);
+  leaving.push(0, at(24, 240));
+  leaving.push(100, at(40, 240));
+  expect(leaving.sample(1000)).toEqual(at(40, 240));
+});
+
+test('le suivant arrive après une extrapolation bornée : il repart du bord, sans retour en arrière', () => {
+  const b = walkingTo(721, 240, 'right');
+  expect(b.sample(130 + 30)!.x).toBeCloseTo(726, 2);
+  // L'arrêt, contre le mur, arrive : il était dessiné au bord, il y reste.
+  b.push(160 + REMOTE_RENDER_DELAY_MS, at(726, 240, 'right', false));
+  expect(b.sample(160)!.x).toBeCloseTo(726, 2);
+  expect(b.sample(60_000)).toEqual(at(726, 240, 'right', false));
 });
