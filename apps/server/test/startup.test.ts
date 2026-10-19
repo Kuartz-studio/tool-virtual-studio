@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { expect, test } from 'vitest';
@@ -37,6 +37,37 @@ test('échec au démarrage hors test : une ligne fatal du journal, sans doublon 
   expect(code).toBe(1);
   expect(JSON.parse(stdout.trim())).toMatchObject({ level: 60, msg: 'Démarrage impossible', err: { message: expect.stringMatching(/pglite:\/\//) } });
   expect(stderr).toBe('');
+}, 30_000);
+
+test('démarrage complet : base en mémoire migrée, santé, inscription directe refusée', async () => {
+  // NODE_ENV=development : le journal écrit une ligne JSON par événement, dont « Serveur démarré » avec le port réel.
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts'], {
+    cwd: serverDir,
+    env: { PATH: process.env.PATH ?? '', NODE_ENV: 'development', APP_URL: 'http://localhost:4000', BETTER_AUTH_SECRET: 'x'.repeat(32), DATABASE_URL: 'memory://', PORT: '0' },
+  });
+  try {
+    const port = await new Promise<number>((resolve, reject) => {
+      let stdout = '';
+      child.stdout.setEncoding('utf8').on('data', (chunk: string) => {
+        stdout += chunk;
+        for (const line of stdout.split('\n')) {
+          if (line.includes('Serveur démarré')) resolve((JSON.parse(line) as { port: number }).port);
+        }
+      });
+      child.once('exit', (code) => reject(new Error(`le serveur s'est arrêté (code ${code}) : ${stdout}`)));
+    });
+    const base = `http://127.0.0.1:${port}`;
+    expect(await (await fetch(`${base}/api/health`)).json()).toEqual({ ok: true });
+    const signUp = await fetch(`${base}/api/auth/sign-up/email`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'x@x.fr', password: 'motdepasse1', name: 'X' }),
+    });
+    expect(signUp.status).toBe(403);
+    expect((await fetch(`${base}/api/invitations/inconnu`)).status).toBe(404);
+  } finally {
+    child.kill();
+  }
 }, 30_000);
 
 test('configuration invalide : les variables fautives sont nommées sur stderr', async () => {

@@ -1,6 +1,6 @@
 import { INVITATION_TTL_MS } from '@bureau/shared';
 import { beforeEach, expect, test, vi } from 'vitest';
-import { createMemoryMailer, createResendMailer } from '../src/mail/mailer';
+import { createMemoryMailer, createResendMailer, type SentMail } from '../src/mail/mailer';
 
 // Le vrai client Resend ne doit jamais appeler le réseau : on le remplace par un faux qui enregistre ses appels.
 const resend = vi.hoisted(() => ({ send: vi.fn(), apiKeys: [] as string[] }));
@@ -146,6 +146,18 @@ test("last(to) renvoie le dernier e-mail de ce destinataire, sans tenir compte d
   // L'adresse enregistrée reste celle qui a été donnée, pas une version normalisée.
   await m.sendPasswordReset({ to: 'Zoé@X.fr', link: RESET_LINK });
   expect(m.last('zoé@x.fr')!.to).toBe('Zoé@X.fr');
+});
+
+test('onSend reçoit chaque e-mail composé, tel que gardé dans sent', async () => {
+  const seen: SentMail[] = [];
+  const m = createMemoryMailer({ onSend: (mail) => seen.push(mail) });
+  await m.sendInvitation({ to: 'lea@x.fr', link: INVITATION_LINK, invitedBy: 'Tom' });
+  await m.sendPasswordReset({ to: 'tom@x.fr', link: RESET_LINK });
+  expect(seen).toEqual(m.sent);
+  expect(seen.map((mail) => [mail.subject, mail.link])).toEqual([
+    ['Invitation au bureau virtuel', INVITATION_LINK],
+    ['Réinitialiser ton mot de passe', RESET_LINK],
+  ]);
 });
 
 test('deux mailers en mémoire ne partagent pas leurs e-mails', async () => {

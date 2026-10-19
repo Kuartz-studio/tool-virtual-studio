@@ -31,11 +31,13 @@ function createMailer(deliver: (mail: SentMail) => Promise<void>): Mailer {
   };
 }
 
-// Développement et tests : rien ne part, les e-mails restent dans `sent`.
-export function createMemoryMailer(): Mailer & { sent: SentMail[]; last(to?: string): SentMail | undefined } {
+// Développement et tests : rien ne part, les e-mails restent dans `sent`. `onSend` voit passer chaque e-mail
+// (le serveur de développement s'en sert pour journaliser l'objet et le lien).
+export function createMemoryMailer(o: { onSend?: (mail: SentMail) => void } = {}): Mailer & { sent: SentMail[]; last(to?: string): SentMail | undefined } {
   const sent: SentMail[] = [];
   const mailer = createMailer(async (mail) => {
     sent.push(mail);
+    o.onSend?.(mail);
   });
   return {
     ...mailer,
