@@ -1,0 +1,21 @@
+{
+  "name": "bureau-virtuel",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "pnpm -r typecheck",
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm --filter @bureau/client build && pnpm --filter @bureau/server build",
+    "e2e": "playwright test -c e2e/playwright.config.ts"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
+  }
+}
