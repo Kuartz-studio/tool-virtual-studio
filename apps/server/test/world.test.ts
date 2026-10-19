@@ -1,0 +1,453 @@
+import { DEV_OFFICE, buildTiledMap, parseOfficeMap } from '@bureau/shared';
+import { describe, expect, test } from 'vitest';
+import { World } from '../src/realtime/world';
+
+// La carte de développement : 24 × 16 cases de 32 px. L'apparition est en (80, 240), sur la ligne 7 (du sol de bout en bout) ;
+// le mur de la ligne 5 (y de 160 à 191) sépare les pièces du haut de l'open space ; les bureaux sont sur la ligne 9.
+const map = parseOfficeMap(buildTiledMap({ ...DEV_OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
+
+type JoinArgs = Parameters<World['join']>[0];
+
+// Un monde dont on fait avancer l'horloge à la main (l'heure de réception côté serveur). `join` y fait entrer un joueur, par
+// défaut à l'apparition.
+function setup() {
+  const clock = { t: 0 };
+  const world = new World(map, () => clock.t);
+  const join = (id: string, over: Partial<JoinArgs> = {}) =>
+    world.join({ id, name: `Nom de ${id}`, avatarKey: 'dev-red', x: 80, y: 240, dir: 'down', status: 'available', ...over });
+  return { clock, world, join };
+}
+
+// ---- Les tests de la brief ------------------------------------------------------------------------------------------
+
+test('applyMove accepté puis drainMoves une seule fois', () => {
+  const { clock, world, join } = setup();
+  join('a');
+  clock.t = 100;
+  expect(world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });   // 80 px en 100 ms
+  expect(world.drainMoves()).toEqual([{ id: 'a', x: 160, y: 240, dir: 'right', moving: true }]);
+  expect(world.drainMoves()).toEqual([]);
+});
+
+test('deux mouvements → seul le dernier sort', () => {
+  const { clock, world, join } = setup();
+  join('a');
+  clock.t = 100;
+  expect(world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  clock.t = 200;
+  expect(world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  expect(world.drainMoves()).toEqual([{ id: 'a', x: 160, y: 240, dir: 'right', moving: true }]);
+  expect(world.drainMoves()).toEqual([]);
+});
+
+test('mouvement refusé → correct = dernière position acceptée', () => {
+  const { clock, world, join } = setup();
+  join('a');
+  clock.t = 100;
+  // 104 px en 100 ms : trop rapide. Le joueur n'a jamais bougé : sa dernière position acceptée est son arrivée.
+  expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+  // Après un mouvement accepté, c'est celui-là.
+  expect(world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  clock.t = 200;
+  expect(world.applyMove('a', { x: 260, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 160, y: 240 } });
+});
+
+test('statut retenu après leave puis join', () => {
+  const { world, join } = setup();
+  join('a');
+  world.setStatus('a', 'dnd');
+  expect(world.leave('a')).toMatchObject({ id: 'a', status: 'dnd' });
+  expect(world.get('a')).toBeUndefined();
+  expect(world.rememberedStatus('a')).toBe('dnd');
+  expect(join('a', { status: world.rememberedStatus('a') }).status).toBe('dnd');
+  expect(world.get('a')?.status).toBe('dnd');
+});
+
+// ---- Arrivée, départ, lecture ---------------------------------------------------------------------------------------------
+
+describe('join, leave, get, list', () => {
+  test('join : le joueur arrive à l\'arrêt, sans micro, sans caméra et sans partage d\'écran', () => {
+    const { join } = setup();
+    expect(join('a', { x: 336, y: 80, dir: 'up', status: 'busy' })).toEqual({
+      id: 'a',
+      name: 'Nom de a',
+      avatarKey: 'dev-red',
+      x: 336,
+      y: 80,
+      dir: 'up',
+      moving: false,
+      status: 'busy',
+      media: { mic: false, cam: false, screen: false },
+    });
+  });
+
+  test('join accepte un joueur sans avatar choisi (avatarKey: null)', () => {
+    const { join } = setup();
+    expect(join('a', { avatarKey: null }).avatarKey).toBeNull();
+  });
+
+  test('get et list : le joueur, ou undefined ; tous les joueurs dans l\'ordre d\'arrivée', () => {
+    const { world, join } = setup();
+    expect(world.list()).toEqual([]);
+    expect(world.get('a')).toBeUndefined();
+    const a = join('a');
+    const b = join('b', { x: 400, y: 400 });
+    const c = join('c', { x: 600, y: 240 });
+    expect(world.get('b')).toEqual(b);
+    expect(world.list()).toEqual([a, b, c]);
+    world.leave('b');
+    expect(world.list().map((p) => p.id)).toEqual(['a', 'c']);
+    join('b');
+    expect(world.list().map((p) => p.id)).toEqual(['a', 'c', 'b']);
+  });
+
+  test('join, get et list renvoient des copies : les modifier ne change pas le monde, et le monde ne change pas ce qu\'on tient', () => {
+    const { clock, world, join } = setup();
+    const joined = join('a');
+    joined.x = 999;
+    joined.media.mic = true;
+    world.get('a')!.name = 'Autre';
+    world.list()[0]!.media.cam = true;
+    expect(world.get('a')).toMatchObject({ x: 80, name: 'Nom de a', media: { mic: false, cam: false, screen: false } });
+
+    const before = world.get('a')!;
+    clock.t = 100;
+    world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true });
+    world.setStatus('a', 'away');
+    world.setMedia('a', { mic: true, cam: true, screen: true });
+    expect(before).toMatchObject({ x: 80, dir: 'down', moving: false, status: 'available', media: { mic: false, cam: false, screen: false } });
+  });
+
+  test('leave : renvoie le joueur parti, tel qu\'il était, et le retire ; un inconnu → undefined', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true });
+    expect(world.leave('a')).toMatchObject({ id: 'a', x: 160, y: 240, dir: 'right', moving: true });
+    expect(world.get('a')).toBeUndefined();
+    expect(world.list()).toEqual([]);
+    expect(world.leave('a')).toBeUndefined();
+    expect(world.leave('inconnu')).toBeUndefined();
+  });
+
+  test('un second join du même identifiant remplace le joueur (et son mouvement en attente)', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true });
+    join('a', { x: 400, y: 400, dir: 'up' });
+    expect(world.list()).toHaveLength(1);
+    expect(world.get('a')).toMatchObject({ x: 400, y: 400, dir: 'up', moving: false });
+    expect(world.drainMoves()).toEqual([]);
+  });
+});
+
+// ---- applyMove ------------------------------------------------------------------------------------------------------------
+
+describe('applyMove', () => {
+  test('un mouvement accepté met à jour la position, la direction et l\'état « en marche » du joueur', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
+    expect(world.get('a')).toMatchObject({ x: 120, y: 240, dir: 'right', moving: true });
+    clock.t = 200;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: false });   // l'arrêt
+    expect(world.get('a')).toMatchObject({ x: 120, y: 240, dir: 'right', moving: false });
+  });
+
+  test('l\'heure de départ est celle de join, lue sur l\'horloge du serveur', () => {
+    const { clock, world, join } = setup();
+    clock.t = 5_000;
+    join('a');
+    clock.t = 5_100;
+    // 100 ms après join : 84 px permis. Si l'heure de départ était 0, plus de 1 200 px le seraient.
+    expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+    expect(world.applyMove('a', { x: 164, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+
+  test('un mouvement accepté remet l\'heure de référence à jour : le suivant, au même instant, n\'a que la marge de gigue (60 px)', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    expect(world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+    // Même instant : dt = 0, donc 60 px au plus. Si l'heure de référence était restée celle de join (0), 84 px passeraient.
+    expect(world.applyMove('a', { x: 221, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 160, y: 240 } });
+    expect(world.applyMove('a', { x: 220, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+
+  test('un mouvement refusé ne change ni la position, ni la direction, ni l\'heure de référence', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });   // 104 px
+    expect(world.get('a')).toMatchObject({ x: 80, y: 240, dir: 'down', moving: false });
+    expect(world.drainMoves()).toEqual([]);
+    // La même position, 100 ms plus tard : 200 ms depuis join, donc 108 px permis. Elle ne passerait pas si le refus avait
+    // remis l'heure de référence à 100.
+    clock.t = 200;
+    expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+
+  test('un mouvement refusé n\'efface pas le mouvement accepté de la même fenêtre', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true });
+    clock.t = 150;
+    expect(world.applyMove('a', { x: 500, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 160, y: 240 } });
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 160, y: 240, dir: 'right', moving: true }]);
+  });
+
+  test('un mur sur le trajet : refusé, correct = dernière position acceptée', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 400;   // 156 px permis ; (80, 100) est à 140 px mais de l'autre côté du mur de la ligne 5
+    expect(world.applyMove('a', { x: 80, y: 100, dir: 'up', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+  });
+
+  test('hors carte : refusé', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 10_000;
+    expect(world.applyMove('a', { x: -10, y: 240, dir: 'left', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+  });
+
+  test('un joueur inconnu : refusé sans erreur, avec le point d\'apparition pour « correct », et rien n\'est enregistré', () => {
+    const { world } = setup();
+    expect(world.applyMove('fantome', { x: 90, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+    expect(world.get('fantome')).toBeUndefined();
+    expect(world.drainMoves()).toEqual([]);
+  });
+
+  test('« correct » est un objet neuf : le modifier ne change pas le monde', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    const refused = world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true });
+    if (refused.ok) throw new Error('le mouvement aurait dû être refusé');
+    refused.correct.x = 1;
+    expect(world.get('a')?.x).toBe(80);
+    const unknown = world.applyMove('fantome', { x: 90, y: 240, dir: 'right', moving: true });
+    if (unknown.ok) throw new Error('le mouvement aurait dû être refusé');
+    unknown.correct.x = 1;
+    expect(map.spawn).toEqual({ x: 80, y: 240 });
+  });
+});
+
+// ---- teleport -------------------------------------------------------------------------------------------------------------
+
+describe('teleport', () => {
+  test('une case praticable : le joueur y est, à l\'arrêt, et le prochain drainMoves le dit', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
+    world.drainMoves();
+    expect(world.teleport('a', 400, 400)).toBe(true);
+    expect(world.get('a')).toMatchObject({ x: 400, y: 400, dir: 'right', moving: false });
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false }]);
+    expect(world.drainMoves()).toEqual([]);
+  });
+
+  test('après un mouvement accepté dans la même fenêtre, seule la téléportation sort', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
+    world.teleport('a', 400, 400);
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false }]);
+  });
+
+  test.each([
+    ['un mur', 16, 16],
+    ['un bureau', 144, 304],
+    ['hors de la carte', -10, 240],
+    ['au-delà du bord droit', 768, 240],
+    ['x = NaN', Number.NaN, 240],
+  ])('%s : false, et rien ne change', (_name, x, y) => {
+    const { world, join } = setup();
+    join('a');
+    expect(world.teleport('a', x, y)).toBe(false);
+    expect(world.get('a')).toMatchObject({ x: 80, y: 240 });
+    expect(world.drainMoves()).toEqual([]);
+  });
+
+  test('un joueur inconnu : false', () => {
+    const { world } = setup();
+    expect(world.teleport('fantome', 400, 400)).toBe(false);
+    expect(world.drainMoves()).toEqual([]);
+  });
+
+  test('la nouvelle position et l\'heure deviennent la référence des mouvements suivants', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 1_000;
+    expect(world.teleport('a', 400, 400)).toBe(true);
+    // Au même instant que la téléportation, dt = 0 : 60 px au plus depuis (400, 400). Si l'heure de référence était restée celle
+    // de join (1 000 ms plus tôt), 300 px seraient permis, et (461, 400) n'est qu'à 61 px.
+    expect(world.applyMove('a', { x: 461, y: 400, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 400, y: 400 } });
+    expect(world.applyMove('a', { x: 460, y: 400, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+});
+
+// ---- Statut, médias, profil ------------------------------------------------------------------------------------------------
+
+describe('statut, médias, profil', () => {
+  test('setStatus change le statut du joueur', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setStatus('a', 'busy');
+    expect(world.get('a')?.status).toBe('busy');
+    world.setStatus('a', 'away');
+    expect(world.get('a')?.status).toBe('away');
+    expect(world.rememberedStatus('a')).toBe('away');
+  });
+
+  test('rememberedStatus : « available » pour un identifiant jamais vu', () => {
+    const { world } = setup();
+    expect(world.rememberedStatus('jamais-vu')).toBe('available');
+  });
+
+  test('le statut donné à join est aussi celui dont le monde se souvient, après leave comme avant', () => {
+    const { world, join } = setup();
+    join('a', { status: 'busy' });
+    expect(world.rememberedStatus('a')).toBe('busy');
+    world.leave('a');
+    expect(world.rememberedStatus('a')).toBe('busy');
+  });
+
+  test('le statut survit à plusieurs départs et retours, et chacun garde le sien', () => {
+    const { world, join } = setup();
+    join('a');
+    join('b');
+    world.setStatus('a', 'dnd');
+    world.setStatus('b', 'away');
+    world.leave('a');
+    world.leave('b');
+    join('a', { status: world.rememberedStatus('a') });
+    expect(world.get('a')?.status).toBe('dnd');
+    expect(world.rememberedStatus('b')).toBe('away');
+  });
+
+  test('setMedia remplace l\'état du micro, de la caméra et du partage d\'écran', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setMedia('a', { mic: true, cam: false, screen: true });
+    expect(world.get('a')?.media).toEqual({ mic: true, cam: false, screen: true });
+    world.setMedia('a', { mic: false, cam: false, screen: false });
+    expect(world.get('a')?.media).toEqual({ mic: false, cam: false, screen: false });
+  });
+
+  test('setMedia garde sa propre copie : modifier l\'objet passé ne change pas le monde', () => {
+    const { world, join } = setup();
+    join('a');
+    const media = { mic: true, cam: true, screen: false };
+    world.setMedia('a', media);
+    media.mic = false;
+    expect(world.get('a')?.media.mic).toBe(true);
+  });
+
+  test('setProfile change le nom et l\'avatar', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setProfile('a', { name: 'Alice', avatarKey: 'dev-blue' });
+    expect(world.get('a')).toMatchObject({ name: 'Alice', avatarKey: 'dev-blue' });
+    world.setProfile('a', { name: 'Alice B.', avatarKey: null });
+    expect(world.get('a')).toMatchObject({ name: 'Alice B.', avatarKey: null });
+  });
+
+  test('un identifiant inconnu est ignoré sans erreur, et ne crée pas de souvenir', () => {
+    const { world } = setup();
+    expect(() => {
+      world.setStatus('fantome', 'busy');
+      world.setMedia('fantome', { mic: true, cam: true, screen: true });
+      world.setProfile('fantome', { name: 'X', avatarKey: null });
+    }).not.toThrow();
+    expect(world.get('fantome')).toBeUndefined();
+    expect(world.rememberedStatus('fantome')).toBe('available');
+  });
+});
+
+// ---- drainMoves et proximityPlayers -----------------------------------------------------------------------------------------
+
+describe('drainMoves', () => {
+  test('sans mouvement : []', () => {
+    const { world, join } = setup();
+    expect(world.drainMoves()).toEqual([]);
+    join('a');
+    expect(world.drainMoves()).toEqual([]);
+  });
+
+  test('un mouvement par joueur : le dernier, dans l\'ordre du premier mouvement accepté de chacun depuis l\'appel précédent', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    join('c');
+    clock.t = 100;
+    world.applyMove('b', { x: 120, y: 240, dir: 'right', moving: true });
+    world.applyMove('a', { x: 80, y: 280, dir: 'down', moving: true });
+    clock.t = 200;
+    world.applyMove('b', { x: 160, y: 240, dir: 'right', moving: true });
+    expect(world.drainMoves()).toEqual([
+      { id: 'b', x: 160, y: 240, dir: 'right', moving: true },
+      { id: 'a', x: 80, y: 280, dir: 'down', moving: true },
+    ]);
+    // Une nouvelle fenêtre : seuls ceux qui ont bougé depuis.
+    clock.t = 300;
+    world.applyMove('c', { x: 100, y: 240, dir: 'right', moving: false });
+    expect(world.drainMoves()).toEqual([{ id: 'c', x: 100, y: 240, dir: 'right', moving: false }]);
+    expect(world.drainMoves()).toEqual([]);
+  });
+
+  test('un joueur parti avant l\'appel n\'y figure plus', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    clock.t = 100;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
+    world.applyMove('b', { x: 120, y: 240, dir: 'right', moving: true });
+    world.leave('a');
+    expect(world.drainMoves()).toEqual([{ id: 'b', x: 120, y: 240, dir: 'right', moving: true }]);
+  });
+
+  test('un joueur revenu après son départ n\'a pas le mouvement de sa visite précédente', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
+    world.leave('a');
+    join('a');
+    expect(world.drainMoves()).toEqual([]);
+  });
+
+  test('les objets renvoyés ne sont plus ceux du monde : un appel suivant ne les change pas', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
+    const first = world.drainMoves();
+    clock.t = 200;
+    world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true });
+    expect(first).toEqual([{ id: 'a', x: 120, y: 240, dir: 'right', moving: true }]);
+  });
+});
+
+describe('proximityPlayers', () => {
+  test('l\'identifiant, la position, l\'état « en marche » et le statut de chacun, dans l\'ordre d\'arrivée, et rien d\'autre', () => {
+    const { clock, world, join } = setup();
+    expect(world.proximityPlayers()).toEqual([]);
+    join('a');
+    join('b', { x: 400, y: 400, status: 'busy' });
+    clock.t = 100;
+    world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
+    world.setStatus('a', 'dnd');
+    world.setMedia('a', { mic: true, cam: true, screen: false });
+    expect(world.proximityPlayers()).toEqual([
+      { id: 'a', x: 120, y: 240, moving: true, status: 'dnd' },
+      { id: 'b', x: 400, y: 400, moving: false, status: 'busy' },
+    ]);
+    world.leave('a');
+    expect(world.proximityPlayers().map((p) => p.id)).toEqual(['b']);
+  });
+});
