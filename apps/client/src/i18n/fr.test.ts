@@ -70,3 +70,15 @@ test('les textes des liens à transmettre', () => {
   // Le texte d'une invitation créée ne promet aucun e-mail.
   expect(JSON.stringify([fr.admin.invite.created, fr.admin.pending.renewed, fr.admin.members.passwordLinkIntro])).not.toMatch(/e-mail|envoyé/i);
 });
+
+// Les textes que lit quelqu'un dont l'invitation est un lien reçu autrement que par e-mail ne parlent pas d'e-mail.
+test('la page « Rejoindre » ne dit pas que le lien est reçu par e-mail', () => {
+  for (const message of [fr.join.errors.missingToken, fr.join.errors.unknown]) {
+    expect(message).toContain('le lien d\'invitation qu\'on t\'a envoyé');
+    expect(message).not.toMatch(/e-mail/i);
+  }
+  expect(fr.join.errors.missingToken).toBe('Ce lien est incomplet. Ouvre en entier le lien d\'invitation qu\'on t\'a envoyé.');
+  // Sans e-mail, on retrouve un lien perdu par « Nouveau lien » (plus de « Renvoyer »).
+  expect(t(fr.admin.invite.validity, { days: 7 })).toContain('« Nouveau lien »');
+  expect(fr.admin.invite.validity).not.toContain('Renvoyer');
+});

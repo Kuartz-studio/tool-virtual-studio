@@ -119,7 +119,7 @@ function failureMessage(err: unknown, notFound: string): string {
 // Le panneau Admin : réservé aux admins (OfficeShell ne le monte, et n'en montre le bouton, que pour eux ; le serveur refuse de toute façon
 // un membre : 403). Trois sections :
 // - Inviter : une adresse e-mail et un rôle ;
-// - Invitations en attente (expirées comprises) : renvoyer, annuler ;
+// - Invitations en attente (expirées comprises) : renvoyer (sans e-mail : « Nouveau lien »), annuler ;
 // - Membres : retirer, après une confirmation. Soi-même n'a pas de bouton (le serveur refuse aussi : `self`).
 //
 // Les listes (/api/admin/members et /api/admin/invitations) sont lues à l'ouverture. Après chaque geste, réussi ou non, la liste
@@ -188,8 +188,8 @@ export function AdminPanel({ id, selfId, mail, onClose }: { id?: string; selfId:
         </button>
       </header>
       <div className="admin-body">
-        <InviteSection reloadInvitations={reloadInvitations} links={links} />
-        <InvitationsSection list={invitations} reloadMembers={reloadMembers} links={links} />
+        <InviteSection reloadInvitations={reloadInvitations} noMail={mail === 'none'} links={links} />
+        <InvitationsSection list={invitations} reloadMembers={reloadMembers} noMail={mail === 'none'} links={links} />
         <MembersSection list={members} selfId={selfId} canLinkPassword={mail === 'none'} links={links} />
       </div>
     </aside>
@@ -335,7 +335,8 @@ function LinkBox({ shown, introId, section, onDismiss }: { shown: ShownLink; int
 
 // L'adresse et le rôle. Le champ ne se vide qu'à l'invitation envoyée : refusée, l'adresse reste, on la corrige. Le rôle revient alors
 // à « Membre » : une invitation d'admin ne se répète pas par inadvertance.
-function InviteSection({ reloadInvitations, links }: { reloadInvitations(): Promise<void>; links: Links }) {
+// `noMail` (MAILER=none) : rien n'est envoyé, le bouton dit « Créer le lien d'invitation » au lieu d'« Envoyer l'invitation ».
+function InviteSection({ reloadInvitations, noMail, links }: { reloadInvitations(): Promise<void>; noMail: boolean; links: Links }) {
   const titleId = useId();
   const emailId = useId();
   const roleId = useId();
@@ -345,6 +346,8 @@ function InviteSection({ reloadInvitations, links }: { reloadInvitations(): Prom
   const [role, setRole] = useState<Role>('member');
   const [submitting, setSubmitting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  const submitLabel = noMail ? { idle: fr.admin.invite.create, busy: fr.admin.invite.creating } : { idle: fr.admin.invite.submit, busy: fr.admin.invite.submitting };
 
   // Un champ e-mail ne garde pas les espaces autour de l'adresse (le navigateur les retire de sa valeur), et le serveur les retire aussi.
   const canSubmit = email !== '' && !submitting;
@@ -422,7 +425,7 @@ function InviteSection({ reloadInvitations, links }: { reloadInvitations(): Prom
             </select>
           </div>
           <button type="submit" className="button" disabled={!canSubmit}>
-            {submitting ? fr.admin.invite.submitting : fr.admin.invite.submit}
+            {submitting ? submitLabel.busy : submitLabel.idle}
           </button>
         </div>
       </form>
@@ -435,7 +438,18 @@ function InviteSection({ reloadInvitations, links }: { reloadInvitations(): Prom
 
 // Une action à la fois dans la section. Les boutons sont alors inactifs par aria-disabled, et non par `disabled` : un bouton qui devient
 // `disabled` perd le focus, et la personne au clavier se retrouverait en haut de la page.
-function InvitationsSection({ list, reloadMembers, links }: { list: AdminList<PendingInvitation>; reloadMembers(): Promise<void>; links: Links }) {
+// `noMail` (MAILER=none) : rien n'est renvoyé par e-mail, « Renvoyer » devient « Nouveau lien » (le lien neuf s'affiche dans une boîte).
+function InvitationsSection({
+  list,
+  reloadMembers,
+  noMail,
+  links,
+}: {
+  list: AdminList<PendingInvitation>;
+  reloadMembers(): Promise<void>;
+  noMail: boolean;
+  links: Links;
+}) {
   const titleId = useId();
   const section = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -519,10 +533,10 @@ function InvitationsSection({ list, reloadMembers, links }: { list: AdminList<Pe
                   type="button"
                   className="bar-button"
                   aria-disabled={busy || undefined}
-                  aria-label={t(fr.admin.pending.resendLabel, { email: invitation.email })}
+                  aria-label={t(noMail ? fr.admin.pending.renewLabel : fr.admin.pending.resendLabel, { email: invitation.email })}
                   onClick={(event) => void run(invitation, 'resend', event.currentTarget)}
                 >
-                  {fr.admin.pending.resend}
+                  {noMail ? fr.admin.pending.renew : fr.admin.pending.resend}
                 </button>
                 <button
                   type="button"

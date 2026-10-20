@@ -50,8 +50,8 @@ export const fr = {
     goToLogin: 'Aller à la connexion',
     goToOffice: 'Aller au bureau',
     errors: {
-      missingToken: 'Ce lien d\'invitation est incomplet. Ouvre le lien reçu par e-mail en entier.',
-      unknown: 'Ce lien d\'invitation n\'est pas valable. Vérifie que tu as ouvert le lien complet reçu par e-mail, ou demande une nouvelle invitation.',
+      missingToken: 'Ce lien est incomplet. Ouvre en entier le lien d\'invitation qu\'on t\'a envoyé.',
+      unknown: 'Ce lien d\'invitation n\'est pas valable. Vérifie que tu as ouvert en entier le lien d\'invitation qu\'on t\'a envoyé, ou demande une nouvelle invitation.',
       used: 'Ce lien d\'invitation est déjà utilisé : le compte existe. Connecte-toi avec ton adresse e-mail et ton mot de passe.',
       expired: 'Ce lien d\'invitation a expiré. Demande à un admin de te renvoyer l\'invitation.',
       revoked: 'Cette invitation a été annulée. Demande une nouvelle invitation à un admin.',
@@ -165,9 +165,12 @@ export const fr = {
       submit: 'Envoyer l\'invitation',
       submitting: 'Envoi…',
       sent: 'Invitation envoyée à {email}.',
-      // Serveur sans e-mail (MAILER=none) : le serveur rend le lien de l'invitation, que l'admin transmet lui-même. Il ne le redonne pas.
+      // Serveur sans e-mail (MAILER=none) : rien n'est envoyé, le serveur rend le lien de l'invitation, que l'admin transmet lui-même. Il ne
+      // le redonne pas : « Nouveau lien », dans les invitations en attente, en donne un autre. Le bouton ne parle plus d'envoi.
+      create: 'Créer le lien d\'invitation',
+      creating: 'Création…',
       created: 'Invitation créée pour {email}. Envoie-lui ce lien :',
-      validity: 'Ce lien est valable {days} jours. Il ne sera plus affiché : si tu le perds, utilise « Renvoyer » dans les invitations en attente.',
+      validity: 'Ce lien est valable {days} jours. Il ne sera plus affiché : si tu le perds, utilise « Nouveau lien » dans les invitations en attente.',
     },
     // Les invitations ni acceptées ni annulées, expirées comprises (on les renvoie). `title` : la section avant l'arrivée de la liste,
     // `titleCount` : une fois la liste là.
@@ -179,11 +182,14 @@ export const fr = {
       expired: 'expirée',
       resend: 'Renvoyer',
       resendLabel: 'Renvoyer l\'invitation à {email}',
+      // Serveur sans e-mail : rien n'est renvoyé, « Renvoyer » devient « Nouveau lien ».
+      renew: 'Nouveau lien',
+      renewLabel: 'Nouveau lien d\'invitation pour {email}',
       revoke: 'Annuler',
       revokeLabel: 'Annuler l\'invitation de {email}',
       resent: 'Invitation renvoyée à {email}.',
       revoked: 'Invitation à {email} annulée.',
-      // Serveur sans e-mail : « Renvoyer » rend un lien neuf, et l'ancien ne marche plus.
+      // Serveur sans e-mail : « Nouveau lien » rend un lien neuf, et l'ancien ne marche plus.
       renewed: 'Nouveau lien pour {email} : l\'ancien ne marche plus. Envoie-lui ce lien :',
     },
     members: {

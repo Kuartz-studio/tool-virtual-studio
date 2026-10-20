@@ -130,10 +130,16 @@ const pendingSection = () => within(panel()).getByRole('region', { name: /^Invit
 const membersSection = () => within(panel()).getByRole('region', { name: /^Membres/ });
 const emailField = () => within(inviteSection()).getByLabelText(fr.admin.invite.email) as HTMLInputElement;
 const roleField = () => within(inviteSection()).getByLabelText(fr.admin.invite.role) as HTMLSelectElement;
-const submitButton = () => within(inviteSection()).getByRole('button', { name: new RegExp(`^(${fr.admin.invite.submit}|${fr.admin.invite.submitting})$`) }) as HTMLButtonElement;
+// Le bouton du formulaire, sous l'un de ses libellés : avec e-mail (envoyer, envoi), sans e-mail (créer le lien, création).
+const submitButton = () =>
+  within(inviteSection()).getByRole('button', {
+    name: new RegExp(`^(${[fr.admin.invite.submit, fr.admin.invite.submitting, fr.admin.invite.create, fr.admin.invite.creating].join('|')})$`),
+  }) as HTMLButtonElement;
 const rowOf = (section: HTMLElement, text: string) => within(section).getByText(text).closest('li') as HTMLElement;
 const removeButton = (name: string) => within(membersSection()).getByRole('button', { name: t(fr.admin.members.removeLabel, { name }) }) as HTMLButtonElement;
 const resendButton = (email: string) => within(pendingSection()).getByRole('button', { name: t(fr.admin.pending.resendLabel, { email }) }) as HTMLButtonElement;
+// Sans e-mail, « Renvoyer » devient « Nouveau lien » : rien n'est envoyé, un lien neuf est montré.
+const renewButton = (email: string) => within(pendingSection()).getByRole('button', { name: t(fr.admin.pending.renewLabel, { email }) }) as HTMLButtonElement;
 const revokeButton = (email: string) => within(pendingSection()).getByRole('button', { name: t(fr.admin.pending.revokeLabel, { email }) }) as HTMLButtonElement;
 const dialog = () => screen.getByRole('alertdialog');
 const dialogButton = (name: string) => within(dialog()).getByRole('button', { name }) as HTMLButtonElement;
@@ -1380,6 +1386,78 @@ describe('inviter sans e-mail', () => {
   });
 });
 
+// Rien ne part sans e-mail : les boutons ne parlent plus d'envoi (le message de chacun dit déjà ce qui arrive : un lien est montré).
+describe('libellés sans e-mail', () => {
+  const PENDING = [invitation('inv-nina', 'nina@x.fr')];
+
+  test('formulaire : « Créer le lien d\'invitation » avec none, « Envoyer l\'invitation » avec resend, avec memory et tant que le mode est inconnu', async () => {
+    expect(fr.admin.invite.create).toBe('Créer le lien d\'invitation');
+    expect(fr.admin.invite.submit).toBe('Envoyer l\'invitation');
+    for (const [mail, label] of [
+      ['none', fr.admin.invite.create],
+      ['resend', fr.admin.invite.submit],
+      ['memory', fr.admin.invite.submit],
+      [null, fr.admin.invite.submit],
+      [undefined, fr.admin.invite.submit],
+    ] as const) {
+      serve();
+      const view = await openPanel({ mail });
+      expect(submitButton().textContent, String(mail)).toBe(label);
+      expect(within(inviteSection()).queryAllByRole('button', { name: mail === 'none' ? fr.admin.invite.submit : fr.admin.invite.create })).toEqual([]);
+      view.unmount();
+    }
+  });
+
+  test('le libellé suit le mode quand il arrive après l\'ouverture (la configuration se lit à l\'ouverture)', async () => {
+    serve();
+    const view = await openPanel({ mail: undefined });
+    expect(submitButton().textContent).toBe(fr.admin.invite.submit);
+    view.rerender(<AdminPanel id="panneau-admin" selfId={ADA.id} mail="none" onClose={() => {}} />);
+    expect(submitButton().textContent).toBe(fr.admin.invite.create);
+  });
+
+  test('pendant la création : « Création… » avec none, « Envoi… » sinon', async () => {
+    const user = userEvent.setup();
+    const reply = deferred<Response>();
+    serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
+    await openPanel({ mail: 'none' });
+    await user.type(emailField(), 'nina@x.fr');
+    await user.click(submitButton());
+    expect(submitButton().textContent).toBe(fr.admin.invite.creating);
+    expect(fr.admin.invite.creating).toBe('Création…');
+    expect(submitButton().disabled).toBe(true);
+    await act(async () => reply.resolve(json(201, { ...invitation('inv-nina', 'nina@x.fr'), link: LINK })));
+    await waitFor(() => expect(submitButton().textContent).toBe(fr.admin.invite.create));
+  });
+
+  test('invitations en attente : « Nouveau lien » avec none (nom accessible dit pour qui), « Renvoyer » sinon', async () => {
+    expect(fr.admin.pending.renew).toBe('Nouveau lien');
+    serve({ invitations: PENDING });
+    const none = await openPanel({ mail: 'none' });
+    expect(renewButton('nina@x.fr').textContent).toBe(fr.admin.pending.renew);
+    expect(within(pendingSection()).queryByRole('button', { name: t(fr.admin.pending.resendLabel, { email: 'nina@x.fr' }) })).toBeNull();
+    expect(within(pendingSection()).queryByText(fr.admin.pending.resend)).toBeNull();
+    none.unmount();
+
+    for (const mail of ['resend', 'memory', null, undefined] as const) {
+      serve({ invitations: PENDING });
+      const view = await openPanel({ mail });
+      expect(resendButton('nina@x.fr').textContent, String(mail)).toBe(fr.admin.pending.resend);
+      expect(within(pendingSection()).queryByText(fr.admin.pending.renew), String(mail)).toBeNull();
+      view.unmount();
+    }
+  });
+
+  test('aucun libellé de bouton du panneau ne parle d\'e-mail ou d\'envoi avec none', async () => {
+    serve({ invitations: PENDING });
+    await openPanel({ mail: 'none' });
+    const names = within(panel())
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent ?? '');
+    expect(names.filter((name) => /e-mail|envoy|renvoy/i.test(name))).toEqual([]);
+  });
+});
+
 describe('renvoyer une invitation sans e-mail', () => {
   const PENDING = [invitation('inv-nina', 'nina@x.fr'), invitation('inv-old', 'old@x.fr', { role: 'admin', expired: true })];
   const renewed = t(fr.admin.pending.renewed, { email: 'nina@x.fr' });
@@ -1396,7 +1474,7 @@ describe('renvoyer une invitation sans e-mail', () => {
     await openPanel({ mail: 'none' });
     noBoxIn(pendingSection());
 
-    await user.click(resendButton('nina@x.fr'));
+    await user.click(renewButton('nina@x.fr'));
     const box = await boxIn(pendingSection(), renewed);
 
     expect(fieldOf(box).value).toBe(LINK);
@@ -1414,7 +1492,7 @@ describe('renvoyer une invitation sans e-mail', () => {
     const writeText = vi.fn(async () => {});
     serve({ invitations: PENDING }, resendWithLink);
     await openPanel({ mail: 'none' });
-    await user.click(resendButton('nina@x.fr'));
+    await user.click(renewButton('nina@x.fr'));
     const box = await boxIn(pendingSection(), renewed);
     stubClipboard(writeText);
 
@@ -1424,7 +1502,7 @@ describe('renvoyer une invitation sans e-mail', () => {
 
     await user.click(dismissOf(box));
     noBoxIn(pendingSection());
-    expect(document.activeElement).toBe(resendButton('nina@x.fr'));
+    expect(document.activeElement).toBe(renewButton('nina@x.fr'));
   });
 
   test('renvoyer une autre invitation remplace la boîte', async () => {
@@ -1434,9 +1512,9 @@ describe('renvoyer une invitation sans e-mail', () => {
       'POST /api/admin/invitations/inv-old/resend': () => json(200, { ok: true, link: OTHER_LINK }),
     }));
     await openPanel({ mail: 'none' });
-    await user.click(resendButton('nina@x.fr'));
+    await user.click(renewButton('nina@x.fr'));
     await boxIn(pendingSection(), renewed);
-    await user.click(resendButton('old@x.fr'));
+    await user.click(renewButton('old@x.fr'));
     const second = await boxIn(pendingSection(), t(fr.admin.pending.renewed, { email: 'old@x.fr' }));
 
     expect(within(pendingSection()).getAllByRole('group')).toHaveLength(1);
@@ -1457,7 +1535,7 @@ describe('renvoyer une invitation sans e-mail', () => {
       },
     }));
     await openPanel({ mail: 'none' });
-    await user.click(resendButton('nina@x.fr'));
+    await user.click(renewButton('nina@x.fr'));
     await boxIn(pendingSection(), renewed);
 
     await user.click(revokeButton('old@x.fr'));
