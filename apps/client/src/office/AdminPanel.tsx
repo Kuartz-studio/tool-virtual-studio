@@ -344,12 +344,12 @@ function InviteSection({ reloadInvitations, links }: { reloadInvitations(): Prom
     setFeedback(null);
     let hasLink = false;
     try {
-      const created = await api<{ id: string; link?: string }>('/api/admin/invitations', { method: 'POST', body: JSON.stringify({ email, role }) });
+      const created = await api<{ id: string; link?: string } | undefined>('/api/admin/invitations', { method: 'POST', body: JSON.stringify({ email, role }) });
       // Le formulaire se vide s'il n'a pas changé depuis l'envoi : l'e-mail part pendant une ou deux secondes (Resend), et la personne
       // qui a déjà tapé l'adresse suivante la garde.
       setEmail((current) => (current === sent.email ? '' : current));
       setRole((current) => (current === sent.role ? 'member' : current));
-      if (typeof created.link === 'string') {
+      if (typeof created?.link === 'string') {
         // Sans e-mail (MAILER=none), rien n'est parti : le serveur rend le lien, que l'admin transmet. La boîte du lien (qui prend le
         // focus, sauf s'il est passé ailleurs) remplace le message d'envoi.
         hasLink = true;

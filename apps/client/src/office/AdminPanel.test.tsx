@@ -1328,6 +1328,16 @@ describe('inviter sans e-mail', () => {
     expect(document.activeElement).toBe(emailField());
   });
 
+  test('une réponse 201 sans corps (rien à lire) ne passe pas pour une erreur : le message d\'envoi, pas de boîte', async () => {
+    const user = userEvent.setup();
+    serve({}, () => ({ 'POST /api/admin/invitations': () => new Response(null, { status: 201 }) }));
+    await openPanel({ mail: 'none' });
+    await invite(user, 'nina@x.fr');
+    expect(await within(inviteSection()).findByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }))).toBeTruthy();
+    expect(within(inviteSection()).queryByRole('alert')).toBeNull();
+    noBoxIn(inviteSection());
+  });
+
   test('la réponse arrive après que le focus est passé ailleurs : il n\'est pas repris', async () => {
     const user = userEvent.setup();
     const reply = deferred<Response>();
