@@ -1,8 +1,10 @@
 import { randomUUID } from 'node:crypto';
 import {
   EMPTY_GROUPING,
+  MEDIA_STATE_RATE,
   MOVE_RATE,
   OFFICE_ROOM,
+  STATUS_RATE,
   chatSendSchema,
   computeGroups,
   mediaStateSchema,
@@ -25,7 +27,7 @@ import type { World } from './world';
 export interface HandlerDeps {
   world: World;
   env: Env;
-  /** L'horloge de la limite de débit des `move`, en ms : celle du monde (performance.now par défaut). */
+  /** L'horloge des limites de débit de `move`, `status:set` et `media:state`, en ms : celle du monde (performance.now par défaut). */
   now?: () => number;
   logger: Logger;
   /** Le chat « Tout le monde » : c'est lui qui enregistre ses messages. */
@@ -49,6 +51,11 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   const { userId } = socket.data;
   // Une limite par socket : elle repart de zéro avec elle. La clé est son identifiant.
   const moveLimiter = createRateLimiter({ ...MOVE_RATE, now: d.now });
+  // De même pour le statut et les médias, que chaque message fait diffuser à tout le bureau : au-delà de STATUS_RATE.max (ou
+  // MEDIA_STATE_RATE.max) par fenêtre, il est ignoré sans réponse, comme un `move` en trop. Le client n'en envoie qu'au clic, à
+  // chaque init et à chaque changement de micro, caméra ou partage.
+  const statusLimiter = createRateLimiter({ ...STATUS_RATE, now: d.now });
+  const mediaLimiter = createRateLimiter({ ...MEDIA_STATE_RATE, now: d.now });
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
   // flot de messages invalides ne coûte presque rien. Refusé par le monde (trop vite, case bloquante, hors carte), il renvoie à
@@ -66,6 +73,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
 
   // Le statut, à tout le monde, émetteur compris : c'est sa confirmation. Le monde le retient pour le retour de cette personne.
   socket.on('status:set', (payload) => {
+    if (!statusLimiter.take(socket.id)) return;
     const status = statusSchema.safeParse(payload);
     if (!status.success || !d.world.get(userId)) return;
     d.world.setStatus(userId, status.data);
@@ -75,6 +83,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   // Micro, caméra et partage d'écran, pour l'affichage chez les autres : à tout le monde, émetteur compris. Le monde le garde,
   // pour ceux qui arrivent ensuite (init, player:joined). Seuls les trois champs du schéma sont diffusés.
   socket.on('media:state', (payload) => {
+    if (!mediaLimiter.take(socket.id)) return;
     const media = mediaStateSchema.safeParse(payload);
     if (!media.success || !d.world.get(userId)) return;
     d.world.setMedia(userId, media.data);

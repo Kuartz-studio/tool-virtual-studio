@@ -1,7 +1,9 @@
 import {
   DEV_AVATAR_KEYS,
   DEV_OFFICE,
+  MEDIA_STATE_RATE,
   MOVE_RATE,
+  STATUS_RATE,
   OFFICE_ROOM,
   WORLD_TICK_MS,
   buildTiledMap,
@@ -211,6 +213,43 @@ describe('statuts et médias', () => {
     const available = nextEvent(b.socket, 'status:changed');
     back.socket.emit('status:set', 'available');
     expect(await available).toEqual({ id: a.id, status: 'available' });
+  });
+
+  // Chacun est diffusé à tout le bureau : une socket qui en envoie à la chaîne ne doit pas inonder les autres. Comme pour `move`, ce
+  // qui dépasse est ignoré sans réponse, et la limite est propre à chaque socket.
+  test('rafale de status:set et de media:state → au plus 10 de chaque par seconde diffusés, le reste ignoré', async () => {
+    expect(STATUS_RATE).toEqual({ max: 10, windowMs: 1_000 });
+    expect(MEDIA_STATE_RATE).toEqual({ max: 10, windowMs: 1_000 });
+    // Une horloge arrêtée : toute la rafale tombe dans la même fenêtre, quel que soit le temps que le test met à l'envoyer.
+    const clock = { t: 5_000 };
+    const srv = await startTestServer({ now: () => clock.t });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b.socket);
+
+    const statuses = ['busy', 'away'] as const;
+    for (let n = 0; n < 15; n++) a.socket.emit('status:set', statuses[n % 2]!);
+    for (let n = 0; n < 15; n++) a.socket.emit('media:state', { mic: n % 2 === 0, cam: n >= 9, screen: false });
+    await vi.waitFor(() => expect(bEvents.payloadsOf('media:changed')).toHaveLength(MEDIA_STATE_RATE.max));
+    await sleep(100);   // les suivants ont eu le temps d'arriver, et d'être diffusés s'ils devaient l'être
+    expect(bEvents.payloadsOf('status:changed')).toHaveLength(STATUS_RATE.max);
+    expect(bEvents.payloadsOf('media:changed')).toHaveLength(MEDIA_STATE_RATE.max);
+    // Le 10e est le dernier pris : le 11e (busy) n'a rien changé.
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ status: 'away', media: { mic: false, cam: true } });
+    expect(a.socket.connected).toBe(true);
+
+    // B, dans la même fenêtre, n'est pas touché par la limite de A...
+    const seen = Promise.all([nextEvent(a.socket, 'status:changed'), nextEvent(b.socket, 'status:changed')]);
+    b.socket.emit('status:set', 'dnd');
+    expect(await seen).toEqual([
+      { id: b.id, status: 'dnd' },
+      { id: b.id, status: 'dnd' },
+    ]);
+    // ... et A est de nouveau écouté dès la fenêtre suivante.
+    clock.t += STATUS_RATE.windowMs;
+    const again = nextEvent(b.socket, 'status:changed');
+    a.socket.emit('status:set', 'dnd');
+    expect(await again).toEqual({ id: a.id, status: 'dnd' });
   });
 
   test('statut inconnu ou charge utile invalide → ignoré, sans diffusion', async () => {
