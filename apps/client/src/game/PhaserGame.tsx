@@ -33,13 +33,15 @@ export const PhaserGame = forwardRef<IRefPhaserGame, IProps>(function PhaserGame
   }, [ref, mapKey]);
 
   useEffect(() => {
-    EventBus.on('current-scene-ready', (sceneInstance: Phaser.Scene) => {
+    const onSceneReady = (sceneInstance: Phaser.Scene) => {
       currentActiveScene?.(sceneInstance);
       if (typeof ref === 'function') ref({ game: game.current, scene: sceneInstance });
       else if (ref) ref.current = { game: game.current, scene: sceneInstance };
-    });
+    };
+    EventBus.on('current-scene-ready', onSceneReady);
     return () => {
-      EventBus.removeListener('current-scene-ready');
+      // Seulement le nôtre : le modèle retirait tous les écouteurs de l'événement, ceux des autres avec.
+      EventBus.off('current-scene-ready', onSceneReady);
     };
   }, [currentActiveScene, ref]);
 

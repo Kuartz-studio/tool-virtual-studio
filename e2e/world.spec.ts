@@ -1,5 +1,6 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import {
+  expectInOffice,
   holdUntil,
   holdUntilStopped,
   inviteAndJoin,
@@ -36,8 +37,8 @@ const AVATAR_COLORS: readonly Rgb[] = [
   [30, 30, 42], [24, 24, 34],
 ];
 
-// Le bonjour provisoire, en haut à gauche de la page, cache ce qui est dessous.
-const HIDE_OVERLAY = '.office-overlay { visibility: hidden }';
+// La barre du bas, les panneaux et les vignettes (office/OfficeShell.tsx) sont posés sur la carte et cachent ce qui est dessous.
+const HIDE_OVERLAY = '.office-ui { visibility: hidden }';
 
 // Attend que le jeu ait dessiné au moins deux images : celle de la scène qui vient d'être prête, et la suivante.
 async function nextFrames(page: Page): Promise<void> {
@@ -160,7 +161,7 @@ async function colorChanges(
 }
 
 // Un point de la carte, juste dedans puis juste dehors, de chaque côté : x et y sont ceux du pixel dedans, dx et dy la direction
-// de la sortie. Loin du bonjour provisoire, qui cache ce qui est dessous.
+// de la sortie. Loin des commandes du bureau (barre du bas, vignettes), qui cachent ce qui est dessous.
 const edge = (x: number, y: number, dx: number, dy: number): [[number, number], [number, number]] => [[x, y], [x + dx, y + dy]];
 
 test('la carte s\'affiche', async ({ page }, testInfo) => {
@@ -174,12 +175,12 @@ test('la carte s\'affiche', async ({ page }, testInfo) => {
   const canvas = page.locator('#game-container canvas');
   await expect(canvas).toBeVisible();
   expect(await canvas.boundingBox()).toMatchObject({ x: 0, y: 0, width: 1600, height: 1100 });
-  // Et le bonjour provisoire reste par-dessus.
-  await expect(page.getByText('Bonjour Carla')).toBeVisible();
+  // Et la barre du bureau est par-dessus : elle ne prend pas de place au canevas, qui garde la taille de la fenêtre (ci-dessus).
+  await expectInOffice(page, 'Carla');
 
   // Zoom ×2, la carte au milieu : 32 px de marge à gauche et à droite, 38 en haut et en bas.
   const edgesX2 = [edge(32, 600, -1, 0), edge(1567, 600, 1, 0), edge(800, 38, 0, -1), edge(800, 1061, 0, 1)];
-  const x2 = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-x2'), MAP_COLORS, edgesX2.flat());
+  const x2 = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-x2', HIDE_OVERLAY), MAP_COLORS, edgesX2.flat());
   edgesX2.forEach((_, side) => {
     expect(x2.at[side * 2], `dedans, bord ${side}`).not.toEqual(BACKGROUND);
     expect(x2.at[side * 2 + 1], `dehors, bord ${side}`).toEqual(BACKGROUND);
@@ -192,7 +193,7 @@ test('la carte s\'affiche', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1100, height: 760 });
   await expect.poll(async () => (await canvas.boundingBox())?.width).toBe(1100);
   const edgesX1 = [edge(166, 400, -1, 0), edge(933, 400, 1, 0), edge(550, 124, 0, -1), edge(550, 635, 0, 1)];
-  const x1 = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-x1'), MAP_COLORS, edgesX1.flat());
+  const x1 = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-x1', HIDE_OVERLAY), MAP_COLORS, edgesX1.flat());
   edgesX1.forEach((_, side) => {
     expect(x1.at[side * 2], `dedans, bord ${side}`).not.toEqual(BACKGROUND);
     expect(x1.at[side * 2 + 1], `dehors, bord ${side}`).toEqual(BACKGROUND);

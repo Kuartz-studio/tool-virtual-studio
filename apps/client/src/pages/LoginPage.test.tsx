@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { fr } from '../i18n/fr';
 import { fakeAuth, resetFakeAuth, setFakeSession } from '../test/fake-auth-client';
+import { findOfficeFor } from '../test/office';
 import { renderRoute } from '../test/render';
 
 vi.mock('../lib/auth-client', () => import('../test/fake-auth-client'));
@@ -28,7 +29,7 @@ test('connexion → le bureau', async () => {
   const router = renderRoute('/connexion');
 
   await signIn(' lea@x.fr ', 'motdepasse1');
-  expect(await screen.findByText('Bonjour Léa')).toBeTruthy();
+  expect(await findOfficeFor('Léa')).toBeTruthy();
   expect(router.state.location.pathname).toBe('/');
   expect(fakeAuth.signInEmail).toHaveBeenCalledWith({ email: 'lea@x.fr', password: 'motdepasse1' });
 });
@@ -69,7 +70,7 @@ test('le bureau sans session renvoie ici ; après connexion, retour au bureau', 
   expect(router.state.location.pathname).toBe('/connexion');
 
   await signIn('lea@x.fr', 'motdepasse1');
-  expect(await screen.findByText('Bonjour Léa')).toBeTruthy();
+  expect(await findOfficeFor('Léa')).toBeTruthy();
 });
 
 test('lien « Mot de passe oublié ? » → /mot-de-passe-oublie', async () => {

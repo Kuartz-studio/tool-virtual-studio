@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr, t } from '../i18n/fr';
 import { fakeApi, json, sentBody } from '../test/fake-api';
 import { fakeAuth, resetFakeAuth, setFakeSession } from '../test/fake-auth-client';
+import { findOfficeFor } from '../test/office';
 import { renderRoute } from '../test/render';
 
 vi.mock('../lib/auth-client', () => import('../test/fake-auth-client'));
@@ -94,7 +95,7 @@ test('création du compte → le jeton, le nom et le mot de passe partent au ser
   await user.type(screen.getByLabelText(fr.join.password), 'motdepasse1');
   await user.click(screen.getByRole('button', { name: fr.join.submit }));
 
-  expect(await screen.findByText('Bonjour Léa')).toBeTruthy();
+  expect(await findOfficeFor('Léa')).toBeTruthy();
   expect(router.state.location.pathname).toBe('/');
   expect(sentBody(api, 'POST /api/invitations/accept')).toEqual({ token: 'tok', name: 'Léa', password: 'motdepasse1' });
 });

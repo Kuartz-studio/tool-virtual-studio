@@ -1,18 +1,11 @@
 import type { Status } from '@bureau/shared';
 import type { GameObjects, Scene } from 'phaser';
+import { STATUS_COLORS } from '../../lib/status';
 import { DEPTH } from '../map-layers';
 import { snapToPixels } from '../pixel-snap';
 
 // Le nom affiché au-dessus d'une tête : 20 caractères au plus, puis « … ».
 export const NAME_MAX_LENGTH = 20;
-
-// La couleur du point de statut (les statuts de la spec : vert, orange, gris, rouge).
-export const STATUS_COLORS: Record<Status, number> = {
-  available: 0x22c55e,
-  busy: 0xf59e0b,
-  away: 0x9ca3af,
-  dnd: 0xef4444,
-};
 
 const graphemes = new Intl.Segmenter('fr', { granularity: 'grapheme' });
 
@@ -42,8 +35,9 @@ const BACKGROUND = { color: 0x1d2030, alpha: 0.75 };
 // L'espace entre le haut de l'image de l'avatar et le bas de l'étiquette.
 const GAP_ABOVE_HEAD = 1;
 
-// L'étiquette au-dessus de la tête d'un avatar : un point de statut (entouré d'un anneau quand la personne parle) et son nom. Elle
-// passe devant tout le reste (DEPTH.nameTags). Elle n'importe de Phaser que des types : la scène lui donne de quoi dessiner.
+// L'étiquette au-dessus de la tête d'un avatar : un point de statut (de la couleur du statut, STATUS_COLORS : celle du menu des
+// statuts et du panneau Personnes aussi), entouré d'un anneau quand la personne parle, et son nom. Elle passe devant tout le reste
+// (DEPTH.nameTags). Elle n'importe de Phaser que des types : la scène lui donne de quoi dessiner.
 export class NameTag {
   private readonly container: GameObjects.Container;
   private readonly background: GameObjects.Rectangle;

@@ -262,13 +262,102 @@ describe('superviseConnection', () => {
     expect(socket.connectCalls).toBe(1);
   });
 
-  test('la fonction rendue annule l\'essai prévu et retire ses écouteurs', () => {
-    const stop = superviseConnection(socket.asSocket(), store, handlers());
+  test('stop() annule l\'essai prévu et retire les écouteurs', () => {
+    const supervisor = superviseConnection(socket.asSocket(), store, handlers());
     socket.connect();
     socket.serverRefuses('unavailable');
-    stop();
+    supervisor.stop();
     expect(socket.listenerCount()).toBe(0);
     vi.advanceTimersByTime(120_000);
     expect(socket.connectCalls).toBe(1);
+  });
+
+  // « Utiliser ici » : la personne reprend la main depuis cet onglet, après que le serveur l'a remplacé par un autre.
+  describe('restart()', () => {
+    test('après session:replaced : la connexion repart tout de suite, et le prochain init rend la main à l\'onglet', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      const supervisor = superviseConnection(socket.asSocket(), store, handlers());
+      socket.connect();
+      socket.serverAccepts();
+      socket.receive('init', init());
+      socket.receive('session:replaced');
+      socket.serverDisconnects();
+      vi.advanceTimersByTime(600_000);
+      expect(socket.connectCalls).toBe(1);
+      expect(store.getState().replaced).toBe(true);
+
+      supervisor.restart();
+      expect(socket.connectCalls).toBe(2);
+      expect(socket.active).toBe(true);
+      // Tant que le serveur n'a pas répondu, l'onglet reste « remplacé ».
+      expect(store.getState().replaced).toBe(true);
+      socket.serverAccepts();
+      socket.receive('init', init());
+      expect(store.getState().replaced).toBe(false);
+    });
+
+    test('un essai déjà prévu est annulé, et les délais repartent de 1 s', () => {
+      const supervisor = superviseConnection(socket.asSocket(), store, handlers());
+      socket.connect();
+      socket.serverRefuses('unavailable');
+      vi.advanceTimersByTime(1000);
+      socket.serverRefuses('unavailable');
+      vi.advanceTimersByTime(2000);
+      socket.serverRefuses('unavailable');   // le prochain essai serait dans 4 s
+      expect(socket.connectCalls).toBe(3);
+
+      supervisor.restart();
+      expect(socket.connectCalls).toBe(4);
+      // Le nouvel essai est refusé tout de suite : le prochain est dans 1 s, comme au premier. (L'essai de 4 s a été annulé : s'il
+      // restait, aucun autre ne serait prévu, et la reprise n'aurait lieu qu'à ses 4 s.)
+      socket.serverRefuses('unavailable');
+      vi.advanceTimersByTime(999);
+      expect(socket.connectCalls).toBe(4);
+      vi.advanceTimersByTime(1);
+      expect(socket.connectCalls).toBe(5);
+      // Et rien d'autre ne s'y ajoute.
+      socket.serverAccepts();
+      vi.advanceTimersByTime(60_000);
+      expect(socket.connectCalls).toBe(5);
+    });
+
+    test('une connexion ouverte, ou en cours : rien à relancer', () => {
+      const supervisor = superviseConnection(socket.asSocket(), store, handlers());
+      socket.connect();
+      supervisor.restart();
+      expect(socket.connectCalls).toBe(1);
+      socket.serverAccepts();
+      supervisor.restart();
+      expect(socket.connectCalls).toBe(1);
+    });
+
+    test('une panne du réseau (Socket.io réessaie seul) : rien à relancer non plus', () => {
+      const supervisor = superviseConnection(socket.asSocket(), store, handlers());
+      socket.connect();
+      socket.serverAccepts();
+      socket.connectionDrops();
+      supervisor.restart();
+      expect(socket.connectCalls).toBe(1);
+    });
+
+    test('après stop(), il ne fait rien : la page se ferme', () => {
+      const supervisor = superviseConnection(socket.asSocket(), store, handlers());
+      socket.connect();
+      socket.disconnect();
+      supervisor.stop();
+      supervisor.restart();
+      expect(socket.connectCalls).toBe(1);
+    });
+
+    test('la connexion relancée est surveillée comme la première : un refus du serveur est suivi', () => {
+      const on = handlers();
+      const supervisor = superviseConnection(socket.asSocket(), store, on);
+      socket.connect();
+      socket.serverAccepts();
+      socket.serverDisconnects();
+      supervisor.restart();
+      socket.serverRefuses('unauthorized');
+      expect(on.signedOut).toHaveBeenCalledOnce();
+    });
   });
 });

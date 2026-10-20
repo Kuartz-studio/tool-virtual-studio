@@ -1,10 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { createInvitation, inviteAndJoin, joinWithLink, lastMail, signIn, submitJoinForm, uniqueEmail } from './helpers';
+import { createInvitation, expectInOffice, inviteAndJoin, joinWithLink, lastMail, officeBar, signIn, submitJoinForm, uniqueEmail } from './helpers';
 
 test('invitation → compte → bureau → déconnexion → connexion', async ({ page }) => {
   const lea = { email: uniqueEmail('lea'), name: 'Léa', password: 'motdepasse-de-lea' };
   await inviteAndJoin(page, lea);
-  await expect(page.getByText('Bonjour Léa')).toBeVisible();
+  // Le bureau est à Léa : son nom est dans la barre du bas, et le serveur du bureau lui a dit son statut (la connexion temps réel est
+  // ouverte, sous sa session).
+  await expectInOffice(page, 'Léa');
+  await expect(officeBar(page).getByRole('button', { name: 'Statut : Disponible' })).toBeVisible();
   await expect(page).toHaveURL('/');
 
   await page.getByRole('button', { name: 'Se déconnecter' }).click();
@@ -17,7 +20,8 @@ test('invitation → compte → bureau → déconnexion → connexion', async ({
   await expect(page).toHaveURL('/');
   // La session survit à un rechargement de la page (cookie).
   await page.reload();
-  await expect(page.getByText('Bonjour Léa')).toBeVisible();
+  await expectInOffice(page, 'Léa');
+  await expect(officeBar(page).getByRole('button', { name: 'Statut : Disponible' })).toBeVisible();
 });
 
 test('mot de passe oublié de bout en bout', async ({ page }) => {
@@ -64,7 +68,7 @@ test('lien réutilisé → message « déjà utilisé »', async ({ page }) => {
   await expect(page.getByLabel('Mot de passe', { exact: true })).toHaveCount(0);
   // Zoé est toujours connectée : la page la renvoie à son bureau.
   await page.getByRole('link', { name: 'Aller au bureau' }).click();
-  await expect(page.getByText('Bonjour Zoé')).toBeVisible();
+  await expectInOffice(page, 'Zoé');
 });
 
 test('lien d\'invitation ouvert en étant connecté avec un autre compte : déconnexion d\'abord, sans mélange de comptes', async ({ page }) => {

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { fr } from './i18n/fr';
 import { fakeAuth, resetFakeAuth, setFakeSession } from './test/fake-auth-client';
+import { findOfficeFor } from './test/office';
 import { renderRoute } from './test/render';
 
 vi.mock('./lib/auth-client', () => import('./test/fake-auth-client'));
@@ -19,12 +20,12 @@ test('sans session, le bureau renvoie à /connexion', async () => {
   expect(router.state.location.pathname).toBe('/connexion');
 });
 
-test('avec session : « Bonjour Léa » ; « Se déconnecter » ferme la session et renvoie à /connexion', async () => {
+test('avec session : le bureau, avec le nom de Léa ; « Se déconnecter » ferme la session et renvoie à /connexion', async () => {
   setFakeSession(LEA);
   const user = userEvent.setup();
   const router = renderRoute('/');
 
-  expect(await screen.findByText('Bonjour Léa')).toBeTruthy();
+  expect(await findOfficeFor('Léa')).toBeTruthy();
   await user.click(screen.getByRole('button', { name: fr.office.signOut }));
   expect(await screen.findByRole('heading', { name: fr.login.title })).toBeTruthy();
   expect(fakeAuth.signOut).toHaveBeenCalledOnce();
@@ -36,7 +37,7 @@ test('avec session : « Bonjour Léa » ; « Se déconnecter » ferme la session
 test('la session est relue à chaque arrivée sur le bureau', async () => {
   setFakeSession(LEA);
   renderRoute('/');
-  expect(await screen.findByText('Bonjour Léa')).toBeTruthy();
+  expect(await findOfficeFor('Léa')).toBeTruthy();
   expect(fakeAuth.getSession).toHaveBeenCalled();
 });
 
@@ -49,7 +50,7 @@ test('serveur injoignable → message et « Réessayer », sans renvoyer à la c
   expect(await screen.findByText(fr.common.errors.network)).toBeTruthy();
   expect(router.state.location.pathname).toBe('/');
   await user.click(screen.getByRole('button', { name: fr.common.retry }));
-  expect(await screen.findByText('Bonjour Léa')).toBeTruthy();
+  expect(await findOfficeFor('Léa')).toBeTruthy();
 });
 
 test.each([

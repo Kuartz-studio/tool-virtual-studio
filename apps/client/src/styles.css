@@ -179,37 +179,363 @@ a {
   inset: 0;
 }
 
-/* Le bonjour et la déconnexion, provisoires, par-dessus la carte. */
-.office-overlay {
+/* Visible des lecteurs d'écran seulement (le titre de la page du bureau, qui n'a pas de titre à l'écran). */
+.visually-hidden {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Par-dessus la carte : les vignettes (en haut), les panneaux (à droite) et la barre (en bas). Tout est posé sur le jeu, rien ne lui
+   prend de place : ouvrir un panneau ne redimensionne pas le canevas. La couche laisse passer la souris, sauf sur ses éléments. */
+/* --bar-gap et --bar-height : l'écart de la barre au bord de la page et sa hauteur (bouton, marges). Les panneaux et les messages
+   s'arrêtent au-dessus. */
+.office-ui {
+  --bar-gap: 12px;
+  --bar-height: 52px;
+
+  position: absolute;
+  inset: 0;
   z-index: 1;
-  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+
+/* Les vignettes vidéo (tâche 20). Vide : sans hauteur, il ne cache rien. */
+.office-top {
+  position: absolute;
+  top: var(--bar-gap);
+  left: var(--bar-gap);
+  right: var(--bar-gap);
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.office-top > * {
+  pointer-events: auto;
+}
+
+/* La connexion au bureau, en attendant le premier état du serveur : au milieu de la page, sur le fond du jeu. */
+.office-connecting {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  color: #ffffff;
+  text-align: center;
+}
+
+/* Ce qui n'a pas marché : au-dessus de la barre, au milieu. */
+.office-banners {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
+  width: min(480px, calc(100% - 2 * var(--bar-gap)));
+  display: grid;
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: auto;
+}
+
+.office-banners .alert {
+  margin: 0;
+}
+
+/* Les panneaux, à droite, de haut en bas de la page, au-dessus de la barre. */
+.office-side {
+  position: absolute;
+  top: var(--bar-gap);
+  right: var(--bar-gap);
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
+  width: min(320px, calc(100% - 2 * var(--bar-gap)));
+  display: flex;
+  flex-direction: column;
+}
+
+.office-side > * {
+  pointer-events: auto;
+}
+
+/* La barre du bas : ton nom et ton statut à gauche, les commandes au milieu (tâche 20), Personnes et la déconnexion à droite. */
+.office-bar {
+  position: absolute;
+  left: var(--bar-gap);
+  right: var(--bar-gap);
+  bottom: var(--bar-gap);
+  min-height: var(--bar-height);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 8px 12px;
-  padding: 8px 12px;
+}
+
+.office-bar-start,
+.office-bar-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+  pointer-events: auto;
+}
+
+.office-bar-center {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.office-bar-center > * {
+  pointer-events: auto;
+}
+
+.office-user {
+  max-width: 14ch;
+  padding-left: 4px;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Les boutons de la barre et des panneaux : discrets, au contraire du bouton d'action des pages de compte (.button). */
+.bar-button {
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  color: var(--text);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.bar-button:hover:not(:disabled),
+.bar-button[aria-expanded='true'] {
+  background: var(--background);
+}
+
+.bar-button[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.bar-button:focus-visible,
+.status-menu-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bar-button-caret {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+/* Le point d'un statut : de la couleur du statut (posée par StatusDot, qui la tient de STATUS_COLORS, comme l'étiquette de l'avatar).
+   Sans statut (hors ligne, ou pas encore connu), un anneau vide. */
+.status-dot {
+  flex: none;
+  box-sizing: border-box;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.status-dot:not([data-status]) {
+  border: 2px solid var(--text-muted);
+}
+
+/* Le menu des statuts, qui s'ouvre vers le haut. */
+.status-menu {
+  position: relative;
+}
+
+.status-menu-list {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 12px);
+  z-index: 2;
+  min-width: 100%;
+  display: grid;
+  gap: 2px;
+  padding: 4px;
+  background: var(--surface);
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+.status-menu-item {
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.status-menu-item:hover,
+.status-menu-item:focus-visible {
+  background: var(--background);
+}
+
+.status-menu-item[aria-checked='true'] {
+  font-weight: 600;
+}
+
+.status-menu-check {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--accent);
+}
+
+/* Le panneau Personnes : l'en-tête, puis les listes, qui défilent. */
+.people-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+  overflow: hidden;
   background: var(--surface);
   border-radius: 12px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
 }
 
-.office-overlay h1 {
+.people-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 4px 16px;
+}
+
+.people-panel-header h2 {
   margin: 0;
   font-size: 1rem;
 }
 
-.office-overlay .alert,
-.office-overlay .notice {
-  flex-basis: 100%;
-  margin: 0;
+/* Le titre reçoit le focus à l'ouverture, sans être un contrôle : pas de contour. */
+.people-panel-header h2:focus {
+  outline: none;
 }
 
-/* La connexion au bureau, en attendant le premier état du serveur. */
-.office-status {
-  flex-basis: 100%;
+.people-lists {
+  overflow-y: auto;
+  padding: 0 16px 16px;
+}
+
+.people-group h3 {
+  margin: 12px 0 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.people-list {
   margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.person {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.person .status-dot {
+  align-self: center;
+}
+
+.person-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-you {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.person-status {
+  flex: none;
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.people-loading {
+  margin: 12px 0 0;
+  color: var(--text-muted);
+}
+
+.people-failed {
+  margin-top: 12px;
+}
+
+.people-failed .alert {
+  margin-bottom: 8px;
+}
+
+/* « Ouvert dans un autre onglet » : un écran sur toute la page, sur le bureau grisé. */
+.replaced-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: rgb(29 32 48 / 85%);
+}
+
+.replaced-card {
+  max-width: 420px;
+  padding: 28px 32px;
+  text-align: center;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+.replaced-card h2 {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+}
+
+.replaced-card p {
+  margin: 0 0 20px;
   color: var(--text-muted);
 }

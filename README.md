@@ -52,6 +52,8 @@ Le bureau est dessiné dans un canevas, que Playwright ne sait pas interroger : 
 
 Tous les tests partagent le serveur et son bureau : les joueurs d'un test apparaissent chez tous les autres, au même point d'apparition. Un test ne regarde donc les autres que par leur identifiant, et ceux qui regardent l'avatar local à l'écran (`e2e/world.spec.ts`) cachent les autres joueurs.
 
+Le reste de l'interface (barre du bas, panneaux, vignettes) est du HTML posé sur la carte, dans `.office-ui` : les tests l'interrogent par ses rôles et ses noms (`getByRole('group', { name: 'Barre du bureau' })`, `getByRole('complementary', { name: 'Personnes' })`), et ceux qui lisent des pixels la cachent (`HIDE_OVERLAY`, `e2e/world.spec.ts`). Dans le panneau Personnes, le point de chaque personne porte `data-user` (son identifiant) et, si elle est en ligne, `data-status` (`available`, `busy`, `away` ou `dnd`).
+
 ## Premier admin
 
 L'inscription se fait sur invitation, et les invitations se créent depuis le panneau d'administration : le premier admin naît donc d'une commande, qui crée une invitation admin et en affiche le lien.

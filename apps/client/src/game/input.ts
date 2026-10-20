@@ -42,12 +42,24 @@ export class DirectionInput {
   }
 }
 
-// Ce qu'on tape dans un champ (le chat, bientôt) n'est pas pour l'avatar. `select` en fait partie : les flèches y changent l'option.
-// `contenteditable="false"` n'est pas un champ ; `contenteditable=""` et `contenteditable="plaintext-only"` en sont.
-const TYPING_FIELD = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+// Ce qu'on tape dans un champ (le chat, bientôt) n'est pas pour l'avatar. Un champ de saisie est :
+// - un <textarea>, ou un élément modifiable (`contenteditable="false"` n'en est pas un ; `contenteditable=""` et
+//   `contenteditable="plaintext-only"` en sont) ;
+// - un <select> : les flèches y changent l'option, et les lettres y cherchent une option ;
+// - un <input> où l'on écrit : text, search, email, password, number, date… (tout type que le navigateur ne connaît pas vaut « text »).
+//   Pas ceux qu'on clique seulement (case à cocher, bouton radio, bouton, curseur, couleur, fichier) : après un clic sur l'un d'eux,
+//   il garde le focus, et l'avatar ne doit pas rester figé jusqu'à un clic ailleurs.
+const EDITABLE = '[contenteditable]:not([contenteditable="false"])';
+const NON_TEXT_INPUT_TYPES: ReadonlySet<string> = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit']);
 
 function isTypingField(target: EventTarget | null): boolean {
-  return target instanceof Element && target.closest(TYPING_FIELD) !== null;
+  if (!(target instanceof Element)) return false;
+  // Une case à cocher dans un texte modifiable : on est dans le texte.
+  if (target.closest(EDITABLE)) return true;
+  const field = target.closest('input, textarea, select');
+  // `type` est le type que le navigateur retient : en minuscules, « text » s'il est absent ou inconnu.
+  if (field instanceof HTMLInputElement) return !NON_TEXT_INPUT_TYPES.has(field.type);
+  return field !== null;
 }
 
 // Branche le clavier de la page sur `input`. Renvoie la fonction qui le débranche.

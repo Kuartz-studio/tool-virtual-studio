@@ -124,18 +124,26 @@ export function retryDelay(attempt: number): number {
 //   `disabled` (compte retiré) renvoient à la connexion (signedOut) ; `forbidden_origin` (la page n'est pas celle de l'appli) ne se
 //   règle pas en réessayant (forbidden) ; `unavailable` (le serveur n'a pas pu lire la session), `rate_limited` (trop de connexions
 //   dans la minute) ou tout autre refus : nouvel essai, après retryDelay ;
-// - le serveur ferme la connexion exprès : après `session:replaced`, jamais de reconnexion (un autre onglet a pris la place ; l'écran
-//   « Ouvert dans un autre onglet » propose de la reprendre). Sinon (compte retiré pendant la visite, arrivée impossible), un nouvel
-//   essai : le serveur dira pourquoi (`disabled`), ou nous laissera revenir.
-//
-// Renvoie la fonction qui arrête de veiller (et annule l'essai prévu).
+// - le serveur ferme la connexion exprès : après `session:replaced`, jamais de reconnexion toute seule (un autre onglet a pris la
+//   place ; l'écran « Ouvert dans un autre onglet » propose de la reprendre : restart()). Sinon (compte retiré pendant la visite,
+//   arrivée impossible), un nouvel essai : le serveur dira pourquoi (`disabled`), ou nous laissera revenir.
+export interface ConnectionSupervisor {
+  // Arrête de veiller : annule l'essai prévu et retire les écouteurs.
+  stop(): void;
+  // Relance la connexion tout de suite, de la part de la personne (« Utiliser ici ») : l'essai prévu est annulé, les délais
+  // repartent de 1 s, et la socket se reconnecte si elle ne l'est ni n'essaie de l'être. Le serveur remplace alors l'autre onglet.
+  // Sans effet après stop().
+  restart(): void;
+}
+
 export function superviseConnection(
   socket: OfficeSocket,
   store: StoreApi<OfficeState>,
   on: { signedOut(): void; forbidden(): void },
-): () => void {
+): ConnectionSupervisor {
   let attempt = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let stopped = false;
 
   const retryLater = () => {
     if (timer !== undefined) return;   // un essai est déjà prévu
@@ -161,11 +169,21 @@ export function superviseConnection(
   socket.on('connect', onConnect);
   socket.on('connect_error', onConnectError);
   socket.on('disconnect', onDisconnect);
-  return () => {
-    clearTimeout(timer);
-    timer = undefined;
-    socket.off('connect', onConnect);
-    socket.off('connect_error', onConnectError);
-    socket.off('disconnect', onDisconnect);
+  return {
+    stop: () => {
+      stopped = true;
+      clearTimeout(timer);
+      timer = undefined;
+      socket.off('connect', onConnect);
+      socket.off('connect_error', onConnectError);
+      socket.off('disconnect', onDisconnect);
+    },
+    restart: () => {
+      if (stopped) return;
+      clearTimeout(timer);
+      timer = undefined;
+      attempt = 0;
+      if (!socket.active) socket.connect();
+    },
   };
 }

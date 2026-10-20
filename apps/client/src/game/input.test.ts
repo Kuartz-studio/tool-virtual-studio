@@ -158,6 +158,58 @@ describe('bindKeyboard', () => {
     expect(input.current()).toBe('down');
   });
 
+  // Seuls les champs où l'on écrit prennent les touches. Une case à cocher, un bouton ou un curseur qui a le focus (après un clic, par
+  // exemple) ne doit pas figer l'avatar : le joueur retrouve ses touches sans devoir cliquer ailleurs.
+  test.each(['checkbox', 'radio', 'button', 'submit', 'reset', 'image', 'range', 'color', 'file'])(
+    'le focus dans un <input type="%s"> : ce n\'est pas un champ de saisie, l\'avatar se déplace',
+    (type) => {
+      const control = field('input', { type });
+      fire(control, 'keydown', 'KeyD');
+      expect(input.current()).toBe('right');
+      fire(control, 'keyup', 'KeyD');
+      expect(input.current()).toBeNull();
+      fire(control, 'keydown', 'ArrowUp');
+      expect(input.current()).toBe('up');
+    },
+  );
+
+  test.each([undefined, 'text', 'search', 'email', 'url', 'tel', 'password', 'number', 'date', 'time', 'datetime-local', 'month', 'week'])(
+    'le focus dans un <input type="%s"> : un champ de saisie, les touches sont ignorées',
+    (type) => {
+      fire(window, 'keydown', 'KeyD');
+      const typing = field('input', type === undefined ? {} : { type });
+      fire(typing, 'keydown', 'KeyA');
+      expect(input.current()).toBeNull();
+    },
+  );
+
+  test.each(['foo', '', ' checkbox'])('un type inconnu (« %s ») vaut « text », comme dans le navigateur : un champ de saisie', (type) => {
+    const typing = field('input', { type });
+    fire(typing, 'keydown', 'KeyA');
+    expect(input.current()).toBeNull();
+  });
+
+  test('le type s\'écrit comme on veut : CHECKBOX est une case à cocher', () => {
+    const control = field('input', { type: 'CHECKBOX' });
+    fire(control, 'keydown', 'KeyS');
+    expect(input.current()).toBe('down');
+  });
+
+  test('un bouton (<button>) qui a le focus n\'est pas un champ de saisie non plus', () => {
+    const button = field('button');
+    fire(button, 'keydown', 'KeyW');
+    expect(input.current()).toBe('up');
+  });
+
+  test('une case à cocher dans un texte modifiable : on y écrit, les touches sont ignorées', () => {
+    const editable = field('div', { contenteditable: 'true' });
+    const checkbox = editable.appendChild(document.createElement('input'));
+    checkbox.setAttribute('type', 'checkbox');
+    checkbox.focus();
+    fire(checkbox, 'keydown', 'KeyD');
+    expect(input.current()).toBeNull();
+  });
+
   test('le focus, et non seulement la cible de l\'événement : un champ qui a le focus ignore une touche envoyée à la fenêtre', () => {
     fire(window, 'keydown', 'KeyD');
     field('input');

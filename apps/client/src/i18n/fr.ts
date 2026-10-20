@@ -1,3 +1,5 @@
+import type { Status } from '@bureau/shared';
+
 // Tous les textes de l'interface. Un texte variable porte des {clés}, que t() remplace.
 export const fr = {
   common: {
@@ -65,13 +67,38 @@ export const fr = {
     invalidLink: 'Ce lien n\'est plus valable : il a expiré, ou il a déjà servi.',
     requestNewLink: 'Demander un nouveau lien',
   },
+  // Les statuts, choisis à la main (spec §10).
+  status: {
+    available: 'Disponible',
+    busy: 'Occupé',
+    away: 'Absent',
+    dnd: 'Ne pas déranger',
+  } satisfies Record<Status, string>,
   office: {
-    hello: 'Bonjour {name}',
     signOut: 'Se déconnecter',
     signingOut: 'Déconnexion…',
     mapLoadFailed: 'Impossible de charger la carte du bureau. Recharge la page pour réessayer.',
     connecting: 'Connexion au bureau…',
     replaced: 'Ouvert dans un autre onglet',
+    replacedHint: 'Le bureau ne peut être ouvert que dans un onglet à la fois. Utilise-le ici pour reprendre la main : l\'autre onglet s\'arrêtera.',
+    useHere: 'Utiliser ici',
+    // La barre du bas : ton nom, ton statut, les commandes.
+    barLabel: 'Barre du bureau',
+    statusMenu: {
+      label: 'Statut',
+      // Le nom du bouton, et ce qu'un lecteur d'écran annonce quand le statut change.
+      current: 'Statut : {status}',
+      menu: 'Choisir mon statut',
+    },
+    people: {
+      toggle: 'Personnes',
+      title: 'Personnes',
+      close: 'Fermer le panneau Personnes',
+      online: 'En ligne ({count})',
+      offline: 'Hors ligne ({count})',
+      you: '(toi)',
+      loadFailed: 'Impossible de charger la liste des membres.',
+    },
     errors: {
       forbiddenOrigin: 'Le bureau refuse la connexion depuis cette page : ouvre l\'appli à son adresse habituelle.',
     },

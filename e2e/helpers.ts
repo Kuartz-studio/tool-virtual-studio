@@ -1,4 +1,4 @@
-import { expect, type APIRequestContext, type Page } from '@playwright/test';
+import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
 
 export interface Account {
   email: string;
@@ -24,12 +24,22 @@ export async function lastMail(request: APIRequestContext, to: string): Promise<
   return res.ok() ? ((await res.json()) as { subject: string; link: string }) : null;
 }
 
+// La barre du bas du bureau (le groupe « Barre du bureau ») : le nom de la personne, son statut, Personnes et Se déconnecter.
+export function officeBar(page: Page): Locator {
+  return page.getByRole('group', { name: 'Barre du bureau' });
+}
+
+// Le bureau est affiché pour cette personne : son nom est dans la barre du bas.
+export async function expectInOffice(page: Page, name: string): Promise<void> {
+  await expect(officeBar(page).getByText(name, { exact: true })).toBeVisible();
+}
+
 // Remplit le formulaire de la page « Rejoindre » (déjà ouverte, ou qui va s'afficher), crée le compte et attend le bureau.
 export async function submitJoinForm(page: Page, { name, password }: Pick<Account, 'name' | 'password'>): Promise<void> {
   await page.getByLabel('Nom affiché', { exact: true }).fill(name);
   await page.getByLabel('Mot de passe', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Créer mon compte' }).click();
-  await expect(page.getByText(`Bonjour ${name}`)).toBeVisible();
+  await expectInOffice(page, name);
 }
 
 // Ouvre un lien d'invitation, crée le compte et attend le bureau.
@@ -49,7 +59,7 @@ export async function signIn(page: Page, { email, password, name }: Account): Pr
   await page.getByLabel('Adresse e-mail', { exact: true }).fill(email);
   await page.getByLabel('Mot de passe', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Se connecter' }).click();
-  await expect(page.getByText(`Bonjour ${name}`)).toBeVisible();
+  await expectInOffice(page, name);
 }
 
 // ---- Le bureau ----------------------------------------------------------------------------------------------------------------
