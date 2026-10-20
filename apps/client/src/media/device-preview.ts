@@ -127,7 +127,8 @@ export class DevicePreview {
     this.publish();
   }
 
-  // Les pistes obtenues, par périphérique (absent : en échec).
+  // Les pistes obtenues, par périphérique (absent : en échec). Fermé entre-temps (« Entrer »), plus rien n'est demandé : ce qui a été
+  // obtenu revient à sync, qui l'arrête.
   private async acquire(kinds: Kind[], wish: PreviewWish): Promise<Map<Kind, MediaStreamTrack>> {
     const got = new Map<Kind, MediaStreamTrack>();
     if (!this.media) return got;
@@ -135,7 +136,9 @@ export class DevicePreview {
     if ('tracks' in together) return together.tracks;
     if (kinds.length === 1) return got;
     for (const kind of kinds) {
+      if (this.closed) return got;
       if (isRefusal(together.error) && !(await this.isGranted(kind))) continue;
+      if (this.closed) return got;
       const alone = await this.request([kind], wish);
       const track = 'tracks' in alone ? alone.tracks.get(kind) : undefined;
       if (track) got.set(kind, track);

@@ -170,4 +170,49 @@ describe('la fin', () => {
     expect(devices.tracks.every((track) => track.stopped)).toBe(true);
     expect(states).toHaveLength(count);
   });
+
+  // La demande à deux a échoué (pas de caméra) : chacun est redemandé seul. « Entrer » pendant ce temps ne doit pas laisser l'aperçu
+  // continuer : une question du navigateur de plus, et une piste que plus personne n'arrêterait.
+  test('close pendant les demandes une à une : plus aucune demande, et la piste obtenue après close est arrêtée', async () => {
+    const { devices, preview, states } = setup();
+    devices.missing.add('video');
+    const together = devices.holdAnswers();
+    preview.want({ mic: true, cam: true });
+    await flush();
+    together();
+    const alone = devices.holdAnswers();   // la demande du micro seul attendra
+    await flush();
+    expect(devices.calls).toEqual([{ audio: true, video: true }, { audio: true, video: false }]);
+    const count = states.length;
+
+    preview.close();
+    alone();
+    await preview.idle();
+    expect(devices.calls).toHaveLength(2);   // la caméra seule n'est pas demandée
+    expect(devices.tracks).toHaveLength(1);
+    expect(devices.tracks[0]!.stopped).toBe(true);
+    expect(states).toHaveLength(count);
+  });
+
+  test('close pendant la question des permissions (après un refus à deux) : rien n\'est redemandé', async () => {
+    const { devices, permissions, preview } = setup();
+    devices.refuse.add('video');
+    permissions.states.set('microphone', 'granted');
+    // La première question (le micro est-il permis ?) attend le test.
+    let answerQuery!: () => void;
+    const firstQuery = new Promise<void>((resolve) => (answerQuery = resolve));
+    const query = permissions.query.bind(permissions);
+    permissions.query = async (descriptor) => {
+      await firstQuery;
+      return query(descriptor);
+    };
+    preview.want({ mic: true, cam: true });
+    await flush();
+    expect(devices.calls).toHaveLength(1);
+    preview.close();
+    answerQuery();
+    await preview.idle();
+    expect(devices.calls).toHaveLength(1);
+    expect(devices.tracks).toEqual([]);
+  });
 });
