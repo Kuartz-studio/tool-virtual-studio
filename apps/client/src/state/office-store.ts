@@ -25,8 +25,10 @@ export interface OfficeState {
   // envoie). Faux avant le premier `init`, et dès que la connexion est coupée, jusqu'à l'`init` du retour. Le reste de l'état reste
   // là pendant une coupure : celui d'avant, que l'`init` du retour remplacera.
   ready: boolean;
-  // La dernière consigne audio/vidéo reçue (null avant la première) : l'audio et la vidéo, branchés après « Entrer », la rejouent
-  // (media/use-media.ts). Le serveur ne redit pas une consigne.
+  // La dernière consigne audio/vidéo reçue par la connexion en cours : l'audio et la vidéo, branchés après « Entrer », la rejouent
+  // (media/use-media.ts), puisque le serveur ne redit pas une consigne. null avant la première, et dès que la connexion qui l'a reçue
+  // est coupée : pendant la coupure, le serveur a pu sortir la personne de son groupe, et il redit la consigne du moment après l'init
+  // de la connexion suivante.
   mediaInstruction: MediaInstruction | null;
   // Soi-même, tel que le serveur le voit (position de l'`init`, statut, médias, profil) ; null avant le premier `init`.
   self: PublicPlayer | null;
@@ -45,7 +47,7 @@ export interface OfficeState {
   setReplaced(v: boolean): void;
   // La connexion coupée : setReady(false). (L'`init` la rend prête : applyInit.)
   setReady(ready: boolean): void;
-  setMediaInstruction(i: MediaInstruction): void;
+  setMediaInstruction(i: MediaInstruction | null): void;
   // Les mouvements d'un tick : la dernière position de chaque joueur connu (soi-même et les inconnus sont ignorés), sans prévenir
   // personne et sans changer l'état réactif.
   recordMoves(moves: ReadonlyArray<{ id: string } & PlayerPosition>): void;

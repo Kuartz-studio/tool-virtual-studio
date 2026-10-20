@@ -346,6 +346,14 @@ describe('la consigne reçue avant le montage (pendant l\'écran d\'entrée)', (
     expect(hook.result.current.room).toBe('r2');
   });
 
+  test('une consigne oubliée (la connexion qui l\'avait reçue est tombée) : rien n\'est rejoué', async () => {
+    useOfficeStore.getState().setMediaInstruction({ type: 'join', p: payload('r1') });
+    useOfficeStore.getState().setMediaInstruction(null);
+    const { client } = setup();
+    await settle(client);
+    expect(client.journal).toEqual([]);
+  });
+
   test('sans socket (pas encore ouverte), rien n\'est rejoué : la consigne viendra avec elle', async () => {
     useOfficeStore.getState().setMediaInstruction({ type: 'join', p: payload('r1') });
     const client = new FakeMediaClient();

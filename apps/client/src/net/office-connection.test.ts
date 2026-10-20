@@ -107,6 +107,23 @@ describe('connectOffice', () => {
     expect(bus.emitted.map(([event]) => event)).toEqual(['net:init']);
   });
 
+  // Une consigne ne vaut que pour la connexion qui l'a reçue : pendant une coupure, le serveur peut sortir la personne de son groupe
+  // (au-delà du délai de grace) sans qu'elle l'apprenne, et la room retenue ne serait plus la sienne. À la connexion suivante, le
+  // serveur redit la consigne du moment, après son init.
+  test('la connexion coupée : la consigne retenue est oubliée ; la suivante redit la sienne', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    socket.serverAccepts();
+    socket.receive('init', init());
+    socket.receive('media:join', { url: 'wss://livekit.test', room: 'r1', token: 'jeton' });
+    socket.connectionDrops();
+    expect(store.getState().mediaInstruction).toBeNull();
+    socket.serverAccepts();
+    socket.receive('init', init());
+    expect(store.getState().mediaInstruction).toBeNull();
+    socket.receive('media:leave');
+    expect(store.getState().mediaInstruction).toEqual({ type: 'leave' });
+  });
+
   // Un autre onglet a pris la place : le serveur ne dira plus rien à celui-ci, et la room retenue est maintenant celle de l'autre (un
   // client qui la rejoindrait avec la même identité l'en chasserait).
   test('session:replaced : la consigne retenue n\'a plus cours (leave)', () => {

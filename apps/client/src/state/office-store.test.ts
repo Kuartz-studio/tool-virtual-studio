@@ -131,13 +131,16 @@ test('ready : faux au départ ; vrai à l\'init (le serveur nous a placés) ; fa
   expect(store.getState().ready).toBe(true);
 });
 
-test('mediaInstruction : aucune au départ, puis la dernière reçue', () => {
+test('mediaInstruction : aucune au départ, puis la dernière reçue, et plus aucune une fois oubliée', () => {
   expect(store.getState().mediaInstruction).toBeNull();
   const p = { url: 'wss://livekit.test', room: 'r1', token: 'jeton' };
   store.getState().setMediaInstruction({ type: 'join', p });
   expect(store.getState().mediaInstruction).toEqual({ type: 'join', p });
   store.getState().setMediaInstruction({ type: 'leave' });
   expect(store.getState().mediaInstruction).toEqual({ type: 'leave' });
+  // La connexion qui l'a reçue est coupée : oubliée.
+  store.getState().setMediaInstruction(null);
+  expect(store.getState().mediaInstruction).toBeNull();
 });
 
 // ---- Les dernières positions (pour un jeu qui démarre après des ticks) ----------------------------------------------------------

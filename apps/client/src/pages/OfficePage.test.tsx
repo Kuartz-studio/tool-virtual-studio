@@ -151,6 +151,32 @@ test('une consigne média reçue pendant l\'écran d\'entrée est suivie après 
   expect(client!.getSnapshot().room).toBe('r1');
 });
 
+// La personne, dans un groupe pendant l'écran d'entrée, perd la connexion plus longtemps que le délai de grâce (un déploiement, le
+// Wi-Fi) : le serveur la sort de son groupe sans qu'elle l'apprenne. La consigne d'avant la coupure ne vaut plus : rejouée après
+// « Entrer », elle publierait micro et caméra dans une room qui n'est plus la sienne, avec un jeton encore bon.
+test('la connexion tombe pendant l\'écran d\'entrée : « Entrer » ne rejoue pas la consigne d\'avant ; celle de la connexion suivante est suivie', async () => {
+  await openPage();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+    socket().receive('media:join', payload('jeton-d-avant'));
+    socket().connectionDrops();
+  });
+  await enter();
+  const [client] = mediaClients;
+  await act(() => client!.idle());
+  expect(client!.journal).toEqual([]);
+
+  // La connexion revient : le serveur redit la consigne du moment, après son init.
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+    socket().receive('media:join', payload('jeton-neuf'));
+  });
+  await act(() => client!.idle());
+  expect(client!.journal).toEqual(['join:r1']);
+});
+
 test('remplacé par un autre onglet pendant l\'écran d\'entrée : « Entrer » ne rejoint pas la room (c\'est celle de l\'autre onglet)', async () => {
   await openPage();
   act(() => {

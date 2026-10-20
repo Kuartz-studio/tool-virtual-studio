@@ -46,8 +46,10 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // Branche la connexion sur l'état de l'interface (le magasin) et sur le jeu (le bus) :
 // - ce que le serveur dit va au magasin (arrivées, départs, statuts, médias, profils, onglet remplacé), puis au jeu, qui le lit déjà
 //   à jour ; les positions (`world:tick`) vont au jeu, et aux dernières positions du magasin, que React ne voit pas changer ;
-// - les consignes audio/vidéo (`media:join`, `media:leave`) : la dernière est retenue au magasin (mediaInstruction). L'audio et la
-//   vidéo ne les suivent qu'après « Entrer », et la rejouent alors : le serveur ne redit pas une consigne ;
+// - les consignes audio/vidéo (`media:join`, `media:leave`) : la dernière est retenue au magasin (mediaInstruction), le temps de la
+//   connexion qui l'a reçue. L'audio et la vidéo ne les suivent qu'après « Entrer », et la rejouent alors : le serveur ne redit pas
+//   une consigne. La connexion coupée l'oublie : pendant la coupure, le serveur a pu sortir la personne de son groupe (au-delà du
+//   délai de grâce), et il redit la consigne du moment après l'init de la connexion suivante ;
 // - la connexion est prête (`ready`, au magasin) une fois l'`init` de cette connexion reçu, et ne l'est plus dès qu'elle est coupée ;
 // - ce que le jeu produit (`local:move`, `local:teleport`) part au serveur, mais seulement quand la connexion est prête. Avant, le
 //   serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure, Socket.io garderait les messages et les enverrait au
@@ -97,7 +99,10 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     'media:join': (p) => state().setMediaInstruction({ type: 'join', p }),
     'media:leave': () => state().setMediaInstruction({ type: 'leave' }),
   };
-  const onDisconnect = () => state().setReady(false);
+  const onDisconnect = () => {
+    state().setReady(false);
+    state().setMediaInstruction(null);
+  };
 
   // Les écouteurs de Socket.io sont typés événement par événement : la boucle passe par un type plus lâche.
   const loose = socket as unknown as { on(event: string, fn: Listener): unknown; off(event: string, fn: Listener): unknown };
