@@ -73,9 +73,9 @@ async function main(): Promise<void> {
     if (isPgliteUrl(env.DATABASE_URL)) await runMigrations(db);
 
     const mailer = createMailerFromEnv(env, logger);
-    const auth = createAuth({ db, mailer, env, logger });
-    const invitations = createInvitationService(db);
     const events = createServerEvents({ onError: (err) => logger.error({ err }, 'Un écouteur d\'événement a échoué') });
+    const auth = createAuth({ db, mailer, env, logger, events });
+    const invitations = createInvitationService(db);
 
     const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger }));
     // Le temps réel partage le serveur HTTP de l'application : /socket.io, sur la même origine que le client et /api.

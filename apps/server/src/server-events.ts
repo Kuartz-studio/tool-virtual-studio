@@ -1,7 +1,9 @@
-// Ce que les routes REST disent au temps réel (la tâche 13 s'y abonne) : un membre vient d'être retiré, un profil a changé.
+// Ce que les routes REST disent au temps réel (la tâche 13 s'y abonne) : un membre vient d'être retiré, un profil a changé, les
+// sessions d'un compte viennent d'être fermées (son mot de passe réinitialisé).
 export interface ServerEventMap {
   'member:removed': [userId: string];
   'profile:changed': [profile: { id: string; name: string; avatarKey: string | null }];
+  'sessions:revoked': [userId: string];
 }
 
 export interface ServerEvents {
@@ -19,6 +21,7 @@ export function createServerEvents(o: { onError?: (err: unknown) => void } = {})
   const listeners: { [E in keyof ServerEventMap]: Set<(...args: ServerEventMap[E]) => void> } = {
     'member:removed': new Set(),
     'profile:changed': new Set(),
+    'sessions:revoked': new Set(),
   };
 
   return {

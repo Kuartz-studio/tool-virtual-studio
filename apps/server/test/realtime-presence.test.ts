@@ -1,6 +1,7 @@
 import { SOCKET_CONNECT_RATE, type MovePayload } from '@bureau/shared';
 import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
+import request from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
 import { removeMember } from '../src/admin/remove-member';
 import { session, user } from '../src/db/schema';
@@ -500,6 +501,58 @@ describe('positions', () => {
   test('loadOfficeMap lit MAPS_DIR/<MAP_KEY>.json ; une carte absente arrête tout avec son chemin', () => {
     expect(loadOfficeMap(testEnv()).spawn).toEqual(SPAWN);
     expect(() => loadOfficeMap({ MAPS_DIR: '/nulle-part', MAP_KEY: 'absente' })).toThrow('/nulle-part/absente.json');
+  });
+});
+
+// Réinitialiser son mot de passe ferme toutes les sessions du compte (revokeSessionsOnPasswordReset) : une session volée ne survit pas
+// au changement. Les connexions au bureau ouvertes avec elles sont coupées aussi, sans désactiver le compte : la reconnexion, avec
+// une session qui n'existe plus, est refusée (`unauthorized`), et le client renvoie à la page de connexion.
+describe('mot de passe réinitialisé', () => {
+  // Le parcours de l'e-mail : la demande, le lien reçu (qui renvoie vers la page de l'appli avec le jeton), le nouveau mot de passe.
+  async function resetPassword(srv: TestServer, email: string, newPassword: string): Promise<void> {
+    const asked = await request(srv.app).post('/api/auth/request-password-reset').send({ email, redirectTo: `${srv.env.APP_URL}/reinitialiser` });
+    expect(asked.status).toBe(200);
+    const mail = await vi.waitFor(
+      () => {
+        const last = srv.mailer.last(email);
+        expect(last).toBeDefined();
+        return last!;
+      },
+      { timeout: 4000 },
+    );
+    const { pathname, search } = new URL(mail.link);
+    const clicked = await request(srv.app).get(pathname + search);
+    const token = new URL(clicked.get('Location') ?? '').searchParams.get('token');
+    expect((await request(srv.app).post('/api/auth/reset-password').send({ token, newPassword })).status).toBe(200);
+  }
+
+  test('ses sockets sont coupées par le serveur, le compte reste actif, et l\'ancienne session ne rouvre pas le bureau', async () => {
+    const srv = await startTestServer();
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    const bEvents = record(b.socket);
+
+    const cut = disconnection(a.socket);
+    await resetPassword(srv, 'a@x.fr', 'nouveaumdp1');
+    expect(await cut).toBe('io server disconnect');   // coupée par le serveur : Socket.io ne se reconnecte pas seul
+    expect(srv.realtime.socketsOf(a.id)).toEqual([]);
+    // Le compte n'est pas retiré : seulement ses sessions.
+    expect((await findUserByEmail(srv.db, 'a@x.fr'))?.disabledAt).toBeNull();
+    // Les autres ne sont pas touchés.
+    expect(b.socket.connected).toBe(true);
+    expect(srv.realtime.socketsOf(b.id)).toHaveLength(1);
+
+    // Le client essaie de revenir (superviseConnection), avec le cookie d'avant : plus de session.
+    const refused = connectError(a.socket);
+    a.socket.connect();
+    expect(await refused).toBe('unauthorized');
+
+    // Avec le nouveau mot de passe, une session neuve, et le bureau de nouveau.
+    const signIn = await request(srv.app).post('/api/auth/sign-in/email').send({ email: 'a@x.fr', password: 'nouveaumdp1' });
+    expect(signIn.status).toBe(200);
+    const cookie = (signIn.get('Set-Cookie') ?? []).map((setCookie) => setCookie.split(';')[0]).join('; ');
+    expect((await enter(srv, cookie)).id).toBe(a.id);
+    expect(bEvents.payloadsOf('player:left')).toEqual([]);   // revenue pendant le délai de grâce
   });
 });
 

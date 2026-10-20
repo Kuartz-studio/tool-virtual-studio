@@ -252,6 +252,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     });
   });
   const offMemberRemoved = d.events.on('member:removed', (userId) => presence.removeMember(userId));
+  // Un mot de passe réinitialisé : ses sessions sont fermées, ses connexions au bureau aussi (le compte, lui, reste actif).
+  const offSessionsRevoked = d.events.on('sessions:revoked', (userId) => presence.disconnectUser(userId));
   // Un profil change (PATCH /api/me) : le monde le retient pour ceux qui arrivent ensuite, et tout le bureau l'apprend, même si la
   // personne n'est pas là (la liste des membres d'un autre onglet peut la suivre).
   const offProfileChanged = d.events.on('profile:changed', (profile) => {
@@ -277,6 +279,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   function stop(): Promise<void> {
     stopped ??= (async () => {
       offMemberRemoved();
+      offSessionsRevoked();
       offProfileChanged();
       clearInterval(saveTimer);
       stopTicks();

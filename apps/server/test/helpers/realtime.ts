@@ -120,6 +120,7 @@ export async function startTestServer(o: TestServerOptions = {}) {
     env: t.env,
     auth: t.auth,
     events: t.events,
+    mailer: t.mailer,
     map,
     get realtime() {
       return current.realtime;

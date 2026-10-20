@@ -19,14 +19,14 @@ export const TEST_PASSWORD = 'motdepasse1';
 // L'application complète sur une base PGlite neuve : Better Auth, invitations et e-mails en mémoire.
 // `env` remplace des variables de testEnv(), par exemple { AUTH_RATE_LIMIT: 'on' } pour tester la limitation des tentatives.
 // `logger` remplace le journal muet des tests, pour vérifier ce que le serveur journalise (un échec d'envoi d'e-mail).
-// `events` reçoit ce que les routes disent au temps réel : t.events.on('member:removed', …).
+// `events` reçoit ce que les routes (et Better Auth) disent au temps réel : t.events.on('member:removed', …).
 export async function createTestApp(o: { env?: Partial<Env>; logger?: Logger } = {}) {
   const env = testEnv(o.env);
   const db = await createTestDb();
   const mailer = createMemoryMailer();
-  const auth = createAuth({ db, mailer, env, logger: o.logger });
-  const invitations = createInvitationService(db);
   const events = createServerEvents();
+  const auth = createAuth({ db, mailer, env, logger: o.logger, events });
+  const invitations = createInvitationService(db);
   const app = createApp({ env, db, auth, invitations, mailer, events, logger: o.logger });
 
   // Invite `email`, accepte l'invitation par la vraie route, et renvoie l'id du compte créé avec son cookie de session,

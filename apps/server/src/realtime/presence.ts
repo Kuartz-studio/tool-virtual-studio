@@ -210,6 +210,13 @@ export function createPresence(d: PresenceDeps) {
     if (player) d.io.to(OFFICE_ROOM).emit('player:left', { id: userId });
   }
 
+  // sessions:revoked (mot de passe réinitialisé) : ses sockets sont coupées, sans reconnexion automatique. Contrairement à un retrait,
+  // le compte reste actif : la personne part comme après une coupure (délai de grâce, position enregistrée), et revient à sa
+  // prochaine connexion, avec une session neuve.
+  function disconnectUser(userId: string): void {
+    for (const socket of [...(socketsByUser.get(userId) ?? [])]) socket.disconnect(true);
+  }
+
   // Enregistre la position de chaque joueur du monde, y compris de ceux qui sont en délai de grâce. La promesse se résout quand
   // cette écriture, et toutes celles d'avant, sont faites.
   function saveAll(): Promise<void> {
@@ -227,6 +234,7 @@ export function createPresence(d: PresenceDeps) {
       }
     },
     removeMember,
+    disconnectUser,
     socketsOf(userId: string): string[] {
       return [...(socketsByUser.get(userId) ?? [])].map((socket) => socket.id);
     },

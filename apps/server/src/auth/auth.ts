@@ -9,14 +9,28 @@ import * as schema from '../db/schema';
 import type { Env } from '../env';
 import { createLogger } from '../logger';
 import type { Mailer } from '../mail/mailer';
+import type { ServerEvents } from '../server-events';
 import { betterAuthLogger } from './auth-logger';
 import { invitationContext } from './invitation-context';
 
 // Better Auth : comptes par e-mail et mot de passe, sessions en cookie, limitation des tentatives en base.
 // auth.cli.ts construit son instance avec cette même fonction : la CLI de Better Auth en déduit src/db/auth-schema.ts.
 // `mailer` envoie les e-mails de réinitialisation du mot de passe ; `logger` reçoit leurs échecs d'envoi et les journaux de
-// Better Auth.
-export function createAuth({ db, mailer, env, logger = createLogger(env) }: { db: Db; mailer: Mailer; env: Env; logger?: Logger }) {
+// Better Auth ; `events` apprend au temps réel qu'un mot de passe a été réinitialisé (sessions:revoked), pour qu'il coupe les
+// connexions au bureau ouvertes avec les sessions fermées (la CLI n'en a pas).
+export function createAuth({
+  db,
+  mailer,
+  env,
+  logger = createLogger(env),
+  events,
+}: {
+  db: Db;
+  mailer: Mailer;
+  env: Env;
+  logger?: Logger;
+  events?: Pick<ServerEvents, 'emit'>;
+}) {
   return betterAuth({
     secret: env.BETTER_AUTH_SECRET,
     baseURL: env.APP_URL,
@@ -44,6 +58,12 @@ export function createAuth({ db, mailer, env, logger = createLogger(env) }: { db
         void mailer.sendPasswordReset({ to: user.email, link: url }).catch((err: unknown) => {
           logger.error({ err, userId: user.id }, 'Envoi de l\'e-mail de réinitialisation impossible');
         });
+      },
+      // Appelé une fois le mot de passe changé et les sessions fermées : les connexions au bureau ouvertes avec elles le sont aussi
+      // (sessions:revoked). Le compte reste actif ; le client, refusé à sa reconnexion (`unauthorized`), renvoie à la connexion.
+      // emit ne lève jamais : la réinitialisation, déjà faite, ne peut pas échouer ici.
+      onPasswordReset: async ({ user }) => {
+        events?.emit('sessions:revoked', user.id);
       },
     },
     session: { expiresIn: SESSION_TTL_S, updateAge: 86400 },
