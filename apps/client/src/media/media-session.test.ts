@@ -386,6 +386,56 @@ describe('dans une room', () => {
     expect(client.getSnapshot()).toMatchObject({ room: 'r2', error: null });
   });
 
+  // Un retrait en retard : le serveur l'a demandé en sortant la personne d'un groupe, puis elle y est revenue (même room), et LiveKit
+  // l'applique à sa nouvelle connexion. Le serveur, pour qui elle est dans la room, ne redira rien : sans erreur, elle resterait seule,
+  // sans conversation et sans « Reconnecter ».
+  describe('retiré, et la room toujours voulue 2 s plus tard', () => {
+    test('ni media:leave ni autre media:join : connection_failed (« Reconnecter »)', async () => {
+      const client = new FakeMediaClient({ mic: true, cam: false });
+      await client.join(payload('r1'));
+      vi.useFakeTimers();
+      try {
+        client.dropConnection('removed');
+        expect(client.getSnapshot()).toMatchObject({ room: null, error: null });
+        vi.advanceTimersByTime(1999);
+        expect(client.getSnapshot().error).toBeNull();
+        vi.advanceTimersByTime(1);
+        expect(client.getSnapshot()).toMatchObject({ room: null, error: 'connection_failed' });
+      } finally {
+        vi.useRealTimers();
+      }
+      // « Reconnecter » : le serveur redit la consigne (avec un jeton neuf), qui rejoint et efface l'erreur.
+      await client.join(payload('r1'));
+      expect(client.getSnapshot()).toMatchObject({ room: 'r1', error: null });
+    });
+
+    test.each([
+      ['media:leave', (client: FakeMediaClient) => client.leave()],
+      ['media:join d\'une autre room', (client: FakeMediaClient) => client.join(payload('r2'))],
+      ['media:join de la même room (rejointe de nouveau)', (client: FakeMediaClient) => client.join(payload('r1'))],
+    ])('une consigne arrivée entre-temps (%s) : pas d\'erreur', async (_name, instruction) => {
+      const client = new FakeMediaClient({ mic: true, cam: false });
+      await client.join(payload('r1'));
+      vi.useFakeTimers();
+      try {
+        client.dropConnection('removed');
+        vi.advanceTimersByTime(500);
+        void instruction(client);
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(client.getSnapshot().error).toBeNull();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    test('perdue (lost) : connection_failed tout de suite, comme avant', async () => {
+      const client = new FakeMediaClient({ mic: true, cam: false });
+      await client.join(payload('r1'));
+      client.dropConnection('lost');
+      expect(client.getSnapshot().error).toBe('connection_failed');
+    });
+  });
+
   test('participants : soi-même d\'abord, puis les autres dans leur ordre d\'arrivée, avec ce qu\'ils publient et qui parle', async () => {
     const client = new FakeMediaClient({ mic: true, cam: false });
     await client.join(payload('r1'));

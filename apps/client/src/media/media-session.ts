@@ -13,6 +13,10 @@ import type {
 
 type DeviceSource = 'mic' | 'cam';
 
+// Retiré d'une room (removed) : le temps laissé à la consigne du serveur qui l'explique (media:leave, ou un autre media:join). Passé ce
+// délai, la room toujours voulue, c'est un retrait en retard (voir roomEnded) : connection_failed, pour que « Reconnecter » apparaisse.
+const REMOVED_RECHECK_MS = 2000;
+
 // Ce qu'a donné l'allumage d'un micro ou d'une caméra :
 // - on : allumé ;
 // - refused : le navigateur l'a refusé, ou le périphérique est absent ou inutilisable (permission_denied) ;
@@ -52,6 +56,8 @@ export class MediaSession implements MediaClient {
   private chosenDevices: MediaDevices;
   // La room que veut la dernière consigne (celle du join, ou aucune après un leave), connue dès l'appel.
   private wanted: string | null = null;
+  // Le nombre de consignes reçues (join, leave) : roomEnded sait ainsi si une autre est arrivée après un retrait.
+  private instructions = 0;
   // La session de room : change quand une connexion commence et quand la room finit (quittée, rendue caduque, terminée par LiveKit).
   private session = 0;
   // Connecté à snapshot.room : la connexion est faite, et la session n'est pas finie.
@@ -102,12 +108,14 @@ export class MediaSession implements MediaClient {
   }
 
   join(p: MediaJoinPayload): Promise<void> {
+    this.instructions += 1;
     this.wanted = p.room;
     this.dropUnwantedRoom();
     return this.enqueue(() => this.doJoin(p));
   }
 
   leave(): Promise<void> {
+    this.instructions += 1;
     this.wanted = null;
     this.dropUnwantedRoom();
     return this.enqueue(() => this.doLeave());
@@ -271,11 +279,20 @@ export class MediaSession implements MediaClient {
     this.endSession({}, true);
   }
 
-  // La room terminée par LiveKit, connectée ou encore en train de se connecter. Perdue, c'est connection_failed ; retirés exprès (un
-  // changement de groupe dont le media:leave n'est pas encore arrivé), ce n'est pas une erreur.
+  // La room terminée par LiveKit, connectée ou encore en train de se connecter. Perdue, c'est connection_failed. Retirés exprès, ce
+  // n'est pas une erreur : un changement de groupe dont le media:leave (ou le media:join d'une autre room) n'est pas encore arrivé, ou
+  // un autre onglet (session:replaced, puis leave). Mais si REMOVED_RECHECK_MS plus tard aucune consigne n'est venue et que la room est
+  // toujours voulue, c'est un retrait en retard : demandé pour un groupe qu'on a quitté puis retrouvé, LiveKit l'a appliqué à la
+  // connexion d'après. Le serveur, pour qui l'on est dans la room, ne dira plus rien : connection_failed, et « Reconnecter ».
   private roomEnded(reason: 'removed' | 'lost'): void {
-    if (this.snapshot.room === null) return;
+    const room = this.snapshot.room;
+    if (room === null) return;
     this.endSession(reason === 'lost' ? { error: 'connection_failed' } : {}, false);
+    if (reason === 'lost') return;
+    const instructions = this.instructions;
+    setTimeout(() => {
+      if (this.instructions === instructions && this.wanted === room && this.snapshot.room === null) this.update({ error: 'connection_failed' });
+    }, REMOVED_RECHECK_MS);
   }
 
   // Finit la session : plus de room, ni de participants, ni de partage d'écran, ni de son bloqué (la room suivante dira le sien).
