@@ -64,6 +64,34 @@ test('le pont des journaux de Better Auth passe par le même journal', () => {
   expect(JSON.parse(lines[0]!)).toMatchObject({ source: 'better-auth', err: { type: 'DrizzleQueryError' } });
 });
 
+// Better Auth passe parfois l'erreur elle-même en guise de message (`logger.error(e)`), et journalise `e.message` en texte quand il parle
+// d'une colonne, d'une table ou d'une relation : dans les deux cas, le « Failed query: … params: … » de Drizzle arrive dans le texte.
+test('le pont de Better Auth : une erreur de la base passée en guise de message n\'a pas ses paramètres dans le texte', () => {
+  const { logger, lines } = productionLogs();
+  betterAuthLogger(logger).log!('error', queryError() as unknown as string);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).not.toContain(TOKEN);
+  expect(lines[0]).not.toContain(EMAIL);
+  const { msg } = JSON.parse(lines[0]!) as { msg: string };
+  expect(msg).toContain('Failed query: insert into "invitation"');
+});
+
+test('le pont de Better Auth : un texte « Failed query: … params: … » n\'a pas ses paramètres non plus', () => {
+  const { logger, lines } = productionLogs();
+  betterAuthLogger(logger).log!('error', queryError().message);
+  expect(lines).toHaveLength(1);
+  expect(lines[0]).not.toContain(TOKEN);
+  expect(lines[0]).not.toContain(EMAIL);
+  const { msg } = JSON.parse(lines[0]!) as { msg: string };
+  expect(msg).toContain('Failed query: insert into "invitation"');
+});
+
+test('le pont de Better Auth : un texte ordinaire est gardé tel quel', () => {
+  const { logger, lines } = productionLogs();
+  betterAuthLogger(logger).log!('warn', 'Invalid password, params: pas ceux d\'une requête');
+  expect(JSON.parse(lines[0]!)).toMatchObject({ msg: 'Invalid password, params: pas ceux d\'une requête' });
+});
+
 test('journal muet (tests, e2e) : la sortie d\'erreur de logServerError ne les montre pas non plus', () => {
   const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
   try {

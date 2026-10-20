@@ -1,6 +1,6 @@
 import type { BetterAuthOptions } from 'better-auth';
 import type { Logger } from 'pino';
-import { logServerError } from '../logger';
+import { logServerError, withoutQueryParams, withoutQueryParamsText } from '../logger';
 
 // Les journaux de Better Auth rejoignent ceux du serveur (une ligne JSON, `source: 'better-auth'`, muets en test) au lieu de
 // s'écrire en texte sur la console. Une erreur garde sa pile (clé `err`) ; les autres arguments vont dans `details`.
@@ -16,7 +16,11 @@ export function betterAuthLogger(logger: Logger): NonNullable<BetterAuthOptions[
       const err = all.find((arg) => arg instanceof Error);
       const details = all.filter((arg) => !(arg instanceof Error));
       const fields = { ...(err !== undefined && { err }), ...(details.length > 0 && { details }) };
-      const text = typeof message === 'string' ? message : err instanceof Error ? err.message : String(message);
+      // Le texte du journal, comme l'erreur (clé `err`), sans les valeurs des requêtes : Drizzle les met dans le message de ses erreurs,
+      // et Better Auth journalise parfois `e.message` en texte.
+      const text = withoutQueryParamsText(
+        typeof message === 'string' ? message : err instanceof Error ? (withoutQueryParams(err) as Error).message : String(message),
+      );
       if (level === 'error') logServerError(scoped, fields, text);
       else scoped[level](fields, text);
     },

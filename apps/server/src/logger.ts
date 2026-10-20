@@ -73,3 +73,10 @@ export function withoutQueryParams(err: unknown): unknown {
   if (lastCause !== undefined && !isErrorLike(lastCause)) copies.at(-1)!.cause = lastCause;
   return copies[0];
 }
+
+// Un texte qui reprend le message d'une requête qui échoue (Better Auth journalise `e.message` tel quel) : « Failed query: <requête>\nparams:
+// <valeurs> » perd ses valeurs, comme dans withoutQueryParams. Tout autre texte est rendu tel quel.
+export function withoutQueryParamsText(text: string): string {
+  const start = text.startsWith('Failed query: ') ? text.indexOf('\nparams: ') : -1;
+  return start === -1 ? text : `${text.slice(0, start)}\nparams: ${HIDDEN}`;
+}
