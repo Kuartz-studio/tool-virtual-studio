@@ -117,6 +117,7 @@ test('reset : l\'état de départ (une autre session, un autre compte)', () => {
   store.getState().setMediaInstruction({ type: 'leave' });
   store.getState().addChatMessage(msg('m1'));
   store.getState().addChatMessage(msg('n1', { channel: 'nearby' }));
+  store.getState().setChosenStatus('dnd');
   store.getState().reset();
   expect(store.getState()).toMatchObject({
     selfId: null,
@@ -129,7 +130,24 @@ test('reset : l\'état de départ (une autre session, un autre compte)', () => {
     chatAll: [],
     chatNearby: [],
     chatReadId: null,
+    chosenStatus: null,
   });
+});
+
+test('chosenStatus : aucun au départ ; le dernier choisi ; un init ne le change pas (self dit ce que dit le serveur)', () => {
+  expect(store.getState().chosenStatus).toBeNull();
+  store.getState().applyInit(init({ ...SELF, status: 'busy' }, [A]));
+  // Le statut de l'init est celui du serveur, pas un choix de la personne.
+  expect(store.getState().chosenStatus).toBeNull();
+  store.getState().setChosenStatus('dnd');
+  store.getState().setChosenStatus('away');
+  expect(store.getState().chosenStatus).toBe('away');
+  // Le serveur a redémarré, et l'a oublié : son init dit « available », le choix reste.
+  store.getState().applyInit(init({ ...SELF, status: 'available' }, [A]));
+  expect(store.getState().chosenStatus).toBe('away');
+  expect(store.getState().self!.status).toBe('available');
+  store.getState().setChosenStatus(null);
+  expect(store.getState().chosenStatus).toBeNull();
 });
 
 test('ready : faux au départ ; vrai à l\'init (le serveur nous a placés) ; faux quand la connexion est coupée', () => {

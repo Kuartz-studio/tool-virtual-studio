@@ -44,6 +44,10 @@ export interface OfficeState {
   self: PublicPlayer | null;
   // La carte du bureau, d'après le dernier `init` : le jeu ne démarre qu'avec elle.
   mapKey: string | null;
+  // Le dernier statut que la personne a choisi dans le menu (StatusMenu), dans cet onglet ; null si elle n'en a pas choisi. Le serveur
+  // ne garde les statuts qu'en mémoire : redémarré (un déploiement), son `init` dit « Disponible », et la connexion lui redit ce choix
+  // (office-connection.ts). Un `init` ne le change donc pas. Il ne survit pas au rechargement de la page.
+  chosenStatus: Status | null;
   // La dernière position connue de chaque autre joueur présent (init, arrivée, ticks). Un Map modifié sur place, sans prévenir les
   // abonnés : un `init` et reset() le remplacent, un départ en retire le joueur ; rien n'y reste de ceux qui sont partis.
   positions: Map<string, PlayerPosition>;
@@ -58,6 +62,8 @@ export interface OfficeState {
   // La connexion coupée : setReady(false). (L'`init` la rend prête : applyInit.)
   setReady(ready: boolean): void;
   setMediaInstruction(i: MediaInstruction | null): void;
+  // Le statut choisi dans le menu ; null l'oublie (un autre onglet a pris la place : c'est lui qui parle pour la personne).
+  setChosenStatus(s: Status | null): void;
   // Un message du chat (`chat:message`), dans la liste de son canal. Un `id` déjà là est ignoré (l'état reste le même objet).
   addChatMessage(m: ChatMessage): void;
   // Tout ce que « Tout le monde » contient maintenant est lu.
@@ -71,7 +77,18 @@ export interface OfficeState {
 
 type Data = Pick<
   OfficeState,
-  'selfId' | 'players' | 'replaced' | 'ready' | 'mediaInstruction' | 'chatAll' | 'chatNearby' | 'chatReadId' | 'self' | 'mapKey' | 'positions'
+  | 'selfId'
+  | 'players'
+  | 'replaced'
+  | 'ready'
+  | 'mediaInstruction'
+  | 'chatAll'
+  | 'chatNearby'
+  | 'chatReadId'
+  | 'self'
+  | 'mapKey'
+  | 'chosenStatus'
+  | 'positions'
 >;
 
 const initialData = (): Data => ({
@@ -85,6 +102,7 @@ const initialData = (): Data => ({
   chatReadId: null,
   self: null,
   mapKey: null,
+  chosenStatus: null,
   positions: new Map(),
 });
 
@@ -179,6 +197,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       setReplaced: (replaced) => set({ replaced }),
       setReady: (ready) => set({ ready }),
       setMediaInstruction: (mediaInstruction) => set({ mediaInstruction }),
+      setChosenStatus: (chosenStatus) => set({ chosenStatus }),
 
       addChatMessage: (message) =>
         set((state) => {

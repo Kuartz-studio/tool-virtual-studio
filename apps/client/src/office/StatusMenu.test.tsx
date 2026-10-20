@@ -126,6 +126,21 @@ describe('le menu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
+  // La connexion le redit au serveur après chaque init qui ne le dit pas (un serveur redémarré l'a oublié) : office-connection.ts.
+  test('le statut choisi est retenu au magasin (chosenStatus), même s\'il est déjà celui en cours', async () => {
+    const user = userEvent.setup();
+    renderMenu({ status: 'available' });
+    expect(useOfficeStore.getState().chosenStatus).toBeNull();
+    await user.click(trigger());
+    await user.click(item('dnd'));
+    expect(useOfficeStore.getState().chosenStatus).toBe('dnd');
+    act(() => useOfficeStore.getState().setStatus('moi', 'dnd'));
+    act(() => useOfficeStore.getState().setChosenStatus(null));
+    await user.click(trigger());
+    await user.click(item('dnd'));
+    expect(useOfficeStore.getState().chosenStatus).toBe('dnd');
+  });
+
   test('le statut change quand le serveur le confirme, pas avant', async () => {
     const user = userEvent.setup();
     renderMenu({ status: 'available' });

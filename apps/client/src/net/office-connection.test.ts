@@ -235,6 +235,60 @@ describe('connectOffice', () => {
     });
   });
 
+  // Le serveur ne garde les statuts qu'en mémoire : après un redémarrage (un déploiement), son init dit « Disponible ». Le statut choisi
+  // dans le menu (chosenStatus, au magasin) lui est redit aussitôt, avant que les groupes (500 ms d'attente) ne prennent la personne.
+  describe('le statut choisi', () => {
+    const SELF_ID = SELF.id;
+
+    test('un init qui ne dit pas le statut choisi (le serveur l\'a oublié) : status:set le lui redit, une fois', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', init());
+      // Choisi dans le menu, qui envoie lui-même status:set ; le serveur le confirme.
+      store.getState().setChosenStatus('dnd');
+      socket.receive('status:changed', { id: SELF_ID, status: 'dnd' });
+      expect(socket.sentOf('status:set')).toEqual([]);
+
+      socket.connectionDrops();
+      socket.serverAccepts();
+      socket.receive('init', init());   // self : available
+      expect(socket.sentOf('status:set')).toEqual(['dnd']);
+    });
+
+    test('un init qui dit le statut choisi : rien à redire', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      store.getState().setChosenStatus('dnd');
+      socket.serverAccepts();
+      socket.receive('init', { ...init(), self: { ...SELF, status: 'dnd' } });
+      expect(socket.sentOf('status:set')).toEqual([]);
+    });
+
+    test('sans choix dans cet onglet : rien, quel que soit le statut de l\'init', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', { ...init(), self: { ...SELF, status: 'dnd' } });
+      socket.connectionDrops();
+      socket.serverAccepts();
+      socket.receive('init', init());
+      expect(socket.sentOf('status:set')).toEqual([]);
+    });
+
+    // Un autre onglet a pris la place : c'est lui qui parle pour la personne, et il a pu choisir un autre statut depuis. « Utiliser ici »
+    // ne doit pas lui imposer un choix plus ancien.
+    test('session:replaced : le choix de cet onglet est oublié ; le retour (« Utiliser ici ») suit le serveur', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', init());
+      store.getState().setChosenStatus('dnd');
+      socket.receive('session:replaced');
+      expect(store.getState().chosenStatus).toBeNull();
+      socket.serverDisconnects();
+      socket.serverAccepts();
+      socket.receive('init', init());   // l'autre onglet a choisi « available »
+      expect(socket.sentOf('status:set')).toEqual([]);
+    });
+  });
+
   test('la fonction rendue retire tous ses écouteurs, de la socket comme du bus : plus rien ne passe', () => {
     const disconnect = connectOffice(socket.asSocket(), store, bus);
     expect(socket.listenerCount()).toBeGreaterThan(0);

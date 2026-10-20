@@ -199,6 +199,36 @@ describe('rooms LiveKit des groupes', () => {
     await expectToken(joinA, a.id, 'a');
   });
 
+  // Le serveur ne garde les statuts qu'en mémoire : redémarré, il voit A « Disponible », et le client lui redit son choix à l'init
+  // (apps/client/src/net/office-connection.ts). Les groupes attendent GROUP_DEBOUNCE_MS avant de prendre quelqu'un : le statut redit
+  // arrive avant, et A, en Ne pas déranger, ne rejoint jamais la conversation de B.
+  test('redémarrage du serveur : A en Ne pas déranger le redit à son init, et n\'est pas pris dans un groupe', async () => {
+    const { srv } = await startMediaServer();
+    const a = await enterRecorded(srv, 'a@x.fr');
+    a.socket.emit('status:set', 'dnd');
+    await vi.waitFor(() => expect(srv.realtime.world.get(a.id)?.status).toBe('dnd'));
+    await teleport(srv, a, SIDE_A);
+    const b = await enterRecorded(srv, 'b@x.fr');
+    await teleport(srv, b, SIDE_B);
+    // Ce que fait le client : le statut choisi, redit à chaque init qui en dit un autre.
+    a.socket.on('init', (p) => {
+      if (p.self.status !== 'dnd') a.socket.emit('status:set', 'dnd');
+    });
+    const aEvents = record(a.socket);
+    const bEvents = record(b.socket);
+
+    const reinits = Promise.all([nextInit(a.socket), nextInit(b.socket)]);
+    await srv.restart();
+    const [aInit] = await reinits;
+    expect(aInit.self.status).toBe('available');   // le monde neuf l'a oublié
+    await vi.waitFor(() => expect(srv.realtime.world.get(a.id)?.status).toBe('dnd'));
+    // Côte à côte et arrêtés : sans le statut redit, la conversation se serait reformée en 500 ms et deux tours de calcul.
+    await sleep(GROUP_DEBOUNCE_MS + 4 * GROUPS_TICK_MS);
+    expect(aEvents.names().filter(isMedia)).not.toContain('media:join');
+    expect(bEvents.names().filter(isMedia)).not.toContain('media:join');
+    expect(srv.realtime.coordinator.groupMembersOf(a.id)).toEqual([]);
+  });
+
   test('une conversation dans la salle de réunion : qui y avait sa dernière position réapparaît au point d\'apparition', async () => {
     const { srv } = await startMediaServer();
     const cookieC = await srv.inviteAndLogin('c@x.fr');

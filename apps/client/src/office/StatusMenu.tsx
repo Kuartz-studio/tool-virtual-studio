@@ -63,8 +63,10 @@ export function StatusMenu({ socket }: { socket: OfficeSocket | null }) {
     trigger.current?.focus();
   }
 
+  // Le choix est aussi retenu au magasin (chosenStatus) : la connexion le redit à un serveur redémarré, qui l'a oublié.
   function choose(status: Status) {
     close();
+    useOfficeStore.getState().setChosenStatus(status);
     if (status !== current) socket?.emit('status:set', status);
   }
 

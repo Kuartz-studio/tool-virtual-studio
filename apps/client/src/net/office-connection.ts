@@ -46,6 +46,8 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // Branche la connexion sur l'état de l'interface (le magasin) et sur le jeu (le bus) :
 // - ce que le serveur dit va au magasin (arrivées, départs, statuts, médias, profils, onglet remplacé), puis au jeu, qui le lit déjà
 //   à jour ; les positions (`world:tick`) vont au jeu, et aux dernières positions du magasin, que React ne voit pas changer ;
+// - le statut choisi dans le menu (chosenStatus, au magasin) est redit au serveur après chaque `init` qui en dit un autre : le serveur
+//   ne garde les statuts qu'en mémoire, et l'`init` d'un serveur redémarré dit « Disponible » ;
 // - le chat est pour l'interface seule : l'historique « Tout le monde » (dans l'`init`) et chaque message (`chat:message`, le sien
 //   compris) vont au magasin, pas au jeu ;
 // - les consignes audio/vidéo (`media:join`, `media:leave`) : la dernière est retenue au magasin (mediaInstruction), le temps de la
@@ -63,9 +65,12 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
   const state = () => store.getState();
 
   const handlers: { [E in keyof ServerToClientEvents]?: ServerToClientEvents[E] } = {
-    // applyInit rend aussi la connexion prête.
+    // applyInit rend aussi la connexion prête. Le statut choisi dans le menu que l'init ne dit pas (le serveur redémarré l'a oublié) lui
+    // est redit tout de suite : les groupes attendent 500 ms avant de prendre quelqu'un, il arrive avant.
     init: (p) => {
       state().applyInit(p);
+      const { chosenStatus } = state();
+      if (chosenStatus !== null && chosenStatus !== p.self.status) socket.emit('status:set', chosenStatus);
       emitOnBus(bus, 'net:init', p);
     },
     // Les positions vont aussi au magasin, hors de son état réactif : un jeu qui démarre plus tard (encore en chargement, ou recréé
@@ -94,9 +99,12 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     },
     // Le serveur ne dira plus rien à cet onglet : la room retenue est maintenant celle de l'autre onglet, que le même compte ne doit
     // pas rejoindre d'ici (LiveKit l'en chasserait).
+    // Et c'est l'autre onglet qui choisit le statut maintenant : le choix de celui-ci, peut-être plus ancien, est oublié (« Utiliser ici »
+    // ne le redira pas).
     'session:replaced': () => {
       state().setReplaced(true);
       state().setMediaInstruction({ type: 'leave' });
+      state().setChosenStatus(null);
     },
     'media:join': (p) => state().setMediaInstruction({ type: 'join', p }),
     'media:leave': () => state().setMediaInstruction({ type: 'leave' }),
