@@ -19,6 +19,8 @@ export interface PresenceDeps {
   busyZones: () => ReadonlySet<string>;
   graceMs: number;
   logger: Logger;
+  /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
+  onWelcome?: (socket: TypedSocket) => void;
 }
 
 // La direction d'un avatar qui apparaît ailleurs qu'à sa position enregistrée : face à l'écran.
@@ -62,7 +64,7 @@ export function createPresence(d: PresenceDeps) {
 
   // Envoie l'état de départ à la socket, puis annonce l'arrivée aux autres si c'en est une (pas pour un onglet de plus ni pour un
   // retour pendant le délai de grâce). La socket n'entre dans la salle du bureau qu'ici : aucune diffusion ne lui parvient avant
-  // son init.
+  // son init. Puis onWelcome (sa room LiveKit).
   function welcome(socket: TypedSocket, arrival: boolean): void {
     const { userId } = socket.data;
     const self = d.world.get(userId)!;
@@ -74,6 +76,7 @@ export function createPresence(d: PresenceDeps) {
       chatHistory: [],
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
+    d.onWelcome?.(socket);
   }
 
   // Une vraie arrivée : à la position enregistrée (ou à l'apparition, chooseSpawn), avec le statut retenu. Pendant les lectures,

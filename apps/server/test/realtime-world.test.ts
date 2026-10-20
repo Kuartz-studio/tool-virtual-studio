@@ -14,6 +14,7 @@ import { describe, expect, onTestFinished, test, vi } from 'vitest';
 import { startWorldTicks } from '../src/realtime/handlers';
 import type { TypedServer } from '../src/realtime/io';
 import { World } from '../src/realtime/world';
+import { captureLogs } from './helpers/logs';
 import {
   cutNetwork,
   enter,
@@ -420,7 +421,8 @@ describe('startWorldTicks', () => {
     world.join({ id: 'a', name: 'A', avatarKey: null, ...SPAWN, dir: 'down', status: 'available' });
     const emit = vi.fn();
     const to = vi.fn(() => ({ volatile: { emit } }));
-    return { clock, world, emit, to, io: { to } as unknown as TypedServer };
+    const { logger, lines } = captureLogs();
+    return { clock, world, emit, to, io: { to } as unknown as TypedServer, logger, lines };
   }
 
   test('toutes les tickMs, un world:tick volatile vers la salle du bureau s\'il y a des mouvements, rien sinon', () => {
@@ -428,8 +430,8 @@ describe('startWorldTicks', () => {
     onTestFinished(() => {
       vi.useRealTimers();
     });
-    const { clock, world, emit, to, io } = setup();
-    const stop = startWorldTicks(io, world, 100, () => clock.t);
+    const { clock, world, emit, to, io, logger } = setup();
+    const stop = startWorldTicks(io, world, 100, () => clock.t, logger);
 
     vi.advanceTimersByTime(300);
     expect(to).not.toHaveBeenCalled();   // personne n'a bougé : pas de tick
@@ -458,12 +460,36 @@ describe('startWorldTicks', () => {
     expect(world.drainMoves()).toEqual([{ id: 'a', ...walk(108) }]);   // rien n'a été vidé depuis l'arrêt
   });
 
+  test('une exception dans la boucle est journalisée, et la boucle continue sans rien perdre', () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const { clock, world, emit, io, logger, lines } = setup();
+    vi.spyOn(world, 'drainMoves').mockImplementationOnce(() => {
+      throw new Error('monde illisible');
+    });
+    const stop = startWorldTicks(io, world, 100, () => clock.t, logger);
+    onTestFinished(stop);
+
+    clock.t = 1_150;
+    world.applyMove('a', walk(96));
+    vi.advanceTimersByTime(100);   // levée dans le rappel d'un minuteur, l'exception ferait tomber le processus
+    expect(emit).not.toHaveBeenCalled();
+    expect(lines).toEqual([
+      expect.objectContaining({ level: 50, msg: 'Envoi du world:tick impossible', err: expect.objectContaining({ message: 'monde illisible' }) }),
+    ]);
+
+    vi.advanceTimersByTime(100);
+    expect(emit).toHaveBeenCalledExactlyOnceWith('world:tick', { t: 1_150, moves: [{ id: 'a', ...walk(96) }] });
+  });
+
   test('le minuteur ne retient pas le processus', () => {
     // Un minuteur « unref » n'est pas compté parmi les ressources actives de Node.
     const timeouts = () => process.getActiveResourcesInfo().filter((resource) => resource === 'Timeout').length;
-    const { world, io } = setup();
+    const { world, io, logger } = setup();
     const before = timeouts();
-    const stop = startWorldTicks(io, world, 100);
+    const stop = startWorldTicks(io, world, 100, () => performance.now(), logger);
     onTestFinished(stop);
     expect(timeouts()).toBe(before);
   });

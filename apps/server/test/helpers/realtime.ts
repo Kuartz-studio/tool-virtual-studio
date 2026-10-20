@@ -14,7 +14,8 @@ export type ClientSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 export const TEST_GRACE_MS = 200;
 export const TEST_SAVE_MS = 1000;
 
-// Ce qu'un test peut régler : les options du temps réel (délais, horloge, zones occupées, journal…) et des variables d'environnement.
+// Ce qu'un test peut régler : les options du temps réel (délais, horloge, zones occupées, journal, backend audio/vidéo `media`…) et
+// des variables d'environnement.
 export type TestServerOptions = Partial<Omit<RealtimeDeps, 'auth' | 'db' | 'map' | 'mapKey' | 'events' | 'env'>> & { env?: Partial<Env> };
 
 type Running = { server: HttpServer; realtime: ReturnType<typeof attachRealtime> };

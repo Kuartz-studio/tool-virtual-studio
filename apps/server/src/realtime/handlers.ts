@@ -1,5 +1,18 @@
-import { MOVE_RATE, OFFICE_ROOM, mediaStateSchema, moveSchema, statusSchema } from '@bureau/shared';
+import {
+  EMPTY_GROUPING,
+  MOVE_RATE,
+  OFFICE_ROOM,
+  computeGroups,
+  mediaStateSchema,
+  moveSchema,
+  statusSchema,
+  type GroupingState,
+  type OfficeMap,
+} from '@bureau/shared';
+import type { Logger } from 'pino';
 import type { Env } from '../env';
+import { logServerError } from '../logger';
+import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
 import { createRateLimiter } from '../rate-limit';
 import type { TypedServer, TypedSocket } from './io';
 import type { World } from './world';
@@ -64,18 +77,70 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   }
 }
 
+// Appelle `fn` toutes les `ms`, sans retenir le processus ; la fonction rendue arrête la boucle. Une exception levée dans le rappel
+// d'un minuteur n'est attrapée par personne et ferait tomber le processus : elle est journalisée (`failure`), et la boucle continue.
+function every(ms: number, logger: Logger, failure: string, fn: () => void): () => void {
+  const timer = setInterval(() => {
+    try {
+      fn();
+    } catch (err) {
+      logServerError(logger, { err }, failure);
+    }
+  }, ms);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 // Toutes les `tickMs`, les mouvements acceptés depuis le tick précédent partent d'un coup vers tout le bureau : au plus un par
 // joueur, le dernier (World.drainMoves). Sans mouvement, rien n'est envoyé. Le tick est `volatile` : un client dont la connexion
 // n'est pas prête le manque, et le suivant le recale ; Socket.io ne garde pas de paquet volatile pour le lui renvoyer.
 //
-// `t` est l'heure du tick, en ms entières, sur l'horloge `now` du serveur (monotone par défaut, comme celle du monde) : elle sert à
-// ordonner les ticks, pas à dire l'heure. Le minuteur ne retient pas le processus ; la fonction rendue l'arrête.
-export function startWorldTicks(io: TypedServer, world: World, tickMs: number, now: () => number = () => performance.now()): () => void {
-  const timer = setInterval(() => {
+// `t` est l'heure du tick, en ms entières, sur l'horloge `now` du serveur (monotone, celle du monde) : elle sert à ordonner les
+// ticks, pas à dire l'heure. Le minuteur ne retient pas le processus ; la fonction rendue l'arrête.
+export function startWorldTicks(io: TypedServer, world: World, tickMs: number, now: () => number, logger: Logger): () => void {
+  return every(tickMs, logger, 'Envoi du world:tick impossible', () => {
     const moves = world.drainMoves();
     if (moves.length === 0) return;
     io.to(OFFICE_ROOM).volatile.emit('world:tick', { t: Math.round(now()), moves });
-  }, tickMs);
-  timer.unref();
-  return () => clearInterval(timer);
+  });
+}
+
+export interface GroupTicksDeps {
+  world: World;
+  map: OfficeMap;
+  coordinator: MediaCoordinator;
+  /** L'envoi d'un événement média à une personne (à ses sockets entrées). */
+  send: (userId: string, e: MediaEvent) => void;
+  /** Le nom affiché d'une personne, pour ses jetons. */
+  nameOf: (id: string) => string;
+  groupsMs: number;
+  /** L'horloge du monde (monotone), celle des délais de computeGroups : jamais Date.now, qui peut sauter. */
+  now: () => number;
+  logger: Logger;
+}
+
+// Toutes les `groupsMs`, les groupes de conversation sont recalculés à partir des joueurs du monde (computeGroups, à l'heure `now`),
+// puis le coordinateur dit à ceux qui changent de room de la quitter ou d'en rejoindre une (apply). Un joueur parti du monde (fin du
+// délai de grâce, retrait) n'est plus dans le calcul suivant : il sort de son groupe comme les autres.
+//
+// Chaque calcul part de l'état du précédent, retenu dès l'appel d'apply (le coordinateur le retient aussi à ce moment-là, même si apply
+// échoue ensuite). Tant qu'apply n'a pas fini (il attend la fabrication des jetons), les tours suivants sont sautés : deux apply ne se
+// chevauchent pas. state() : l'état du dernier calcul (les zones occupées, busyZoneIds, en viennent). Le minuteur ne retient pas le
+// processus ; stop() l'arrête.
+export function startGroupTicks(d: GroupTicksDeps): { stop(): void; state(): GroupingState } {
+  let state: GroupingState = EMPTY_GROUPING;
+  let applying = false;
+  const stop = every(d.groupsMs, d.logger, 'Calcul des groupes impossible', () => {
+    if (applying) return;
+    const next = computeGroups(d.world.proximityPlayers(), d.map, state, d.now());
+    const applied = d.coordinator.apply(state, next, d.send, d.nameOf);
+    state = next;
+    applying = true;
+    applied
+      .catch((err: unknown) => logServerError(d.logger, { err }, 'Envoi des rooms LiveKit impossible'))
+      .finally(() => {
+        applying = false;
+      });
+  });
+  return { stop, state: () => state };
 }

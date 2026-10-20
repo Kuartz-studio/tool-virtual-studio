@@ -82,6 +82,15 @@ pnpm --filter @bureau/server map:check ../client/public/assets/maps/dev-office.j
 
 Le chemin est relatif à `apps/server`. La commande affiche la taille de la carte, ses cases bloquantes, le nombre de zones par type et le point d'apparition. Sinon elle sort avec le code 1 et le code de l'erreur : calque `collisions` ou `zones` absent (`missing_layer`), tileset externe (`external_tileset`), calque compressé ou pas en CSV (`compressed_layer`), aucune zone `spawn` (`missing_spawn`), zone inutilisable, deux apparitions ou apparition sur une case bloquante (`bad_zone`). Compilée (`pnpm build`), elle se lance avec `node apps/server/dist/cli/map-check.js <fichier>`.
 
+## Audio et vidéo
+
+L'audio et la vidéo passent par LiveKit Cloud, avec une room par groupe de conversation. Le serveur recalcule les groupes 4 fois par seconde (`computeGroups`, `packages/shared`) et dit à chaque personne dont le groupe change de quitter sa room (`media:leave`), puis d'entrer dans celle de son nouveau groupe (`media:join`, avec l'adresse du projet, le nom de la room et un jeton). Quand des groupes fusionnent ou se séparent, la partie qui garde l'id du groupe garde sa room : seuls les autres en changent. Après chaque `init` (arrivée, retour après une coupure, nouvel onglet), le client reçoit aussi `media:join` s'il est dans un groupe, sinon `media:leave` : un client resté dans une room pendant une coupure, ou dans une room d'avant un redémarrage, en sort ainsi.
+
+- **Rooms.** Une room s'appelle `<démarrage>-<groupe>`, par exemple `k3x9qa-g4` : 6 caractères aléatoires tirés à chaque démarrage du serveur, puis l'id du groupe. Les ids des groupes repartent de `g1` à chaque démarrage ; le préfixe évite qu'un groupe formé après un redémarrage retrouve la room d'un groupe d'avant.
+- **Jetons.** Un jeton ne vaut que pour une room (rejoindre, publier, recevoir), pendant 10 minutes, au nom de la personne (identité : l'id de son compte ; nom : son nom affiché). Le serveur ne journalise jamais de jeton.
+- **Sortie d'un groupe.** En plus de `media:leave`, le serveur retire la personne de la room par l'API de LiveKit (`RemoveParticipant`, sur l'adresse HTTP qui correspond à `LIVEKIT_URL`) : un client qui ignorerait `media:leave` n'entend plus la conversation. Une personne déjà sortie (« introuvable ») est ignorée ; un autre échec est journalisé.
+- **Sans LiveKit.** Sans l'une des trois variables `LIVEKIT_*`, les groupes sont calculés quand même (zones occupées, chat « À proximité »), mais aucun événement `media:*` ne part ; un avertissement le dit au démarrage. Une `LIVEKIT_URL` qui n'est pas une adresse `wss://`, `ws://`, `https://` ou `http://` arrête le démarrage.
+
 ## Base de données
 
 Le schéma est dans `apps/server/src/db/schema.ts`. Les tables de Better Auth (`src/db/auth-schema.ts`) sont générées par sa CLI à partir de `src/auth/auth.cli.ts` : ce fichier ne se modifie pas à la main. Après un changement de schéma, depuis `apps/server` :
@@ -115,7 +124,7 @@ L'appli tourne sur Railway : un service construit depuis le `Dockerfile` de la r
    | `BETTER_AUTH_SECRET` | une valeur propre à la production : `openssl rand -base64 32` |
    | `MAILER` | `resend`, le seul mode d'envoi accepté en production |
    | `RESEND_API_KEY`, `MAIL_FROM` | la clé d'API de Resend, et l'expéditeur (`Bureau virtuel <bureau@…>`) sur un domaine d'envoi vérifié dans Resend |
-   | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | facultatives pour l'instant : sans elles, l'audio et la vidéo restent désactivés |
+   | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | le projet LiveKit Cloud : son adresse (`wss://<projet>.livekit.cloud`) et une clé d'API avec son secret (voir « Audio et vidéo »). Facultatives : sans l'une d'elles, l'audio et la vidéo sont désactivés, et le journal le dit au démarrage |
 
    `PORT` vient de Railway ; `NODE_ENV`, `CLIENT_DIST_DIR` et `MAPS_DIR` ont déjà leur valeur de production dans l'image (les définir sur Railway n'est utile que pour en changer). `E2E` ne doit pas être définie : le serveur la refuse en production. Une configuration invalide arrête le démarrage, et le journal du déploiement nomme les variables fautives.
 4. Ajouter le domaine personnalisé (réseau public du service, puis l'enregistrement DNS que Railway indique ; le certificat HTTPS vient de Railway), et mettre `APP_URL` à jour avec ce domaine : Better Auth n'accepte que cette origine.

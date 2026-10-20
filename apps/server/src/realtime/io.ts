@@ -3,10 +3,12 @@ import type { Server as HttpServer } from 'node:http';
 import { join } from 'node:path';
 import {
   DISCONNECT_GRACE_MS,
+  GROUPS_TICK_MS,
   OFFICE_ROOM,
   POSITION_SAVE_INTERVAL_MS,
   SOCKET_CONNECT_RATE,
   WORLD_TICK_MS,
+  busyZoneIds,
   parseOfficeMap,
   type ClientToServerEvents,
   type OfficeMap,
@@ -19,10 +21,12 @@ import { Server, type Socket } from 'socket.io';
 import type { Auth } from '../auth/auth';
 import type { Db } from '../db/client';
 import type { Env } from '../env';
-import { createLogger } from '../logger';
+import { createLogger, logServerError } from '../logger';
+import { LIVEKIT_VARIABLES, createLiveKitBackend, type MediaBackend } from '../media/livekit';
+import { MediaCoordinator, newBootId, type MediaEvent } from '../media/media-coordinator';
 import { createRateLimiter } from '../rate-limit';
 import type { ServerEvents } from '../server-events';
-import { registerHandlers, startWorldTicks } from './handlers';
+import { registerHandlers, startGroupTicks, startWorldTicks } from './handlers';
 import { createPresence } from './presence';
 import { socketAuth } from './socket-auth';
 import { World } from './world';
@@ -46,20 +50,28 @@ export interface RealtimeDeps {
   events: ServerEvents;
   env: Env;
   /**
-   * L'horloge du temps réel, en ms : celle du monde (l'heure de réception des mouvements), de la limite de débit des `move` et de
-   * l'heure `t` des ticks. Monotone (performance.now par défaut), jamais Date.now, qui peut sauter.
+   * L'horloge du temps réel, en ms : celle du monde (l'heure de réception des mouvements), de la limite de débit des `move`, de
+   * l'heure `t` des ticks et des délais du calcul des groupes. Monotone (performance.now par défaut), jamais Date.now, qui peut sauter.
    */
   now?: () => number;
   /** Le délai de grâce à la déconnexion : DISCONNECT_GRACE_MS par défaut. */
   graceMs?: number;
   /** La période de world:tick : WORLD_TICK_MS par défaut. */
   tickMs?: number;
-  /** La période du calcul des groupes (tâche 18). */
+  /** La période du calcul des groupes de conversation : GROUPS_TICK_MS par défaut. */
   groupsMs?: number;
   /** La période d'enregistrement des positions : POSITION_SAVE_INTERVAL_MS par défaut. */
   saveMs?: number;
-  /** Les zones où une conversation a lieu (tâche 18) : on n'y fait pas réapparaître quelqu'un. Aucune par défaut. */
+  /**
+   * Les zones où une conversation a lieu : on n'y fait pas réapparaître quelqu'un. Par défaut, celles des groupes du dernier calcul
+   * (busyZoneIds).
+   */
   busyZones?: () => ReadonlySet<string>;
+  /**
+   * L'audio et la vidéo. Par défaut, LiveKit d'après les variables LIVEKIT_* (createLiveKitBackend), ou rien s'il en manque une ;
+   * null : désactivés. Les tests passent un faux.
+   */
+  media?: MediaBackend | null;
   /** L'intervalle des pings du serveur : PING_INTERVAL_MS par défaut. */
   pingIntervalMs?: number;
   /** Le délai de réponse à un ping, au-delà duquel la connexion est coupée : PING_TIMEOUT_MS par défaut. */
@@ -73,10 +85,12 @@ export interface Realtime {
   world: World;
   /** Les identifiants des sockets connectées de ce compte (au plus une : un nouvel onglet remplace l'ancien). */
   socketsOf(userId: string): string[];
+  /** Les groupes de conversation et leurs rooms LiveKit : groupMembersOf sert au chat « À proximité ». */
+  coordinator: MediaCoordinator;
   /**
-   * L'arrêt, pour un redémarrage ou un déploiement : arrête les ticks, enregistre la position de chaque joueur du monde, y compris
-   * en délai de grâce, puis ferme les sockets (les clients se reconnecteront seuls, à la nouvelle instance, et y liront cette
-   * position) et le serveur HTTP auquel Socket.io est attaché. Appelée plusieurs fois, elle renvoie la même promesse.
+   * L'arrêt, pour un redémarrage ou un déploiement : arrête les ticks et le calcul des groupes, enregistre la position de chaque
+   * joueur du monde, y compris en délai de grâce, puis ferme les sockets (les clients se reconnecteront seuls, à la nouvelle instance,
+   * et y liront cette position) et le serveur HTTP auquel Socket.io est attaché. Appelée plusieurs fois, elle renvoie la même promesse.
    */
   stop(): Promise<void>;
 }
@@ -133,6 +147,14 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const now = d.now ?? (() => performance.now());
   const world = new World(d.map, now);
 
+  // L'audio et la vidéo : LiveKit, s'il est configuré. Sans lui, les groupes sont calculés quand même (chat « À proximité », zones
+  // occupées), mais aucun événement média ne part.
+  const media = d.media !== undefined ? d.media : createLiveKitBackend(d.env);
+  if (media === null) {
+    logger.warn({ missing: LIVEKIT_VARIABLES.filter((name) => !d.env[name]) }, 'LiveKit non configuré : audio et vidéo désactivés');
+  }
+  const coordinator = new MediaCoordinator(media, newBootId(), logger);
+
   // Pas de récupération de connexion (connectionStateRecovery) : Socket.io renverrait à une socket revenue les diffusions qu'elle a
   // manquées avant même de repasser les middlewares, si bien qu'un membre retiré pendant sa coupure en recevrait jusqu'à 10 s.
   // Le délai de grâce garde l'avatar en place, et chaque reconnexion reçoit un init neuf, qui dit tout l'état du moment.
@@ -157,10 +179,51 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     db: d.db,
     map: d.map,
     mapKey: d.mapKey,
-    busyZones: d.busyZones ?? (() => new Set<string>()),
+    busyZones: d.busyZones ?? (() => busyZoneIds(groups.state())),
     graceMs,
     logger,
+    onWelcome: resyncMedia,
   });
+
+  // Ce que chaque socket sait de sa room LiveKit : la room de son dernier media:join, null après un media:leave. La même consigne
+  // n'est jamais envoyée deux fois de suite à une socket : le join de son retour (resyncMedia) et celui d'un changement de groupe
+  // (apply) peuvent se croiser, et un second join pour la même room ferait quitter puis rejoindre la room au client.
+  const told = new WeakMap<TypedSocket, string | null>();
+  function tell(socket: TypedSocket, e: MediaEvent): void {
+    const room = e.type === 'join' ? e.p.room : null;
+    if (told.has(socket) && told.get(socket) === room) return;
+    told.set(socket, room);
+    if (e.type === 'join') socket.emit('media:join', e.p);
+    else socket.emit('media:leave');
+  }
+
+  // Un événement média, à chacune des sockets de la personne qui ont reçu leur init (welcome les fait entrer dans la salle du bureau
+  // juste avant) : jamais avant init. Une socket qui attend encore son init apprend sa room juste après (resyncMedia).
+  function sendMedia(userId: string, e: MediaEvent): void {
+    for (const id of presence.socketsOf(userId)) {
+      const socket = io.sockets.sockets.get(id);
+      if (socket?.rooms.has(OFFICE_ROOM)) tell(socket, e);
+    }
+  }
+
+  // Après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : la room du groupe de la personne, avec un jeton
+  // neuf, ou media:leave hors groupe. Un client resté dans une room pendant une coupure, ou dans celle d'avant un redémarrage (un autre
+  // bootId), en sort ainsi. Sans LiveKit, rien.
+  function resyncMedia(socket: TypedSocket): void {
+    if (!media) return;
+    const { userId } = socket.data;
+    if (coordinator.groupMembersOf(userId).length === 0) {
+      tell(socket, { type: 'leave' });
+      return;
+    }
+    coordinator
+      .currentJoin(userId)
+      .then((p) => {
+        if (p && socket.connected) tell(socket, { type: 'join', p });
+      })
+      .catch((err: unknown) => logServerError(logger, { err, userId }, 'media:join impossible'));
+  }
+
   io.on('connection', (socket) => {
     presence.connect(socket);
     registerHandlers(io, socket, { world, env: d.env, now });
@@ -172,7 +235,17 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     world.setProfile(profile.id, { name: profile.name, avatarKey: profile.avatarKey });
     io.to(OFFICE_ROOM).emit('profile:changed', { id: profile.id, name: profile.name, avatarKey: profile.avatarKey });
   });
-  const stopTicks = startWorldTicks(io, world, d.tickMs ?? WORLD_TICK_MS, now);
+  const stopTicks = startWorldTicks(io, world, d.tickMs ?? WORLD_TICK_MS, now, logger);
+  const groups = startGroupTicks({
+    world,
+    map: d.map,
+    coordinator,
+    send: sendMedia,
+    nameOf: (id) => world.get(id)?.name ?? id,
+    groupsMs: d.groupsMs ?? GROUPS_TICK_MS,
+    now,
+    logger,
+  });
 
   const saveTimer = setInterval(() => presence.savePeriodically(), saveMs);
   saveTimer.unref();
@@ -184,6 +257,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       offProfileChanged();
       clearInterval(saveTimer);
       stopTicks();
+      groups.stop();
       presence.halt();
       // Les positions d'abord, les sockets ensuite : un client dont la connexion tombe se reconnecte aussitôt, peut-être à la nouvelle
       // instance d'un déploiement, et y lit sa position en base. Elle doit y être déjà, même si l'écriture est lente. Un `move` reçu
@@ -201,6 +275,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     io,
     world,
     socketsOf: (userId) => presence.socketsOf(userId),
+    coordinator,
     stop,
   };
 }
