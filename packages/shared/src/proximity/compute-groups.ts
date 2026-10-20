@@ -53,8 +53,8 @@ const LEAVE_SQ = LEAVE_DISTANCE_PX * LEAVE_DISTANCE_PX;
 //     grappe de la zone a pris son id). On en sort même si l'on veut rejoindre une autre grappe, qu'on attend alors 500 ms ;
 //   · un groupe réduit à un membre, vers qui personne n'est en route, est dissous ;
 // - personne hors d'une zone n'est jamais dans le groupe de cette zone ;
-// - quand des groupes fusionnent ou se séparent, chaque id va à la grappe qui compte le plus de ses membres : la plus grande partie
-//   garde sa room, les autres en changent.
+// - quand des groupes fusionnent ou se séparent, chaque id va à la grappe qui compte le plus de ses membres (à égalité, à celle qui
+//   reste dans la zone du groupe, puis à la plus grande) : la plus grande partie garde sa room, les autres en changent.
 export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: GroupingState, now: number): GroupingState {
   // Les joueurs présents, dans l'ordre lexicographique de leur id, avec leur zone : zoneOf(p) = zoneAt(map, p.x, p.y)?.id ?? null.
   const present = [...new Map(players.map((p) => [p.id, p])).values()]
@@ -108,15 +108,19 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
     if (component.length >= 2) clusters.push({ members: component.sort(compare), zoneId: null });
   }
 
-  // 3. Les identifiants, pris aux voix : un id va à la grappe qui compte le plus de ses membres, la plus grande partie d'un groupe qui
-  //    se sépare garde donc sa room, quelle que soit la taille des autres grappes et l'ordre des ids des joueurs.
+  // 3. Les identifiants, pris aux voix : un id va à la grappe qui compte le plus de ses membres ; à voix égales, à celle qui garde la
+  //    zone du groupe, puis à la plus grande. Les ids des joueurs n'interviennent que sur une égalité complète (mêmes voix, zone gardée
+  //    ou non de la même façon, même taille), où la grappe du plus petit id de membre l'emporte, et pour numéroter les nouveaux ids de
+  //    grappes de même taille.
   //    a. Ids actuels : chaque paire (grappe, id actuel d'au moins un de ses membres), permise si l'id ne sort pas de sa zone (celui
   //       d'un groupe d'espace ouvert, ou d'un groupe de la zone de la grappe : l'id d'un groupe de zone ne sert jamais hors de sa
   //       zone) ; voix = ses membres qui sont dans ce groupe.
   //    b. Pour les grappes restées sans id : leurs cibles en attente, parmi les ids qui ne sont pas encore des groupes (un groupe qui
   //       se forme garde son id pendant l'attente) ; voix = ses membres qui attendent cet id.
-  //    Dans chaque passe, les paires par voix décroissantes, puis taille de grappe décroissante, puis plus petit id de membre, puis id
-  //    (ordre lexicographique) ; une paire n'est retenue que si ni sa grappe ni son id ne le sont déjà.
+  //    Dans chaque passe, les paires par voix décroissantes, puis d'abord celles qui gardent la zone du groupe (cluster.zoneId ===
+  //    prevZone(id) : la même zone, ou un espace ouvert pour un groupe d'espace ouvert ; une cible en attente n'étant pas encore un
+  //    groupe, prevZone vaut null pour elle), puis taille de grappe décroissante, puis plus petit id de membre, puis id (ordre
+  //    lexicographique) ; une paire n'est retenue que si ni sa grappe ni son id ne le sont déjà.
   //    c. Les grappes restantes reçoivent un nouvel id, `g${nextId++}`, de la plus grande à la plus petite (à égalité : celle du
   //       plus petit id de membre).
   //    claimed : les ids pris par une grappe, avec sa zone.
@@ -127,8 +131,10 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
   const prevZone = (id: string): string | null => own(prev.groups, id)?.zoneId ?? null;
   const claimByVotes = (votesOf: (cluster: Cluster) => Map<string, number>) => {
     const pairs = clusters
-      .flatMap((cluster, rank) => (idOf.has(cluster) ? [] : [...votesOf(cluster)].map(([id, votes]) => ({ cluster, rank, id, votes }))))
-      .sort((a, b) => b.votes - a.votes || a.rank - b.rank || compare(a.id, b.id));
+      .flatMap((cluster, rank) =>
+        idOf.has(cluster) ? [] : [...votesOf(cluster)].map(([id, votes]) => ({ cluster, rank, id, votes, keepsZone: cluster.zoneId === prevZone(id) })),
+      )
+      .sort((a, b) => b.votes - a.votes || Number(b.keepsZone) - Number(a.keepsZone) || a.rank - b.rank || compare(a.id, b.id));
     for (const { cluster, id } of pairs) {
       if (idOf.has(cluster) || claimed.has(id)) continue;
       idOf.set(cluster, id);

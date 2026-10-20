@@ -534,6 +534,46 @@ test("une cible en attente se prend aussi aux voix : ceux qui l'attendent le plu
   ]);
 });
 
+// ---- Revue, tour 2 : à voix égales, la grappe qui garde la zone du groupe -----------------------------------------------------
+
+test("à voix égales, la grappe qui garde la zone du groupe l'emporte : deux des quatre du couloir entrent dans la salle vide, les deux autres gardent g1 (24 façons de les nommer)", () => {
+  // g1 = quatre personnes en ligne dans le couloir. Les deux de gauche entrent dans la salle vide ; les deux de droite, qui n'ont pas
+  // bougé, gardent g1 (2 voix contre 2, mais g1 reste un groupe d'espace ouvert chez elles) ; les deux de la salle forment g2 500 ms
+  // plus tard.
+  const failures: string[] = [];
+  for (const [in1, in2, stay1, stay2] of permutations(['A', 'B', 'C', 'D'])) {
+    const stay = [player(stay1, at(13, 6)), player(stay2, at(15, 6))];
+    const s = step([player(in1, at(9, 6)), player(in2, at(11, 6)), ...stay], EMPTY_GROUPING, 0, 500);
+    const states = steps([player(in1, at(9, 4)), player(in2, at(11, 4)), ...stay], s, 750, 1250);
+    const roles = (st: GroupingState) => [st.assignment[in1], st.assignment[in2], st.assignment[stay1], st.assignment[stay2]];
+    const got = JSON.stringify([...[s, ...states].map(roles), [states.at(-1)!.groups.g1?.zoneId, states.at(-1)!.groups.g2?.zoneId]]);
+    const expected = JSON.stringify([
+      ['g1', 'g1', 'g1', 'g1'],   // 500 : g1 formé
+      ['g1', 'g1', 'g1', 'g1'],   // 750 : les deux entrent dans la salle, et attendent g2
+      ['g1', 'g1', 'g1', 'g1'],
+      ['g2', 'g2', 'g1', 'g1'],   // 1250
+      [null, ROOM],
+    ]);
+    if (got !== expected) failures.push(`${in1} et ${in2} entrent, ${stay1} et ${stay2} restent : ${got}`);
+  }
+  expect(failures).toEqual([]);
+});
+
+test("à voix égales, garder la zone du groupe passe avant la taille : la grappe de la salle, plus grande, ne prend pas g1", () => {
+  const stay = [player('C', at(13, 6)), player('D', at(15, 6))];
+  const X = player('X', at(12, 2));   // seul dans la salle
+  const s = step([player('A', at(9, 6)), player('B', at(11, 6)), ...stay, X], EMPTY_GROUPING, 0, 500);
+  expect(s.assignment).toEqual({ A: 'g1', B: 'g1', C: 'g1', D: 'g1', X: null });
+  // A et B entrent dans la salle : {A, B, X} (3) et {C, D} (2) ont deux voix chacune pour g1 ; {C, D} garde la zone de g1 (un espace
+  // ouvert) et l'emporte malgré sa taille. A, B et X forment g2 500 ms plus tard.
+  const states = steps([player('A', at(9, 4)), player('B', at(11, 4)), ...stay, X], s, 750, 1250);
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: 'g1', B: 'g1', C: 'g1', D: 'g1', X: null },
+    { A: 'g1', B: 'g1', C: 'g1', D: 'g1', X: null },
+    { A: 'g2', B: 'g2', C: 'g1', D: 'g1', X: 'g2' },
+  ]);
+});
+
 // ---- Propriétés, sur des marches au hasard ----------------------------------------------------------------------------------
 
 const ISOLATING_ZONES = new Set(map.zones.filter((z) => z.type === 'private' || z.type === 'desk').map((z) => z.id));
@@ -654,6 +694,26 @@ function unchangedGroups(prev: GroupingState, players: ProximityPlayer[], previo
     .map((g) => g.id);
 }
 
+// Les membres du groupe sont reliés entre eux, sans personne d'autre : un groupe de zone (tous dans sa zone), ou, dans un espace
+// ouvert, tous hors des zones et reliés de proche en proche à 4 cases au plus. Sinon, un tiers les tenait peut-être ensemble (quelqu'un
+// en route vers eux, qui s'en va) et leur séparation est voulue.
+function linkedAmongThemselves(g: GroupingState['groups'][string], players: ProximityPlayer[]): boolean {
+  if (g.zoneId !== null) return true;
+  const members = players.filter((p) => g.members.includes(p.id));
+  if (members.length !== g.members.length || members.some((p) => zoneOf(p) !== null)) return false;
+  const reached = new Set([members[0]!.id]);
+  for (let grew = true; grew; ) {
+    grew = false;
+    for (const a of members) {
+      if (!reached.has(a.id) && members.some((b) => reached.has(b.id) && distance(a, b) <= LEAVE_DISTANCE_PX)) {
+        reached.add(a.id);
+        grew = true;
+      }
+    }
+  }
+  return reached.size === members.length;
+}
+
 // Ce qui doit être vrai de chaque état rendu, quel que soit le passé : la liste des écarts (vide si tout va bien). previous : les
 // joueurs de l'appel précédent, celui qui a rendu prev.
 function violations(s: GroupingState, prev: GroupingState, players: ProximityPlayer[], previous: ProximityPlayer[], now: number): string[] {
@@ -720,10 +780,20 @@ function violations(s: GroupingState, prev: GroupingState, players: ProximityPla
     const dissolved = leavers.length === 1 && !Object.values(s.assignment).includes(gid) && !awaited.has(gid);
     if (!dissolved) out.push(`${leavers} quitte(nt) ${gid} sans attendre, et ${gid} n'a pas été dissous`);
   }
-  // Un groupe garde son id quand aucun de ses membres n'a bougé, changé de statut ni quitté le bureau : tous y restent.
+  // Un groupe garde son id quand aucun de ses membres n'a bougé, changé de statut ni quitté le bureau : tous y restent. Et si ses
+  // membres sont reliés entre eux, aucun ne se met en route vers la sortie (null) ni vers un nouvel id (absent de prev.groups) : le
+  // groupe ne change pas de room. Rejoindre un groupe qui existe reste permis : une fusion avec un groupe plus nombreux.
   for (const gid of unchangedGroups(prev, players, previous)) {
-    const gone = prev.groups[gid]!.members.filter((m) => s.assignment[m] !== gid);
+    const g = prev.groups[gid]!;
+    const gone = g.members.filter((m) => s.assignment[m] !== gid);
     if (gone.length > 0) out.push(`${gid} : aucun membre n'a bougé ni changé, mais ${gone} n'y sont plus`);
+    if (!linkedAmongThemselves(g, players)) continue;
+    for (const m of g.members) {
+      const w = s.pending[m];
+      if (w !== undefined && (w.target === null || !Object.hasOwn(prev.groups, w.target))) {
+        out.push(`${gid} : aucun membre n'a bougé ni changé, et ils sont reliés, mais ${m} se met en route vers ${w.target ?? 'la sortie'}`);
+      }
+    }
   }
   if (s.nextId < prev.nextId) out.push(`nextId recule : ${prev.nextId} → ${s.nextId}`);
   for (const id of [...Object.keys(s.groups), ...awaited]) {
@@ -782,7 +852,7 @@ describe('propriétés, sur des marches au hasard', () => {
   const SEEDS = Array.from({ length: 30 }, (_, i) => 1000 + i);
 
   test("à chaque appel : état cohérent, résultat indépendant de l'ordre des joueurs, état reçu jamais modifié", () => {
-    const seen = { openGroups: 0, zoneGroups: 0, alone: 0, immediate: 0, switches: 0, zoneExitsToCluster: 0, openToZone: 0, unchangedGroups: 0 };
+    const seen = { openGroups: 0, zoneGroups: 0, alone: 0, immediate: 0, switches: 0, zoneExitsToCluster: 0, openToZone: 0, unchangedGroups: 0, linkedUnchanged: 0 };
     for (const seed of SEEDS) {
       const random = mulberry32(seed + 1);
       let s = EMPTY_GROUPING;
@@ -793,7 +863,9 @@ describe('propriétés, sur des marches au hasard', () => {
         const next = computeGroups(deepFreeze(players), map, prev, now);
         const context = `graine ${seed}, appel ${k} (t = ${now})`;
         expect(violations(next, prev, players, previous, now), context).toEqual([]);
-        seen.unchangedGroups += unchangedGroups(prev, players, previous).length;
+        const unchangedNow = unchangedGroups(prev, players, previous);
+        seen.unchangedGroups += unchangedNow.length;
+        seen.linkedUnchanged += unchangedNow.filter((gid) => linkedAmongThemselves(prev.groups[gid]!, players)).length;
         previous = players;
         expect(JSON.stringify(computeGroups(shuffled(players, random), map, prev, now)), context).toBe(JSON.stringify(next));
         // Ce que la marche a fait passer par le calcul, pour vérifier qu'elle couvre les cas intéressants.
