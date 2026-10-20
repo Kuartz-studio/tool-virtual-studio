@@ -55,10 +55,14 @@ beforeEach(() => {
   useOfficeStore.getState().reset();
 });
 
+// Ouvre le bureau, et attend que la page ait ouvert sa connexion. La barre ne suffit pas : la page n'ouvre la connexion que dans un
+// effet, que React passe après avoir affiché la page, dans une autre tâche ; sur une machine chargée, la barre est trouvée avant
+// (c'était l'instabilité de ce fichier : `sockets` encore vide, « La page n'a pas ouvert de connexion »).
 async function openOffice() {
   setFakeSession(LEA);
   const router = renderRoute('/');
   await findOfficeFor('Léa');
+  await waitFor(() => expect(sockets.at(-1)?.connectCalls).toBe(1));
   return router;
 }
 
