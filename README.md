@@ -229,3 +229,4 @@ Lancement :
 - [ ] Envoyer les invitations à l'équipe depuis le panneau admin.
 - [ ] Poser à LimeZu la question de la licence par personne.
 - [ ] Une semaine après : relever les minutes LiveKit et décider du passage à l'offre Ship (voir « Suivre la consommation LiveKit »).
+# tool-virtual-studio
