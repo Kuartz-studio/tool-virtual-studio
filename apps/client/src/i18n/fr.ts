@@ -13,6 +13,16 @@ export const fr = {
       tooManyAttempts: 'Trop de tentatives. Patiente une minute, puis réessaie.',
     },
   },
+  // Toute l'appli : une nouvelle version déployée pendant que l'onglet était ouvert, une page qui ne s'affiche pas.
+  app: {
+    newVersion: 'Nouvelle version disponible',
+    newVersionHint: 'Recharge la page pour continuer.',
+    reload: 'Recharger',
+    error: {
+      title: 'La page ne s\'affiche pas',
+      message: 'Une nouvelle version est peut-être en ligne, ou la connexion a coupé. Recharge la page.',
+    },
+  },
   login: {
     title: 'Connexion',
     email: 'Adresse e-mail',

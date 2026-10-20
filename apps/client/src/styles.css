@@ -166,6 +166,35 @@ a {
   margin: 0;
 }
 
+.page-message h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+/* Une nouvelle version déployée pendant que l'onglet était ouvert : en haut, au milieu, par-dessus tout (le jeu, les panneaux, l'écran
+   « Ouvert dans un autre onglet »). */
+.new-version {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: max-content;
+  max-width: calc(100% - 24px);
+  padding: 8px 8px 8px 16px;
+  color: var(--warning-text);
+  background: var(--warning-background);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+  transform: translateX(-50%);
+}
+
+.new-version p {
+  margin: 0;
+}
+
 /* Le bureau : la carte (le canevas de Phaser) occupe toute la page. Le fond est celui du jeu (backgroundColor, game/config.ts), pour
    qu'il n'y ait pas d'éclair clair pendant le chargement de Phaser. */
 .office {

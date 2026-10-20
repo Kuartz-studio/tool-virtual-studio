@@ -1,5 +1,7 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import {
+  createInvitation,
+  enterOffice,
   expectInOffice,
   holdUntilStopped,
   inviteAndJoin,
@@ -226,6 +228,31 @@ test('planche d\'avatar introuvable : le même message à la place de la carte',
   // dev-blue n'est pas l'avatar de cette personne : le Preloader charge pourtant toutes les planches, pour les autres joueurs.
   const account = { email: uniqueEmail('axel'), name: 'Axel', password: 'motdepasse-d-axel' };
   await expectLoadFailure(page, '**/assets/dev/avatars/dev-blue.png', account);
+});
+
+// Après un déploiement, les fichiers compilés changent de nom, et le serveur n'a plus les anciens : un onglet ouvert avant ne trouve
+// plus le jeu, qu'il charge à la demande (404). L'avis le dit dès l'écran d'entrée (qui charge le jeu d'avance), et la page qui ne
+// peut pas s'afficher fait place à la page d'erreur de l'appli ; « Recharger » remet tout d'aplomb.
+test('le jeu introuvable (un onglet d\'avant un déploiement) : « Nouvelle version disponible », puis la page d\'erreur, et « Recharger »', async ({ page }) => {
+  const game = '**/assets/PhaserGame-*.js';
+  await page.route(game, (route) => route.fulfill({ status: 404, body: 'introuvable' }));
+  await page.goto(await createInvitation(page.request, uniqueEmail('noe')));
+  await page.getByLabel('Nom affiché', { exact: true }).fill('Noé');
+  await page.getByLabel('Mot de passe', { exact: true }).fill('motdepasse-de-noe');
+  await page.getByRole('button', { name: 'Créer mon compte' }).click();
+
+  const notice = page.getByRole('alert').filter({ hasText: 'Nouvelle version disponible' });
+  await expect(notice).toBeVisible();
+  await expect(notice.getByRole('button', { name: 'Recharger' })).toBeVisible();
+
+  await page.getByRole('button', { name: /^Entrer( quand même)?$/ }).click();
+  await expect(page.getByRole('heading', { level: 1, name: 'La page ne s\'affiche pas' })).toBeVisible();
+
+  // Le jeu est de nouveau là (la nouvelle page pointerait vers les nouveaux fichiers) : « Recharger », et l'on entre.
+  await page.unroute(game);
+  await page.getByRole('main').getByRole('button', { name: 'Recharger' }).click();
+  await enterOffice(page);
+  await expectInOffice(page, 'Noé');
 });
 
 // ---- L'avatar local -------------------------------------------------------------------------------------------------------
