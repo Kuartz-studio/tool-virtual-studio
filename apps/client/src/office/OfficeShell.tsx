@@ -1,6 +1,7 @@
 import type { Role } from '@bureau/shared';
 import { Activity, useId, useRef, useState, type ReactNode } from 'react';
 import { fr, t } from '../i18n/fr';
+import { useMailMode } from '../lib/config';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
@@ -88,6 +89,9 @@ export function OfficeShell({
   // quelqu'un d'inconnu arrive : son bouton n'attend pas l'`init`. Un membre n'a ni le bouton ni le panneau, et rien ne part vers /api/admin.
   const isAdmin = user.role === 'admin';
   const [adminOpen, setAdminOpen] = useState(false);
+  // Le mode d'envoi du serveur, lu (une fois pour la page) à la première ouverture du panneau Admin : sans e-mail, ses membres ont
+  // « Lien de mot de passe ». Inconnu tant qu'il n'est pas lu, ou s'il ne se lit pas : le panneau est celui des e-mails.
+  const mail = useMailMode(isAdmin && adminOpen);
   const adminToggle = useRef<HTMLButtonElement>(null);
   const adminId = useId();
 
@@ -123,7 +127,7 @@ export function OfficeShell({
         )}
         <div className="office-side" data-chat-open={chatOpen ? 'true' : undefined} data-admin-open={isAdmin && adminOpen ? 'true' : undefined}>
           {peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}
-          {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} onClose={closeAdmin} />}
+          {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} mail={mail} onClose={closeAdmin} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont
               arrêtés : il ne prend pas le focus, et ne lit rien. À l'affichage, ils reprennent (focus dans le champ, messages lus). */}
           <Activity mode={chatOpen ? 'visible' : 'hidden'}>

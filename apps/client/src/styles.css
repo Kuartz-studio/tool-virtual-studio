@@ -1069,6 +1069,79 @@ a {
   white-space: nowrap;
 }
 
+/* Sans e-mail, un membre a deux boutons (« Lien de mot de passe » et « Retirer ») : ils passent sous son nom, à droite, au lieu de
+   l'écraser. */
+.admin-row-stack {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.admin-row-stack .admin-row-text {
+  flex: 1 1 100%;
+}
+
+.admin-row-stack .admin-row-actions {
+  margin-left: auto;
+}
+
+/* Un lien à transmettre (sans e-mail) : la phrase qui le présente, le lien dans un champ à copier, « Copier le lien » et « Masquer »,
+   puis sa durée de validité. La région vivante qui l'entoure est vide, et sans marge, tant qu'il n'y en a pas. */
+.admin-link {
+  margin: 0 0 12px;
+  padding: 12px;
+  background: var(--background);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.admin-link-intro {
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.admin-link-field {
+  box-sizing: border-box;
+  width: 100%;
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  text-overflow: ellipsis;
+}
+
+.admin-link-field:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  border-color: var(--accent);
+}
+
+.admin-link-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.admin-link-actions .bar-button {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+.admin-link-copied {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--success-text);
+}
+
+.admin-link-hint {
+  margin: 8px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* Le rôle, et « expirée ». */
 .admin-badge {
   flex: none;

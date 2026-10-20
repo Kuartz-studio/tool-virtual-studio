@@ -56,3 +56,17 @@ test('le panneau Personnes compte ses lignes', () => {
   expect(t(fr.office.people.online, { count: 3 })).toBe('En ligne (3)');
   expect(t(fr.office.people.offline, { count: 0 })).toBe('Hors ligne (0)');
 });
+
+// Sans e-mail (MAILER=none) : les phrases des liens à transmettre, mot pour mot.
+test('les textes des liens à transmettre', () => {
+  expect(t(fr.admin.invite.created, { email: 'nina@x.fr' })).toBe('Invitation créée pour nina@x.fr. Envoie-lui ce lien :');
+  expect(t(fr.admin.invite.validity, { days: 7 })).toMatch(/^Ce lien est valable 7 jours\. Il ne sera plus affiché/);
+  expect(t(fr.admin.pending.renewed, { email: 'nina@x.fr' })).toBe('Nouveau lien pour nina@x.fr : l\'ancien ne marche plus. Envoie-lui ce lien :');
+  expect(t(fr.admin.members.passwordLinkIntro, { name: 'Bob' })).toBe('Ce lien permet de choisir un nouveau mot de passe pour Bob.');
+  expect(fr.admin.members.passwordLink).toBe('Lien de mot de passe');
+  expect(fr.admin.link.copy).toBe('Copier le lien');
+  expect(fr.admin.link.copied).toBe('Copié');
+  expect(fr.admin.errors.resetFailed.length).toBeGreaterThan(10);
+  // Le texte d'une invitation créée ne promet aucun e-mail.
+  expect(JSON.stringify([fr.admin.invite.created, fr.admin.pending.renewed, fr.admin.members.passwordLinkIntro])).not.toMatch(/e-mail|envoyé/i);
+});

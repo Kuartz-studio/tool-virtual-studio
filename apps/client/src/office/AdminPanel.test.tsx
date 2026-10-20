@@ -1,8 +1,8 @@
-import type { PublicPlayer } from '@bureau/shared';
+import { INVITATION_TTL_MS, type MailMode, type PublicPlayer } from '@bureau/shared';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { bindKeyboard, DirectionInput } from '../game/input';
 import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
@@ -94,10 +94,12 @@ const player = (id: string, name: string): PublicPlayer => ({
 interface Options {
   selfId?: string;
   onClose?: () => void;
+  // Le mode d'envoi du serveur (GET /api/config, que lit OfficeShell) : absent tant qu'il est inconnu.
+  mail?: MailMode | null;
 }
 
-function renderPanel({ selfId = ADA.id, onClose = () => {} }: Options = {}) {
-  return render(<AdminPanel id="panneau-admin" selfId={selfId} onClose={onClose} />);
+function renderPanel({ selfId = ADA.id, onClose = () => {}, mail }: Options = {}) {
+  return render(<AdminPanel id="panneau-admin" selfId={selfId} mail={mail} onClose={onClose} />);
 }
 
 // Le panneau ouvert, ses deux listes arrivées (les titres des sections en portent le nombre).
@@ -110,11 +112,11 @@ async function openPanel(options?: Options) {
 
 // Le panneau, avec un bouton à côté, hors de lui (la page, le Chat…) : là où le focus peut passer pendant qu'une réponse se fait attendre.
 async function openPanelBeside(options: Options = {}) {
-  const { selfId = ADA.id, onClose = () => {} } = options;
+  const { selfId = ADA.id, onClose = () => {}, mail } = options;
   render(
     <>
       <button type="button">Dehors</button>
-      <AdminPanel id="panneau-admin" selfId={selfId} onClose={onClose} />
+      <AdminPanel id="panneau-admin" selfId={selfId} mail={mail} onClose={onClose} />
     </>,
   );
   await screen.findByRole('region', { name: /^Membres \(\d+\)$/ });
@@ -1125,5 +1127,485 @@ describe('quelqu\'un que les listes ne connaissent pas arrive en ligne', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(countOf(api, 'GET /api/admin/members')).toBe(2);
     expect(countOf(api, 'GET /api/admin/invitations')).toBe(2);
+  });
+});
+
+// ---- Sans e-mail : des liens à transmettre ----------------------------------------------------------------------------------------
+
+// Avec MAILER=none, rien ne part par e-mail : le serveur rend le lien (`link`) de l'invitation créée ou renvoyée, et celui d'un
+// mot de passe. Le panneau le montre une fois, dans une boîte à copier, sous le geste qui l'a produit.
+const LINK = 'https://bureau.exemple.fr/rejoindre?token=jeton-nina';
+const OTHER_LINK = 'https://bureau.exemple.fr/rejoindre?token=jeton-tom';
+const RESET_LINK = 'https://bureau.exemple.fr/api/auth/reset-password/jeton-bob?callbackURL=https%3A%2F%2Fbureau.exemple.fr%2Freinitialiser';
+const DAYS = INVITATION_TTL_MS / (24 * 3600 * 1000);
+
+// Le presse-papiers du navigateur : `writeText` simulé, ou rien du tout (une page en http, hors localhost, n'a pas navigator.clipboard).
+function stubClipboard(writeText?: (text: string) => Promise<void>) {
+  Object.defineProperty(navigator, 'clipboard', { value: writeText ? { writeText } : undefined, configurable: true });
+}
+
+afterEach(() => {
+  // Retire la propriété posée par stubClipboard : navigator retrouve celle de happy-dom.
+  Reflect.deleteProperty(navigator, 'clipboard');
+});
+
+// La boîte d'une section : le groupe nommé par la phrase qui la présente.
+const boxIn = (section: HTMLElement, intro: string) => within(section).findByRole('group', { name: intro });
+const noBoxIn = (section: HTMLElement) => expect(within(section).queryByRole('group')).toBeNull();
+const fieldOf = (box: HTMLElement) => within(box).getByRole('textbox') as HTMLInputElement;
+const copyOf = (box: HTMLElement) => within(box).getByRole('button', { name: fr.admin.link.copy }) as HTMLButtonElement;
+const dismissOf = (box: HTMLElement) => within(box).getByRole('button', { name: fr.admin.link.dismiss }) as HTMLButtonElement;
+
+describe('inviter sans e-mail', () => {
+  const created = t(fr.admin.invite.created, { email: 'nina@x.fr' });
+
+  // Le serveur répond 201 avec le corps d'avant et, en plus, `link`.
+  const postWithLink = (links: Record<string, string>) => (state: World) => ({
+    'POST /api/admin/invitations': (init: RequestInit | undefined) => {
+      const body = JSON.parse(String(init?.body)) as { email: string; role: Role };
+      if (state.invitations.some((pending) => pending.email === body.email)) return json(409, { error: 'already_invited' });
+      const made = invitation(`inv-${body.email}`, body.email, { role: body.role });
+      state.invitations = [made, ...state.invitations];
+      return json(201, { ...made, link: links[body.email] });
+    },
+  });
+
+  test('le serveur rend un lien : la boîte le montre, à copier, sous le formulaire, et ne dit pas qu\'un e-mail est parti', async () => {
+    const user = userEvent.setup();
+    const { api } = serve({}, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    noBoxIn(inviteSection());
+
+    await invite(user, 'nina@x.fr');
+    const box = await boxIn(inviteSection(), created);
+
+    // Le lien, dans un champ en lecture seule nommé par la phrase de la boîte.
+    const field = within(box).getByRole('textbox', { name: created }) as HTMLInputElement;
+    expect(field.value).toBe(LINK);
+    expect(field.readOnly).toBe(true);
+    expect(within(box).getByRole('button', { name: fr.admin.link.copy })).toBeTruthy();
+    // Sept jours, et pas redonné : l'admin sait qu'il doit le transmettre maintenant, ou renvoyer l'invitation.
+    expect(within(box).getByText(t(fr.admin.invite.validity, { days: DAYS }))).toBeTruthy();
+    expect(DAYS).toBe(7);
+    expect(fr.admin.invite.validity).toMatch(/plus affiché/);
+    // Sous le formulaire, pas dedans.
+    const form = inviteSection().querySelector('form')!;
+    expect(form.contains(box)).toBe(false);
+    expect(form.compareDocumentPosition(box) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // Rien n'est parti : le message d'un envoi ne s'affiche pas. Le champ est vidé, et la liste relue.
+    expect(within(inviteSection()).queryByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }))).toBeNull();
+    expect(emailField().value).toBe('');
+    await within(pendingSection()).findByText('nina@x.fr');
+    expect(routesOf(api).slice(-2)).toEqual(['POST /api/admin/invitations', 'GET /api/admin/invitations']);
+  });
+
+  test('la boîte est dans une région vivante qui existait déjà, vide, et le focus va sur « Copier le lien »', async () => {
+    const user = userEvent.setup();
+    serve({}, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    const live = inviteSection().querySelector('[aria-live="polite"]')!;
+    expect(live.textContent).toBe('');
+
+    await invite(user, 'nina@x.fr');
+    const box = await boxIn(inviteSection(), created);
+    expect(inviteSection().querySelector('[aria-live="polite"]')).toBe(live);
+    expect(live.contains(box)).toBe(true);
+    // Le message d'avant garde sa région role="status" à lui, vide : la boîte n'en prend pas la place.
+    expect(within(inviteSection()).getByRole('status').textContent).toBe('');
+    expect(document.activeElement).toBe(copyOf(box));
+  });
+
+  test('« Copier le lien » met le lien dans le presse-papiers et dit « Copié »', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => {});
+    serve({}, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    await invite(user, 'nina@x.fr');
+    const box = await boxIn(inviteSection(), created);
+    stubClipboard(writeText);
+    expect(within(box).queryByText(fr.admin.link.copied)).toBeNull();
+
+    await user.click(copyOf(box));
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(LINK);
+    expect(await within(box).findByText(fr.admin.link.copied)).toBeTruthy();
+    expect(within(box).queryByText(fr.admin.link.selected)).toBeNull();
+    // Le focus reste sur le bouton.
+    expect(document.activeElement).toBe(copyOf(box));
+  });
+
+  test.each([
+    ['le navigateur n\'a pas de presse-papiers (page en http)', () => stubClipboard(undefined)],
+    ['le presse-papiers refuse (permission)', () => stubClipboard(vi.fn(async () => { throw new DOMException('refusé', 'NotAllowedError'); }))],
+  ])('%s : le lien est sélectionné dans le champ, et la boîte dit de le copier soi-même', async (_name, arrange) => {
+    const user = userEvent.setup();
+    serve({}, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    await invite(user, 'nina@x.fr');
+    const box = await boxIn(inviteSection(), created);
+    arrange();
+
+    await user.click(copyOf(box));
+
+    expect(await within(box).findByText(fr.admin.link.selected)).toBeTruthy();
+    expect(within(box).queryByText(fr.admin.link.copied)).toBeNull();
+    const field = fieldOf(box);
+    expect(document.activeElement).toBe(field);
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, LINK.length]);
+  });
+
+  test('le champ se sélectionne en entier quand on y met le focus', async () => {
+    const user = userEvent.setup();
+    serve({}, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    await invite(user, 'nina@x.fr');
+    const field = fieldOf(await boxIn(inviteSection(), created));
+    await user.click(field);
+    expect([field.selectionStart, field.selectionEnd]).toEqual([0, LINK.length]);
+  });
+
+  test('« Masquer » ferme la boîte et rend le focus au champ de l\'adresse', async () => {
+    const user = userEvent.setup();
+    serve({}, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    await invite(user, 'nina@x.fr');
+    const box = await boxIn(inviteSection(), created);
+
+    await user.click(dismissOf(box));
+
+    noBoxIn(inviteSection());
+    expect(within(inviteSection()).queryByText(LINK)).toBeNull();
+    expect(document.activeElement).toBe(emailField());
+  });
+
+  test('le résultat suivant remplace la boîte : le nouveau lien, « Copié » oublié', async () => {
+    const user = userEvent.setup();
+    stubClipboard(vi.fn(async () => {}));
+    serve({}, postWithLink({ 'nina@x.fr': LINK, 'tom@x.fr': OTHER_LINK }));
+    await openPanel({ mail: 'none' });
+    await invite(user, 'nina@x.fr');
+    await user.click(copyOf(await boxIn(inviteSection(), created)));
+    await within(inviteSection()).findByText(fr.admin.link.copied);
+
+    await invite(user, 'tom@x.fr');
+    const second = await boxIn(inviteSection(), t(fr.admin.invite.created, { email: 'tom@x.fr' }));
+
+    expect(within(inviteSection()).getAllByRole('group')).toHaveLength(1);
+    expect(fieldOf(second).value).toBe(OTHER_LINK);
+    expect(within(inviteSection()).queryByText(created)).toBeNull();
+    expect(within(inviteSection()).queryByText(fr.admin.link.copied)).toBeNull();
+    expect(document.activeElement).toBe(copyOf(second));
+  });
+
+  test('la boîte reste tant qu\'on ne la ferme pas : taper l\'adresse suivante, ou un refus, ne l\'efface pas', async () => {
+    const user = userEvent.setup();
+    serve({ invitations: [invitation('inv-tom', 'tom@x.fr')] }, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    await invite(user, 'nina@x.fr');
+    await boxIn(inviteSection(), created);
+
+    await user.type(emailField(), 'tom@x.fr');
+    expect(within(inviteSection()).getByRole('group', { name: created })).toBeTruthy();
+    await user.click(submitButton());   // déjà invitée : 409
+    expect((await within(inviteSection()).findByRole('alert')).textContent).toBe(fr.admin.errors.alreadyInvited);
+    expect(fieldOf(within(inviteSection()).getByRole('group', { name: created })).value).toBe(LINK);
+  });
+
+  test('sans lien dans la réponse (envoi par e-mail), rien ne change : le message d\'envoi, pas de boîte', async () => {
+    const user = userEvent.setup();
+    serve({}, (state) => ({
+      'POST /api/admin/invitations': () => {
+        const made = invitation('inv-nina', 'nina@x.fr');
+        state.invitations = [made];
+        return json(201, made);
+      },
+    }));
+    await openPanel({ mail: 'resend' });
+    await invite(user, 'nina@x.fr');
+    expect(await within(inviteSection()).findByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }))).toBeTruthy();
+    noBoxIn(inviteSection());
+    expect(document.activeElement).toBe(emailField());
+  });
+
+  test('la réponse arrive après que le focus est passé ailleurs : il n\'est pas repris', async () => {
+    const user = userEvent.setup();
+    const reply = deferred<Response>();
+    serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
+    const outside = await openPanelBeside({ mail: 'none' });
+    await user.type(emailField(), 'nina@x.fr');
+    await user.click(submitButton());
+    outside.focus();
+
+    await act(async () => reply.resolve(json(201, { ...invitation('inv-nina', 'nina@x.fr'), link: LINK })));
+    const box = await boxIn(inviteSection(), created);
+    expect(fieldOf(box).value).toBe(LINK);   // la boîte est là…
+    expect(document.activeElement).toBe(outside);   // …sans avoir pris le focus
+  });
+});
+
+describe('renvoyer une invitation sans e-mail', () => {
+  const PENDING = [invitation('inv-nina', 'nina@x.fr'), invitation('inv-old', 'old@x.fr', { role: 'admin', expired: true })];
+  const renewed = t(fr.admin.pending.renewed, { email: 'nina@x.fr' });
+  const resendWithLink = (state: World) => ({
+    'POST /api/admin/invitations/inv-nina/resend': () => {
+      state.invitations = state.invitations.map((pending) => (pending.id === 'inv-nina' ? { ...pending, expired: false } : pending));
+      return json(200, { ok: true, link: LINK });
+    },
+  });
+
+  test('le serveur rend un lien : la boîte est sous « Invitations en attente », et on ne dit pas qu\'un e-mail est reparti', async () => {
+    const user = userEvent.setup();
+    const { api } = serve({ invitations: PENDING }, resendWithLink);
+    await openPanel({ mail: 'none' });
+    noBoxIn(pendingSection());
+
+    await user.click(resendButton('nina@x.fr'));
+    const box = await boxIn(pendingSection(), renewed);
+
+    expect(fieldOf(box).value).toBe(LINK);
+    expect(fieldOf(box).readOnly).toBe(true);
+    expect(within(box).getByText(t(fr.admin.invite.validity, { days: DAYS }))).toBeTruthy();
+    expect(within(pendingSection()).queryByText(t(fr.admin.pending.resent, { email: 'nina@x.fr' }))).toBeNull();
+    expect(routesOf(api).slice(-2)).toEqual(['POST /api/admin/invitations/inv-nina/resend', 'GET /api/admin/invitations']);
+    expect(document.activeElement).toBe(copyOf(box));
+    // La boîte précède la liste : elle est sous le titre et les messages, au-dessus des invitations.
+    expect(box.compareDocumentPosition(within(pendingSection()).getByRole('list')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  test('copier, masquer : comme sous le formulaire, et le focus revient à « Renvoyer »', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => {});
+    serve({ invitations: PENDING }, resendWithLink);
+    await openPanel({ mail: 'none' });
+    await user.click(resendButton('nina@x.fr'));
+    const box = await boxIn(pendingSection(), renewed);
+    stubClipboard(writeText);
+
+    await user.click(copyOf(box));
+    expect(writeText).toHaveBeenCalledWith(LINK);
+    expect(await within(box).findByText(fr.admin.link.copied)).toBeTruthy();
+
+    await user.click(dismissOf(box));
+    noBoxIn(pendingSection());
+    expect(document.activeElement).toBe(resendButton('nina@x.fr'));
+  });
+
+  test('renvoyer une autre invitation remplace la boîte', async () => {
+    const user = userEvent.setup();
+    serve({ invitations: PENDING }, (state) => ({
+      ...resendWithLink(state),
+      'POST /api/admin/invitations/inv-old/resend': () => json(200, { ok: true, link: OTHER_LINK }),
+    }));
+    await openPanel({ mail: 'none' });
+    await user.click(resendButton('nina@x.fr'));
+    await boxIn(pendingSection(), renewed);
+    await user.click(resendButton('old@x.fr'));
+    const second = await boxIn(pendingSection(), t(fr.admin.pending.renewed, { email: 'old@x.fr' }));
+
+    expect(within(pendingSection()).getAllByRole('group')).toHaveLength(1);
+    expect(fieldOf(second).value).toBe(OTHER_LINK);
+  });
+
+  test('annuler cette invitation fait disparaître son lien ; en annuler une autre, non', async () => {
+    const user = userEvent.setup();
+    serve({ invitations: PENDING }, (state) => ({
+      ...resendWithLink(state),
+      'DELETE /api/admin/invitations/inv-old': () => {
+        state.invitations = state.invitations.filter((pending) => pending.id !== 'inv-old');
+        return json(200, { ok: true });
+      },
+      'DELETE /api/admin/invitations/inv-nina': () => {
+        state.invitations = state.invitations.filter((pending) => pending.id !== 'inv-nina');
+        return json(200, { ok: true });
+      },
+    }));
+    await openPanel({ mail: 'none' });
+    await user.click(resendButton('nina@x.fr'));
+    await boxIn(pendingSection(), renewed);
+
+    await user.click(revokeButton('old@x.fr'));
+    await waitFor(() => expect(within(pendingSection()).queryByText('old@x.fr')).toBeNull());
+    expect(within(pendingSection()).getByRole('group', { name: renewed })).toBeTruthy();
+
+    await user.click(revokeButton('nina@x.fr'));
+    await waitFor(() => expect(within(pendingSection()).queryByText('nina@x.fr')).toBeNull());
+    noBoxIn(pendingSection());
+  });
+
+  test('sans lien dans la réponse (e-mail renvoyé), le message d\'avant, pas de boîte', async () => {
+    const user = userEvent.setup();
+    serve({ invitations: PENDING }, () => ({ 'POST /api/admin/invitations/inv-nina/resend': () => json(200, { ok: true }) }));
+    await openPanel({ mail: 'resend' });
+    await user.click(resendButton('nina@x.fr'));
+    expect(await within(pendingSection()).findByText(t(fr.admin.pending.resent, { email: 'nina@x.fr' }))).toBeTruthy();
+    noBoxIn(pendingSection());
+  });
+});
+
+describe('lien de mot de passe', () => {
+  const passwordLink = (name: string) => within(membersSection()).queryByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name }) }) as HTMLButtonElement | null;
+  const introFor = (name: string) => t(fr.admin.members.passwordLinkIntro, { name });
+  const resetLinkOf = (id: string, reply: () => Response | Promise<Response>) => ({ [`POST /api/admin/members/${id}/reset-link`]: reply });
+
+  test('avec MAILER=none : un bouton par membre, sauf pour soi-même', async () => {
+    serve();
+    await openPanel({ mail: 'none' });   // ADA est le compte connecté
+    expect(passwordLink('Bob')).not.toBeNull();
+    expect(passwordLink('Cléo')).not.toBeNull();
+    expect(passwordLink('Ada')).toBeNull();
+    expect(within(rowOf(membersSection(), 'Ada')).queryByRole('button')).toBeNull();   // ni ce bouton, ni « Retirer »
+    // Le bouton se lit « Lien de mot de passe », et son nom dit pour qui.
+    expect(passwordLink('Bob')!.textContent).toBe('Lien de mot de passe');
+    expect(fr.admin.members.passwordLink).toBe('Lien de mot de passe');
+    // « Retirer » reste là, à côté.
+    expect(removeButton('Bob')).toBeTruthy();
+  });
+
+  test('le compte connecté est celui de selfId : avec Cléo, c\'est Ada qui a le bouton', async () => {
+    serve();
+    await openPanel({ mail: 'none', selfId: CLEO.id });
+    expect(passwordLink('Cléo')).toBeNull();
+    expect(passwordLink('Ada')).not.toBeNull();
+  });
+
+  test.each([
+    ['le mode est inconnu (configuration pas encore lue, ou illisible)', undefined],
+    ['null', null],
+    ['MAILER=resend', 'resend'],
+    ['MAILER=memory', 'memory'],
+  ] as const)('%s : aucun bouton « Lien de mot de passe », les lignes sont celles d\'avant', async (_name, mail) => {
+    serve();
+    await openPanel({ mail });
+    expect(within(membersSection()).queryAllByRole('button', { name: /mot de passe/i })).toEqual([]);
+    expect(removeButton('Bob')).toBeTruthy();
+    expect(within(membersSection()).getAllByRole('button').map((button) => button.textContent)).toEqual([fr.admin.members.remove, fr.admin.members.remove]);
+  });
+
+  test('un clic demande le lien (POST sans corps) et la boîte le montre, avec la phrase du membre', async () => {
+    const user = userEvent.setup();
+    const { api } = serve({}, () => resetLinkOf('bob', () => json(200, { link: RESET_LINK })));
+    await openPanel({ mail: 'none' });
+
+    await user.click(passwordLink('Bob')!);
+    const box = await boxIn(membersSection(), introFor('Bob'));
+
+    expect(introFor('Bob')).toBe('Ce lien permet de choisir un nouveau mot de passe pour Bob.');
+    expect(fieldOf(box).value).toBe(RESET_LINK);
+    expect(fieldOf(box).readOnly).toBe(true);
+    expect(within(box).getByText(fr.admin.members.passwordLinkValidity)).toBeTruthy();
+    expect(fr.admin.members.passwordLinkValidity).toMatch(/une heure/);
+    expect(fr.admin.members.passwordLinkValidity).toMatch(/plus affiché/);
+    expect(document.activeElement).toBe(copyOf(box));
+    // La demande : un POST sans corps ; la liste des membres n'a pas besoin d'être relue.
+    const call = api.mock.calls.find(([input]) => String(input) === '/api/admin/members/bob/reset-link');
+    expect(call?.[1]).toMatchObject({ method: 'POST' });
+    expect(call?.[1]?.body).toBeUndefined();
+    expect(countOf(api, 'GET /api/admin/members')).toBe(1);
+    expect(within(membersSection()).queryByRole('alert')).toBeNull();
+  });
+
+  test('copier et masquer : le focus revient au bouton « Lien de mot de passe » de ce membre', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.fn(async () => {});
+    serve({}, () => resetLinkOf('bob', () => json(200, { link: RESET_LINK })));
+    await openPanel({ mail: 'none' });
+    await user.click(passwordLink('Bob')!);
+    const box = await boxIn(membersSection(), introFor('Bob'));
+    stubClipboard(writeText);
+
+    await user.click(copyOf(box));
+    expect(writeText).toHaveBeenCalledWith(RESET_LINK);
+    expect(await within(box).findByText(fr.admin.link.copied)).toBeTruthy();
+
+    await user.click(dismissOf(box));
+    noBoxIn(membersSection());
+    expect(document.activeElement).toBe(passwordLink('Bob'));
+  });
+
+  test('le lien d\'un autre membre remplace la boîte', async () => {
+    const user = userEvent.setup();
+    serve({}, () => ({
+      ...resetLinkOf('bob', () => json(200, { link: RESET_LINK })),
+      ...resetLinkOf('cleo', () => json(200, { link: OTHER_LINK })),
+    }));
+    await openPanel({ mail: 'none' });
+    await user.click(passwordLink('Bob')!);
+    await boxIn(membersSection(), introFor('Bob'));
+    await user.click(passwordLink('Cléo')!);
+    const second = await boxIn(membersSection(), introFor('Cléo'));
+    expect(within(membersSection()).getAllByRole('group')).toHaveLength(1);
+    expect(fieldOf(second).value).toBe(OTHER_LINK);
+  });
+
+  test('pendant la demande : les boutons sont inactifs (aria-disabled), le focus reste, une seule demande part', async () => {
+    const user = userEvent.setup();
+    const reply = deferred<Response>();
+    const { api } = serve({}, () => resetLinkOf('bob', () => reply.promise));
+    await openPanel({ mail: 'none' });
+    await user.click(passwordLink('Bob')!);
+
+    expect(passwordLink('Bob')!.getAttribute('aria-disabled')).toBe('true');
+    expect(passwordLink('Cléo')!.getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(passwordLink('Bob'));
+    await user.keyboard('{Enter}');
+    fireEvent.click(passwordLink('Cléo')!);
+    expect(routesOf(api).filter((route) => route.startsWith('POST'))).toEqual(['POST /api/admin/members/bob/reset-link']);
+
+    await act(async () => reply.resolve(json(200, { link: RESET_LINK })));
+    await boxIn(membersSection(), introFor('Bob'));
+    expect(passwordLink('Bob')!.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  test.each([
+    ['membre retiré entre-temps (404)', () => json(404, { error: 'not_found' }), fr.admin.errors.notFoundMember, true],
+    ['le lien n\'a pas pu être créé (502)', () => json(502, { error: 'reset_failed' }), fr.admin.errors.resetFailed, false],
+    ['route absente : le serveur n\'est plus sans e-mail (404 générique)', () => json(404, { error: 'not_found' }), fr.admin.errors.notFoundMember, true],
+    ['accès refusé (403)', () => json(403, { error: 'forbidden' }), fr.admin.errors.forbidden, false],
+    ['session expirée (401)', () => json(401, { error: 'unauthorized' }), fr.admin.errors.unauthorized, false],
+    ['serveur injoignable', () => { throw new TypeError('Failed to fetch'); }, fr.common.errors.network, false],
+    ['erreur du serveur (500)', () => json(500, { error: 'internal' }), fr.common.errors.unexpected, false],
+    ['réponse sans lien', () => json(200, {}), fr.common.errors.unexpected, false],
+  ] as const)('%s : le message, pas de boîte, et le bouton est de nouveau actif', async (_name, reply, message, reloads) => {
+    const user = userEvent.setup();
+    const { api } = serve({}, () => resetLinkOf('bob', reply));
+    await openPanel({ mail: 'none' });
+
+    await user.click(passwordLink('Bob')!);
+
+    expect((await within(membersSection()).findByRole('alert')).textContent).toBe(message);
+    noBoxIn(membersSection());
+    await waitFor(() => expect(countOf(api, 'GET /api/admin/members')).toBe(reloads ? 2 : 1));
+    // 404 : Bob n'est plus là pour tout le monde, la liste est relue (le faux serveur la garde telle quelle ici) ; sinon, le bouton sert encore.
+    if (!reloads) expect(passwordLink('Bob')!.hasAttribute('aria-disabled')).toBe(false);
+  });
+
+  test('retirer le membre fait disparaître son lien', async () => {
+    const user = userEvent.setup();
+    serve({}, (state) => ({
+      ...resetLinkOf('bob', () => json(200, { link: RESET_LINK })),
+      'DELETE /api/admin/members/bob': () => {
+        state.members = state.members.filter((member) => member.id !== 'bob');
+        return json(200, { ok: true });
+      },
+    }));
+    await openPanel({ mail: 'none' });
+    await user.click(passwordLink('Bob')!);
+    await boxIn(membersSection(), introFor('Bob'));
+
+    await user.click(removeButton('Bob'));
+    await user.click(dialogButton(fr.admin.removal.confirm));
+    await waitFor(() => expect(within(membersSection()).queryByText('Bob')).toBeNull());
+    noBoxIn(membersSection());
+  });
+
+  test('l\'identifiant du membre est encodé dans l\'adresse', async () => {
+    const user = userEvent.setup();
+    const odd: Member = { id: 'a/b c', name: 'Odd', email: 'odd@x.fr', role: 'member' };
+    const { api } = serve({ members: [ADA, odd] }, () => resetLinkOf('a%2Fb%20c', () => json(200, { link: RESET_LINK })));
+    await openPanel({ mail: 'none' });
+    await user.click(passwordLink('Odd')!);
+    await boxIn(membersSection(), introFor('Odd'));
+    expect(countOf(api, 'POST /api/admin/members/a%2Fb%20c/reset-link')).toBe(1);
   });
 });

@@ -1,5 +1,5 @@
-import type { Role } from '@bureau/shared';
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react';
+import { INVITATION_TTL_MS, type MailMode, type Role } from '@bureau/shared';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type RefObject } from 'react';
 import { fr, t } from '../i18n/fr';
 import { api, ApiError } from '../lib/api';
 import { Alert } from '../pages/AuthLayout';
@@ -97,6 +97,8 @@ function failureMessage(err: unknown, notFound: string): string {
       return fr.admin.errors.alreadyMember;
     case 'mail_failed':
       return fr.admin.errors.mailFailed;
+    case 'reset_failed':
+      return fr.admin.errors.resetFailed;
     case 'invalid':
       return fr.admin.errors.invalid;
     case 'self':
@@ -126,13 +128,28 @@ function failureMessage(err: unknown, notFound: string): string {
 // des membres ne connaît pas et qui arrive au bureau (une invitation vient d'être acceptée) les fait relire aussi, une fois par personne,
 // comme le panneau Personnes.
 //
+// Sans e-mail (`mail` vaut « none » : MAILER=none, que dit GET /api/config), rien n'est envoyé : le serveur rend le lien d'une invitation
+// créée ou renvoyée, et celui d'un mot de passe (« Lien de mot de passe », sur chaque membre sauf soi). Le panneau le montre dans une boîte
+// à copier, une seule à la fois dans tout le panneau ; le serveur ne le redonne pas. Tant que `mail` est inconnu, le panneau est celui
+// des e-mails.
+//
 // Le focus va au titre à l'ouverture (le lecteur d'écran l'annonce, et Tab entre dans le panneau) ; Échap ferme.
-export function AdminPanel({ id, selfId, onClose }: { id?: string; selfId: string; onClose(): void }) {
+export function AdminPanel({ id, selfId, mail, onClose }: { id?: string; selfId: string; mail?: MailMode | null; onClose(): void }) {
   const members = useAdminList<AdminMember>('/api/admin/members');
   const invitations = useAdminList<PendingInvitation>('/api/admin/invitations');
   const players = useOfficeStore((state) => state.players);
   const titleId = useId();
   const heading = useRef<HTMLHeadingElement>(null);
+  const [shown, setShown] = useState<ShownLink | null>(null);
+  const links = useMemo<Links>(
+    () => ({
+      shown,
+      show: (link) => setShown({ ...link, key: ++shownCount }),
+      hide: () => setShown(null),
+      forget: (subject) => setShown((current) => (current?.subject === subject ? null : current)),
+    }),
+    [shown],
+  );
 
   useEffect(() => {
     heading.current?.focus();
@@ -171,9 +188,9 @@ export function AdminPanel({ id, selfId, onClose }: { id?: string; selfId: strin
         </button>
       </header>
       <div className="admin-body">
-        <InviteSection reloadInvitations={reloadInvitations} />
-        <InvitationsSection list={invitations} reloadMembers={reloadMembers} />
-        <MembersSection list={members} selfId={selfId} />
+        <InviteSection reloadInvitations={reloadInvitations} links={links} />
+        <InvitationsSection list={invitations} reloadMembers={reloadMembers} links={links} />
+        <MembersSection list={members} selfId={selfId} canLinkPassword={mail === 'none'} links={links} />
       </div>
     </aside>
   );
@@ -188,11 +205,124 @@ function focusUnlessMoved(target: HTMLElement | null | undefined, section: HTMLE
   if (active === null || active === document.body || section?.contains(active)) target?.focus();
 }
 
+// ---- Un lien à transmettre -----------------------------------------------------------------------------------------------------------
+
+// Un lien que le serveur vient de rendre et ne redonnera pas : il n'a gardé que l'empreinte du jeton.
+interface ShownLink {
+  // Un numéro par résultat : la boîte d'un résultat neuf repart de zéro (« Copié » oublié), même si le lien s'écrit pareil.
+  key: number;
+  // La section sous laquelle la boîte paraît : celle du geste qui l'a produite.
+  place: 'invite' | 'pending' | 'members';
+  // La phrase qui présente le lien, et nomme la boîte.
+  intro: string;
+  link: string;
+  // Combien de temps il vaut, et qu'il ne sera pas redonné.
+  validity: string;
+  // Ce qu'il ouvre (`invitation:<id>`, `member:<id>`) : annuler l'invitation ou retirer le membre fait disparaître la boîte.
+  subject: string;
+  // Où va le focus quand on la masque : le bouton du geste, s'il existe encore.
+  returnFocus(): HTMLElement | null | undefined;
+}
+
+// Une seule boîte à la fois dans tout le panneau : un résultat neuf remplace le précédent.
+interface Links {
+  shown: ShownLink | null;
+  show(link: Omit<ShownLink, 'key'>): void;
+  hide(): void;
+  forget(subject: string): void;
+}
+
+let shownCount = 0;
+
+const DAY_MS = 24 * 3600 * 1000;
+// La durée de validité d'une invitation, en jours, telle que le serveur la fixe (INVITATION_TTL_MS).
+const INVITATION_DAYS = Math.round(INVITATION_TTL_MS / DAY_MS);
+
+// L'emplacement de la boîte sous une section : une région vivante (aria-live) qui existe avant la boîte, vide, pour qu'un lecteur
+// d'écran annonce la boîte quand elle paraît. (Ce n'est pas une région role="status" : chaque section en a déjà une, pour ses messages.)
+function LinkSlot({ links, place, section }: { links: Links; place: ShownLink['place']; section: RefObject<HTMLElement | null> }) {
+  const shown = links.shown?.place === place ? links.shown : null;
+  return <div aria-live="polite">{shown && <LinkBox key={shown.key} shown={shown} section={section} onDismiss={() => dismiss(links)} />}</div>;
+}
+
+// Masquer la boîte rend le focus au bouton du geste, avant qu'elle ne disparaisse avec celui qu'elle avait.
+function dismiss(links: Links): void {
+  const target = links.shown?.returnFocus();
+  links.hide();
+  target?.focus();
+}
+
+// La phrase, le lien dans un champ en lecture seule, « Copier le lien » et « Masquer », puis la durée de validité. À son apparition,
+// le focus va à « Copier le lien », sauf s'il était passé ailleurs pendant l'attente (focusUnlessMoved).
+function LinkBox({ shown, section, onDismiss }: { shown: ShownLink; section: RefObject<HTMLElement | null>; onDismiss(): void }) {
+  const introId = useId();
+  const hintId = useId();
+  const field = useRef<HTMLInputElement>(null);
+  const copyButton = useRef<HTMLButtonElement>(null);
+  const [copied, setCopied] = useState<'copied' | 'selected' | null>(null);
+
+  useEffect(() => {
+    focusUnlessMoved(copyButton.current, section.current);
+  }, [section]);
+
+  function selectLink() {
+    const input = field.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+    input.setSelectionRange(0, input.value.length);
+  }
+
+  async function copy() {
+    try {
+      // Sans presse-papiers (une page en http, hors localhost) ou s'il refuse (permission), `clipboard` est absent ou rejette.
+      await navigator.clipboard.writeText(shown.link);
+      setCopied('copied');
+    } catch {
+      // Le lien est sélectionné : la personne le copie elle-même.
+      selectLink();
+      setCopied('selected');
+    }
+  }
+
+  return (
+    <div className="admin-link" role="group" aria-labelledby={introId}>
+      <p id={introId} className="admin-link-intro">
+        {shown.intro}
+      </p>
+      <input
+        ref={field}
+        className="admin-link-field"
+        type="text"
+        readOnly
+        spellCheck={false}
+        autoComplete="off"
+        aria-labelledby={introId}
+        aria-describedby={hintId}
+        value={shown.link}
+        onFocus={(event) => event.currentTarget.select()}
+      />
+      <div className="admin-link-actions">
+        <button ref={copyButton} type="button" className="bar-button" onClick={() => void copy()}>
+          {fr.admin.link.copy}
+        </button>
+        <button type="button" className="bar-button" onClick={onDismiss}>
+          {fr.admin.link.dismiss}
+        </button>
+      </div>
+      {copied && <p className="admin-link-copied">{copied === 'copied' ? fr.admin.link.copied : fr.admin.link.selected}</p>}
+      <p id={hintId} className="admin-link-hint">
+        {shown.validity}
+      </p>
+    </div>
+  );
+}
+
 // ---- Inviter -----------------------------------------------------------------------------------------------------------------------
 
 // L'adresse et le rôle. Le champ ne se vide qu'à l'invitation envoyée : refusée, l'adresse reste, on la corrige. Le rôle revient alors
 // à « Membre » : une invitation d'admin ne se répète pas par inadvertance.
-function InviteSection({ reloadInvitations }: { reloadInvitations(): Promise<void> }) {
+function InviteSection({ reloadInvitations, links }: { reloadInvitations(): Promise<void>; links: Links }) {
   const titleId = useId();
   const emailId = useId();
   const roleId = useId();
@@ -212,19 +342,35 @@ function InviteSection({ reloadInvitations }: { reloadInvitations(): Promise<voi
     const sent = { email, role };
     setSubmitting(true);
     setFeedback(null);
+    let hasLink = false;
     try {
-      await api('/api/admin/invitations', { method: 'POST', body: JSON.stringify({ email, role }) });
+      const created = await api<{ id: string; link?: string }>('/api/admin/invitations', { method: 'POST', body: JSON.stringify({ email, role }) });
       // Le formulaire se vide s'il n'a pas changé depuis l'envoi : l'e-mail part pendant une ou deux secondes (Resend), et la personne
       // qui a déjà tapé l'adresse suivante la garde.
       setEmail((current) => (current === sent.email ? '' : current));
       setRole((current) => (current === sent.role ? 'member' : current));
-      setFeedback({ kind: 'done', text: t(fr.admin.invite.sent, { email }) });
+      if (typeof created.link === 'string') {
+        // Sans e-mail (MAILER=none), rien n'est parti : le serveur rend le lien, que l'admin transmet. La boîte du lien (qui prend le
+        // focus, sauf s'il est passé ailleurs) remplace le message d'envoi.
+        hasLink = true;
+        links.show({
+          place: 'invite',
+          intro: t(fr.admin.invite.created, { email }),
+          link: created.link,
+          validity: t(fr.admin.invite.validity, { days: INVITATION_DAYS }),
+          subject: `invitation:${created.id}`,
+          returnFocus: () => emailInput.current,
+        });
+      } else {
+        setFeedback({ kind: 'done', text: t(fr.admin.invite.sent, { email }) });
+      }
     } catch (err) {
       setFeedback({ kind: 'error', text: failureMessage(err, fr.admin.errors.notFoundInvitation) });
     }
     setSubmitting(false);
-    // Le bouton a perdu le focus en devenant inactif : le champ le reprend, pour enchaîner ou corriger l'adresse.
-    focusUnlessMoved(emailInput.current, section.current);
+    // Le bouton a perdu le focus en devenant inactif : le champ le reprend, pour enchaîner ou corriger l'adresse. (Avec un lien, c'est
+    // « Copier le lien » qui le prend : il faut d'abord le transmettre.)
+    if (!hasLink) focusUnlessMoved(emailInput.current, section.current);
     void reloadInvitations();
   }
 
@@ -267,6 +413,7 @@ function InviteSection({ reloadInvitations }: { reloadInvitations(): Promise<voi
           </button>
         </div>
       </form>
+      <LinkSlot links={links} place="invite" section={section} />
     </section>
   );
 }
@@ -275,14 +422,14 @@ function InviteSection({ reloadInvitations }: { reloadInvitations(): Promise<voi
 
 // Une action à la fois dans la section. Les boutons sont alors inactifs par aria-disabled, et non par `disabled` : un bouton qui devient
 // `disabled` perd le focus, et la personne au clavier se retrouverait en haut de la page.
-function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingInvitation>; reloadMembers(): Promise<void> }) {
+function InvitationsSection({ list, reloadMembers, links }: { list: AdminList<PendingInvitation>; reloadMembers(): Promise<void>; links: Links }) {
   const titleId = useId();
   const section = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
 
-  async function run(invitation: PendingInvitation, action: 'resend' | 'revoke') {
+  async function run(invitation: PendingInvitation, action: 'resend' | 'revoke', opener?: HTMLElement) {
     if (busy) return;
     setBusy(true);
     setFeedback(null);
@@ -291,15 +438,33 @@ function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingIn
     let gone = false;
     let notFound = false;
     try {
-      if (action === 'resend') await api(`${path}/resend`, { method: 'POST' });
-      else await api(path, { method: 'DELETE' });
-      setFeedback({ kind: 'done', text: t(action === 'resend' ? fr.admin.pending.resent : fr.admin.pending.revoked, { email: invitation.email }) });
-      gone = action === 'revoke';
+      if (action === 'resend') {
+        const renewed = await api<{ link?: string }>(`${path}/resend`, { method: 'POST' });
+        if (typeof renewed?.link === 'string') {
+          // Sans e-mail (MAILER=none), rien n'est reparti : le serveur rend le lien neuf (l'ancien ne marche plus), que l'admin transmet.
+          links.show({
+            place: 'pending',
+            intro: t(fr.admin.pending.renewed, { email: invitation.email }),
+            link: renewed.link,
+            validity: t(fr.admin.invite.validity, { days: INVITATION_DAYS }),
+            subject: `invitation:${invitation.id}`,
+            returnFocus: () => (opener?.isConnected ? opener : heading.current),
+          });
+        } else {
+          setFeedback({ kind: 'done', text: t(fr.admin.pending.resent, { email: invitation.email }) });
+        }
+      } else {
+        await api(path, { method: 'DELETE' });
+        setFeedback({ kind: 'done', text: t(fr.admin.pending.revoked, { email: invitation.email }) });
+        gone = true;
+      }
     } catch (err) {
       notFound = isNotFound(err);
       setFeedback({ kind: 'error', text: failureMessage(err, fr.admin.errors.notFoundInvitation) });
       gone = notFound;
     }
+    // Annulée ou plus en attente : son lien n'ouvre plus rien, la boîte qui le montre disparaît.
+    if (gone) links.forget(`invitation:${invitation.id}`);
     setBusy(false);
     if (gone) focusUnlessMoved(heading.current, section.current);
     void list.reload();
@@ -314,6 +479,7 @@ function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingIn
         {invitations ? t(fr.admin.pending.titleCount, { count: invitations.length }) : fr.admin.pending.title}
       </h3>
       <FeedbackMessage feedback={feedback} />
+      <LinkSlot links={links} place="pending" section={section} />
       {invitations === null && !list.failed && <p className="admin-note">{fr.common.loading}</p>}
       {list.failed && <LoadFailed message={fr.admin.pending.loadFailed} onRetry={() => retry(list, heading.current)} />}
       {invitations?.length === 0 && <p className="admin-note">{fr.admin.pending.empty}</p>}
@@ -341,7 +507,7 @@ function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingIn
                   className="bar-button"
                   aria-disabled={busy || undefined}
                   aria-label={t(fr.admin.pending.resendLabel, { email: invitation.email })}
-                  onClick={() => void run(invitation, 'resend')}
+                  onClick={(event) => void run(invitation, 'resend', event.currentTarget)}
                 >
                   {fr.admin.pending.resend}
                 </button>
@@ -365,14 +531,47 @@ function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingIn
 
 // ---- Membres -----------------------------------------------------------------------------------------------------------------------
 
-function MembersSection({ list, selfId }: { list: AdminList<AdminMember>; selfId: string }) {
+// `canLinkPassword` : le serveur n'envoie pas d'e-mail (MAILER=none), l'admin demande lui-même le lien de mot de passe d'un membre.
+function MembersSection({ list, selfId, canLinkPassword, links }: { list: AdminList<AdminMember>; selfId: string; canLinkPassword: boolean; links: Links }) {
   const titleId = useId();
   const section = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   // Le retrait qu'on demande à confirmer, et le bouton qui l'a demandé (le focus lui revient si on renonce).
   const [removal, setRemoval] = useState<{ member: AdminMember; opener: HTMLElement } | null>(null);
   const [removing, setRemoving] = useState(false);
+  // Un lien de mot de passe est en cours de demande : une seule à la fois dans la section (aria-disabled, comme les invitations).
+  const [requesting, setRequesting] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+
+  // Le lien par lequel ce membre choisit un nouveau mot de passe : la boîte le montre, l'admin le lui transmet. Les sessions du membre
+  // ne sont fermées que quand il s'en sert.
+  async function requestPasswordLink(member: AdminMember, opener: HTMLElement) {
+    if (requesting) return;
+    setRequesting(true);
+    setFeedback(null);
+    let gone = false;
+    try {
+      const reply = await api<{ link?: unknown }>(`/api/admin/members/${encodeURIComponent(member.id)}/reset-link`, { method: 'POST' });
+      if (typeof reply?.link !== 'string') throw new ApiError(200, 'unexpected');
+      links.show({
+        place: 'members',
+        intro: t(fr.admin.members.passwordLinkIntro, { name: member.name }),
+        link: reply.link,
+        validity: fr.admin.members.passwordLinkValidity,
+        subject: `member:${member.id}`,
+        returnFocus: () => (opener.isConnected ? opener : heading.current),
+      });
+    } catch (err) {
+      setFeedback({ kind: 'error', text: failureMessage(err, fr.admin.errors.notFoundMember) });
+      gone = isNotFound(err);
+    }
+    setRequesting(false);
+    if (gone) {
+      links.forget(`member:${member.id}`);
+      focusUnlessMoved(heading.current, section.current);
+      void list.reload();
+    }
+  }
 
   function ask(member: AdminMember, event: MouseEvent<HTMLButtonElement>) {
     setFeedback(null);
@@ -401,6 +600,8 @@ function MembersSection({ list, selfId }: { list: AdminList<AdminMember>; selfId
       setFeedback({ kind: 'error', text: failureMessage(err, fr.admin.errors.notFoundMember) });
       gone = isNotFound(err);
     }
+    // Retiré : le lien de mot de passe qu'on montrait pour lui n'ouvre plus rien.
+    if (gone) links.forget(`member:${member.id}`);
     setRemoving(false);
     setRemoval(null);
     focusUnlessMoved(gone ? heading.current : opener, section.current);
@@ -414,12 +615,13 @@ function MembersSection({ list, selfId }: { list: AdminList<AdminMember>; selfId
         {members ? t(fr.admin.members.titleCount, { count: members.length }) : fr.admin.members.title}
       </h3>
       <FeedbackMessage feedback={feedback} />
+      <LinkSlot links={links} place="members" section={section} />
       {members === null && !list.failed && <p className="admin-note">{fr.common.loading}</p>}
       {list.failed && <LoadFailed message={fr.admin.members.loadFailed} onRetry={() => retry(list, heading.current)} />}
       {members && members.length > 0 && (
         <ul className="admin-list">
           {members.map((member) => (
-            <li key={member.id} className="admin-row">
+            <li key={member.id} className={canLinkPassword && member.id !== selfId ? 'admin-row admin-row-stack' : 'admin-row'}>
               <div className="admin-row-text">
                 <span className="admin-row-line">
                   {/* Un nom ou une adresse trop longs sont coupés (« … ») : l'infobulle les donne en entier. */}
@@ -435,11 +637,24 @@ function MembersSection({ list, selfId }: { list: AdminList<AdminMember>; selfId
                   {member.email}
                 </span>
               </div>
-              {/* Pas de bouton pour se retirer soi-même. */}
+              {/* Pas de bouton pour se retirer soi-même, ni pour se demander son propre lien de mot de passe. */}
               {member.id !== selfId && (
-                <button type="button" className="bar-button" aria-label={t(fr.admin.members.removeLabel, { name: member.name })} onClick={(event) => ask(member, event)}>
-                  {fr.admin.members.remove}
-                </button>
+                <div className="admin-row-actions">
+                  {canLinkPassword && (
+                    <button
+                      type="button"
+                      className="bar-button"
+                      aria-disabled={requesting || undefined}
+                      aria-label={t(fr.admin.members.passwordLinkLabel, { name: member.name })}
+                      onClick={(event) => void requestPasswordLink(member, event.currentTarget)}
+                    >
+                      {fr.admin.members.passwordLink}
+                    </button>
+                  )}
+                  <button type="button" className="bar-button" aria-label={t(fr.admin.members.removeLabel, { name: member.name })} onClick={(event) => ask(member, event)}>
+                    {fr.admin.members.remove}
+                  </button>
+                </div>
               )}
             </li>
           ))}

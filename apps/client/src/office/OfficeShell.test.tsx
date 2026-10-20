@@ -1,5 +1,5 @@
 import type { ChatMessage, MediaJoinPayload, PublicPlayer, Role } from '@bureau/shared';
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr, t } from '../i18n/fr';
@@ -645,6 +645,59 @@ describe('le panneau Admin', () => {
     expect(lea.textContent).toContain(fr.admin.you);
     expect(within(lea).queryByRole('button')).toBeNull();
     expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
+  });
+
+  // Le mode d'envoi du serveur (GET /api/config) décide si les membres ont « Lien de mot de passe » : OfficeShell le lit à l'ouverture
+  // du panneau, jamais avant, et jamais pour un membre.
+  describe('sans e-mail (GET /api/config)', () => {
+    const configCalls = (api: ReturnType<typeof fakeApi>) => api.mock.calls.filter(([url]) => String(url) === '/api/config');
+    const passwordLink = (name: string) => screen.queryByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name }) });
+
+    test('MAILER=none : la configuration est lue à l\'ouverture du panneau, et Bob a « Lien de mot de passe » (Léa, qui est connectée, non)', async () => {
+      const user = userEvent.setup();
+      const api = fakeApi({ ...adminLists, 'GET /api/config': () => json(200, { mail: 'none' }) });
+      renderShell({ role: 'admin' });
+      expect(configCalls(api)).toHaveLength(0);   // panneau fermé : rien n'est demandé
+
+      await user.click(adminToggle());
+      const members = await screen.findByRole('region', { name: 'Membres (2)' });
+      expect(await within(members).findByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name: 'Bob' }) })).toBeTruthy();
+      expect(passwordLink('Léa')).toBeNull();
+      expect(configCalls(api)).toHaveLength(1);
+
+      // Fermé puis rouvert : la configuration est connue, elle n'est pas relue, et les boutons sont là tout de suite.
+      await user.click(adminToggle());
+      await user.click(adminToggle());
+      expect(await screen.findByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name: 'Bob' }) })).toBeTruthy();
+      expect(configCalls(api)).toHaveLength(1);
+    });
+
+    test.each([
+      ['MAILER=resend', () => json(200, { mail: 'resend' })],
+      ['MAILER=memory', () => json(200, { mail: 'memory' })],
+      ['la configuration ne se lit pas (500)', () => json(500, { error: 'internal' })],
+      ['le serveur ne répond pas', () => {
+        throw new TypeError('Failed to fetch');
+      }],
+    ])('%s : pas de « Lien de mot de passe », et rien ne s\'affiche en erreur', async (_name, config) => {
+      const user = userEvent.setup();
+      const api = fakeApi({ ...adminLists, 'GET /api/config': config });
+      renderShell({ role: 'admin' });
+      await user.click(adminToggle());
+      const members = await screen.findByRole('region', { name: 'Membres (2)' });
+      await waitFor(() => expect(configCalls(api)).toHaveLength(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(passwordLink('Bob')).toBeNull();
+      expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
+      expect(within(adminPanel()).queryByRole('alert')).toBeNull();
+    });
+
+    test('un membre ne lit pas la configuration : pas de panneau', async () => {
+      const api = fakeApi({ 'GET /api/members': () => json(200, []), 'GET /api/config': () => json(200, { mail: 'none' }) });
+      renderShell({ role: 'member' });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(configCalls(api)).toHaveLength(0);
+    });
   });
 
   test('il n\'attend pas l\'init (il ne parle qu\'à l\'API, et ne lit du bureau que qui est là) : le bouton est actif avant elle', () => {

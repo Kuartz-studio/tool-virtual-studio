@@ -165,6 +165,9 @@ export const fr = {
       submit: 'Envoyer l\'invitation',
       submitting: 'Envoi…',
       sent: 'Invitation envoyée à {email}.',
+      // Serveur sans e-mail (MAILER=none) : le serveur rend le lien de l'invitation, que l'admin transmet lui-même. Il ne le redonne pas.
+      created: 'Invitation créée pour {email}. Envoie-lui ce lien :',
+      validity: 'Ce lien est valable {days} jours. Il ne sera plus affiché : si tu le perds, utilise « Renvoyer » dans les invitations en attente.',
     },
     // Les invitations ni acceptées ni annulées, expirées comprises (on les renvoie). `title` : la section avant l'arrivée de la liste,
     // `titleCount` : une fois la liste là.
@@ -180,6 +183,8 @@ export const fr = {
       revokeLabel: 'Annuler l\'invitation de {email}',
       resent: 'Invitation renvoyée à {email}.',
       revoked: 'Invitation à {email} annulée.',
+      // Serveur sans e-mail : « Renvoyer » rend un lien neuf, et l'ancien ne marche plus.
+      renewed: 'Nouveau lien pour {email} : l\'ancien ne marche plus. Envoie-lui ce lien :',
     },
     members: {
       title: 'Membres',
@@ -188,6 +193,18 @@ export const fr = {
       remove: 'Retirer',
       removeLabel: 'Retirer {name}',
       removed: '{name} ne fait plus partie du bureau.',
+      // Serveur sans e-mail : l'admin demande le lien par lequel la personne choisit un nouveau mot de passe, et le lui transmet.
+      passwordLink: 'Lien de mot de passe',
+      passwordLinkLabel: 'Lien de mot de passe de {name}',
+      passwordLinkIntro: 'Ce lien permet de choisir un nouveau mot de passe pour {name}.',
+      passwordLinkValidity: 'Ce lien est valable une heure. Il ne sera plus affiché : si tu le perds, demandes-en un autre.',
+    },
+    // La boîte d'un lien à transmettre (invitation créée ou renvoyée, mot de passe) : copier, ou masquer.
+    link: {
+      copy: 'Copier le lien',
+      copied: 'Copié',
+      selected: 'Lien sélectionné : copie-le avec Ctrl+C (⌘C sur Mac).',
+      dismiss: 'Masquer',
     },
     // La confirmation d'un retrait : le compte est désactivé, pas supprimé, et son adresse ne peut plus être invitée (le serveur répond
     // alors « already_member »).
@@ -209,6 +226,7 @@ export const fr = {
       // « not_found » dépend de ce qu'on visait : une invitation (renvoyer, annuler), ou un membre (retirer).
       notFoundInvitation: 'Cette invitation n\'est plus en attente : elle a été acceptée ou annulée. Les listes viennent d\'être relues.',
       notFoundMember: 'Ce membre a déjà été retiré. La liste vient d\'être relue.',
+      resetFailed: 'Le lien n\'a pas pu être créé. Réessaie dans un instant.',
       unauthorized: 'Ta session a expiré. Recharge la page pour te reconnecter.',
       forbidden: 'Cette action est réservée aux admins.',
     },
