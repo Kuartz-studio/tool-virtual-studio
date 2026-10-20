@@ -182,6 +182,14 @@ Les gestes de tous les jours, une fois le bureau en ligne. Le détail technique 
 3. Limite connue de la V1 : **un retrait est définitif**. Il n'y a pas de réactivation dans l'appli, et l'adresse retirée ne peut plus être invitée (`already_member`, « Cette adresse a déjà un compte (actif ou retiré) »). Avant de retirer, vérifie donc que c'est bien voulu.
 4. Le serveur refuse aussi qu'on se retire soi-même (`self`) ou qu'on retire le dernier admin actif (`last_admin`) : il en faut toujours un.
 
+**Dépannage : réactiver un compte retiré par erreur.** Hors de l'appli, à faire avec précaution. Le compte n'a été que désactivé (sa colonne `disabled_at` est remplie) : il suffit de la vider. Ouvre la console de la base (`railway connect`, avec la CLI de Railway liée au projet, ouvre `psql` sur le service PostgreSQL ; `psql` doit être installé sur le poste), puis, avec l'adresse de la personne écrite en minuscules (la base garde les adresses ainsi) :
+
+```sql
+UPDATE "user" SET disabled_at = NULL WHERE email = 'prenom.nom@exemple.fr';
+```
+
+La réponse doit être `UPDATE 1` (`UPDATE 0` : l'adresse n'est pas la bonne). Ses sessions ont été supprimées au retrait : la personne se reconnecte avec son adresse et son mot de passe (ou « Mot de passe oublié ? »). Son rôle, son nom et son avatar n'ont pas changé.
+
 ### Suivre la consommation LiveKit
 
 - L'audio et la vidéo tournent sur l'offre gratuite de LiveKit Cloud (offre Build) : **5 000 minutes par mois**. Une minute compte pour chaque personne connectée à une conversation (`docs/conception.md`, §8.5).
@@ -193,7 +201,7 @@ Les gestes de tous les jours, une fois le bureau en ligne. Le détail technique 
 
 - Un `git push` sur `main` redéploie sur Railway : l'image est reconstruite, les migrations passent, puis la nouvelle version remplace l'ancienne dès que `/api/health` répond (détails dans « Déployer » et « Première mise en ligne »). Après un déploiement, `curl https://<domaine>/api/health` doit répondre `{"ok":true}`.
 - Pendant un redéploiement, **tout le monde est déconnecté**, puis les navigateurs se reconnectent seuls à la nouvelle version. À l'arrêt, le serveur enregistre la position de chaque personne présente avant de fermer les connexions : chacun retrouve sa place. Les conversations audio et vidéo se reforment ensuite d'après les positions retrouvées.
-- À vérifier dans Railway : le délai laissé entre SIGTERM et SIGKILL, qui se règle dans « Settings » du service (réglage « draining »), ou par la variable `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` (documentation de Railway sur l'arrêt d'un déploiement). Il doit couvrir l'enregistrement des positions, la fermeture des connexions, du serveur HTTP et de la base. Le serveur n'a pas de délai global : seule l'attente de la fermeture du serveur HTTP s'arrête d'elle-même, au bout de 5 s (`HTTP_CLOSE_WAIT_MS`, `apps/server/src/realtime/io.ts`) ; l'enregistrement des positions et la fermeture de la base n'ont pas de limite. Si Railway tue le processus avant la fin, les gens retrouvent leur dernière position enregistrée, qui date de 60 secondes au plus (c'est l'intervalle de l'enregistrement périodique). Aucune valeur n'est vérifiée à ce jour : lis-la dans Railway avant le premier lancement.
+- Railway laisse **30 s** entre SIGTERM et SIGKILL à l'ancienne version : `deploy.drainingSeconds` dans `railway.json` (« le temps entre l'envoi de SIGTERM au déploiement précédent et celui de SIGKILL », d'après le schéma de configuration et la documentation « Config as code » de Railway, vérifiés le 20/10/2026). La configuration du dépôt passe avant les réglages du service dans Railway : c'est là qu'il faut changer la valeur. Ces 30 s couvrent l'enregistrement des positions, la fermeture des connexions, du serveur HTTP et de la base. Le serveur n'a pas de délai global : l'attente de la fermeture du serveur HTTP s'arrête d'elle-même au bout de 5 s (`HTTP_CLOSE_WAIT_MS`, `apps/server/src/realtime/io.ts`), et une requête à PostgreSQL au bout de 10 s (5 s pour obtenir une connexion : `apps/server/src/db/client.ts`). Si Railway tue le processus avant la fin, les gens retrouvent leur dernière position enregistrée, qui date de 60 secondes au plus (c'est l'intervalle de l'enregistrement périodique).
 
 ### Checklist du premier vrai lancement
 
@@ -203,6 +211,7 @@ Production (variables du service Railway, voir « Première mise en ligne ») :
 - [ ] `LIVEKIT_URL`, `LIVEKIT_API_KEY` et `LIVEKIT_API_SECRET` en place : le journal de démarrage ne contient pas « LiveKit non configuré : audio et vidéo désactivés ».
 - [ ] `MAP_KEY=office`, **seulement quand la carte définitive (`apps/client/public/assets/maps/office.json`, dessinée dans Tiled) est dans le dépôt** et que `pnpm --filter @bureau/server map:check ../client/public/assets/maps/office.json` sort avec le code 0. Commite et pousse `office.json` avant de mettre `MAP_KEY=office` : Railway construit l'image depuis le dépôt, et une carte absente empêche le serveur de démarrer. Tant que cette carte n'y est pas, `MAP_KEY` reste à `dev-office`.
 - [ ] Une invitation réelle arrive dans la boîte de réception, pas dans les spams.
+- [ ] La limitation des tentatives de connexion compte bien par adresse du visiteur, et non par celle du proxy de Railway (voir « Derrière le proxy de Railway ») : sur `https://<domaine>/connexion`, quatre connexions de suite (en moins de 10 s) avec un mauvais mot de passe, la quatrième répond « Trop de tentatives » (429). Puis, dans la console de la base (`railway connect`), `select key from rate_limit;` montre `<ton adresse IP publique>|/sign-in/email`, ni `no-trusted-ip|/sign-in/email` ni une adresse de Railway. Sinon, `X-Real-IP` n'arrive pas, ou pas seul : tout le monde partage alors les mêmes trois essais.
 
 Essais à plusieurs, en vrai : deux personnes, puis trois, sur Chrome, Firefox et Safari, dont une sur le partage de connexion d'un téléphone.
 

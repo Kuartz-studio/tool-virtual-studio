@@ -8,6 +8,7 @@
     "startCommand": "/bin/sh -c \"node apps/server/dist/migrate.js && exec node apps/server/dist/index.js\"",
     "healthcheckPath": "/api/health",
     "restartPolicyType": "ON_FAILURE",
-    "restartPolicyMaxRetries": 10
+    "restartPolicyMaxRetries": 10,
+    "drainingSeconds": 30
   }
 }
