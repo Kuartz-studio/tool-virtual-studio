@@ -263,14 +263,30 @@ describe('connectOffice', () => {
       expect(socket.sentOf('status:set')).toEqual([]);
     });
 
-    test('sans choix dans cet onglet : rien, quel que soit le statut de l\'init', () => {
+    test('sans choix dans cet onglet, un init « Disponible » : rien, et le choix reste vide', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.serverAccepts();
-      socket.receive('init', { ...init(), self: { ...SELF, status: 'dnd' } });
+      socket.receive('init', init());
+      expect(store.getState().chosenStatus).toBeNull();
       socket.connectionDrops();
       socket.serverAccepts();
       socket.receive('init', init());
       expect(socket.sentOf('status:set')).toEqual([]);
+    });
+
+    // Après un rechargement de la page (ou « Utiliser ici »), cet onglet n'a rien choisi, mais le serveur, lui, a gardé le statut de la
+    // personne. Ce statut est le choix : sans cela, le redémarrage suivant du serveur le ferait tomber.
+    test('sans choix dans cet onglet (rechargement), un init qui dit « Ne pas déranger » : il devient le choix, sans rien renvoyer', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', { ...init(), self: { ...SELF, status: 'dnd' } });
+      expect(store.getState().chosenStatus).toBe('dnd');
+      expect(socket.sentOf('status:set')).toEqual([]);
+
+      socket.connectionDrops();
+      socket.serverAccepts();
+      socket.receive('init', init());   // le serveur redémarré : « Disponible »
+      expect(socket.sentOf('status:set')).toEqual(['dnd']);
     });
 
     // Un autre onglet a pris la place : c'est lui qui parle pour la personne, et il a pu choisir un autre statut depuis. « Utiliser ici »

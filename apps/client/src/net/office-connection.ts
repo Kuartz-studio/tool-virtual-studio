@@ -69,6 +69,9 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     // est redit tout de suite : les groupes attendent 500 ms avant de prendre quelqu'un, il arrive avant.
     init: (p) => {
       state().applyInit(p);
+      // Un statut autre que « Disponible » que cet onglet n'a pas choisi (rechargement, « Utiliser ici ») : le serveur l'a gardé, donc c'est
+      // celui de la personne. Seul le menu fixe un statut côté serveur, et « Disponible » est le statut par défaut.
+      if (state().chosenStatus === null && p.self.status !== 'available') state().setChosenStatus(p.self.status);
       const { chosenStatus } = state();
       if (chosenStatus !== null && chosenStatus !== p.self.status) socket.emit('status:set', chosenStatus);
       emitOnBus(bus, 'net:init', p);
