@@ -1,14 +1,15 @@
-import { asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import { Router, type Response } from 'express';
 import type { Logger } from 'pino';
 import { z } from 'zod';
 import type { Auth } from '../auth/auth';
 import { InvitationNotPendingError, type Invitation, type InvitationService } from '../auth/invitations';
 import { requireAdmin } from '../auth/require-session';
+import { resetLinkContext } from '../auth/reset-link-context';
 import type { Db } from '../db/client';
 import { user } from '../db/schema';
 import type { Env } from '../env';
-import type { Mailer } from '../mail/mailer';
+import { isNoneMailer, type Mailer } from '../mail/mailer';
 import { oneAtATimePerKey } from '../one-at-a-time';
 import type { ServerEvents } from '../server-events';
 import { emailSchema, invitationLink } from './invite-admin';
@@ -28,6 +29,10 @@ function listed(i: Invitation, now: number) {
 
 const notFound = (res: Response) => res.status(404).json({ error: 'not_found' });
 
+// Combien de temps la route du lien de mot de passe attend que Better Auth le confie au mailer. Better Auth l'appelle pendant la
+// requête, mais auth.ts détache l'envoi (`void mailer.sendPasswordReset(…)`) : le lien peut n'arriver qu'un instant après.
+const RESET_LINK_WAIT_MS = 2000;
+
 // Montées sous /api/admin, après express.json(). Le garde d'accès est posé sur le routeur entier : une route ajoutée ici est
 // réservée aux admins sans qu'on ait à y penser, et une adresse inconnue sous /api/admin répond 401 ou 403, jamais 404.
 export function adminRoutes(d: {
@@ -39,7 +44,10 @@ export function adminRoutes(d: {
   events: ServerEvents;
   logger: Logger;
 }): Router {
-  const { db, env, invitations, mailer, events, logger } = d;
+  const { auth, db, env, invitations, mailer, events, logger } = d;
+  // MAILER=none : le mailer garde les liens de mot de passe en mémoire (reset-link-store.ts), d'où la route les reprend.
+  if (env.MAILER === 'none' && !isNoneMailer(mailer)) throw new Error('MAILER=none exige le mailer none (createNoneMailer).');
+  const resetLinks = isNoneMailer(mailer) && env.MAILER === 'none' ? mailer.resetLinks : null;
   const router = Router();
   // MAILER=none : aucun e-mail ne part. Les routes rendent à l'admin le lien de l'invitation (`link`), qu'il transmet lui-même ;
   // il n'est montré qu'à cet instant : la base ne garde que l'empreinte du jeton, et ni les listes ni le journal ne le reçoivent.
@@ -156,6 +164,47 @@ export function adminRoutes(d: {
       }
       await invitations.revoke(id);
       res.json({ ok: true });
+    });
+  });
+
+  // MAILER=none seulement (sinon 404) : le lien par lequel un membre choisit un nouveau mot de passe, que l'admin lui transmet. C'est
+  // la demande de mot de passe oublié de Better Auth, faite pour le compte de ce membre, dont le lien est repris au mailer au lieu
+  // d'être envoyé. Mêmes règles que le lien de l'e-mail : valable une heure, un seul usage ; réinitialiser ferme les sessions du
+  // compte et coupe ses connexions au bureau (auth.ts). Le lien n'est ni journalisé ni gardé : il n'existe que dans cette réponse.
+  // Un lien par demande, et les demandes pour un même membre passent l'une après l'autre : chacune reprend le sien.
+  router.post('/members/:id/reset-link', async (req, res) => {
+    if (!resetLinks) {
+      notFound(res);
+      return;
+    }
+    const { id } = req.params;
+    await oneAtATime(`reset-link:${id}`, async () => {
+      const [member] = await db
+        .select({ id: user.id, email: user.email })
+        .from(user)
+        .where(and(eq(user.id, id), isNull(user.disabledAt)));
+      if (!member) {
+        notFound(res);
+        return;
+      }
+      // Un lien resté là d'une demande sans suite ne doit pas passer pour celui-ci.
+      resetLinks.discard(member.email);
+      try {
+        await resetLinkContext.run({ email: member.email.toLowerCase() }, () =>
+          auth.api.requestPasswordReset({ body: { email: member.email, redirectTo: `${env.APP_URL}/reinitialiser` } }),
+        );
+      } catch (err) {
+        logger.error({ err, userId: member.id }, 'Création du lien de mot de passe impossible');
+        res.status(502).json({ error: 'reset_failed' });
+        return;
+      }
+      const link = await resetLinks.wait(member.email, RESET_LINK_WAIT_MS);
+      if (link === null) {
+        logger.error({ userId: member.id }, 'Le lien de mot de passe n\'est pas arrivé');
+        res.status(502).json({ error: 'reset_failed' });
+        return;
+      }
+      res.json({ link });
     });
   });
 

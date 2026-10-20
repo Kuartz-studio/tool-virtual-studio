@@ -38,6 +38,14 @@ export const MOVE_RATE = { max: 20, windowMs: 1_000 };          // au-delà, les
 export const STATUS_RATE = { max: 10, windowMs: 1_000 };        // de même pour ses `status:set`, diffusés à tout le bureau
 export const MEDIA_STATE_RATE = { max: 10, windowMs: 1_000 };   // et ses `media:state`
 export const INVITATION_TTL_MS = 7 * 24 * 3600 * 1000;
+// Comment les liens d'invitation et de mot de passe parviennent aux gens (MAILER, côté serveur) : resend les envoie par e-mail ; none
+// n'envoie rien, l'admin copie les liens depuis l'appli et les transmet lui-même ; memory (développement, tests) les garde en mémoire.
+export const MAIL_MODES = ['resend', 'none', 'memory'] as const;
+export type MailMode = (typeof MAIL_MODES)[number];
+// Ce que GET /api/config répond à qui que ce soit, session ou non : rien d'autre que ce qui change ce que la page affiche.
+export interface PublicConfig {
+  mail: MailMode;
+}
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 128;
 export const DISPLAY_NAME_MAX_LENGTH = 40;

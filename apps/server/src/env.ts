@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { MAIL_MODES } from '@bureau/shared';
 import { z } from 'zod';
 import { isPgliteUrl } from './db/client';
 
@@ -18,7 +19,7 @@ const envSchema = z
     // resend : les e-mails partent par Resend. none : aucun e-mail, l'admin copie lui-même les liens d'invitation et de mot de passe
     // depuis l'appli (le mode le moins cher, accepté en production). memory : rien ne part, les e-mails restent en mémoire
     // (développement et tests seulement).
-    MAILER: z.enum(['resend', 'none', 'memory'], { error: 'doit valoir resend, none ou memory' }).default('memory'),
+    MAILER: z.enum(MAIL_MODES, { error: 'doit valoir resend, none ou memory' }).default('memory'),
     // Obligatoires avec MAILER=resend seulement.
     RESEND_API_KEY: z.string().optional(),
     MAIL_FROM: z.string().optional(),

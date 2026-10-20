@@ -12,6 +12,7 @@ import type { Mailer } from '../mail/mailer';
 import type { ServerEvents } from '../server-events';
 import { betterAuthLogger } from './auth-logger';
 import { invitationContext } from './invitation-context';
+import { resetLinkContext } from './reset-link-context';
 
 // Better Auth : comptes par e-mail et mot de passe, sessions en cookie, limitation des tentatives en base.
 // auth.cli.ts construit son instance avec cette même fonction : la CLI de Better Auth en déduit src/db/auth-schema.ts.
@@ -54,7 +55,12 @@ export function createAuth({
       // adresse inconnue : ce délai dirait quelles adresses ont un compte. La réponse est 200 dans tous les cas. Un échec
       // d'envoi est journalisé ici (sans l'adresse ni le lien, dont le jeton ouvre le compte) ; le `.catch` évite aussi
       // tout rejet non géré. Si le processus s'arrête pendant l'envoi, l'e-mail est perdu : la personne redemande un lien.
+      //
+      // MAILER=none : personne ne reçoit d'e-mail, et la route publique ne doit rien révéler. Le lien n'est livré (au mailer, qui le
+      // garde en mémoire) que pour l'admin qui le demande (resetLinkContext) ; une demande publique ne fait rien partir, qu'elle
+      // vise un compte ou non, et reçoit la même réponse 200.
       sendResetPassword: async ({ user, url }) => {
+        if (env.MAILER === 'none' && resetLinkContext.getStore()?.email !== user.email.toLowerCase()) return;
         void mailer.sendPasswordReset({ to: user.email, link: url }).catch((err: unknown) => {
           logger.error({ err, userId: user.id }, 'Envoi de l\'e-mail de réinitialisation impossible');
         });

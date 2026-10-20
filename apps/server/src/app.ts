@@ -1,3 +1,4 @@
+import type { PublicConfig } from '@bureau/shared';
 import { toNodeHandler } from 'better-auth/node';
 import express from 'express';
 import type { Logger } from 'pino';
@@ -43,6 +44,12 @@ export function createApp(deps: AppDeps): express.Express {
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });
+  });
+  // Ce que la page doit savoir avant toute session (celle de mot de passe oublié, par exemple) : comment les liens parviennent aux
+  // gens. Sans authentification, et rien d'autre dans la réponse. Avant les routes qui exigent une session.
+  app.get('/api/config', (_req, res) => {
+    const config: PublicConfig = { mail: deps.env.MAILER };
+    res.set('Cache-Control', 'no-store').json(config);
   });
   app.use('/api/invitations', invitationRoutes(deps));
   app.use('/api/admin', adminRoutes({ ...deps, logger }));
