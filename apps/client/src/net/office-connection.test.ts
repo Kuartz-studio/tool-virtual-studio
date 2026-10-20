@@ -91,8 +91,8 @@ describe('connectOffice', () => {
     expect(store.getState().replaced).toBe(true);
   });
 
-  // L'audio et la vidéo (useMedia) ne suivent les consignes qu'après « Entrer » : la connexion, ouverte dès l'écran d'entrée, retient
-  // la dernière, que le serveur ne redira pas.
+  // L'audio et la vidéo (useMedia) rejouent la dernière consigne en se branchant, par sûreté : la connexion la retient, le serveur ne la
+  // redira pas.
   test('media:join et media:leave : la dernière consigne est retenue au magasin', () => {
     connectOffice(socket.asSocket(), store, bus);
     socket.serverAccepts();

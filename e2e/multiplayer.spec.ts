@@ -186,10 +186,11 @@ test('A marche puis s\'arrête pendant que le jeu de B charge : B le voit à sa 
   await pageB.getByLabel('Nom affiché', { exact: true }).fill('Béatrice');
   await pageB.getByLabel('Mot de passe', { exact: true }).fill('motdepasse-de-beatrice');
 
-  // A marche déjà quand le serveur construit l'init de B : B l'y reçoit « en marche » (pendant son écran d'entrée : sa connexion est
-  // déjà ouverte). Le jeu de B ne démarre qu'après « Entrer ».
-  await a.page.keyboard.down('ArrowRight');
+  // A marche déjà quand le serveur construit l'init de B : B l'y reçoit « en marche ». La connexion de B s'ouvre à « Entrer », et son
+  // jeu démarre à l'init : A part juste avant.
   await pageB.getByRole('button', { name: 'Créer mon compte' }).click();
+  await expect(pageB.getByRole('button', { name: /^Entrer( quand même)?$/ })).toBeVisible();
+  await a.page.keyboard.down('ArrowRight');
   await enterOffice(pageB);
   await requested;
   // Puis A s'arrête pendant que le jeu de B charge : son arrêt, et son renvoi 500 ms plus tard, arrivent avant la scène de B.

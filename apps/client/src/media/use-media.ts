@@ -10,8 +10,9 @@ import type { MediaClient, MediaSnapshot } from './media-client';
 // Relie le client média à la connexion au bureau, et rend son état (à jour à chaque changement) :
 // - les consignes du serveur : media:join → client.join, media:leave → client.leave. Et session:replaced (un autre onglet a pris la
 //   place) → client.leave : le serveur ne dira plus rien à cet onglet, qui garderait sinon micro et caméra ouverts ;
-// - au montage, la dernière consigne reçue avant lui : la page ouvre la connexion dès l'écran d'entrée, mais ne monte ce hook
-//   qu'après « Entrer ». Le serveur ne redit pas une consigne : la connexion la retient (mediaInstruction, au magasin), il la rejoue ;
+// - au montage, la dernière consigne reçue avant lui, s'il y en a une : la page ouvre la connexion à « Entrer », et monte ce hook
+//   dans le même rendu, mais par sûreté (une consigne qui arriverait avant ses écouteurs) : le serveur ne redit pas une consigne. La
+//   connexion la retient (mediaInstruction, au magasin), il la rejoue ;
 // - l'état local part au serveur (media:state), qui le montre à tous : au montage, après chaque init (le serveur ne retient l'état
 //   qu'une fois la personne placée, et l'oublie quand elle revient après le délai de grâce), puis à chaque changement, jamais deux fois
 //   le même de suite, et rien pendant une coupure (l'init du retour le renverra) ;

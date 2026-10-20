@@ -310,10 +310,10 @@ describe('le cycle de vie', () => {
   });
 });
 
-// La connexion au bureau est ouverte dès l'écran d'entrée, mais le hook n'est monté qu'après « Entrer » : une consigne arrivée entre-
-// temps (des gens autour du point d'apparition) n'aurait personne pour la suivre, et le serveur ne la redit pas. La connexion retient
-// la dernière (office-connection.ts, dans le magasin), et le hook la rejoue au montage.
-describe('la consigne reçue avant le montage (pendant l\'écran d\'entrée)', () => {
+// La page ouvre la connexion au bureau à « Entrer », et monte le hook dans le même rendu. Une consigne qui arriverait avant ses
+// écouteurs n'aurait pourtant personne pour la suivre, et le serveur ne la redit pas : la connexion retient la dernière
+// (office-connection.ts, dans le magasin), et le hook la rejoue au montage, par sûreté.
+describe('la consigne reçue avant le montage', () => {
   test('media:join reçu avant : rejoué au montage', async () => {
     useOfficeStore.getState().setMediaInstruction({ type: 'join', p: payload('r1') });
     const { client, hook } = setup();

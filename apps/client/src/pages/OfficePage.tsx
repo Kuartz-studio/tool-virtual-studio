@@ -28,12 +28,13 @@ interface Connection {
 // Les deux états de la page : l'écran d'entrée (precheck), puis le bureau (inside), avec son client média.
 type Phase = { step: 'precheck' } | { step: 'inside'; media: MediaClient };
 
-// / : le bureau. La page ouvre la connexion temps réel dès son arrivée, puis passe par deux états :
-// - precheck : l'écran d'entrée (DeviceCheck), où la personne vérifie son micro et sa caméra. Derrière lui, le serveur répond (`init`,
-//   consignes audio/vidéo, que la connexion retient) ; rien n'est encore joué, et rien n'est demandé aux périphériques que l'aperçu ;
-// - inside : après « Entrer », le bureau. Le jeu démarre et occupe toute la page ; l'audio et la vidéo suivent les consignes du serveur
-//   (useMedia, qui rejoue celle reçue pendant l'écran d'entrée) ; par-dessus, les vignettes, la barre de commandes, les panneaux, et
-//   si un autre onglet prend la place de celui-ci, l'écran « Ouvert dans un autre onglet » (OfficeShell).
+// / : le bureau. La page prépare la connexion temps réel dès son arrivée (écouteurs, veille), puis passe par deux états :
+// - precheck : l'écran d'entrée (DeviceCheck), où la personne vérifie son micro et sa caméra. La connexion n'est pas encore ouverte :
+//   pour le serveur, la personne n'est pas au bureau (spec §2 : on vérifie micro et caméra, « puis tu apparais »). Personne ne la voit
+//   ni ne la rejoint, et un deuxième onglet laissé sur cet écran ne prend pas la place du premier ;
+// - inside : « Entrer » ouvre la connexion, et c'est le bureau. Le jeu démarre à l'init, qui dit la carte, et occupe toute la page ;
+//   l'audio et la vidéo suivent les consignes du serveur (useMedia) ; par-dessus, les vignettes, la barre de commandes, les panneaux,
+//   et si un autre onglet prend la place de celui-ci, l'écran « Ouvert dans un autre onglet » (OfficeShell).
 export function OfficePage() {
   const user = useSessionUser();
   const navigate = useNavigate();
@@ -52,8 +53,8 @@ export function OfficePage() {
     goToLoginRef.current = goToLogin;
   }, [goToLogin]);
 
-  // La connexion vit avec la page : ouverte au montage (les écouteurs d'abord, puis connect()), fermée au démontage, qui vide aussi
-  // l'état du bureau (un autre compte pourrait suivre).
+  // La connexion vit avec la page : préparée au montage (ses écouteurs et sa veille, posés avant le premier message du serveur), ouverte
+  // à « Entrer » (enter), fermée au démontage, qui vide aussi l'état du bureau (un autre compte pourrait suivre).
   useEffect(() => {
     const socket = createOfficeSocket();
     const disconnectOffice = connectOffice(socket, useOfficeStore, EventBus);
@@ -62,7 +63,6 @@ export function OfficePage() {
       forbidden: () => setConnectionError(fr.office.errors.forbiddenOrigin),
     });
     setConnection({ socket, supervisor });
-    socket.connect();
     return () => {
       supervisor.stop();
       disconnectOffice();
@@ -78,12 +78,13 @@ export function OfficePage() {
 
   useSessionKeepAlive(goToLogin);
 
-  // « Entrer » : le client média, avec les préférences de l'écran d'entrée. Ce clic est le geste qui permet au navigateur de jouer le
-  // son des autres : startAudio part dedans.
+  // « Entrer » : le client média, avec les préférences de l'écran d'entrée, puis la connexion au bureau, où la personne apparaît. Ce
+  // clic est le geste qui permet au navigateur de jouer le son des autres : startAudio part dedans.
   function enter(prefs: MediaPrefs) {
     const media = createMediaClient(prefs);
     void media.startAudio();
     setPhase({ step: 'inside', media });
+    connection?.socket.connect();
   }
 
   async function signOut() {

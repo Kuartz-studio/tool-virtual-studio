@@ -99,16 +99,26 @@ test('le statut survit à un rechargement de la page : A le retrouve, et B ne le
   await expect(panel.locator(`[data-user="${a.id}"][data-status="available"]`)).toBeVisible();
 });
 
-test('deuxième onglet de A → le premier affiche l\'écran « Ouvert dans un autre onglet » ; « Utiliser ici » reprend la main', async ({ browser }) => {
+test('deuxième onglet de A : sur l\'écran d\'entrée, il ne coupe pas le premier ; à « Entrer », le premier affiche « Ouvert dans un autre onglet » ; « Utiliser ici » reprend la main', async ({ browser }) => {
   test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
   const a = await arrive(browser, 'Axel');
   const b = await arrive(browser, 'Bianca');
   const panelOfB = await openPeople(b.page);
   const first = a.page;
 
-  // Un deuxième onglet, avec la même session. Sa connexion s'ouvre dès l'écran d'entrée, et prend la place du premier.
+  // Un deuxième onglet, avec la même session, laissé sur l'écran d'entrée : sa connexion ne s'ouvre qu'à « Entrer ». Le premier reste
+  // au bureau, et marche (son statut part au serveur, B le voit).
   const second = await a.context.newPage();
   await second.goto('/');
+  await expect(second.getByRole('button', { name: /^Entrer( quand même)?$/ })).toBeVisible();
+  await first.waitForTimeout(1500);
+  await expect(first.getByRole('dialog')).toHaveCount(0);
+  await chooseStatus(first, 'Absent');
+  await expect(panelOfB.locator(`[data-user="${a.id}"][data-status="away"]`)).toBeVisible();
+  await chooseStatus(first, 'Disponible');
+  await expect(panelOfB.locator(`[data-user="${a.id}"][data-status="available"]`)).toBeVisible();
+
+  // « Entrer » : sa connexion s'ouvre, et prend la place du premier.
   await enterOffice(second);
   await waitForOffice(second);
 

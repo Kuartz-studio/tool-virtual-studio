@@ -51,8 +51,8 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // - le chat est pour l'interface seule : l'historique « Tout le monde » (dans l'`init`) et chaque message (`chat:message`, le sien
 //   compris) vont au magasin, pas au jeu ;
 // - les consignes audio/vidéo (`media:join`, `media:leave`) : la dernière est retenue au magasin (mediaInstruction), le temps de la
-//   connexion qui l'a reçue. L'audio et la vidéo ne les suivent qu'après « Entrer », et la rejouent alors : le serveur ne redit pas
-//   une consigne. La connexion coupée l'oublie : pendant la coupure, le serveur a pu sortir la personne de son groupe (au-delà du
+//   connexion qui l'a reçue. L'audio et la vidéo (useMedia) la rejouent en se branchant, par sûreté : le serveur ne redit pas une
+//   consigne. La connexion coupée l'oublie : pendant la coupure, le serveur a pu sortir la personne de son groupe (au-delà du
 //   délai de grâce), et il redit la consigne du moment après l'init de la connexion suivante ;
 // - la connexion est prête (`ready`, au magasin) une fois l'`init` de cette connexion reçu, et ne l'est plus dès qu'elle est coupée ;
 // - ce que le jeu produit (`local:move`, `local:teleport`) part au serveur, mais seulement quand la connexion est prête. Avant, le

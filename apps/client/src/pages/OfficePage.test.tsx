@@ -83,14 +83,15 @@ afterEach(() => {
   uninstallDevices();
 });
 
-// Ouvre la page : l'écran d'entrée, et la connexion déjà ouverte derrière lui. L'écran ne suffit pas : la page n'ouvre la connexion que
-// dans un effet, que React passe après avoir affiché la page, dans une autre tâche ; sur une machine chargée, l'écran est trouvé avant
-// (c'était l'instabilité de ce fichier : `sockets` encore vide, « La page n'a pas ouvert de connexion »).
+// Ouvre la page : l'écran d'entrée, et derrière lui la connexion préparée (ses écouteurs posés), pas encore ouverte. L'écran ne suffit
+// pas : la page ne prépare la connexion que dans un effet, que React passe après avoir affiché la page, dans une autre tâche ; sur une
+// machine chargée, l'écran est trouvé avant (c'était l'instabilité de ce fichier : `sockets` encore vide, « La page n'a pas ouvert de
+// connexion »).
 async function openPage(account: FakeUser = LEA) {
   setFakeSession(account);
   const router = renderRoute('/');
   await screen.findByRole('heading', { level: 1, name: fr.media.check.title });
-  await waitFor(() => expect(sockets.at(-1)?.connectCalls).toBe(1));
+  await waitFor(() => expect(sockets.at(-1)?.listenerCount()).toBeGreaterThan(0));
   return router;
 }
 
@@ -109,22 +110,31 @@ async function openOffice(account?: FakeUser) {
 
 const payload = (token = 'jeton') => ({ url: 'wss://livekit.test', room: 'r1', token });
 
-test('l\'écran d\'entrée d\'abord : la connexion est ouverte derrière lui, mais ni barre, ni jeu, ni audio ; « Entrer » ouvre le bureau', async () => {
+// La connexion ne s'ouvre qu'à « Entrer » : ouverte dès l'écran d'entrée, elle plaçait au bureau quelqu'un qui n'y est pas entré (vu
+// « Disponible », pris dans un groupe, des collègues seuls dans une room LiveKit), et un deuxième onglet laissé sur l'écran d'entrée
+// coupait le premier (`session:replaced`) en pleine conversation.
+test('l\'écran d\'entrée d\'abord : la connexion est préparée mais pas ouverte, ni barre, ni jeu, ni audio ; « Entrer » l\'ouvre', async () => {
   await openPage();
+  expect(socket().connectCalls).toBe(0);
+  expect(socket().active).toBe(false);
+  expect(screen.queryByRole('group', { name: fr.office.barLabel })).toBeNull();
+  expect(screen.queryByTestId('jeu')).toBeNull();
+  expect(mediaClients).toHaveLength(0);
+  // Rien ne l'ouvre plus tard non plus : la personne peut rester sur cet écran.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  expect(socket().connectCalls).toBe(0);
+
+  await enter();
+  expect(socket().connectCalls).toBe(1);
+  expect(screen.queryByRole('heading', { level: 1, name: fr.media.check.title })).toBeNull();
+  expect(mediaClients).toHaveLength(1);
+  // Le jeu attend la carte, que dit l'init.
+  expect(screen.queryByTestId('jeu')).toBeNull();
   act(() => {
     socket().serverAccepts();
     socket().receive('init', init());
   });
-  // L'init est arrivé (le magasin le sait) : on est pourtant encore à l'écran d'entrée.
-  expect(useOfficeStore.getState().mapKey).toBe('dev-office');
-  expect(screen.queryByRole('group', { name: fr.office.barLabel })).toBeNull();
-  expect(screen.queryByTestId('jeu')).toBeNull();
-  expect(mediaClients).toHaveLength(0);
-
-  await enter();
   expect(await screen.findByTestId('jeu')).toBeTruthy();
-  expect(screen.queryByRole('heading', { level: 1, name: fr.media.check.title })).toBeNull();
-  expect(mediaClients).toHaveLength(1);
 });
 
 test('« Entrer » : le client média reçoit les préférences de l\'écran d\'entrée, et le son est lancé dans le clic même (startAudio)', async () => {
@@ -134,64 +144,6 @@ test('« Entrer » : le client média reçoit les préférences de l\'écran d\'
   const [client] = mediaClients;
   expect(client!.getSnapshot().local).toEqual({ mic: false, cam: true, screen: false });
   expect(client!.startAudio).toHaveBeenCalledOnce();
-});
-
-test('une consigne média reçue pendant l\'écran d\'entrée est suivie après « Entrer » (le serveur ne la redit pas)', async () => {
-  await openPage();
-  act(() => {
-    socket().serverAccepts();
-    socket().receive('init', init());
-    socket().receive('media:join', payload());
-  });
-  // Personne ne la suit encore : pas de client média avant « Entrer », donc rien de demandé aux périphériques.
-  expect(mediaClients).toHaveLength(0);
-  await enter();
-  const [client] = mediaClients;
-  await act(() => client!.idle());
-  expect(client!.journal).toEqual(['join:r1']);
-  expect(client!.getSnapshot().room).toBe('r1');
-});
-
-// La personne, dans un groupe pendant l'écran d'entrée, perd la connexion plus longtemps que le délai de grâce (un déploiement, le
-// Wi-Fi) : le serveur la sort de son groupe sans qu'elle l'apprenne. La consigne d'avant la coupure ne vaut plus : rejouée après
-// « Entrer », elle publierait micro et caméra dans une room qui n'est plus la sienne, avec un jeton encore bon.
-test('la connexion tombe pendant l\'écran d\'entrée : « Entrer » ne rejoue pas la consigne d\'avant ; celle de la connexion suivante est suivie', async () => {
-  await openPage();
-  act(() => {
-    socket().serverAccepts();
-    socket().receive('init', init());
-    socket().receive('media:join', payload('jeton-d-avant'));
-    socket().connectionDrops();
-  });
-  await enter();
-  const [client] = mediaClients;
-  await act(() => client!.idle());
-  expect(client!.journal).toEqual([]);
-
-  // La connexion revient : le serveur redit la consigne du moment, après son init.
-  act(() => {
-    socket().serverAccepts();
-    socket().receive('init', init());
-    socket().receive('media:join', payload('jeton-neuf'));
-  });
-  await act(() => client!.idle());
-  expect(client!.journal).toEqual(['join:r1']);
-});
-
-test('remplacé par un autre onglet pendant l\'écran d\'entrée : « Entrer » ne rejoint pas la room (c\'est celle de l\'autre onglet)', async () => {
-  await openPage();
-  act(() => {
-    socket().serverAccepts();
-    socket().receive('init', init());
-    socket().receive('media:join', payload());
-    socket().receive('session:replaced');
-    socket().serverDisconnects();
-  });
-  await enter();
-  const [client] = mediaClients;
-  await act(() => client!.idle());
-  expect(client!.journal).toEqual([]);
-  expect(screen.getByRole('dialog', { name: fr.office.replaced })).toBeTruthy();
 });
 
 test('« Connexion perdue, reconnexion… » quand la connexion tombe après l\'arrivée, jusqu\'à l\'init du retour', async () => {

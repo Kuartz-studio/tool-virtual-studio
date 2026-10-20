@@ -25,7 +25,7 @@ export interface OfficeState {
   // envoie). Faux avant le premier `init`, et dès que la connexion est coupée, jusqu'à l'`init` du retour. Le reste de l'état reste
   // là pendant une coupure : celui d'avant, que l'`init` du retour remplacera.
   ready: boolean;
-  // La dernière consigne audio/vidéo reçue par la connexion en cours : l'audio et la vidéo, branchés après « Entrer », la rejouent
+  // La dernière consigne audio/vidéo reçue par la connexion en cours : l'audio et la vidéo la rejouent en se branchant
   // (media/use-media.ts), puisque le serveur ne redit pas une consigne. null avant la première, et dès que la connexion qui l'a reçue
   // est coupée : pendant la coupure, le serveur a pu sortir la personne de son groupe, et il redit la consigne du moment après l'init
   // de la connexion suivante.
