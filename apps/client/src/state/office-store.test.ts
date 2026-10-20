@@ -114,8 +114,30 @@ test('chaque changement donne de nouveaux objets (React ne voit que ce qui chang
 test('reset : l\'état de départ (une autre session, un autre compte)', () => {
   store.getState().applyInit(init(SELF, [A]));
   store.getState().setReplaced(true);
+  store.getState().setMediaInstruction({ type: 'leave' });
   store.getState().reset();
-  expect(store.getState()).toMatchObject({ selfId: null, self: null, mapKey: null, players: {}, replaced: false });
+  expect(store.getState()).toMatchObject({ selfId: null, self: null, mapKey: null, players: {}, replaced: false, ready: false, mediaInstruction: null });
+});
+
+test('ready : faux au départ ; vrai à l\'init (le serveur nous a placés) ; faux quand la connexion est coupée', () => {
+  expect(store.getState().ready).toBe(false);
+  store.getState().applyInit(init(SELF, [A]));
+  expect(store.getState().ready).toBe(true);
+  store.getState().setReady(false);
+  expect(store.getState().ready).toBe(false);
+  // Le reste de l'état reste là pendant la coupure : on sait qui on est, et la carte.
+  expect(store.getState()).toMatchObject({ selfId: 'moi', mapKey: 'dev-office' });
+  store.getState().applyInit(init(SELF, [A]));
+  expect(store.getState().ready).toBe(true);
+});
+
+test('mediaInstruction : aucune au départ, puis la dernière reçue', () => {
+  expect(store.getState().mediaInstruction).toBeNull();
+  const p = { url: 'wss://livekit.test', room: 'r1', token: 'jeton' };
+  store.getState().setMediaInstruction({ type: 'join', p });
+  expect(store.getState().mediaInstruction).toEqual({ type: 'join', p });
+  store.getState().setMediaInstruction({ type: 'leave' });
+  expect(store.getState().mediaInstruction).toEqual({ type: 'leave' });
 });
 
 // ---- Les dernières positions (pour un jeu qui démarre après des ticks) ----------------------------------------------------------

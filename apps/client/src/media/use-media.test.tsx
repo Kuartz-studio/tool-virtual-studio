@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import { mediaDebug } from '../game/debug';
 import { EventBus } from '../game/EventBus';
 import type { OfficeSocket } from '../net/socket';
+import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
 import { FakeMediaClient } from './fake-media-client';
 import type { MediaPrefs } from './media-client';
@@ -33,6 +34,7 @@ const cleanups: Array<() => void> = [];
 afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
   mediaDebug.room = null;
+  useOfficeStore.getState().reset();
 });
 
 // La socket connectée (poignée de main faite), le faux client et le hook qui les relie.
@@ -305,5 +307,50 @@ describe('le cycle de vie', () => {
     expect(first.listenerCount()).toBe(0);
     await serverSays(second, client, 'r1');
     expect(client.journal).toEqual(['join:r1']);
+  });
+});
+
+// La connexion au bureau est ouverte dès l'écran d'entrée, mais le hook n'est monté qu'après « Entrer » : une consigne arrivée entre-
+// temps (des gens autour du point d'apparition) n'aurait personne pour la suivre, et le serveur ne la redit pas. La connexion retient
+// la dernière (office-connection.ts, dans le magasin), et le hook la rejoue au montage.
+describe('la consigne reçue avant le montage (pendant l\'écran d\'entrée)', () => {
+  test('media:join reçu avant : rejoué au montage', async () => {
+    useOfficeStore.getState().setMediaInstruction({ type: 'join', p: payload('r1') });
+    const { client, hook } = setup();
+    await settle(client);
+    expect(client.journal).toEqual(['join:r1']);
+    expect(hook.result.current.room).toBe('r1');
+  });
+
+  test('media:leave reçu en dernier : rien à rejoindre', async () => {
+    useOfficeStore.getState().setMediaInstruction({ type: 'join', p: payload('r1') });
+    useOfficeStore.getState().setMediaInstruction({ type: 'leave' });
+    const { client, hook } = setup();
+    await settle(client);
+    expect(client.journal).toEqual([]);
+    expect(hook.result.current.room).toBeNull();
+  });
+
+  test('aucune consigne reçue : rien', async () => {
+    const { client } = setup();
+    await settle(client);
+    expect(client.journal).toEqual([]);
+  });
+
+  test('les consignes suivantes passent par la socket, chacune une fois', async () => {
+    useOfficeStore.getState().setMediaInstruction({ type: 'join', p: payload('r1') });
+    const { socket, client, hook } = setup();
+    await settle(client);
+    await serverSays(socket, client, 'r2');
+    expect(client.journal).toEqual(['join:r1', 'leave', 'join:r2']);
+    expect(hook.result.current.room).toBe('r2');
+  });
+
+  test('sans socket (pas encore ouverte), rien n\'est rejoué : la consigne viendra avec elle', async () => {
+    useOfficeStore.getState().setMediaInstruction({ type: 'join', p: payload('r1') });
+    const client = new FakeMediaClient();
+    renderHook(() => useMedia(client, null));
+    await settle(client);
+    expect(client.journal).toEqual([]);
   });
 });

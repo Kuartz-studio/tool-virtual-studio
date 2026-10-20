@@ -1,14 +1,18 @@
-import type { InitPayload, MediaState, PublicPlayer, Status } from '@bureau/shared';
+import type { InitPayload, MediaJoinPayload, MediaState, PublicPlayer, Status } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 
-// Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil. Le serveur le dit à chaque
-// (re)connexion (`init`), puis par événements (arrivées, départs, statuts, médias, profils) ; office-connection.ts les applique ici.
+// Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, et
+// la dernière consigne audio/vidéo. Le serveur le dit à chaque (re)connexion (`init`), puis par événements (arrivées, départs,
+// statuts, médias, profils, consignes) ; office-connection.ts les applique ici.
 //
 // Les positions ne sont pas dans l'état réactif : elles changent 10 fois par seconde, et seul le jeu (Phaser) les dessine. Celles de
 // `self` et de `players` sont celles de l'`init` ou de l'arrivée. Les dernières reçues sont gardées à part, dans `positions`, que
 // React ne voit pas changer : le jeu y lit où sont les autres quand il démarre (ou redémarre avec une autre carte), même si des
 // ticks sont arrivés pendant son chargement, et suit ensuite les ticks lui-même.
 export type PlayerPosition = Pick<PublicPlayer, 'x' | 'y' | 'dir' | 'moving'>;
+
+// Une consigne audio/vidéo du serveur : rejoindre la room de son groupe (media:join), ou la quitter (media:leave).
+export type MediaInstruction = { type: 'join'; p: MediaJoinPayload } | { type: 'leave' };
 
 export interface OfficeState {
   // Le compte connecté, d'après le dernier `init` ; null avant le premier.
@@ -17,6 +21,13 @@ export interface OfficeState {
   players: Record<string, PublicPlayer>;
   // Un autre onglet a pris la place de celui-ci (`session:replaced`) : le serveur l'a déconnecté, sans reconnexion automatique.
   replaced: boolean;
+  // La connexion est prête : connectée, et l'`init` de cette connexion reçu (le serveur nous a placés, et écoute ce qu'on lui
+  // envoie). Faux avant le premier `init`, et dès que la connexion est coupée, jusqu'à l'`init` du retour. Le reste de l'état reste
+  // là pendant une coupure : celui d'avant, que l'`init` du retour remplacera.
+  ready: boolean;
+  // La dernière consigne audio/vidéo reçue (null avant la première) : l'audio et la vidéo, branchés après « Entrer », la rejouent
+  // (media/use-media.ts). Le serveur ne redit pas une consigne.
+  mediaInstruction: MediaInstruction | null;
   // Soi-même, tel que le serveur le voit (position de l'`init`, statut, médias, profil) ; null avant le premier `init`.
   self: PublicPlayer | null;
   // La carte du bureau, d'après le dernier `init` : le jeu ne démarre qu'avec elle.
@@ -32,6 +43,9 @@ export interface OfficeState {
   setMedia(id: string, m: MediaState): void;
   setProfile(p: { id: string; name: string; avatarKey: string | null }): void;
   setReplaced(v: boolean): void;
+  // La connexion coupée : setReady(false). (L'`init` la rend prête : applyInit.)
+  setReady(ready: boolean): void;
+  setMediaInstruction(i: MediaInstruction): void;
   // Les mouvements d'un tick : la dernière position de chaque joueur connu (soi-même et les inconnus sont ignorés), sans prévenir
   // personne et sans changer l'état réactif.
   recordMoves(moves: ReadonlyArray<{ id: string } & PlayerPosition>): void;
@@ -39,9 +53,18 @@ export interface OfficeState {
   reset(): void;
 }
 
-type Data = Pick<OfficeState, 'selfId' | 'players' | 'replaced' | 'self' | 'mapKey' | 'positions'>;
+type Data = Pick<OfficeState, 'selfId' | 'players' | 'replaced' | 'ready' | 'mediaInstruction' | 'self' | 'mapKey' | 'positions'>;
 
-const initialData = (): Data => ({ selfId: null, players: {}, replaced: false, self: null, mapKey: null, positions: new Map() });
+const initialData = (): Data => ({
+  selfId: null,
+  players: {},
+  replaced: false,
+  ready: false,
+  mediaInstruction: null,
+  self: null,
+  mapKey: null,
+  positions: new Map(),
+});
 
 const positionOf = (p: PlayerPosition): PlayerPosition => ({ x: p.x, y: p.y, dir: p.dir, moving: p.moving });
 
@@ -69,6 +92,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           positions: new Map(others.map((player) => [player.id, positionOf(player)])),
           // Un init n'arrive qu'à un onglet connecté : s'il avait été remplacé, il a repris la main.
           replaced: false,
+          ready: true,
         });
       },
 
@@ -99,6 +123,8 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       setMedia: (id, m) => updatePlayer(id, (p) => ({ ...p, media: { mic: m.mic, cam: m.cam, screen: m.screen } })),
       setProfile: ({ id, name, avatarKey }) => updatePlayer(id, (p) => ({ ...p, name, avatarKey })),
       setReplaced: (replaced) => set({ replaced }),
+      setReady: (ready) => set({ ready }),
+      setMediaInstruction: (mediaInstruction) => set({ mediaInstruction }),
       reset: () => set(initialData()),
     };
   });

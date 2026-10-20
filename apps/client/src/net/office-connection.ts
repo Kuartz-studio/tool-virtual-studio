@@ -46,20 +46,22 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // Branche la connexion sur l'état de l'interface (le magasin) et sur le jeu (le bus) :
 // - ce que le serveur dit va au magasin (arrivées, départs, statuts, médias, profils, onglet remplacé), puis au jeu, qui le lit déjà
 //   à jour ; les positions (`world:tick`) vont au jeu, et aux dernières positions du magasin, que React ne voit pas changer ;
-// - ce que le jeu produit (`local:move`, `local:teleport`) part au serveur, mais seulement quand la connexion est prête : connectée,
-//   et l'`init` de cette connexion reçu. Avant, le serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure,
-//   Socket.io garderait les messages et les enverrait au retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
+// - les consignes audio/vidéo (`media:join`, `media:leave`) : la dernière est retenue au magasin (mediaInstruction). L'audio et la
+//   vidéo ne les suivent qu'après « Entrer », et la rejouent alors : le serveur ne redit pas une consigne ;
+// - la connexion est prête (`ready`, au magasin) une fois l'`init` de cette connexion reçu, et ne l'est plus dès qu'elle est coupée ;
+// - ce que le jeu produit (`local:move`, `local:teleport`) part au serveur, mais seulement quand la connexion est prête. Avant, le
+//   serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure, Socket.io garderait les messages et les enverrait au
+//   retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
 //
 // La connexion elle-même (connect, refus, nouveaux essais) est l'affaire de l'appelant (superviseConnection). Renvoie la fonction
 // qui retire tous les écouteurs posés ici.
 export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>, bus: OfficeBus): () => void {
   const state = () => store.getState();
-  let ready = false;
 
   const handlers: { [E in keyof ServerToClientEvents]?: ServerToClientEvents[E] } = {
+    // applyInit rend aussi la connexion prête.
     init: (p) => {
       state().applyInit(p);
-      ready = true;
       emitOnBus(bus, 'net:init', p);
     },
     // Les positions vont aussi au magasin, hors de son état réactif : un jeu qui démarre plus tard (encore en chargement, ou recréé
@@ -86,11 +88,16 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setProfile(p);
       emitOnBus(bus, 'net:profile', p);
     },
-    'session:replaced': () => state().setReplaced(true),
+    // Le serveur ne dira plus rien à cet onglet : la room retenue est maintenant celle de l'autre onglet, que le même compte ne doit
+    // pas rejoindre d'ici (LiveKit l'en chasserait).
+    'session:replaced': () => {
+      state().setReplaced(true);
+      state().setMediaInstruction({ type: 'leave' });
+    },
+    'media:join': (p) => state().setMediaInstruction({ type: 'join', p }),
+    'media:leave': () => state().setMediaInstruction({ type: 'leave' }),
   };
-  const onDisconnect = () => {
-    ready = false;
-  };
+  const onDisconnect = () => state().setReady(false);
 
   // Les écouteurs de Socket.io sont typés événement par événement : la boucle passe par un type plus lâche.
   const loose = socket as unknown as { on(event: string, fn: Listener): unknown; off(event: string, fn: Listener): unknown };
@@ -99,10 +106,10 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
   socket.on('disconnect', onDisconnect);
   const unlisten = [
     listenOnBus(bus, 'local:move', (m) => {
-      if (ready) socket.emit('move', m);
+      if (state().ready) socket.emit('move', m);
     }),
     listenOnBus(bus, 'local:teleport', (p) => {
-      if (ready) socket.emit('debug:teleport', p);
+      if (state().ready) socket.emit('debug:teleport', p);
     }),
   ];
 
@@ -133,8 +140,12 @@ export function retryDelay(attempt: number): number {
 export interface ConnectionSupervisor {
   // Arrête de veiller : annule l'essai prévu et retire les écouteurs.
   stop(): void;
-  // Relance la connexion tout de suite, de la part de la personne (« Utiliser ici ») : l'essai prévu est annulé, les délais
-  // repartent de 1 s, et la socket se reconnecte si elle ne l'est ni n'essaie de l'être. Le serveur remplace alors l'autre onglet.
+  // Relance la connexion tout de suite, de la part de la personne : l'essai prévu est annulé, les délais repartent de 1 s, et :
+  // - une socket qui n'est ni connectée ni en train d'essayer se reconnecte (« Utiliser ici » : le serveur remplace alors l'autre
+  //   onglet ; une déconnexion qui a échoué) ;
+  // - une socket connectée est fermée puis rouverte (« Reconnecter », après un échec de la connexion audio/vidéo) : le serveur redit
+  //   tout à la nouvelle connexion, l'`init` puis la consigne média, avec un jeton neuf ;
+  // - une socket qui essaie déjà (une panne du réseau, que Socket.io surmonte seul) : rien de plus.
   // Sans effet après stop().
   restart(): void;
 }
@@ -186,6 +197,7 @@ export function superviseConnection(
       clearTimeout(timer);
       timer = undefined;
       attempt = 0;
+      if (socket.connected) socket.disconnect();
       if (!socket.active) socket.connect();
     },
   };

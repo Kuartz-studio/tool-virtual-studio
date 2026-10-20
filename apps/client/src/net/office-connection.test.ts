@@ -91,6 +91,49 @@ describe('connectOffice', () => {
     expect(store.getState().replaced).toBe(true);
   });
 
+  // L'audio et la vidéo (useMedia) ne suivent les consignes qu'après « Entrer » : la connexion, ouverte dès l'écran d'entrée, retient
+  // la dernière, que le serveur ne redira pas.
+  test('media:join et media:leave : la dernière consigne est retenue au magasin', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    socket.serverAccepts();
+    socket.receive('init', init());
+    expect(store.getState().mediaInstruction).toBeNull();
+    const p = { url: 'wss://livekit.test', room: 'r1', token: 'jeton' };
+    socket.receive('media:join', p);
+    expect(store.getState().mediaInstruction).toEqual({ type: 'join', p });
+    socket.receive('media:leave');
+    expect(store.getState().mediaInstruction).toEqual({ type: 'leave' });
+    // Ce n'est pas pour le jeu.
+    expect(bus.emitted.map(([event]) => event)).toEqual(['net:init']);
+  });
+
+  // Un autre onglet a pris la place : le serveur ne dira plus rien à celui-ci, et la room retenue est maintenant celle de l'autre (un
+  // client qui la rejoindrait avec la même identité l'en chasserait).
+  test('session:replaced : la consigne retenue n\'a plus cours (leave)', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    socket.serverAccepts();
+    socket.receive('init', init());
+    socket.receive('media:join', { url: 'wss://livekit.test', room: 'r1', token: 'jeton' });
+    socket.receive('session:replaced');
+    expect(store.getState().mediaInstruction).toEqual({ type: 'leave' });
+  });
+
+  test('ready : vrai une fois l\'init de la connexion reçu, faux dès qu\'elle est coupée (le magasin le dit à l\'interface)', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    socket.connect();
+    socket.serverAccepts();
+    expect(store.getState().ready).toBe(false);
+    socket.receive('init', init());
+    expect(store.getState().ready).toBe(true);
+    socket.connectionDrops();
+    expect(store.getState().ready).toBe(false);
+    // Reconnectée, mais pas encore placée par le serveur : toujours pas prête.
+    socket.serverAccepts();
+    expect(store.getState().ready).toBe(false);
+    socket.receive('init', init());
+    expect(store.getState().ready).toBe(true);
+  });
+
   test('local:move part au serveur une fois l\'init de la connexion reçu ; après une coupure, plus rien jusqu\'au prochain init', () => {
     connectOffice(socket.asSocket(), store, bus);
     socket.connect();
@@ -321,14 +364,35 @@ describe('superviseConnection', () => {
       expect(socket.connectCalls).toBe(5);
     });
 
-    test('une connexion ouverte, ou en cours : rien à relancer', () => {
+    test('une connexion en cours : rien à relancer', () => {
       const supervisor = superviseConnection(socket.asSocket(), store, handlers());
       socket.connect();
       supervisor.restart();
       expect(socket.connectCalls).toBe(1);
+      expect(socket.disconnectCalls).toBe(0);
+    });
+
+    // « Reconnecter », après un échec de la connexion audio/vidéo : la socket va bien, mais le serveur ne redit la consigne média (avec un
+    // jeton neuf) qu'après un init, donc à une nouvelle connexion.
+    test('une connexion ouverte : fermée puis rouverte tout de suite, et le serveur redit tout (init, puis la consigne média)', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      const supervisor = superviseConnection(socket.asSocket(), store, handlers());
+      socket.connect();
       socket.serverAccepts();
+      socket.receive('init', init());
       supervisor.restart();
-      expect(socket.connectCalls).toBe(1);
+      expect(socket.disconnectCalls).toBe(1);
+      expect(socket.connectCalls).toBe(2);
+      expect(socket.active).toBe(true);
+      expect(store.getState().ready).toBe(false);
+      socket.serverAccepts();
+      socket.receive('init', init());
+      const p = { url: 'wss://livekit.test', room: 'r1', token: 'jeton-neuf' };
+      socket.receive('media:join', p);
+      expect(store.getState()).toMatchObject({ ready: true, mediaInstruction: { type: 'join', p } });
+      // Rien d'autre n'est prévu : pas de second essai.
+      vi.advanceTimersByTime(60_000);
+      expect(socket.connectCalls).toBe(2);
     });
 
     test('une panne du réseau (Socket.io réessaie seul) : rien à relancer non plus', () => {

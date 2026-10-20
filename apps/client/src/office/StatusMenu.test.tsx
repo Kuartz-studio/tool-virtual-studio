@@ -30,10 +30,10 @@ function arriveWith(status: Status): void {
   act(() => useOfficeStore.getState().applyInit({ self: player('moi', status), players: [], mapKey: 'dev-office', chatHistory: [] }));
 }
 
-// Un menu des statuts avec une socket connectée, et le bureau prêt.
-function renderMenu({ status = 'available' as Status, connected = true } = {}) {
+// Un menu des statuts avec une socket connectée, et le bureau prêt (l'init reçu : ready).
+function renderMenu({ status = 'available' as Status } = {}) {
   const socket = new FakeSocket();
-  if (connected) socket.serverAccepts();
+  socket.serverAccepts();
   arriveWith(status);
   const view = render(<StatusMenu socket={socket.asSocket()} />);
   return Object.assign(socket, { view });
@@ -368,20 +368,31 @@ describe('quand on ne peut pas changer de statut', () => {
     expect(dotOf(trigger())).toBeNull();
   });
 
-  test('connexion coupée : inactif (le message partirait, ou serait ignoré à la reconnexion) ; rétablie : actif', () => {
-    const socket = renderMenu({ connected: false });
-    expect((trigger() as HTMLButtonElement).disabled).toBe(true);
-    act(() => socket.serverAccepts());
+  test('connexion coupée (le magasin n\'est plus « prêt ») : inactif ; le message partirait, ou serait ignoré à la reconnexion', () => {
+    renderMenu();
     expect((trigger() as HTMLButtonElement).disabled).toBe(false);
-    act(() => socket.connectionDrops());
+    act(() => useOfficeStore.getState().setReady(false));
     expect((trigger() as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  // Le serveur n'écoute une socket revenue qu'après l'avoir replacée (son init) : avant, status:set serait ignoré.
+  test('la socket reconnectée ne suffit pas : inactif jusqu\'au nouvel init', () => {
+    const socket = renderMenu();
+    act(() => {
+      socket.connectionDrops();
+      useOfficeStore.getState().setReady(false);
+    });
+    act(() => socket.serverAccepts());
+    expect((trigger() as HTMLButtonElement).disabled).toBe(true);
+    arriveWith('available');
+    expect((trigger() as HTMLButtonElement).disabled).toBe(false);
   });
 
   test('la connexion tombe menu ouvert : il se ferme, et rien n\'est envoyé', async () => {
     const user = userEvent.setup();
     const socket = renderMenu();
     await user.click(trigger());
-    act(() => socket.connectionDrops());
+    act(() => useOfficeStore.getState().setReady(false));
     expect(screen.queryByRole('menu')).toBeNull();
     expect(socket.sent).toEqual([]);
   });

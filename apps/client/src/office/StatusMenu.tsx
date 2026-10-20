@@ -2,7 +2,6 @@ import { STATUSES, type Status } from '@bureau/shared';
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
-import { useSocketConnected } from '../net/use-socket-connected';
 import { useOfficeStore } from '../state/office-store';
 import { StatusDot } from './StatusDot';
 
@@ -13,11 +12,12 @@ import { StatusDot } from './StatusDot';
 // focus après un choix. Elles ne doivent pas rouvrir le menu quand on repart.
 //
 // Le statut affiché ne change qu'à la confirmation du serveur (`status:changed`) : pas de changement affiché que le serveur n'a pas
-// pris. Le bouton est donc inactif tant qu'un message ne peut pas lui arriver : pas de socket, pas d'`init` encore, ou connexion coupée.
+// pris. Le bouton est donc inactif tant que le serveur ne prendrait pas le message : pas de socket, ou connexion pas prête (pas encore
+// d'`init`, connexion coupée, ou revenue mais pas encore replacée par son `init`).
 export function StatusMenu({ socket }: { socket: OfficeSocket | null }) {
   const current = useOfficeStore((state) => state.self?.status ?? null);
-  const connected = useSocketConnected(socket);
-  const enabled = socket !== null && connected && current !== null;
+  const ready = useOfficeStore((state) => state.ready);
+  const enabled = socket !== null && ready && current !== null;
 
   const [open, setOpen] = useState(false);
   const menuId = useId();
