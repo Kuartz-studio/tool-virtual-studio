@@ -14,7 +14,7 @@ export function invitationLink(env: Pick<Env, 'APP_URL'>, token: string): string
 
 // Invitation admin sans passer par un admin : la commande admin:invite crée ainsi le premier admin. Elle n'a pas d'admin qui
 // invite (invitedBy vaut null, et l'e-mail n'a pas de nom). Si l'e-mail ne peut pas partir, l'erreur remonte et l'invitation
-// reste en attente.
+// reste en attente. Avec MAILER=none (ou memory), le mailer n'envoie rien : le lien rendu est la seule porte d'entrée.
 export async function inviteAdmin(
   email: string,
   d: { invitations: InvitationService; mailer: Mailer; env: Pick<Env, 'APP_URL'> },

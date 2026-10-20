@@ -41,6 +41,9 @@ export function adminRoutes(d: {
 }): Router {
   const { db, env, invitations, mailer, events, logger } = d;
   const router = Router();
+  // MAILER=none : aucun e-mail ne part. Les routes rendent à l'admin le lien de l'invitation (`link`), qu'il transmet lui-même ;
+  // il n'est montré qu'à cet instant : la base ne garde que l'empreinte du jeton, et ni les listes ni le journal ne le reçoivent.
+  const handsOverLinks = env.MAILER === 'none';
   // Inviter une adresse, relancer ou annuler une invitation, retirer un membre : chaque action lit d'abord l'état (déjà
   // invitée ? dernier admin actif ?) puis écrit, et aucune contrainte de la base ne l'impose. Deux demandes simultanées (un
   // double clic, deux admins) passent donc l'une après l'autre, comme l'acceptation d'une invitation.
@@ -97,6 +100,10 @@ export function adminRoutes(d: {
       }
 
       const { invitation, token } = await invitations.create({ email, role, invitedBy: admin.id });
+      if (handsOverLinks) {
+        res.status(201).json({ ...listed(invitation, Date.now()), link: invitationLink(env, token) });
+        return;
+      }
       if (!(await sendInvitationMail(invitation, token, admin.name))) {
         res.status(502).json({ error: 'mail_failed' });
         return;
@@ -105,7 +112,8 @@ export function adminRoutes(d: {
     });
   });
 
-  // Nouveau jeton et nouvel e-mail ; l'ancien lien cesse de marcher. C'est l'admin qui relance qui « invite » dans l'e-mail.
+  // Nouveau jeton et nouvel e-mail (ou, avec MAILER=none, nouveau lien dans la réponse) ; l'ancien lien cesse de marcher. C'est
+  // l'admin qui relance qui « invite » dans l'e-mail.
   router.post('/invitations/:id/resend', async (req, res) => {
     const { id } = req.params;
     await oneAtATime(`invitation:${id}`, async () => {
@@ -124,6 +132,10 @@ export function adminRoutes(d: {
           return;
         }
         throw err;
+      }
+      if (handsOverLinks) {
+        res.json({ ok: true, link: invitationLink(env, token) });
+        return;
       }
       if (!(await sendInvitationMail(invitation, token, res.locals.user!.name))) {
         res.status(502).json({ error: 'mail_failed' });

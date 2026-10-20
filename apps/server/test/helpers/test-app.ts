@@ -8,7 +8,7 @@ import { createInvitationService } from '../../src/auth/invitations';
 import type { Db } from '../../src/db/client';
 import { user } from '../../src/db/schema';
 import type { Env } from '../../src/env';
-import { createMemoryMailer } from '../../src/mail/mailer';
+import { createMemoryMailer, createNoneMailer, type Mailer } from '../../src/mail/mailer';
 import { createServerEvents } from '../../src/server-events';
 import { createTestDb } from './test-db';
 import { testEnv } from './test-env';
@@ -16,18 +16,30 @@ import { testEnv } from './test-env';
 // Mot de passe des comptes créés par inviteAndAccept, sauf si le test en donne un autre.
 export const TEST_PASSWORD = 'motdepasse1';
 
+interface TestAppOptions {
+  env?: Partial<Env>;
+  logger?: Logger;
+}
+
 // L'application complète sur une base PGlite neuve : Better Auth, invitations et e-mails en mémoire.
 // `env` remplace des variables de testEnv(), par exemple { AUTH_RATE_LIMIT: 'on' } pour tester la limitation des tentatives.
 // `logger` remplace le journal muet des tests, pour vérifier ce que le serveur journalise (un échec d'envoi d'e-mail).
 // `events` reçoit ce que les routes (et Better Auth) disent au temps réel : t.events.on('member:removed', …).
-export async function createTestApp(o: { env?: Partial<Env>; logger?: Logger } = {}) {
-  const env = testEnv(o.env);
+export function createTestApp(o: TestAppOptions = {}) {
+  return buildTestApp(createMemoryMailer(), testEnv(o.env), o.logger);
+}
+
+// La même application sans e-mail : MAILER=none, et son mailer, dont `resetLinks` est la réserve des liens de mot de passe.
+export function createNoneTestApp(o: TestAppOptions = {}) {
+  return buildTestApp(createNoneMailer(), testEnv({ ...o.env, MAILER: 'none' }), o.logger);
+}
+
+async function buildTestApp<M extends Mailer>(mailer: M, env: Env, logger: Logger | undefined) {
   const db = await createTestDb();
-  const mailer = createMemoryMailer();
   const events = createServerEvents();
-  const auth = createAuth({ db, mailer, env, logger: o.logger, events });
+  const auth = createAuth({ db, mailer, env, logger, events });
   const invitations = createInvitationService(db);
-  const app = createApp({ env, db, auth, invitations, mailer, events, logger: o.logger });
+  const app = createApp({ env, db, auth, invitations, mailer, events, logger });
 
   // Invite `email`, accepte l'invitation par la vraie route, et renvoie l'id du compte créé avec son cookie de session,
   // prêt pour `.set('Cookie', cookie)`. Par défaut : rôle membre, nom tiré de l'adresse, mot de passe TEST_PASSWORD.
