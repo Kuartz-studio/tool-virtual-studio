@@ -151,6 +151,51 @@ describe('les onglets', () => {
     expect(tab('Tout le monde').getAttribute('aria-selected')).toBe('true');
   });
 
+  // Un bouton n'est pas un champ de saisie pour l'avatar (game/input.ts) : le focus laissé sur l'onglet, taper « z » le ferait marcher.
+  // Même pour « À proximité » resté choisi après la conversation : on n'y envoie plus, mais le champ (et son brouillon) reste à
+  // l'écriture, et c'est là qu'on tape.
+  test('cliquer un onglet met le focus dans le champ du message : taper écrit, et l\'avatar ne marche pas', async () => {
+    const user = userEvent.setup();
+    const directions = new DirectionInput();
+    const unbind = bindKeyboard(directions);
+    try {
+      const { rerenderWith } = renderChat({ room: 'r1' });
+      await user.click(tab('À proximité'));
+      expect(document.activeElement).toBe(input());
+      await user.keyboard('z[KeyW>]');
+      expect(input().value).toBe('zw');
+      expect(directions.current()).toBeNull();
+      await user.keyboard('[/KeyW]');
+
+      await user.click(tab('Tout le monde'));
+      expect(document.activeElement).toBe(input());
+      expect(input().getAttribute('aria-label')).toBe(fr.chat.input.all);
+
+      // « À proximité », choisi, après la fin de la conversation.
+      await user.click(tab('À proximité'));
+      rerenderWith(null);
+      input().blur();
+      await user.click(tab('À proximité'));
+      expect(document.activeElement).toBe(input());
+    } finally {
+      unbind();
+    }
+  });
+
+  // Au clavier, le focus reste sur les onglets (motif « tabs ») : les flèches, et aussi Entrée ou Espace sur l'onglet choisi.
+  test('au clavier, le focus reste sur les onglets : Entrée et Espace ne l\'emmènent pas dans le champ', async () => {
+    const user = userEvent.setup();
+    renderChat({ room: 'r1' });
+    tab('Tout le monde').focus();
+    await user.keyboard('{ArrowRight}');
+    expect(document.activeElement).toBe(tab('À proximité'));
+    await user.keyboard('{Enter}');
+    expect(document.activeElement).toBe(tab('À proximité'));
+    await user.keyboard(' ');
+    expect(document.activeElement).toBe(tab('À proximité'));
+    expect(tab('À proximité').getAttribute('aria-selected')).toBe('true');
+  });
+
   // Les flèches sont celles de l'avatar (game/input.ts), qui laisse passer ce qu'un autre écouteur a pris (preventDefault).
   test('les flèches qui changent d\'onglet ne font pas marcher l\'avatar', async () => {
     const user = userEvent.setup();

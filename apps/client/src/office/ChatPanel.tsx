@@ -1,5 +1,5 @@
 import { CHAT_MAX_LENGTH, type ChatAck, type ChatChannel, type ChatMessage } from '@bureau/shared';
-import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type UIEvent } from 'react';
+import { memo, useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type KeyboardEvent, type MouseEvent, type UIEvent } from 'react';
 import { fr } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
@@ -80,7 +80,7 @@ interface ChatPanelProps {
 // - L'onglet « À proximité » ne se choisit qu'en conversation. S'il est déjà choisi quand elle finit, il reste : on y lit encore ce qui
 //   s'est dit, mais on n'y écrit plus (jamais de message envoyé à tout le monde par l'onglet qui change sous les doigts). Chaque onglet
 //   a son brouillon, pour la même raison.
-// - Le focus va au champ à l'ouverture, et Échap ferme. Les touches de l'avatar (ZQSD, flèches : game/input.ts) sont ignorées dans un
+// - Le focus va au champ à l'ouverture, et après un clic sur un onglet ; Échap ferme. Les touches de l'avatar (ZQSD, flèches : game/input.ts) sont ignorées dans un
 //   champ de saisie : taper n'ennuie pas l'avatar. Celles qui servent ici sans être dans un champ (flèches des onglets et de la liste)
 //   sont prises (preventDefault), et l'avatar ne les voit pas.
 // - Le panneau lit « Tout le monde » : tant qu'il est affiché sur cet onglet, ses messages sont lus (store.chatReadId). Fermé, il peut
@@ -155,6 +155,15 @@ export function ChatPanel({ id, socket, room, onClose }: ChatPanelProps) {
     followLog.current = true;
     setError(null);
     setTab(channel);
+  }
+
+  // Un clic sur un onglet le choisit, et met le focus dans le champ du message : un bouton n'est pas un champ de saisie pour l'avatar
+  // (game/input.ts), et le focus laissé sur l'onglet, taper ferait marcher l'avatar. Au clavier (Entrée ou Espace sur l'onglet : un
+  // clic sans pointeur, detail 0), le focus reste sur les onglets, comme avec les flèches.
+  function clickTab(channel: ChatChannel, event: MouseEvent<HTMLButtonElement>) {
+    if (!tabEnabled(channel)) return;
+    selectTab(channel);
+    if (event.detail > 0) input.current?.focus();
   }
 
   // Les onglets : ← → passent de l'un à l'autre, Début et Fin vont au premier et au dernier, le focus avec la sélection. Les flèches sont
@@ -261,7 +270,7 @@ export function ChatPanel({ id, socket, room, onClose }: ChatPanelProps) {
             tabIndex={tab === channel ? 0 : -1}
             disabled={!tabEnabled(channel)}
             title={tabEnabled(channel) ? undefined : fr.chat.nearbyUnavailable}
-            onClick={() => selectTab(channel)}
+            onClick={(event) => clickTab(channel, event)}
           >
             {fr.chat.tabs[channel]}
           </button>
