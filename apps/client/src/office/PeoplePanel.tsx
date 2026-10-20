@@ -112,7 +112,10 @@ export function PeoplePanel({ id, onClose }: { id?: string; onClose(): void }) {
     return (
       <li key={person.id} className="person">
         <StatusDot status={status} userId={person.id} />
-        <span className="person-name">{person.name}</span>
+        {/* Un nom trop long est coupé (« … ») : l'infobulle le donne en entier. */}
+        <span className="person-name" title={person.name}>
+          {person.name}
+        </span>
         {self?.id === person.id && <span className="person-you">{fr.office.people.you}</span>}
         {status && <span className="person-status">{fr.status[status]}</span>}
       </li>

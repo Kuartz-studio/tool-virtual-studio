@@ -113,6 +113,18 @@ describe('la liste', () => {
     expect(dot('bob').getAttribute('aria-hidden')).toBe('true');
   });
 
+  // Un nom trop long pour le panneau est coupé (« … », en CSS) : son infobulle le donne en entier.
+  test('chaque nom a son infobulle (title), le nom entier : en ligne comme hors ligne', async () => {
+    const long = 'Marie-Hélène de La Tour-Dupin-Gouvernet';
+    fakeApi({ 'GET /api/members': () => json(200, [...MEMBERS, { id: 'mh', name: long, avatarKey: null }]) });
+    arrive([player('zoe', 'Zoé')]);
+    render(<PeoplePanel onClose={() => {}} />);
+    const offline = await screen.findByRole('region', { name: /^Hors ligne/ });
+    const titles = (section: HTMLElement) => [...section.querySelectorAll('.person-name')].map((name) => name.getAttribute('title'));
+    expect(titles(offline)).toEqual(['Alice', 'Bob', 'Élise', long]);
+    expect(titles(group(/^En ligne/))).toEqual(['Moi', 'Zoé']);
+  });
+
   test('une section vide n\'est pas affichée : tout le monde en ligne, pas de « Hors ligne »', async () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS.slice(0, 2)) });
     arrive([player('zoe', 'Zoé')]);
