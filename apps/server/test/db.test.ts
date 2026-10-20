@@ -3,9 +3,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
 import { drizzle as drizzlePglite } from 'drizzle-orm/pglite';
+import type { Pool } from 'pg';
 import { afterAll, expect, test, vi } from 'vitest';
 import { createDb, driverOf, isPgliteUrl } from '../src/db/client';
 import { migrateCommand, runMigrations } from '../src/db/migrate';
+
+// createDb, tel quel, mais espionné : la commande de migration dit comment elle ouvre sa base.
+vi.mock(import('../src/db/client'), async (importOriginal) => {
+  const original = await importOriginal();
+  return { ...original, createDb: vi.fn(original.createDb) };
+});
 
 const tmp = mkdtempSync(join(tmpdir(), 'bureau-db-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -52,6 +59,32 @@ test('toute autre URL : pool node-postgres', async () => {
   const { db, close } = await createDb('postgres://bureau:bureau@127.0.0.1:1/bureau');   // rien n'écoute sur le port 1
   expect(driverOf(db)).toBe('pg');
   await expect(db.execute(sql`select 1`)).rejects.toThrow(/select 1/);
+  await close();
+});
+
+// Une base qui ne répond plus (bloquée, réseau coupé) ne doit pas tout bloquer avec elle : les arrivées au bureau, l'historique du chat,
+// les enregistrements périodiques, l'arrêt. Le pool de l'application a des délais : 5 s pour se connecter, 10 s par requête.
+test('le pool node-postgres de l\'application : 5 s pour se connecter, 10 s par requête', async () => {
+  const { db, close } = await createDb('postgres://bureau:bureau@127.0.0.1:1/bureau');
+  const pool = (db as unknown as { $client: Pool }).$client;
+  expect(pool.options).toMatchObject({ connectionTimeoutMillis: 5_000, query_timeout: 10_000 });
+  await close();
+});
+
+// Une migration peut être longue (une table à réécrire) : la commande ouvre sa propre base, sans délai par requête.
+test('la commande de migration ouvre sa base sans ces délais', async () => {
+  const folder = writeMigrations('migrations-sans-delai', ['CREATE TABLE "probe" ("id" integer PRIMARY KEY NOT NULL);']);
+  const create = vi.mocked(createDb);
+  create.mockClear();
+  const url = 'postgres://bureau:bureau@127.0.0.1:1/bureau';   // rien n'écoute sur le port 1
+  await expect(migrateCommand(url, [folder])).rejects.toThrow();
+  expect(create).toHaveBeenCalledWith(url, { timeouts: false });
+  const pool = ((await create.mock.results[0]!.value) as { db: { $client: Pool } }).db.$client;
+  expect(pool.options.connectionTimeoutMillis).toBeUndefined();
+  expect(pool.options.query_timeout).toBeUndefined();
+
+  const { db, close } = await createDb(url, { timeouts: false });
+  expect((db as unknown as { $client: Pool }).$client.options).not.toHaveProperty('query_timeout');
   await close();
 });
 

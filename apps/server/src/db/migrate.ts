@@ -46,7 +46,8 @@ export async function migrateCommand(url: string | undefined, folders: string[] 
     );
     return 1;
   }
-  const { db, close } = await createDb(url);
+  // Sa propre base, sans les délais de l'application : une migration peut être longue.
+  const { db, close } = await createDb(url, { timeouts: false });
   try {
     await runMigrations(db, folder);
     console.log('Migrations à jour.');
