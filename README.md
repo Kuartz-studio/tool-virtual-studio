@@ -170,7 +170,7 @@ Les gestes de tous les jours, une fois le bureau en ligne. Le détail technique 
 ### Inviter
 
 1. Connecte-toi avec un compte admin et ouvre « Admin » dans la barre du bas (le tout premier admin vient de la commande de « Premier admin »).
-2. Saisis l'adresse e-mail, choisis le rôle (« Membre » par défaut, « Admin » pour qui doit aussi administrer), puis valide.
+2. Saisis l'adresse e-mail, choisis le rôle (« Membre » par défaut, « Admin » pour qui doit aussi administrer), puis clique sur « Envoyer l'invitation ».
 3. La personne reçoit un e-mail avec un lien d'inscription, **valable 7 jours** (`INVITATION_TTL_MS`, `packages/shared/src/constants.ts`).
 4. Au-delà, le lien ne marche plus mais l'invitation reste dans « Invitations en attente », marquée « expirée ». « Renvoyer » envoie un nouveau lien, valable 7 jours à son tour ; l'ancien ne marche plus.
 5. Si l'e-mail n'est pas parti (`mail_failed`), l'invitation est gardée : elle est dans la liste, et « Renvoyer » refait l'envoi. Une adresse déjà invitée ne peut pas l'être une seconde fois (`already_invited`) : renvoie ou annule l'invitation existante.
@@ -186,14 +186,14 @@ Les gestes de tous les jours, une fois le bureau en ligne. Le détail technique 
 
 - L'audio et la vidéo tournent sur l'offre gratuite de LiveKit Cloud (offre Build) : **5 000 minutes par mois**. Une minute compte pour chaque personne connectée à une conversation (`docs/conception.md`, §8.5).
 - Les minutes se lisent dans le tableau de bord de LiveKit Cloud, sur le projet dont les clés sont dans les variables `LIVEKIT_*`. Rien ne les compte dans l'appli.
-- Une semaine environ après le lancement, relève les minutes consommées et rapporte-les au mois.
+- Une semaine environ après le lancement, relève les minutes consommées et ramène-les à un mois entier.
 - Si l'équipe approche de 5 000 minutes, passe à l'offre **Ship** (environ 50 $ par mois : 150 000 minutes, puis 0,0005 $ la minute ; tarifs vérifiés le 19/10/2026 dans la conception). N'attends pas la limite : la page de tarifs de LiveKit ne dit pas ce qui arrive quand l'offre gratuite l'atteint.
 
-### Déployer
+### Redéployer
 
 - Un `git push` sur `main` redéploie sur Railway : l'image est reconstruite, les migrations passent, puis la nouvelle version remplace l'ancienne dès que `/api/health` répond (détails dans « Déployer » et « Première mise en ligne »). Après un déploiement, `curl https://<domaine>/api/health` doit répondre `{"ok":true}`.
 - Pendant un redéploiement, **tout le monde est déconnecté**, puis les navigateurs se reconnectent seuls à la nouvelle version. À l'arrêt, le serveur enregistre la position de chaque personne présente avant de fermer les connexions : chacun retrouve sa place. Les conversations audio et vidéo se reforment ensuite d'après les positions retrouvées.
-- À vérifier dans les réglages du service Railway : le délai laissé entre SIGTERM et SIGKILL. Il doit couvrir l'enregistrement des positions, la fermeture des connexions, du serveur HTTP et de la base ; le serveur n'a pas de minuterie à lui. Si Railway tue le processus avant la fin, les gens retrouvent leur dernière position enregistrée, qui date de 60 secondes au plus (les positions sont enregistrées toutes les 60 secondes). Aucune valeur n'est vérifiée à ce jour : lis-la dans Railway avant le premier lancement.
+- À vérifier dans Railway : le délai laissé entre SIGTERM et SIGKILL, qui se règle dans « Settings » du service (réglage « draining »), ou par la variable `RAILWAY_DEPLOYMENT_DRAINING_SECONDS` (documentation de Railway sur l'arrêt d'un déploiement). Il doit couvrir l'enregistrement des positions, la fermeture des connexions, du serveur HTTP et de la base. Le serveur n'a pas de délai global : seule l'attente de la fermeture du serveur HTTP s'arrête d'elle-même, au bout de 5 s (`HTTP_CLOSE_WAIT_MS`, `apps/server/src/realtime/io.ts`) ; l'enregistrement des positions et la fermeture de la base n'ont pas de limite. Si Railway tue le processus avant la fin, les gens retrouvent leur dernière position enregistrée, qui date de 60 secondes au plus (c'est l'intervalle de l'enregistrement périodique). Aucune valeur n'est vérifiée à ce jour : lis-la dans Railway avant le premier lancement.
 
 ### Checklist du premier vrai lancement
 
@@ -201,7 +201,7 @@ Production (variables du service Railway, voir « Première mise en ligne ») :
 
 - [ ] `MAILER=resend`, avec `RESEND_API_KEY` et `MAIL_FROM` (un domaine d'envoi vérifié dans Resend).
 - [ ] `LIVEKIT_URL`, `LIVEKIT_API_KEY` et `LIVEKIT_API_SECRET` en place : le journal de démarrage ne contient pas « LiveKit non configuré : audio et vidéo désactivés ».
-- [ ] `MAP_KEY=office`, **seulement quand `apps/client/public/assets/maps/office.json` existe** (la carte définitive, dessinée dans Tiled) et que `pnpm --filter @bureau/server map:check ../client/public/assets/maps/office.json` sort avec le code 0. Aujourd'hui seule `dev-office.json` existe : `MAP_KEY` vaut `dev-office`, et une carte absente empêche le serveur de démarrer.
+- [ ] `MAP_KEY=office`, **seulement quand la carte définitive (`apps/client/public/assets/maps/office.json`, dessinée dans Tiled) est dans le dépôt** et que `pnpm --filter @bureau/server map:check ../client/public/assets/maps/office.json` sort avec le code 0. Commite et pousse `office.json` avant de mettre `MAP_KEY=office` : Railway construit l'image depuis le dépôt, et une carte absente empêche le serveur de démarrer. Tant que cette carte n'y est pas, `MAP_KEY` reste à `dev-office`.
 - [ ] Une invitation réelle arrive dans la boîte de réception, pas dans les spams.
 
 Essais à plusieurs, en vrai : deux personnes, puis trois, sur Chrome, Firefox et Safari, dont une sur le partage de connexion d'un téléphone.
