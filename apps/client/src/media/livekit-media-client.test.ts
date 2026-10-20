@@ -48,11 +48,14 @@ const lk = vi.hoisted(() => {
   class FakeLocalParticipant extends FakeParticipant {
     // Ce que getUserMedia ou getDisplayMedia refusent.
     refuse = new Set<string>();
+    // Retient les allumages : une demande d'accès sans réponse, ou une publication que LiveKit garde dans une room fermée (15 s).
+    hold: Promise<void> | null = null;
     readonly setMicrophoneEnabled = vi.fn((on: boolean) => this.toggle('mic', on, () => (this.isMicrophoneEnabled = on)));
     readonly setCameraEnabled = vi.fn((on: boolean) => this.toggle('cam', on, () => (this.isCameraEnabled = on)));
     readonly setScreenShareEnabled = vi.fn((on: boolean) => this.toggle('screen', on, () => (this.isScreenShareEnabled = on)));
     private async toggle(kind: string, on: boolean, apply: () => void): Promise<undefined> {
       log.push(`${kind}:${on ? 'on' : 'off'}`);
+      if (this.hold) await this.hold;
       if (on && this.refuse.has(kind)) throw new DOMException('Permission denied', 'NotAllowedError');
       apply();
       return undefined;
@@ -62,15 +65,27 @@ const lk = vi.hoisted(() => {
   class FakeRoom {
     static readonly instances: FakeRoom[] = [];
     static failConnect = false;
+    // Retient les connexions (un serveur lent) ; disconnect() annule celle qui attend, comme LiveKit.
+    static holdConnect: Promise<void> | null = null;
     readonly localParticipant = new FakeLocalParticipant('moi', 'Moi', true);
     readonly remoteParticipants = new Map<string, FakeParticipant>();
     readonly listeners = new Map<string, Set<Listener>>();
+    private cancelConnect: ((err: Error) => void) | null = null;
     readonly connect = vi.fn(async (url: string, token: string) => {
       log.push(`connect:${url}:${token}`);
+      const hold = FakeRoom.holdConnect;
+      if (hold) {
+        await new Promise<void>((resolve, reject) => {
+          this.cancelConnect = reject;
+          void hold.then(resolve);
+        });
+      }
       if (FakeRoom.failConnect) throw new Error('could not establish signal connection');
     });
     readonly disconnect = vi.fn(async () => {
       log.push('disconnect');
+      this.cancelConnect?.(new Error('Client initiated disconnect'));
+      this.cancelConnect = null;
     });
     readonly switchActiveDevice = vi.fn(async (kind: string, deviceId: string) => {
       log.push(`switch:${kind}:${deviceId}`);
@@ -132,6 +147,7 @@ afterEach(async () => {
   for (const client of clients.splice(0)) await client.leave();
   lk.FakeRoom.instances.splice(0);
   lk.FakeRoom.failConnect = false;
+  lk.FakeRoom.holdConnect = null;
   lk.log.splice(0);
   document.body.innerHTML = '';
 });
@@ -144,6 +160,8 @@ function client(prefs: MediaPrefs = { mic: false, cam: false }): MediaClient {
 
 const lastRoom = () => lk.FakeRoom.instances.at(-1)!;
 const audioElements = () => [...document.querySelectorAll('audio')];
+// Laisse le client avancer aussi loin qu'il peut (la fausse Room n'attend que des promesses, ou ce que retient le test).
+const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe('createLiveKitMediaClient', () => {
   test('aucune Room ni aucun périphérique avant le premier join, même en changeant micro, caméra et préférences', async () => {
@@ -219,6 +237,76 @@ describe('createLiveKitMediaClient', () => {
     expect(room.listenerCount()).toBe(0);
     expect(media.getSnapshot()).toMatchObject({ room: null, participants: [] });
   });
+
+  test('leave pendant la connexion : room.disconnect() l\'annule tout de suite, sans micro ni caméra, sans erreur', async () => {
+    lk.FakeRoom.holdConnect = new Promise(() => {});   // la connexion n'aboutirait jamais d'elle-même
+    const media = client({ mic: true, cam: true });
+    const joined = media.join(payload('r1'));
+    await media.leave();
+    await joined;
+    expect(lk.log).toEqual(['connect:wss://livekit.test:jeton-r1', 'disconnect']);
+    expect(media.getSnapshot()).toMatchObject({ room: null, local: { mic: true, cam: true }, error: null });
+    expect(lastRoom().listenerCount()).toBe(0);
+  });
+
+  test('dans la room, allumer attend la réponse de LiveKit : le micro n\'est allumé qu\'une fois publié', async () => {
+    const media = client({ mic: false, cam: false });
+    await media.join(payload('r1'));
+    const room = lastRoom();
+    let publish!: () => void;
+    room.localParticipant.hold = new Promise((resolve) => (publish = resolve));
+    let done = false;
+    const turnedOn = media.setMic(true).then(() => (done = true));
+    await flush();
+    expect(done).toBe(false);
+    expect(media.getSnapshot().participants[0]!.mic).toBe(false);
+    publish();
+    await turnedOn;
+    expect(media.getSnapshot().participants[0]!.mic).toBe(true);
+  });
+
+  test('LiveKit renonce pendant la connexion (Disconnected), puis la connexion aboutit quand même : la room reste finie, rien n\'y est allumé', async () => {
+    let connected!: () => void;
+    lk.FakeRoom.holdConnect = new Promise((resolve) => (connected = resolve));
+    const media = client({ mic: true, cam: true });
+    const joined = media.join(payload('r1'));
+    lastRoom().emit(RoomEvent.Disconnected, DisconnectReason.SIGNAL_CLOSE);
+    connected();
+    await joined;
+    expect(media.getSnapshot()).toMatchObject({ room: null, participants: [], error: 'connection_failed' });
+    expect(lk.log).toEqual(['connect:wss://livekit.test:jeton-r1']);
+    // Hors room, comme il se doit : un partage d'écran demandé ne se fait pas.
+    await media.setScreenShare(true);
+    expect(media.getSnapshot().local.screen).toBe(false);
+  });
+
+  test.each([
+    ['retirée par le serveur (Disconnected)', 'removed'],
+    ['quittée (media:leave)', 'left'],
+  ] as const)(
+    'la room %s pendant que le micro s\'allume (LiveKit retient la publication) : rien n\'attend, le micro voulu reste, la room suivante se connecte',
+    async (_, end) => {
+      const media = client({ mic: true, cam: false });
+      const first = media.join(payload('r1'));
+      const room = lastRoom();
+      room.localParticipant.hold = new Promise(() => {});   // jamais : comme une publication dans une room fermée, pendant 15 s
+      await flush();
+      expect(lk.log).toEqual(['connect:wss://livekit.test:jeton-r1', 'mic:on']);
+
+      if (end === 'removed') room.emit(RoomEvent.Disconnected, DisconnectReason.PARTICIPANT_REMOVED);
+      else void media.leave();
+      await first;
+      await media.join(payload('r2'));
+      expect(lk.log.at(-2)).toBe('connect:wss://livekit.test:jeton-r2');
+      expect(media.getSnapshot()).toMatchObject({
+        room: 'r2',
+        participants: [{ id: 'moi', mic: true }],
+        local: { mic: true, cam: false },
+        error: null,
+      });
+      expect(room.listenerCount()).toBe(0);
+    },
+  );
 });
 
 describe('les événements de la Room', () => {

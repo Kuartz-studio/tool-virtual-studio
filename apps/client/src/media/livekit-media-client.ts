@@ -66,6 +66,9 @@ interface Attachment {
 //   vidéos détachées : elles se rattacheront à la room suivante.
 export class LiveKitTransport implements MediaTransport {
   private room: Room | null = null;
+  // Résolue quand la room en cours est quittée ou terminée (release) : ce qui attendait encore dans cette room s'arrête alors.
+  private released: Promise<void> = Promise.resolve();
+  private markReleased: () => void = () => {};
   private readonly unlisten: Array<() => void> = [];
   private readonly audio = new Map<RemoteTrack, HTMLMediaElement>();
   private readonly attachments = new Set<Attachment>();
@@ -73,6 +76,7 @@ export class LiveKitTransport implements MediaTransport {
   async connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void> {
     const room = new Room(roomOptions(devices));
     this.room = room;
+    this.released = new Promise<void>((resolve) => (this.markReleased = resolve));
     this.listen(room, events);
     try {
       await room.connect(p.url, p.token);
@@ -95,9 +99,9 @@ export class LiveKitTransport implements MediaTransport {
   async setSource(source: LocalSource, on: boolean): Promise<void> {
     const local = this.room?.localParticipant;
     if (!local) return;
-    if (source === 'mic') await local.setMicrophoneEnabled(on);
-    else if (source === 'cam') await local.setCameraEnabled(on);
-    else await local.setScreenShareEnabled(on);
+    const work =
+      source === 'mic' ? local.setMicrophoneEnabled(on) : source === 'cam' ? local.setCameraEnabled(on) : local.setScreenShareEnabled(on);
+    await this.whileInRoom(work);
   }
 
   async useDevices(devices: MediaDevices): Promise<void> {
@@ -109,11 +113,22 @@ export class LiveKitTransport implements MediaTransport {
     for (const [kind, deviceId] of choices) {
       if (!deviceId || !this.room) continue;
       try {
-        await this.room.switchActiveDevice(kind, deviceId);
+        await this.whileInRoom(this.room.switchActiveDevice(kind, deviceId));
       } catch {
         // introuvable ou refusé : celui d'avant reste, et les autres changent quand même
       }
     }
+  }
+
+  // Attend ce travail de LiveKit, mais pas au-delà du départ de la room. Une demande d'accès peut rester sans réponse, et LiveKit
+  // retient jusqu'à 15 s une publication dans une room fermée : le client média, qui a déjà quitté cette room, n'a pas à l'attendre.
+  // Abandonné, le travail finit seul (LiveKit arrête la piste qu'il n'a pas pu publier), et son échec ne compte plus.
+  private async whileInRoom(work: Promise<unknown>): Promise<void> {
+    const released = this.released;
+    work.catch(() => {
+      // tant que la room est là, son échec passe par la course ci-dessous ; après son départ, il ne doit pas rester sans réponse
+    });
+    await Promise.race([work, released]);
   }
 
   participants(): MediaParticipant[] {
@@ -193,7 +208,8 @@ export class LiveKitTransport implements MediaTransport {
     for (const attachment of this.attachments) this.follow(attachment);
   }
 
-  // Plus rien de cette room : ses écouteurs, l'audio des autres, les vidéos attachées (qui restent suivies, pour la room suivante).
+  // Plus rien de cette room : ses écouteurs, l'audio des autres, les vidéos attachées (qui restent suivies, pour la room suivante),
+  // et ce qui y attendait encore (whileInRoom).
   private release(): void {
     for (const off of this.unlisten.splice(0)) off();
     for (const track of [...this.audio.keys()]) this.silence(track);
@@ -202,6 +218,7 @@ export class LiveKitTransport implements MediaTransport {
       attachment.track = undefined;
     }
     this.room = null;
+    this.markReleased();
   }
 }
 

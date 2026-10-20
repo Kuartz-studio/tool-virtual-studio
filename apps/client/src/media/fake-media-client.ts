@@ -20,30 +20,47 @@ export interface FakeAttachment {
 
 type Remote = Omit<MediaParticipant, 'isLocal' | 'speaking'>;
 
+// Ce que fait un appel aux périphériques retenu (holdDevices) quand la room part avant sa réponse :
+// - finish : il finit tout de suite, sans rien publier, comme LiveKitTransport.setSource ;
+// - fail : il échoue, comme la publication que LiveKit abandonne dans une room fermée (PublishTrackError, au bout de 15 s).
+export type HeldDeviceOutcome = 'finish' | 'fail';
+
 // Un faux LiveKit : il retient ce qu'on lui demande, et les tests y font entrer des gens, les font parler, refusent un périphérique,
-// coupent la connexion…
+// retiennent une connexion ou un périphérique, coupent la connexion…
 class FakeLiveKit implements MediaTransport {
   readonly journal: string[] = [];
   readonly deviceLog: string[] = [];
   readonly attachments: FakeAttachment[] = [];
   devices: MediaDevices = {};
-  readonly denied = new Set<'mic' | 'cam'>();
+  // L'erreur que le navigateur rend quand on allume ce périphérique (un refus, ou autre chose).
+  readonly failures = new Map<'mic' | 'cam', unknown>();
   screenRefused = false;
   failConnect = false;
-  hold: Promise<void> | null = null;
+  connectHold: Promise<void> | null = null;
+  deviceHold: { until: Promise<void>; onLeave: HeldDeviceOutcome } | null = null;
   // Les autres personnes de la room (celle où l'on est, ou celle qu'on va rejoindre), dans leur ordre d'arrivée.
   readonly remotes: Remote[] = [];
   speaking = new Set<string>();
   private room: string | null = null;
   private events: TransportEvents | null = null;
   private published = { mic: false, cam: false, screen: false };
+  // La connexion en cours, même pas encore aboutie : son numéro, et son départ (résolu quand elle est quittée, annulée ou perdue).
+  private connection = 0;
+  private left: Promise<void> = Promise.resolve();
+  private markLeft: () => void = () => {};
 
   constructor(private readonly self: { id: string; name: string }) {}
 
   async connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void> {
     this.journal.push(`join:${p.room}`);
-    if (this.hold) await this.hold;
-    if (this.failConnect) throw new Error('connexion à LiveKit impossible');
+    const connection = this.open();
+    if (this.connectHold) await Promise.race([this.connectHold, this.left]);
+    // Quittée pendant qu'elle se faisait : comme LiveKit, disconnect() l'annule, et elle échoue.
+    if (this.connection !== connection) throw new Error('Client initiated disconnect');
+    if (this.failConnect) {
+      this.close();
+      throw new Error('connexion à LiveKit impossible');
+    }
     this.room = p.room;
     this.devices = { ...devices };
     this.events = events;
@@ -51,13 +68,26 @@ class FakeLiveKit implements MediaTransport {
 
   async disconnect(): Promise<void> {
     this.journal.push('leave');
-    this.reset();
+    this.close();
   }
 
   async setSource(source: LocalSource, on: boolean): Promise<void> {
     this.deviceLog.push(`${source}:${on ? 'on' : 'off'}`);
-    const refused = source === 'screen' ? this.screenRefused : this.denied.has(source);
-    if (on && refused) throw new DOMException('Permission denied', 'NotAllowedError');
+    const connection = this.connection;
+    const hold = this.deviceHold;
+    if (hold) {
+      await Promise.race([hold.until, this.left]);
+      if (this.connection !== connection) {
+        if (hold.onLeave === 'fail') {
+          throw Object.assign(new Error('publishing rejected as engine not connected within timeout'), { name: 'PublishTrackError' });
+        }
+        return;
+      }
+    }
+    if (on) {
+      const failure = source === 'screen' ? (this.screenRefused ? new DOMException('Permission denied', 'NotAllowedError') : undefined) : this.failures.get(source);
+      if (failure !== undefined) throw failure;
+    }
     this.published[source] = on;
   }
 
@@ -93,12 +123,20 @@ class FakeLiveKit implements MediaTransport {
 
   drop(reason: 'removed' | 'lost'): void {
     const events = this.events;
-    this.reset();
+    this.close();
     events?.disconnected(reason);
   }
 
-  // Hors de la room : rien de publié, personne d'autre, plus d'événement.
-  private reset(): void {
+  private open(): number {
+    this.connection += 1;
+    this.left = new Promise<void>((resolve) => (this.markLeft = resolve));
+    return this.connection;
+  }
+
+  // Hors de la room : rien de publié, personne d'autre, plus d'événement, et ce qui attendait dans cette room s'arrête.
+  private close(): void {
+    this.connection += 1;
+    this.markLeft();
     this.room = null;
     this.events = null;
     this.published = { mic: false, cam: false, screen: false };
@@ -110,8 +148,11 @@ class FakeLiveKit implements MediaTransport {
 // Le faux client média, pour les tests : la vraie logique (MediaSession), sur un faux LiveKit. Sans réseau ni périphérique.
 // - journal : ce qui arrive à la connexion, `join:<room>` à chaque connexion tentée, `leave` à chaque départ ;
 // - deviceLog : ce qui est demandé aux périphériques, `mic:on`, `cam:off`, `screen:on`, `devices:{…}` ;
-// - les commandes des tests jouent LiveKit et le navigateur : refuser un périphérique, faire échouer ou attendre la connexion, faire
-//   entrer, changer, parler ou partir des gens, arrêter le partage d'écran depuis le navigateur, perdre la connexion.
+// - les commandes des tests jouent LiveKit et le navigateur : refuser un périphérique (ou le faire échouer autrement), faire
+//   attendre un périphérique, faire échouer ou attendre la connexion, faire entrer, changer, parler ou partir des gens, arrêter le
+//   partage d'écran depuis le navigateur, perdre la connexion ou en être retiré.
+// Comme LiveKit, une connexion quittée pendant qu'elle se fait est annulée (et échoue). Comme LiveKitTransport, un appel aux
+// périphériques qui attend encore quand la room part finit tout de suite.
 // L'identité de la personne (soi-même, dans participants) est `moi`, « Moi », sauf autre choix.
 export class FakeMediaClient extends MediaSession {
   readonly journal: readonly string[];
@@ -135,13 +176,30 @@ export class FakeMediaClient extends MediaSession {
     return this.livekit.attachments;
   }
 
-  // Le navigateur refuse ces périphériques (ou ils n'existent pas), jusqu'à allowDevices().
+  // Le navigateur refuse ces périphériques (NotAllowedError), jusqu'à allowDevices().
   denyDevices(...sources: Array<'mic' | 'cam'>): void {
-    for (const source of sources) this.livekit.denied.add(source);
+    this.failDevices(new DOMException('Permission denied', 'NotAllowedError'), ...sources);
+  }
+
+  // Allumer ces périphériques lève cette erreur (un refus du navigateur, ou un autre échec), jusqu'à allowDevices().
+  failDevices(error: unknown, ...sources: Array<'mic' | 'cam'>): void {
+    for (const source of sources) this.livekit.failures.set(source, error);
   }
 
   allowDevices(): void {
-    this.livekit.denied.clear();
+    this.livekit.failures.clear();
+  }
+
+  // Les appels aux périphériques attendent (l'accès demandé à la personne, la caméra qui chauffe) jusqu'à l'appel de la fonction
+  // rendue. Si la room part avant, ils finissent tout de suite, ou échouent (HeldDeviceOutcome).
+  holdDevices(onLeave: HeldDeviceOutcome = 'finish'): () => void {
+    let release!: () => void;
+    const hold = { until: new Promise<void>((resolve) => (release = resolve)), onLeave };
+    this.livekit.deviceHold = hold;
+    return () => {
+      if (this.livekit.deviceHold === hold) this.livekit.deviceHold = null;
+      release();
+    };
   }
 
   // Le choix de l'écran à partager est refusé ou fermé.
@@ -157,9 +215,9 @@ export class FakeMediaClient extends MediaSession {
   // Les connexions attendent ; la fonction rendue les laisse aboutir.
   holdConnections(): () => void {
     let release!: () => void;
-    this.livekit.hold = new Promise<void>((resolve) => (release = resolve));
+    this.livekit.connectHold = new Promise<void>((resolve) => (release = resolve));
     return () => {
-      this.livekit.hold = null;
+      this.livekit.connectHold = null;
       release();
     };
   }

@@ -24,8 +24,8 @@ export interface MediaParticipant {
 //   faite ;
 // - local : micro et caméra voulus (hors room aussi : ils s'allument en entrant), et le partage d'écran en cours. C'est ce que le
 //   serveur apprend (media:state) et montre aux autres ;
-// - error : permission_denied quand le micro ou la caméra n'ont pas pu s'allumer (refusés, absents ou inutilisables : on reste dans
-//   la room, en réception seule) ; connection_failed quand la room n'a pas pu être rejointe, ou que la connexion est perdue.
+// - error : permission_denied quand le navigateur a refusé le micro ou la caméra, ou qu'ils sont absents ou inutilisables (on reste
+//   dans la room, en réception seule) ; connection_failed quand la room n'a pas pu être rejointe, ou que la connexion est perdue.
 export interface MediaSnapshot {
   room: string | null;
   participants: MediaParticipant[];
@@ -54,6 +54,8 @@ export interface MediaClient {
   join(p: MediaJoinPayload): Promise<void>;
   // Quitte la room : les pistes locales s'arrêtent (le partage d'écran aussi), l'audio des autres se tait. Hors room : rien, sinon
   // effacer connection_failed (la room qui n'a pas pu être rejointe n'est plus attendue).
+  // join (d'une autre room) et leave quittent la room en cours dès l'appel, sans attendre ce qu'elle fait encore : une connexion qui
+  // se fait est annulée, et un micro ou une caméra qui s'allument n'y sont jamais publiés.
   leave(): Promise<void>;
   // Micro et caméra : dans une room, allumés ou éteints tout de suite (rallumer redemande l'accès s'il avait été refusé) ; hors room,
   // retenus pour la prochaine.
@@ -99,10 +101,11 @@ export interface TransportEvents {
 export interface MediaTransport {
   // Se connecte à la room, avec ces périphériques pour les pistes à venir ; rejette si la connexion échoue (et ne laisse rien derrière).
   connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void>;
-  // Quitte la room : pistes locales arrêtées, audio des autres retiré, plus aucun événement.
+  // Quitte la room : pistes locales arrêtées, audio des autres retiré, plus aucun événement. Peut venir pendant connect (qui est alors
+  // annulée) ou pendant setSource et useDevices (qui finissent alors tout de suite, sans attendre LiveKit ni le navigateur).
   disconnect(): Promise<void>;
   // Allume ou éteint une source locale ; rejette si le périphérique ne peut pas s'allumer (refusé, absent, inutilisable, choix de
-  // l'écran annulé).
+  // l'écran annulé) ou si la piste ne peut pas être publiée. L'erreur est rendue telle quelle (celle de getUserMedia pour un refus).
   setSource(source: LocalSource, on: boolean): Promise<void>;
   // Passe à ces périphériques (ceux qui sont choisis), dans la room.
   useDevices(devices: MediaDevices): Promise<void>;
