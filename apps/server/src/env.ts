@@ -23,10 +23,11 @@ const envSchema = z
     // Obligatoires avec MAILER=resend seulement.
     RESEND_API_KEY: z.string().optional(),
     MAIL_FROM: z.string().optional(),
-    // Sans les trois variables LiveKit, l'audio et la vidéo sont désactivés.
-    LIVEKIT_URL: z.string().optional(),
-    LIVEKIT_API_KEY: z.string().optional(),
-    LIVEKIT_API_SECRET: z.string().optional(),
+    // Sans les trois variables LiveKit, l'audio et la vidéo sont désactivés. Rognées : un espace ou un retour à la ligne collé avec la
+    // valeur (dans Railway, par exemple) fait répondre 401 à LiveKit Cloud pour chaque jeton.
+    LIVEKIT_URL: z.string().trim().optional(),
+    LIVEKIT_API_KEY: z.string().trim().optional(),
+    LIVEKIT_API_SECRET: z.string().trim().optional(),
     MAP_KEY: z.string().default('dev-office'),
     MAPS_DIR: z.string().default(DEFAULT_MAPS_DIR),
     CLIENT_DIST_DIR: z.string().optional(),

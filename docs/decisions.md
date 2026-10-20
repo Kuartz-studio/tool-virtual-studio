@@ -93,6 +93,7 @@ Pendant l'exécution du plan, certaines questions n'avaient pas de réponse dans
 | Une panne de connexion audio/vidéo s'affiche, avec un bouton « Reconnecter » | Sinon elle restait silencieuse jusqu'au changement de groupe suivant | Rien |
 | La bibliothèque LiveKit n'est chargée qu'à la première conversation | Pour alléger le chargement | Rien |
 | Les messages de refus du micro ou de la caméra sont plus précis que prévu, et « Entrer quand même » est toujours proposé | Ils sont plus justes | Rien |
+| `LIVEKIT_URL`, `LIVEKIT_API_KEY` et `LIVEKIT_API_SECRET` sont rognées à la lecture (les autres variables ne le sont pas) | Un espace ou un retour à la ligne collé avec la valeur dans Railway faisait répondre 401 à LiveKit Cloud pour chaque jeton, sans message clair (arrivé au propriétaire) | Une valeur qui devrait vraiment commencer ou finir par un espace serait modifiée (aucune ne le devrait) |
 
 ## Interface et chat
 

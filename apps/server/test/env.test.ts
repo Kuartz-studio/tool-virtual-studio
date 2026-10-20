@@ -85,6 +85,22 @@ test('valeurs fournies', () => {
   });
 });
 
+// Un espace ou un retour à la ligne collé avec la valeur dans Railway fait répondre 401 à LiveKit Cloud pour chaque jeton : les trois
+// valeurs LiveKit sont rognées à la lecture. Les autres variables ne le sont pas.
+test('LIVEKIT_URL, LIVEKIT_API_KEY et LIVEKIT_API_SECRET : les espaces et retours à la ligne autour de la valeur sont retirés', () => {
+  const env = loadEnv({ ...valid, LIVEKIT_URL: ' wss://x.livekit.cloud\n', LIVEKIT_API_KEY: 'key \r\n', LIVEKIT_API_SECRET: '\t secret\n\n' });
+  expect(env.LIVEKIT_URL).toBe('wss://x.livekit.cloud');
+  expect(env.LIVEKIT_API_KEY).toBe('key');
+  expect(env.LIVEKIT_API_SECRET).toBe('secret');
+  // Ce qui est au milieu de la valeur reste.
+  expect(loadEnv({ ...valid, LIVEKIT_API_SECRET: ' se cret ' }).LIVEKIT_API_SECRET).toBe('se cret');
+});
+
+test('LIVEKIT_* : une valeur faite d\'espaces seulement vaut une valeur absente', () => {
+  const env = loadEnv({ ...valid, LIVEKIT_URL: '   ', LIVEKIT_API_KEY: '\n', LIVEKIT_API_SECRET: ' \t ' });
+  expect([env.LIVEKIT_URL, env.LIVEKIT_API_KEY, env.LIVEKIT_API_SECRET]).toEqual([undefined, undefined, undefined]);
+});
+
 test('une variable vide vaut une variable absente', () => {
   const env = loadEnv({ ...valid, PORT: '', MAP_KEY: '', MAPS_DIR: '  ', LIVEKIT_URL: '', CLIENT_DIST_DIR: '', E2E: '', MAILER: '', AUTH_RATE_LIMIT: '' });
   expect(env).toMatchObject({ PORT: 4000, MAP_KEY: 'dev-office', MAILER: 'memory', AUTH_RATE_LIMIT: 'on' });
