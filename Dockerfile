@@ -30,7 +30,7 @@ RUN pnpm deploy --legacy --filter @bureau/server --prod /prod/server
 # ---- 2. Image finale ----------------------------------------------------------------------------------------------------
 FROM node:24-slim
 
-# NODE_ENV=production rend les refus de la configuration de production effectifs (base PGlite, E2E, MAILER autre que resend).
+# NODE_ENV=production rend les refus de la configuration de production effectifs (base PGlite, E2E, MAILER=memory).
 # Le client compilé et les cartes sont servis depuis l'image. Railway fournit PORT ; les variables du service passent avant
 # ces valeurs par défaut.
 ENV NODE_ENV=production \

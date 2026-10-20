@@ -69,7 +69,7 @@ L'inscription se fait sur invitation, et les invitations se créent depuis le pa
 pnpm --filter @bureau/server admin:invite <adresse e-mail>
 ```
 
-Elle lit la même configuration que le serveur : les variables d'environnement, et le `.env` de la racine quand elle est lancée par `pnpm`. Avec `MAILER=resend`, l'e-mail part ; avec `MAILER=memory`, rien ne part, et le lien affiché est la seule porte d'entrée. Avec une base `pglite://`, arrêter d'abord `pnpm dev` : deux processus sur le même dossier perdent des écritures. Compilée (`pnpm build`), elle se lance avec `node apps/server/dist/cli/admin-invite.js <adresse e-mail>`, sans lire de `.env`.
+Elle lit la même configuration que le serveur : les variables d'environnement, et le `.env` de la racine quand elle est lancée par `pnpm`. Avec `MAILER=resend`, l'e-mail part ; avec `MAILER=none` (le mode de production sans service d'envoi) ou `MAILER=memory`, rien ne part, et le lien affiché est la seule porte d'entrée : c'est à toi de le transmettre à la personne. Avec une base `pglite://`, arrêter d'abord `pnpm dev` : deux processus sur le même dossier perdent des écritures. Compilée (`pnpm build`), elle se lance avec `node apps/server/dist/cli/admin-invite.js <adresse e-mail>`, sans lire de `.env`.
 
 ## Panneau admin
 
@@ -78,8 +78,9 @@ Le bouton « Admin » de la barre du bas, que les admins seuls ont, ouvre le pan
 - **Inviter.** Une adresse et un rôle (« Membre » par défaut) : `POST /api/admin/invitations`. Accepté, le champ se vide et le rôle revient à « Membre ». Refusé (adresse déjà invitée, déjà un compte actif ou retiré, mal formée…), le message de `fr.admin.errors` s'affiche et l'adresse reste dans le champ. Quand l'e-mail n'est pas parti (`mail_failed`), l'invitation existe quand même : elle est dans la liste, avec « Renvoyer ».
 - **Invitations en attente** (`GET /api/admin/invitations`, expirées comprises, marquées « expirée »). « Renvoyer » (`POST …/:id/resend` : nouveau lien et nouvel e-mail, l'ancien lien ne marche plus) et « Annuler » (`DELETE …/:id`). Une invitation que le serveur ne trouve plus (acceptée, ou annulée par un autre admin) fait relire les deux listes : une invitation acceptée est un nouveau membre.
 - **Membres** (`GET /api/admin/members`). « Retirer » (`DELETE …/:id`) demande d'abord confirmation, dans une boîte de dialogue modale (`alertdialog`) qui nomme la personne : le focus y est sur « Annuler », Tab ne sort pas de la boîte, Échap et « Annuler » renoncent (un clic sur le fond ne fait rien : un double clic sur « Retirer » fermerait la boîte à peine ouverte), et les touches de l'avatar n'y marchent pas. Le compte est désactivé, la personne est déconnectée tout de suite (sa page revient à la connexion) et son adresse ne peut plus être invitée. Soi-même n'a pas de bouton « Retirer » (le serveur refuse aussi : `self`).
+- **Sans e-mail (`MAILER=none`).** Rien ne part : le serveur rend le lien, que l'admin transmet lui-même. `POST /api/admin/invitations` répond 201 avec le corps d'avant et `link`, et `POST …/:id/resend` répond `{ ok, link }` avec un jeton neuf (`mail_failed` ne peut plus arriver). Le panneau le montre dans une boîte sous le geste (le formulaire, ou « Invitations en attente »), avec « Copier le lien » (presse-papiers ; sans lui, ou s'il refuse, le lien est sélectionné dans le champ pour qu'on le copie soi-même) et « Masquer ». Il n'y a qu'une boîte à la fois dans tout le panneau : un nouveau résultat remplace le précédent, et annuler l'invitation ou retirer le membre la fait disparaître. Le lien n'est montré qu'à cet instant : la base n'en garde que l'empreinte, et aucune liste ni aucun journal ne le reçoit. Chaque membre, sauf soi, a aussi « Lien de mot de passe » (`POST /api/admin/members/:id/reset-link`, 404 hors de ce mode) : voir « Mot de passe oublié ». Le mode vient de `GET /api/config` (`{ mail }`, sans authentification, rien d'autre), que le panneau lit une fois à sa première ouverture (`apps/client/src/lib/config.ts`) ; tant qu'il est inconnu, ou si la lecture échoue, le panneau est celui des e-mails.
 - **Listes.** Lues à l'ouverture, puis relues après chaque geste, réussi ou non (un refus ne dit pas toujours que rien n'a changé : l'e-mail n'est pas parti mais l'invitation existe, la réponse s'est perdue), et quand quelqu'un que la liste ne connaît pas arrive au bureau (une invitation vient d'être acceptée), comme le panneau Personnes. Une relecture qui échoue laisse la liste déjà là.
-- **Tests.** `AdminPanel.test.tsx` (le panneau, avec un faux serveur), `OfficeShell.test.tsx` (le bouton et la place du panneau), et `e2e/admin.spec.ts` : l'admin des tests de bout en bout est un compte créé par la route de test, avec l'invitation d'un admin (`joinOffice(page, nom, 'admin')`, `e2e/helpers.ts`).
+- **Tests.** `AdminPanel.test.tsx` (le panneau, avec un faux serveur, dont les boîtes de liens et « Lien de mot de passe »), `OfficeShell.test.tsx` (le bouton, la place du panneau et la lecture de la configuration), côté serveur `admin-none.test.ts` (les routes sans e-mail) et `config.test.ts`, et `e2e/admin.spec.ts` : l'admin des tests de bout en bout est un compte créé par la route de test, avec l'invitation d'un admin (`joinOffice(page, nom, 'admin')`, `e2e/helpers.ts`).
 
 ## Cartes
 
@@ -149,11 +150,11 @@ L'appli tourne sur Railway : un service construit depuis le `Dockerfile` de la r
 
    | Variable | Valeur |
    | --- | --- |
-   | `APP_URL` | l'adresse publique de l'appli, `https://<domaine>`, sans barre finale : c'est l'origine des cookies et des liens des e-mails, et la seule page d'où le temps réel accepte une connexion (en-tête `Origin`) |
+   | `APP_URL` | l'adresse publique de l'appli, `https://<domaine>`, sans barre finale : c'est l'origine des cookies et des liens d'invitation et de mot de passe, et la seule page d'où le temps réel accepte une connexion (en-tête `Origin`) |
    | `DATABASE_URL` | `${{Postgres.DATABASE_URL}}`, la référence à la base du projet (remplacer « Postgres » par le nom du service de la base) |
    | `BETTER_AUTH_SECRET` | une valeur propre à la production : `openssl rand -base64 32` |
-   | `MAILER` | `resend`, le seul mode d'envoi accepté en production |
-   | `RESEND_API_KEY`, `MAIL_FROM` | la clé d'API de Resend, et l'expéditeur (`Bureau virtuel <bureau@…>`) sur un domaine d'envoi vérifié dans Resend |
+   | `MAILER` | `none` : aucun e-mail ne part, l'admin copie lui-même les liens d'invitation et de mot de passe depuis le panneau Admin (voir « Inviter » et « Mot de passe oublié »). C'est le mode le moins cher, et celui à choisir sans service d'envoi. `resend` envoie les e-mails (voir la ligne suivante) ; `memory`, qui ne livre rien à personne, est refusé en production |
+   | `RESEND_API_KEY`, `MAIL_FROM` | facultatif : e-mails automatiques. Seulement avec `MAILER=resend` : la clé d'API de Resend, et l'expéditeur (`Bureau virtuel <bureau@…>`) sur un domaine d'envoi vérifié dans Resend |
    | `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` | le projet LiveKit Cloud : son adresse (`wss://<projet>.livekit.cloud`) et une clé d'API avec son secret (voir « Audio et vidéo »). Facultatives : sans l'une d'elles, l'audio et la vidéo sont désactivés, et le journal le dit au démarrage |
 
    `PORT` vient de Railway ; `NODE_ENV`, `CLIENT_DIST_DIR` et `MAPS_DIR` ont déjà leur valeur de production dans l'image (les définir sur Railway n'est utile que pour en changer). `E2E` ne doit pas être définie : le serveur la refuse en production. Une configuration invalide arrête le démarrage, et le journal du déploiement nomme les variables fautives.
@@ -171,9 +172,9 @@ Les gestes de tous les jours, une fois le bureau en ligne. Le détail technique 
 
 1. Connecte-toi avec un compte admin et ouvre « Admin » dans la barre du bas (le tout premier admin vient de la commande de « Premier admin »).
 2. Saisis l'adresse e-mail, choisis le rôle (« Membre » par défaut, « Admin » pour qui doit aussi administrer), puis clique sur « Envoyer l'invitation ».
-3. La personne reçoit un e-mail avec un lien d'inscription, **valable 7 jours** (`INVITATION_TTL_MS`, `packages/shared/src/constants.ts`).
-4. Au-delà, le lien ne marche plus mais l'invitation reste dans « Invitations en attente », marquée « expirée ». « Renvoyer » envoie un nouveau lien, valable 7 jours à son tour ; l'ancien ne marche plus.
-5. Si l'e-mail n'est pas parti (`mail_failed`), l'invitation est gardée : elle est dans la liste, et « Renvoyer » refait l'envoi. Une adresse déjà invitée ne peut pas l'être une seconde fois (`already_invited`) : renvoie ou annule l'invitation existante.
+3. Avec `MAILER=none`, rien n'est envoyé : une boîte apparaît sous le formulaire, avec le lien d'inscription. Clique sur « Copier le lien » et transmets-le toi-même à la personne (Slack, WhatsApp…). Le lien est **valable 7 jours** (`INVITATION_TTL_MS`, `packages/shared/src/constants.ts`) et **n'est montré qu'une fois** : le serveur n'en garde que l'empreinte, et fermer le panneau ou la boîte (« Masquer ») le fait disparaître. Avec `MAILER=resend`, la personne reçoit à la place un e-mail avec ce lien.
+4. **Un lien perdu se remplace par « Renvoyer »** : dans « Invitations en attente », « Renvoyer » donne un lien neuf (une nouvelle boîte, ou un nouvel e-mail avec Resend), valable 7 jours à son tour ; l'ancien ne marche plus. C'est aussi ce qu'il faut faire au-delà de 7 jours : le lien ne marche plus, mais l'invitation reste dans la liste, marquée « expirée ».
+5. Avec Resend, si l'e-mail n'est pas parti (`mail_failed`), l'invitation est gardée : elle est dans la liste, et « Renvoyer » refait l'envoi (sans e-mail, `mail_failed` n'existe pas). Une adresse déjà invitée ne peut pas l'être une seconde fois (`already_invited`) : renvoie ou annule l'invitation existante.
 
 ### Retirer
 
@@ -188,7 +189,14 @@ Les gestes de tous les jours, une fois le bureau en ligne. Le détail technique 
 UPDATE "user" SET disabled_at = NULL WHERE email = 'prenom.nom@exemple.fr';
 ```
 
-La réponse doit être `UPDATE 1` (`UPDATE 0` : l'adresse n'est pas la bonne). Ses sessions ont été supprimées au retrait : la personne se reconnecte avec son adresse et son mot de passe (ou « Mot de passe oublié ? »). Son rôle, son nom et son avatar n'ont pas changé.
+La réponse doit être `UPDATE 1` (`UPDATE 0` : l'adresse n'est pas la bonne). Ses sessions ont été supprimées au retrait : la personne se reconnecte avec son adresse et son mot de passe (ou, si elle l'a oublié, voir « Mot de passe oublié »). Son rôle, son nom et son avatar n'ont pas changé.
+
+### Mot de passe oublié
+
+- Avec `MAILER=resend`, la personne ouvre « Mot de passe oublié ? » sur la page de connexion, et reçoit un e-mail avec un lien valable une heure.
+- Avec `MAILER=none`, cette page dit que les e-mails ne sont pas activés et renvoie vers un admin. **L'admin** ouvre « Admin », cherche la personne dans « Membres », clique sur **« Lien de mot de passe »**, copie le lien de la boîte qui s'ouvre et le lui transmet. Le lien est **valable une heure**, ne sert **qu'une fois** et n'est montré qu'à cet instant (un nouveau clic en crée un autre, sans annuler le précédent). La personne l'ouvre, choisit son nouveau mot de passe et se reconnecte : ses sessions ouvertes sont fermées, comme avec l'e-mail.
+- Un admin n'a pas ce bouton sur sa propre ligne : s'il perd son mot de passe, un autre admin lui donne le lien. Avec un seul admin, personne ne le peut : garde-en au moins deux.
+- Qui n'est pas admin ne peut rien tirer de la route publique de Better Auth (`/api/auth/request-password-reset`) : sans e-mail, elle répond 200 comme toujours, qu'un compte existe ou non, mais ne livre aucun lien : rien n'est envoyé ni gardé.
 
 ### Suivre la consommation LiveKit
 
@@ -207,10 +215,11 @@ La réponse doit être `UPDATE 1` (`UPDATE 0` : l'adresse n'est pas la bonne). S
 
 Production (variables du service Railway, voir « Première mise en ligne ») :
 
-- [ ] `MAILER=resend`, avec `RESEND_API_KEY` et `MAIL_FROM` (un domaine d'envoi vérifié dans Resend).
+- [ ] `MAILER=none` (le minimum : pas de service d'envoi), ou `MAILER=resend` avec `RESEND_API_KEY` et `MAIL_FROM` (un domaine d'envoi vérifié dans Resend).
 - [ ] `LIVEKIT_URL`, `LIVEKIT_API_KEY` et `LIVEKIT_API_SECRET` en place : le journal de démarrage ne contient pas « LiveKit non configuré : audio et vidéo désactivés ».
 - [ ] `MAP_KEY=office`, **seulement quand la carte définitive (`apps/client/public/assets/maps/office.json`, dessinée dans Tiled) est dans le dépôt** et que `pnpm --filter @bureau/server map:check ../client/public/assets/maps/office.json` sort avec le code 0. Commite et pousse `office.json` avant de mettre `MAP_KEY=office` : Railway construit l'image depuis le dépôt, et une carte absente empêche le serveur de démarrer. Tant que cette carte n'y est pas, `MAP_KEY` reste à `dev-office`.
-- [ ] Une invitation réelle arrive dans la boîte de réception, pas dans les spams.
+- [ ] Une invitation réelle marche : avec `none`, le lien copié depuis la boîte du panneau Admin ouvre « Rejoindre » et crée le compte ; avec `resend`, l'e-mail arrive dans la boîte de réception, pas dans les spams.
+- [ ] Avec `none` : « Mot de passe oublié ? » dit de demander à un admin, et « Lien de mot de passe » (Admin › Membres) donne un lien qui change bien le mot de passe de la personne.
 - [ ] La limitation des tentatives de connexion compte bien par adresse du visiteur, et non par celle du proxy de Railway (voir « Derrière le proxy de Railway ») : sur `https://<domaine>/connexion`, quatre connexions de suite (en moins de 10 s) avec un mauvais mot de passe, la quatrième répond « Trop de tentatives » (429). Puis, dans la console de la base (`railway connect`), `select key from rate_limit;` montre `<ton adresse IP publique>|/sign-in/email`, ni `no-trusted-ip|/sign-in/email` ni une adresse de Railway. Sinon, `X-Real-IP` n'arrive pas, ou pas seul : tout le monde partage alors les mêmes trois essais.
 
 Essais à plusieurs, en vrai : deux personnes, puis trois, sur Chrome, Firefox et Safari, dont une sur le partage de connexion d'un téléphone.
@@ -226,7 +235,7 @@ Essais à plusieurs, en vrai : deux personnes, puis trois, sur Chrome, Firefox e
 
 Lancement :
 
-- [ ] Envoyer les invitations à l'équipe depuis le panneau admin.
+- [ ] Inviter l'équipe depuis le panneau admin (avec `MAILER=none`, transmettre soi-même chaque lien).
 - [ ] Poser à LimeZu la question de la licence par personne.
 - [ ] Une semaine après : relever les minutes LiveKit et décider du passage à l'offre Ship (voir « Suivre la consommation LiveKit »).
 # tool-virtual-studio
