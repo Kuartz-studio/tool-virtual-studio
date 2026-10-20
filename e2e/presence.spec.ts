@@ -53,6 +53,7 @@ async function chooseStatus(page: Page, label: string): Promise<void> {
 const statusButton = (page: Page, label: string) => officeBar(page).getByRole('button', { name: `Statut : ${label}` });
 
 test('A passe en Ne pas déranger → B voit le point rouge dans le panneau Personnes', async ({ browser }) => {
+  test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
   const a = await arrive(browser, 'Alix');
   const b = await arrive(browser, 'Bastien');
   const panel = await openPeople(b.page);
@@ -80,6 +81,7 @@ test('A passe en Ne pas déranger → B voit le point rouge dans le panneau Pers
 });
 
 test('le statut survit à un rechargement de la page : A le retrouve, et B ne le voit pas bouger', async ({ browser }) => {
+  test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
   const a = await arrive(browser, 'Alice');
   const b = await arrive(browser, 'Baptiste');
   const panel = await openPeople(b.page);
@@ -97,6 +99,7 @@ test('le statut survit à un rechargement de la page : A le retrouve, et B ne le
 });
 
 test('deuxième onglet de A → le premier affiche l\'écran « Ouvert dans un autre onglet » ; « Utiliser ici » reprend la main', async ({ browser }) => {
+  test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
   const a = await arrive(browser, 'Axel');
   const b = await arrive(browser, 'Bianca');
   const panelOfB = await openPeople(b.page);

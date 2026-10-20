@@ -1,8 +1,11 @@
 import type { InitPayload, PublicPlayer } from '@bureau/shared';
-import { act, cleanup, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { beforeEach, expect, test, vi } from 'vitest';
 import { EventBus } from '../game/EventBus';
+import { routes } from '../router';
 import { useOfficeStore } from '../state/office-store';
 import { fakeAuth, resetFakeAuth, setFakeSession } from '../test/fake-auth-client';
 import type { FakeSocket } from '../test/fake-socket';
@@ -239,4 +242,33 @@ test('quitter le bureau : connexion fermée, écouteurs retirés, magasin vidé'
   expect(socket().listenerCount()).toBe(0);
   expect(EventBus.listenerCount('local:move')).toBe(0);
   expect(useOfficeStore.getState().mapKey).toBeNull();
+});
+
+// En développement, StrictMode monte la page, la démonte, puis la remonte : deux connexions sont créées l'une après l'autre. Seule la
+// dernière doit rester ouverte, et la barre doit parler à celle-là (la connexion de la page est un état, que le second montage remplace).
+test('StrictMode (développement) : la dernière connexion est la seule ouverte, et le menu des statuts lui parle', async () => {
+  const user = userEvent.setup();
+  setFakeSession(LEA);
+  render(
+    <StrictMode>
+      <RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/'] })} />
+    </StrictMode>,
+  );
+  await findOfficeFor('Léa');
+
+  expect(sockets).toHaveLength(2);
+  const [first, second] = sockets as [FakeSocket, FakeSocket];
+  expect(first.active).toBe(false);
+  expect(first.listenerCount()).toBe(0);
+  expect(second.active).toBe(true);
+  expect(EventBus.listenerCount('local:move')).toBe(1);
+
+  act(() => {
+    second.serverAccepts();
+    second.receive('init', init());
+  });
+  await user.click(await screen.findByRole('button', { name: 'Statut : Disponible' }));
+  await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
+  expect(second.sentOf('status:set')).toEqual(['dnd']);
+  expect(first.sent).toEqual([]);
 });
