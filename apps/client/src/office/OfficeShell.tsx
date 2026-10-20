@@ -1,9 +1,11 @@
+import type { Role } from '@bureau/shared';
 import { Activity, useId, useRef, useState, type ReactNode } from 'react';
 import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectChatUnread, useOfficeStore } from '../state/office-store';
+import { AdminPanel } from './AdminPanel';
 import { ChatPanel } from './ChatPanel';
 import { ControlBar } from './ControlBar';
 import { PeoplePanel } from './PeoplePanel';
@@ -11,8 +13,9 @@ import { ReplacedScreen } from './ReplacedScreen';
 import { VideoStrip } from './VideoStrip';
 
 interface OfficeShellProps {
-  // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`).
-  user: { name: string };
+  // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`). Son rôle décide du panneau Admin (bouton et
+  // panneau n'existent que pour un admin) ; son identifiant, de la ligne « (toi) » de ce panneau, qui n'a pas de bouton Retirer.
+  user: { id: string; name: string; role: Role };
   // La connexion au bureau, que la page ouvre (null avant).
   socket: OfficeSocket | null;
   // L'audio et la vidéo : le client, et son état (useMedia).
@@ -35,9 +38,9 @@ interface OfficeShellProps {
 
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
 // - en haut, les vignettes de la conversation (VideoStrip) ;
-// - à droite, les panneaux (Personnes, Chat), qui peuvent être ouverts ensemble : Personnes au-dessus ;
-// - en bas, la barre de commandes (ControlBar) : ton nom, ton statut, micro, caméra et partage d'écran, Chat, Personnes et la
-//   déconnexion.
+// - à droite, les panneaux (Personnes, Admin pour un admin, Chat), qui peuvent être ouverts ensemble : de haut en bas, dans cet ordre ;
+// - en bas, la barre de commandes (ControlBar) : ton nom, ton statut, micro, caméra et partage d'écran, Chat, Personnes, Admin (pour un
+//   admin) et la déconnexion.
 // Rien de cela ne prend de place au jeu : les éléments sont posés sur lui, et ouvrir un panneau ne redimensionne pas le canevas (ni
 // ne change le zoom de la caméra).
 //
@@ -81,6 +84,18 @@ export function OfficeShell({
     chatToggle.current?.focus();
   }
 
+  // Le panneau Admin ne parle qu'à l'API (pas au bureau en temps réel) : son bouton n'attend pas l'`init`. Un membre n'a ni le bouton ni
+  // le panneau, et rien ne part vers /api/admin.
+  const isAdmin = user.role === 'admin';
+  const [adminOpen, setAdminOpen] = useState(false);
+  const adminToggle = useRef<HTMLButtonElement>(null);
+  const adminId = useId();
+
+  function closeAdmin() {
+    setAdminOpen(false);
+    adminToggle.current?.focus();
+  }
+
   return (
     <main className="office">
       <h1 className="visually-hidden">{fr.common.appName}</h1>
@@ -106,8 +121,9 @@ export function OfficeShell({
             ))}
           </div>
         )}
-        <div className="office-side" data-chat-open={chatOpen ? 'true' : undefined}>
+        <div className="office-side" data-chat-open={chatOpen ? 'true' : undefined} data-admin-open={isAdmin && adminOpen ? 'true' : undefined}>
           {peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}
+          {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} onClose={closeAdmin} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont
               arrêtés : il ne prend pas le focus, et ne lit rien. À l'affichage, ils reprennent (focus dans le champ, messages lus). */}
           <Activity mode={chatOpen ? 'visible' : 'hidden'}>
@@ -139,6 +155,17 @@ export function OfficeShell({
               buttonRef: peopleToggle,
               onToggle: () => (peopleOpen ? closePeople() : setPeopleOpen(true)),
             },
+            ...(isAdmin
+              ? [
+                  {
+                    label: fr.admin.toggle,
+                    open: adminOpen,
+                    panelId: adminId,
+                    buttonRef: adminToggle,
+                    onToggle: () => (adminOpen ? closeAdmin() : setAdminOpen(true)),
+                  },
+                ]
+              : []),
           ]}
           onSignOut={onSignOut}
           signingOut={signingOut}

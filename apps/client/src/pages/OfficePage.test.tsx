@@ -11,7 +11,8 @@ import type { MediaPrefs } from '../media/media-client';
 import { savePrefs } from '../media/prefs';
 import { routes } from '../router';
 import { useOfficeStore } from '../state/office-store';
-import { fakeAuth, resetFakeAuth, setFakeSession } from '../test/fake-auth-client';
+import { fakeApi, json } from '../test/fake-api';
+import { fakeAuth, resetFakeAuth, setFakeSession, type FakeUser } from '../test/fake-auth-client';
 import { FakeMediaDevices, installMediaDevices } from '../test/fake-media-devices';
 import type { FakeSocket } from '../test/fake-socket';
 import { findOfficeFor } from '../test/office';
@@ -85,8 +86,8 @@ afterEach(() => {
 // Ouvre la page : l'écran d'entrée, et la connexion déjà ouverte derrière lui. L'écran ne suffit pas : la page n'ouvre la connexion que
 // dans un effet, que React passe après avoir affiché la page, dans une autre tâche ; sur une machine chargée, l'écran est trouvé avant
 // (c'était l'instabilité de ce fichier : `sockets` encore vide, « La page n'a pas ouvert de connexion »).
-async function openPage() {
-  setFakeSession(LEA);
+async function openPage(account: FakeUser = LEA) {
+  setFakeSession(account);
   const router = renderRoute('/');
   await screen.findByRole('heading', { level: 1, name: fr.media.check.title });
   await waitFor(() => expect(sockets.at(-1)?.connectCalls).toBe(1));
@@ -100,8 +101,8 @@ async function enter() {
 }
 
 // La page ouverte, et le bureau, après « Entrer ».
-async function openOffice() {
-  const router = await openPage();
+async function openOffice(account?: FakeUser) {
+  const router = await openPage(account);
   await enter();
   return router;
 }
@@ -601,4 +602,43 @@ test('StrictMode (développement) : le panneau Chat s\'ouvre sur son champ, et e
   await user.keyboard('Salut{Enter}');
   expect(second.sentOf('chat:send')).toEqual([{ channel: 'all', text: 'Salut' }]);
   expect(first.sent).toEqual([]);
+});
+
+// ---- Le panneau Admin, du compte à la barre -------------------------------------------------------------------------------------
+
+// Le rôle vient de la session (Better Auth le renvoie avec le compte) : il décide si la barre a un bouton Admin.
+test('admin : la barre a un bouton Admin, qui ouvre le panneau sur les listes du serveur, et le compte de la session s\'y reconnaît', async () => {
+  const user = userEvent.setup();
+  fakeApi({
+    'GET /api/admin/members': () =>
+      json(200, [
+        { id: 'u-lea', name: 'Léa', email: 'lea@x.fr', role: 'admin' },
+        { id: 'u-bob', name: 'Bob', email: 'bob@x.fr', role: 'member' },
+      ]),
+    'GET /api/admin/invitations': () => json(200, []),
+  });
+  await openOffice({ ...LEA, role: 'admin' });
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+  });
+
+  await user.click(await screen.findByRole('button', { name: fr.admin.toggle }));
+  const members = await screen.findByRole('region', { name: 'Membres (2)' });
+  // Léa est le compte de la session : pas de bouton pour se retirer elle-même.
+  expect(within(members).getByText('Léa').closest('li')?.textContent).toContain(fr.admin.you);
+  expect(within(members).queryByRole('button', { name: 'Retirer Léa' })).toBeNull();
+  expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
+});
+
+test('membre : ni bouton Admin dans la barre, ni requête à /api/admin', async () => {
+  const api = fakeApi({});
+  await openOffice();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+  });
+  expect(screen.getByRole('button', { name: fr.chat.toggle })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: fr.admin.toggle })).toBeNull();
+  expect(api).not.toHaveBeenCalled();
 });

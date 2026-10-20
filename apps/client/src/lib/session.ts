@@ -1,3 +1,4 @@
+import type { Role } from '@bureau/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { authClient } from './auth-client';
 
@@ -6,6 +7,14 @@ export interface SessionUser {
   id: string;
   name: string;
   email: string;
+  role: Role;
+}
+
+// Le rôle du compte. Better Auth le renvoie avec la session (un champ que le serveur ajoute au compte : auth/auth.ts), sans que le
+// client en connaisse le type. Seul « admin » ouvre les outils d'admin ; toute autre valeur, ou son absence, vaut membre : le serveur
+// lit le rôle de la même façon (require-session.ts), et c'est lui qui refuse (403) un membre qui s'adresserait quand même à /api/admin.
+function roleOf(user: object): Role {
+  return (user as { role?: unknown }).role === 'admin' ? 'admin' : 'member';
 }
 
 export type SessionState =
@@ -32,7 +41,7 @@ export function useCurrentSession(): { state: SessionState; refresh: () => Promi
     try {
       const { data, error } = await authClient.getSession();
       if (error) next = { status: 'error' };
-      else if (data) next = { status: 'signedIn', user: { id: data.user.id, name: data.user.name, email: data.user.email } };
+      else if (data) next = { status: 'signedIn', user: { id: data.user.id, name: data.user.name, email: data.user.email, role: roleOf(data.user) } };
       else next = { status: 'signedOut' };
     } catch {
       next = { status: 'error' };

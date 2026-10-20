@@ -1,4 +1,4 @@
-import type { ChatMessage, MediaJoinPayload, PublicPlayer } from '@bureau/shared';
+import type { ChatMessage, MediaJoinPayload, PublicPlayer, Role } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -48,6 +48,8 @@ interface Options {
   onUseHere?: () => void;
   onReconnect?: () => void;
   init?: boolean;
+  // Le rôle du compte connecté (la session) : « member » par défaut.
+  role?: Role;
 }
 
 // Le bureau, avec une socket connectée et un faux client média (hors conversation). `init` : le serveur a envoyé l'état de départ.
@@ -60,6 +62,7 @@ function renderShell({
   onUseHere = () => {},
   onReconnect = () => {},
   init = true,
+  role = 'member',
 }: Options = {}) {
   const socket = new FakeSocket();
   socket.serverAccepts();
@@ -68,7 +71,7 @@ function renderShell({
   if (init) act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [] }));
   const shell = () => (
     <OfficeShell
-      user={{ name: 'Léa' }}
+      user={{ id: 'moi', name: 'Léa', role }}
       socket={socket.asSocket()}
       media={{ client, snapshot: client.getSnapshot() }}
       onReconnect={onReconnect}
@@ -512,6 +515,151 @@ describe('le panneau Chat', () => {
       await user.click(chatToggle());
       expect(badge()).toBeNull();
     });
+  });
+});
+
+describe('le panneau Admin', () => {
+  // Léa (le compte connecté, 'moi') est admin ; Bob est un membre.
+  const adminLists = {
+    'GET /api/admin/members': () =>
+      json(200, [
+        { id: 'moi', name: 'Léa', email: 'lea@x.fr', role: 'admin' },
+        { id: 'bob', name: 'Bob', email: 'bob@x.fr', role: 'member' },
+      ]),
+    'GET /api/admin/invitations': () => json(200, []),
+  };
+  const adminToggle = () => within(bar()).getByRole('button', { name: fr.admin.toggle }) as HTMLButtonElement;
+  const adminPanel = () => screen.getByRole('complementary', { name: fr.admin.title });
+  const adminCalls = (api: ReturnType<typeof fakeApi>) => api.mock.calls.filter(([url]) => String(url).startsWith('/api/admin'));
+
+  test('un membre n\'a pas de bouton Admin : ni panneau, ni requête à /api/admin, même Chat et Personnes ouverts', async () => {
+    const user = userEvent.setup();
+    const api = fakeApi({ 'GET /api/members': () => json(200, []) });
+    renderShell({ role: 'member' });
+    await user.click(toggle());
+    await user.click(chatToggle());
+    expect(within(bar()).queryByRole('button', { name: fr.admin.toggle })).toBeNull();
+    expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
+    expect(adminCalls(api)).toEqual([]);
+  });
+
+  test('un admin a le bouton Admin dans la barre, entre Personnes et Se déconnecter', () => {
+    renderShell({ role: 'admin' });
+    const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Admin', 'Se déconnecter']);
+  });
+
+  test('fermé au départ, sans rien demander au serveur ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {
+    const user = userEvent.setup();
+    const api = fakeApi(adminLists);
+    renderShell({ role: 'admin' });
+    expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
+    expect(adminToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(adminToggle().hasAttribute('aria-controls')).toBe(false);
+    expect(adminCalls(api)).toEqual([]);
+
+    await user.click(adminToggle());
+    expect(adminToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(adminToggle().getAttribute('aria-controls')).toBe(adminPanel().id);
+    expect(adminPanel().id).not.toBe('');
+    expect(await screen.findByRole('region', { name: 'Membres (2)' })).toBeTruthy();
+
+    await user.click(adminToggle());
+    expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
+    expect(adminToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(adminToggle().hasAttribute('aria-controls')).toBe(false);
+  });
+
+  test('à l\'ouverture le focus passe au panneau (son titre) ; Échap le ferme et rend le focus au bouton, à chaque fois', async () => {
+    const user = userEvent.setup();
+    fakeApi(adminLists);
+    renderShell({ role: 'admin' });
+    for (let times = 0; times < 2; times++) {
+      await user.click(adminToggle());
+      expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.admin.title }));
+      await screen.findByRole('region', { name: 'Membres (2)' });
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
+      expect(document.activeElement).toBe(adminToggle());
+    }
+  });
+
+  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton', async () => {
+    const user = userEvent.setup();
+    fakeApi(adminLists);
+    renderShell({ role: 'admin' });
+    await user.click(adminToggle());
+    await user.click(screen.getByRole('button', { name: fr.admin.close }));
+    expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
+    expect(document.activeElement).toBe(adminToggle());
+  });
+
+  test('au clavier : Entrée ouvre le panneau, et Tab y entre', async () => {
+    const user = userEvent.setup();
+    fakeApi(adminLists);
+    renderShell({ role: 'admin' });
+    adminToggle().focus();
+    await user.keyboard('{Enter}');
+    expect(adminPanel()).toBeTruthy();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.admin.close }));
+  });
+
+  test('il s\'ouvre dans la couche par-dessus le jeu, à droite ; avec Personnes et Chat, de haut en bas : Personnes, Admin, Chat', async () => {
+    const user = userEvent.setup();
+    fakeApi({ ...adminLists, 'GET /api/members': () => json(200, []) });
+    const { container } = renderShell({ role: 'admin' });
+    const game = screen.getByTestId('jeu');
+    await user.click(chatToggle());
+    await user.click(adminToggle());
+    await user.click(toggle());
+    const side = container.querySelector('.office-ui .office-side')!;
+    expect(side.contains(adminPanel())).toBe(true);
+    expect([...side.querySelectorAll(':scope > aside')].map((panel) => panel.querySelector('h2')?.textContent)).toEqual([
+      fr.office.people.title,
+      fr.admin.title,
+      fr.chat.title,
+    ]);
+    expect(screen.getByTestId('jeu')).toBe(game);
+  });
+
+  test('la colonne de droite sait si l\'admin est ouvert (Personnes lui laisse alors de la place)', async () => {
+    const user = userEvent.setup();
+    fakeApi(adminLists);
+    const { container } = renderShell({ role: 'admin' });
+    const side = container.querySelector('.office-side')!;
+    expect(side.hasAttribute('data-admin-open')).toBe(false);
+    await user.click(adminToggle());
+    expect(side.getAttribute('data-admin-open')).toBe('true');
+    await user.click(adminToggle());
+    expect(side.hasAttribute('data-admin-open')).toBe(false);
+  });
+
+  test('le panneau reconnaît le compte connecté : sa ligne est « (toi) » et n\'a pas de bouton Retirer, celle de Bob oui', async () => {
+    const user = userEvent.setup();
+    fakeApi(adminLists);
+    renderShell({ role: 'admin' });
+    await user.click(adminToggle());
+    const members = await screen.findByRole('region', { name: 'Membres (2)' });
+    const lea = within(members).getByText('Léa').closest('li')!;
+    expect(lea.textContent).toContain(fr.admin.you);
+    expect(within(lea).queryByRole('button')).toBeNull();
+    expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
+  });
+
+  test('il ne dépend pas du bureau (il ne parle qu\'à l\'API) : le bouton est actif avant l\'init', () => {
+    renderShell({ role: 'admin', init: false });
+    expect(adminToggle().disabled).toBe(false);
+  });
+
+  test('l\'écran « Ouvert dans un autre onglet » rend le panneau inerte avec le reste', async () => {
+    const user = userEvent.setup();
+    fakeApi(adminLists);
+    const { container } = renderShell({ role: 'admin' });
+    await user.click(adminToggle());
+    act(() => useOfficeStore.getState().setReplaced(true));
+    expect(container.querySelector('.office-ui')?.contains(adminPanel())).toBe(true);
+    expect(container.querySelector('.office-ui')?.hasAttribute('inert')).toBe(true);
   });
 });
 

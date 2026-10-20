@@ -604,8 +604,9 @@ a {
   color: var(--accent);
 }
 
-/* Les panneaux de droite (Personnes, Chat) : l'en-tête, puis leur contenu, qui défile. */
+/* Les panneaux de droite (Personnes, Admin, Chat) : l'en-tête, puis leur contenu, qui défile. */
 .people-panel,
+.admin-panel,
 .chat-panel {
   display: flex;
   flex-direction: column;
@@ -617,6 +618,7 @@ a {
 }
 
 .people-panel-header,
+.admin-panel-header,
 .chat-panel-header {
   display: flex;
   align-items: center;
@@ -626,13 +628,15 @@ a {
 }
 
 .people-panel-header h2,
+.admin-panel-header h2,
 .chat-panel-header h2 {
   margin: 0;
   font-size: 1rem;
 }
 
 /* Le titre reçoit le focus à l'ouverture, sans être un contrôle : pas de contour. */
-.people-panel-header h2:focus {
+.people-panel-header h2:focus,
+.admin-panel-header h2:focus {
   outline: none;
 }
 
@@ -702,9 +706,10 @@ a {
   margin-bottom: 8px;
 }
 
-/* Chat ouvert, Personnes ne prend que la place de sa liste, jusqu'à moins de la moitié de la hauteur : le reste est au chat, et la liste
-   des personnes défile si elle est plus longue. Seul, Personnes peut occuper toute la hauteur. */
-.office-side[data-chat-open='true'] .people-panel {
+/* Chat ou Admin ouvert, Personnes ne prend que la place de sa liste, jusqu'à moins de la moitié de la hauteur : le reste est à l'autre
+   panneau, et la liste des personnes défile si elle est plus longue. Seul, Personnes peut occuper toute la hauteur. */
+.office-side[data-chat-open='true'] .people-panel,
+.office-side[data-admin-open='true'] .people-panel {
   flex: 0 0 auto;
   max-height: 45%;
 }
@@ -877,6 +882,246 @@ a {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
   border-color: var(--accent);
+}
+
+/* Le panneau Admin : Inviter, Invitations en attente, Membres, qui défilent ensemble sous l'en-tête. Entre Personnes et Chat. */
+.admin-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 16px 16px;
+}
+
+.admin-section + .admin-section {
+  margin-top: 16px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+}
+
+.admin-section h3 {
+  margin: 12px 0 8px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+/* Les titres de section reçoivent le focus quand la ligne qu'on venait d'utiliser disparaît, sans être des contrôles : pas de contour. */
+.admin-section h3:focus {
+  outline: none;
+}
+
+.admin-invite .field {
+  margin-bottom: 12px;
+}
+
+.admin-invite .field input,
+.admin-invite .field select {
+  padding: 8px 10px;
+}
+
+/* Le rôle, et le bouton qui envoie, sur une ligne. */
+.admin-invite-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.admin-invite-row .field {
+  flex: none;
+  margin-bottom: 0;
+}
+
+.admin-invite-row .button {
+  flex: 1 1 auto;
+  padding: 9px 12px;
+}
+
+/* Le retour d'un geste (« c'est fait », ou le refus) : plus serré que dans les pages de compte. */
+.admin-section .alert,
+.admin-section .notice {
+  margin: 0 0 12px;
+  font-size: 0.9rem;
+}
+
+.admin-note {
+  margin: 8px 0;
+  color: var(--text-muted);
+}
+
+.admin-failed {
+  margin-top: 8px;
+}
+
+.admin-failed .alert {
+  margin-bottom: 8px;
+}
+
+.admin-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.admin-row:first-child {
+  border-top: none;
+}
+
+.admin-row-text {
+  flex: 1 1 0;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+/* Une invitation : l'adresse a toute la largeur de la première ligne ; dessous, son rôle, et ses deux boutons à droite (qui passent à la
+   ligne suivante quand ils ne tiennent pas). */
+.admin-row-wrap {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+.admin-row-wrap .admin-row-name {
+  flex: 1 1 100%;
+}
+
+.admin-row-wrap .admin-row-line {
+  flex: 1 1 auto;
+}
+
+.admin-row-wrap .admin-row-actions {
+  margin-left: auto;
+}
+
+.admin-row-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-row .bar-button {
+  flex: none;
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+.admin-row-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.admin-row-name {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-row-you {
+  flex: none;
+  color: var(--text-muted);
+}
+
+.admin-row-email {
+  overflow: hidden;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le rôle, et « expirée ». */
+.admin-badge {
+  flex: none;
+  padding: 0 8px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.admin-badge[data-role='admin'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.admin-badge[data-state='expired'] {
+  color: var(--warning-text);
+  background: var(--warning-background);
+  border-color: transparent;
+}
+
+/* Un bouton rendu inactif pendant une demande, sans perdre le focus (aria-disabled, et non disabled). */
+.bar-button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bar-button[aria-disabled='true']:hover {
+  background: transparent;
+}
+
+.bar-button-danger {
+  color: var(--error-text);
+  border-color: var(--error-text);
+}
+
+.bar-button-danger:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--error-background);
+}
+
+/* La confirmation d'un retrait : une boîte au milieu de la page, sur un fond qui la couvre. Elle est posée en `fixed` : le panneau coupe
+   (overflow: hidden) ce qui dépasse, pas ce qui est fixé à la page. Elle reste dans la couche du bureau (au-dessous de l'écran
+   « Ouvert dans un autre onglet »). */
+.admin-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: rgb(29 32 48 / 60%);
+}
+
+.admin-dialog {
+  width: min(400px, 100%);
+  padding: 24px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 24%);
+}
+
+/* La boîte reçoit le focus quand on clique dedans, hors de ses boutons : pas de contour. */
+.admin-dialog:focus {
+  outline: none;
+}
+
+.admin-dialog h4 {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+}
+
+.admin-dialog p {
+  margin: 0 0 20px;
+  color: var(--text-muted);
+}
+
+.admin-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /* « Ouvert dans un autre onglet » : un écran sur toute la page, sur le bureau grisé. */

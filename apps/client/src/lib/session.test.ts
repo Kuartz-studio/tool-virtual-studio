@@ -1,7 +1,7 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { fakeAuth, resetFakeAuth, setFakeSession } from '../test/fake-auth-client';
-import { SESSION_REFRESH_INTERVAL_MS, useSessionKeepAlive } from './session';
+import { SESSION_REFRESH_INTERVAL_MS, useCurrentSession, useSessionKeepAlive } from './session';
 
 vi.mock('./auth-client', () => import('../test/fake-auth-client'));
 
@@ -61,4 +61,20 @@ test('le dernier signedOut donné est celui qui est appelé (sans relancer le mi
   expect(fakeAuth.getSession).toHaveBeenCalledTimes(1);
   expect(first).not.toHaveBeenCalled();
   expect(second).toHaveBeenCalledOnce();
+});
+
+// Le serveur envoie le rôle avec le compte (champ ajouté de Better Auth). Seul « admin » ouvre les outils d'admin : tout le reste, comme
+// un rôle absent ou inconnu, vaut membre (le serveur lit le rôle de la même façon : require-session.ts).
+test.each([
+  ['admin', 'admin'],
+  ['member', 'member'],
+  [undefined, 'member'],
+  ['Admin', 'member'],
+  ['superadmin', 'member'],
+  ['', 'member'],
+] as const)('useCurrentSession : le rôle %j de la session est lu comme %j', async (role, expected) => {
+  setFakeSession({ id: 'u-lea', name: 'Léa', email: 'lea@x.fr', role });
+  const { result } = renderHook(() => useCurrentSession());
+  await act(async () => {});
+  expect(result.current.state).toEqual({ status: 'signedIn', user: { id: 'u-lea', name: 'Léa', email: 'lea@x.fr', role: expected } });
 });

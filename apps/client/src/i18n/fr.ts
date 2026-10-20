@@ -138,6 +138,69 @@ export const fr = {
     unreadOne: '{count} nouveau message',
     unreadMany: '{count} nouveaux messages',
   },
+  // Le panneau Admin (réservé aux admins) : inviter, les invitations en attente, les membres, et ce que le serveur peut refuser.
+  admin: {
+    toggle: 'Admin',
+    title: 'Admin',
+    close: 'Fermer le panneau Admin',
+    you: '(toi)',
+    // Le rôle d'un compte : choisi en invitant, écrit dans les listes.
+    roles: { member: 'Membre', admin: 'Admin' },
+    invite: {
+      title: 'Inviter',
+      email: 'Adresse e-mail',
+      role: 'Rôle',
+      submit: 'Envoyer l\'invitation',
+      submitting: 'Envoi…',
+      sent: 'Invitation envoyée à {email}.',
+    },
+    // Les invitations ni acceptées ni annulées, expirées comprises (on les renvoie). `title` : la section avant l'arrivée de la liste,
+    // `titleCount` : une fois la liste là.
+    pending: {
+      title: 'Invitations en attente',
+      titleCount: 'Invitations en attente ({count})',
+      empty: 'Aucune invitation en attente.',
+      loadFailed: 'Impossible de charger les invitations en attente.',
+      expired: 'expirée',
+      resend: 'Renvoyer',
+      resendLabel: 'Renvoyer l\'invitation à {email}',
+      revoke: 'Annuler',
+      revokeLabel: 'Annuler l\'invitation de {email}',
+      resent: 'Invitation renvoyée à {email}.',
+      revoked: 'Invitation à {email} annulée.',
+    },
+    members: {
+      title: 'Membres',
+      titleCount: 'Membres ({count})',
+      loadFailed: 'Impossible de charger la liste des membres.',
+      remove: 'Retirer',
+      removeLabel: 'Retirer {name}',
+      removed: '{name} ne fait plus partie du bureau.',
+    },
+    // La confirmation d'un retrait : le compte est désactivé, pas supprimé, et son adresse ne peut plus être invitée (le serveur répond
+    // alors « already_member »).
+    removal: {
+      title: 'Retirer {name} ?',
+      body: 'Le compte {email} sera désactivé. La personne sera déconnectée tout de suite et ne pourra plus se connecter. Cette adresse ne pourra plus être invitée.',
+      confirm: 'Retirer',
+      confirming: 'Retrait…',
+      cancel: 'Annuler',
+    },
+    // Le message de chaque refus du serveur (routes /api/admin) ; un serveur injoignable ou en panne a les messages de `common.errors`.
+    errors: {
+      alreadyInvited: 'Une invitation est déjà en attente pour cette adresse.',
+      alreadyMember: 'Cette adresse a déjà un compte (actif ou retiré).',
+      mailFailed: 'L\'e-mail n\'est pas parti. L\'invitation est gardée : tu peux la renvoyer.',
+      invalid: 'Cette adresse e-mail n\'est pas valable.',
+      self: 'Tu ne peux pas te retirer toi-même.',
+      lastAdmin: 'Tu ne peux pas retirer le dernier admin : il en faut au moins un.',
+      // « not_found » dépend de ce qu'on visait : une invitation (renvoyer, annuler), ou un membre (retirer).
+      notFoundInvitation: 'Cette invitation n\'est plus en attente : elle a été acceptée ou annulée. Les listes viennent d\'être relues.',
+      notFoundMember: 'Ce membre a déjà été retiré. La liste vient d\'être relue.',
+      unauthorized: 'Ta session a expiré. Recharge la page pour te reconnecter.',
+      forbidden: 'Cette action est réservée aux admins.',
+    },
+  },
   // L'audio et la vidéo : l'écran d'entrée, les vignettes et les commandes de la barre.
   media: {
     // Micro et caméra refusés ou absents, ou l'un des deux refusé et l'autre coupé.

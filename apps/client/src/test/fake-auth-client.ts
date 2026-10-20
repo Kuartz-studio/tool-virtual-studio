@@ -8,6 +8,8 @@ export interface FakeUser {
   id: string;
   name: string;
   email: string;
+  // Le rôle que le serveur ajoute au compte dans la session (« admin » ou « member ») ; absent, comme un serveur qui ne le dirait pas.
+  role?: string;
 }
 
 // Une erreur telle que la renvoie le client de Better Auth : le statut HTTP et, souvent, le code de Better Auth.

@@ -5,7 +5,7 @@ import type { OfficeSocket } from '../net/socket';
 import { CameraIcon, MicIcon, ScreenIcon } from './icons';
 import { StatusMenu } from './StatusMenu';
 
-// Le bouton d'un panneau de droite (Chat et Personnes ; l'admin viendra) : il dit si le panneau est ouvert, et le bascule.
+// Le bouton d'un panneau de droite (Chat, Personnes, et Admin pour un admin) : il dit si le panneau est ouvert, et le bascule.
 export interface PanelToggle {
   label: string;
   open: boolean;

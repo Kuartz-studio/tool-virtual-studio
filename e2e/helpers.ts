@@ -25,9 +25,14 @@ export async function lastMail(request: APIRequestContext, to: string): Promise<
 }
 
 // La barre du bas du bureau (le groupe « Barre du bureau ») : le nom de la personne, son statut, micro, caméra et partage d'écran,
-// Chat, Personnes et Se déconnecter.
+// Chat, Personnes, Admin (pour un admin) et Se déconnecter.
 export function officeBar(page: Page): Locator {
   return page.getByRole('group', { name: 'Barre du bureau' });
+}
+
+// Le bouton Admin de la barre, qu'ont les admins seulement.
+export function adminToggle(page: Page): Locator {
+  return officeBar(page).getByRole('button', { name: 'Admin', exact: true });
 }
 
 // Le bouton Chat de la barre : son nom devient « Chat, N nouveaux messages » quand il y en a de non lus.
@@ -85,10 +90,10 @@ export async function joinWithLink(page: Page, link: string, account: Pick<Accou
   await submitJoinForm(page, account);
 }
 
-// Invite cette adresse, crée son compte depuis le lien de l'invitation, clique sur « Entrer » et attend le bureau : la page reste
-// connectée.
-export async function inviteAndJoin(page: Page, { email, name, password }: Account): Promise<void> {
-  await joinWithLink(page, await createInvitation(page.request, email), { name, password });
+// Invite cette adresse (membre, ou admin), crée son compte depuis le lien de l'invitation, clique sur « Entrer » et attend le bureau : la
+// page reste connectée.
+export async function inviteAndJoin(page: Page, { email, name, password }: Account, role: 'admin' | 'member' = 'member'): Promise<void> {
+  await joinWithLink(page, await createInvitation(page.request, email, role), { name, password });
 }
 
 // Se connecte depuis la page de connexion, entre et attend le bureau.
@@ -118,12 +123,12 @@ export async function selfAt(page: Page): Promise<{ id: string; x: number; y: nu
   return self;
 }
 
-// Un compte neuf, entré dans le bureau prêt. Renvoie le compte (pour se reconnecter).
-export async function joinOffice(page: Page, name: string): Promise<Account> {
+// Un compte neuf (membre, ou admin), entré dans le bureau prêt. Renvoie le compte (pour se reconnecter).
+export async function joinOffice(page: Page, name: string, role: 'admin' | 'member' = 'member'): Promise<Account> {
   // L'adresse e-mail n'a pas d'accent : « Zoé » devient zoe.
   const slug = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const account = { email: uniqueEmail(slug), name, password: `motdepasse-de-${slug}` };
-  await inviteAndJoin(page, account);
+  await inviteAndJoin(page, account, role);
   await waitForOffice(page);
   return account;
 }
