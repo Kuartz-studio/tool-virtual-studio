@@ -1,19 +1,24 @@
+import { randomUUID } from 'node:crypto';
 import {
   EMPTY_GROUPING,
   MOVE_RATE,
   OFFICE_ROOM,
+  chatSendSchema,
   computeGroups,
   mediaStateSchema,
   moveSchema,
   statusSchema,
+  type ChatAck,
+  type ChatMessage,
   type GroupingState,
   type OfficeMap,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
+import type { ChatService } from '../chat/chat-service';
 import type { Env } from '../env';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
-import { createRateLimiter } from '../rate-limit';
+import { createRateLimiter, type RateLimiter } from '../rate-limit';
 import type { TypedServer, TypedSocket } from './io';
 import type { World } from './world';
 
@@ -22,15 +27,24 @@ export interface HandlerDeps {
   env: Env;
   /** L'horloge de la limite de débit des `move`, en ms : celle du monde (performance.now par défaut). */
   now?: () => number;
+  logger: Logger;
+  /** Le chat « Tout le monde » : c'est lui qui enregistre ses messages. */
+  chat: Pick<ChatService, 'post'>;
+  /** La limite de débit du chat (CHAT_RATE), par compte : une seule pour toutes les sockets d'une personne, celles à venir comprises. */
+  chatLimiter: RateLimiter;
+  /** Les membres du groupe de conversation de cette personne, elle comprise ; [] hors groupe (MediaCoordinator.groupMembersOf). */
+  groupMembersOf: (userId: string) => string[];
+  /** Les sockets de cette personne qui ont reçu leur init : les seules à qui l'on écrit, jamais avant. */
+  socketsOf: (userId: string) => TypedSocket[];
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
 const teleportSchema = moveSchema.pick({ x: true, y: true });
 
 // Les messages d'une socket une fois connectée. Chaque charge utile passe par son schéma zod avant qu'on la lise ; ce qui ne le
-// passe pas est ignoré sans réponse, comme ce qui vient d'une socket dont le joueur n'est pas (encore) dans le monde : son arrivée
-// lit la base avant `init`, et un message envoyé entre-temps ne doit rien changer. Rien ici ne lève : l'exception d'un écouteur de
-// Socket.io n'est attrapée par personne et ferait tomber le processus.
+// passe pas est ignoré sans réponse (sauf `chat:send`, qui répond `invalid`), comme ce qui vient d'une socket dont le joueur n'est
+// pas (encore) dans le monde : son arrivée lit la base avant `init`, et un message envoyé entre-temps ne doit rien changer. Rien ici
+// ne lève : l'exception d'un écouteur de Socket.io n'est attrapée par personne et ferait tomber le processus.
 export function registerHandlers(io: TypedServer, socket: TypedSocket, d: HandlerDeps): void {
   const { userId } = socket.data;
   // Une limite par socket : elle repart de zéro avec elle. La clé est son identifiant.
@@ -65,6 +79,57 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     if (!media.success || !d.world.get(userId)) return;
     d.world.setMedia(userId, media.data);
     io.to(OFFICE_ROOM).emit('media:changed', { id: userId, media: media.data });
+  });
+
+  // Le chat, avec accusé de réception. Une socket dont le joueur n'est pas (encore, ou plus) au monde est ignorée sans réponse, comme
+  // pour les messages ci-dessus : un membre retiré n'écrit plus. Il en va de même d'une socket qui n'a pas reçu son init (le retour
+  // d'une socket lit encore la base) : elle ne reçoit pas non plus. Puis, dans cet ordre :
+  // 1. charge utile invalide (chatSendSchema : 1 à 500 caractères une fois coupés) : `invalid` ;
+  // 2. débit dépassé (CHAT_RATE) : `rate_limited`. La limite est celle du compte, pas de la socket : se reconnecter ne la remet pas à
+  //    zéro. Elle est commune aux deux canaux, et passe avant leurs règles ;
+  // 3. canal `all` : enregistré, puis envoyé à tout le bureau, émetteur compris (c'est sa confirmation) ;
+  // 4. canal `nearby` : envoyé à chaque socket de chaque membre du groupe actuel de l'émetteur, lui compris, sans rien enregistrer ;
+  //    `no_group` s'il n'est dans aucun groupe. Jamais vers le bureau entier : le groupe vient de l'émetteur, personne d'autre n'y entre.
+  // Le texte part tel que le schéma l'a rendu (coupé), sans traitement HTML : le client l'affiche comme du texte. L'auteur, le nom,
+  // l'identifiant et l'heure sont ceux du serveur, jamais ceux du message.
+  async function sendChat(payload: unknown, ack: unknown): Promise<void> {
+    // Un client peut ne pas donner de rappel, ou autre chose à sa place : personne ne reçoit alors de réponse.
+    const reply = (r: ChatAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    const sender = d.world.get(userId);
+    if (!sender || !socket.rooms.has(OFFICE_ROOM)) return;
+    const message = chatSendSchema.safeParse(payload);
+    if (!message.success) return reply({ ok: false, error: 'invalid' });
+    if (!d.chatLimiter.take(userId)) return reply({ ok: false, error: 'rate_limited' });
+    const { channel, text } = message.data;
+
+    if (channel === 'nearby') {
+      const members = d.groupMembersOf(userId);
+      if (members.length === 0) return reply({ ok: false, error: 'no_group' });
+      const nearby: ChatMessage = { id: randomUUID(), channel, userId, name: sender.name, text, sentAt: new Date().toISOString() };
+      for (const member of members) {
+        for (const target of d.socketsOf(member)) target.emit('chat:message', nearby);
+      }
+      return reply({ ok: true });
+    }
+
+    let stored: ChatMessage;
+    try {
+      stored = await d.chat.post(userId, text);
+    } catch (err) {
+      logServerError(d.logger, { err, userId }, 'Enregistrement du message impossible');
+      // L'accusé n'a pas de code pour une panne du serveur : le message n'est pas parti, c'est ce que dit `invalid`.
+      return reply({ ok: false, error: 'invalid' });
+    }
+    // Retiré (member:removed) pendant l'écriture : plus rien ne part en son nom.
+    if (!d.world.get(userId)) return;
+    io.to(OFFICE_ROOM).emit('chat:message', stored);
+    reply({ ok: true });
+  }
+
+  socket.on('chat:send', (payload, ack) => {
+    sendChat(payload, ack).catch((err: unknown) => logServerError(d.logger, { err, userId }, 'Message du chat impossible'));
   });
 
   // Réservé aux tests de bout en bout : sans E2E=1 (que loadEnv refuse en production), l'événement n'existe pas. Le joueur est posé

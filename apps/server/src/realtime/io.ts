@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import type { Server as HttpServer } from 'node:http';
 import { join } from 'node:path';
 import {
+  CHAT_RATE,
   DISCONNECT_GRACE_MS,
   GROUPS_TICK_MS,
   OFFICE_ROOM,
@@ -19,6 +20,7 @@ import {
 import type { Logger } from 'pino';
 import { Server, type Socket } from 'socket.io';
 import type { Auth } from '../auth/auth';
+import { createChatService } from '../chat/chat-service';
 import type { Db } from '../db/client';
 import type { Env } from '../env';
 import { createLogger, logServerError } from '../logger';
@@ -173,6 +175,11 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     }),
   );
 
+  // Le chat « Tout le monde » (enregistré, relu dans chaque init) et la limite de débit du chat : par compte, commune à toutes ses
+  // sockets, sur l'horloge du temps réel.
+  const chat = createChatService(d.db);
+  const chatLimiter = createRateLimiter({ ...CHAT_RATE, now });
+
   const presence = createPresence({
     io,
     world,
@@ -182,6 +189,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     busyZones: d.busyZones ?? (() => busyZoneIds(groups.state())),
     graceMs,
     logger,
+    chat,
     onWelcome: resyncMedia,
   });
 
@@ -197,13 +205,19 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     else socket.emit('media:leave');
   }
 
-  // Un événement média, à chacune des sockets de la personne qui ont reçu leur init (welcome les fait entrer dans la salle du bureau
-  // juste avant) : jamais avant init. Une socket qui attend encore son init apprend sa room juste après (resyncMedia).
-  function sendMedia(userId: string, e: MediaEvent): void {
-    for (const id of presence.socketsOf(userId)) {
+  // Les sockets de cette personne qui ont reçu leur init (welcome les fait entrer dans la salle du bureau juste avant) : les seules
+  // à qui l'on écrit, jamais avant init.
+  function enteredSockets(userId: string): TypedSocket[] {
+    return presence.socketsOf(userId).flatMap((id) => {
       const socket = io.sockets.sockets.get(id);
-      if (socket?.rooms.has(OFFICE_ROOM)) tell(socket, e);
-    }
+      return socket?.rooms.has(OFFICE_ROOM) ? [socket] : [];
+    });
+  }
+
+  // Un événement média, à chacune des sockets de la personne qui ont reçu leur init : jamais avant. Une socket qui attend encore son
+  // init apprend sa room juste après (resyncMedia).
+  function sendMedia(userId: string, e: MediaEvent): void {
+    for (const socket of enteredSockets(userId)) tell(socket, e);
   }
 
   // Après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : la room du groupe de la personne, avec un jeton
@@ -226,7 +240,16 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
 
   io.on('connection', (socket) => {
     presence.connect(socket);
-    registerHandlers(io, socket, { world, env: d.env, now });
+    registerHandlers(io, socket, {
+      world,
+      env: d.env,
+      now,
+      logger,
+      chat,
+      chatLimiter,
+      groupMembersOf: (userId) => coordinator.groupMembersOf(userId),
+      socketsOf: enteredSockets,
+    });
   });
   const offMemberRemoved = d.events.on('member:removed', (userId) => presence.removeMember(userId));
   // Un profil change (PATCH /api/me) : le monde le retient pour ceux qui arrivent ensuite, et tout le bureau l'apprend, même si la

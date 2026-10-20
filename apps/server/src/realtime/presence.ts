@@ -1,6 +1,7 @@
-import { OFFICE_ROOM, type Direction, type OfficeMap, type PublicPlayer } from '@bureau/shared';
+import { OFFICE_ROOM, type ChatMessage, type Direction, type OfficeMap, type PublicPlayer } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
+import type { ChatService } from '../chat/chat-service';
 import type { Db } from '../db/client';
 import { user } from '../db/schema';
 import { logServerError } from '../logger';
@@ -19,6 +20,8 @@ export interface PresenceDeps {
   busyZones: () => ReadonlySet<string>;
   graceMs: number;
   logger: Logger;
+  /** Le chat « Tout le monde » : ses derniers messages sont l'historique de chaque init. */
+  chat: Pick<ChatService, 'recent'>;
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -62,10 +65,21 @@ export function createPresence(d: PresenceDeps) {
     graceTimers.delete(userId);
   }
 
-  // Envoie l'état de départ à la socket, puis annonce l'arrivée aux autres si c'en est une (pas pour un onglet de plus ni pour un
-  // retour pendant le délai de grâce). La socket n'entre dans la salle du bureau qu'ici : aucune diffusion ne lui parvient avant
-  // son init. Puis onWelcome (sa room LiveKit).
-  function welcome(socket: TypedSocket, arrival: boolean): void {
+  // Les derniers messages du chat « Tout le monde », pour un init. Illisibles (la base est tombée), ils sont journalisés et l'init part
+  // avec un historique vide : arriver au bureau ne dépend pas du chat. Ne rejette jamais.
+  async function readChatHistory(userId: string): Promise<ChatMessage[]> {
+    try {
+      return await d.chat.recent();
+    } catch (err) {
+      logServerError(d.logger, { err, userId }, 'Historique du chat illisible');
+      return [];
+    }
+  }
+
+  // Envoie l'état de départ à la socket (l'historique du chat est lu avant : `chatHistory`), puis annonce l'arrivée aux autres si c'en
+  // est une (pas pour un onglet de plus ni pour un retour pendant le délai de grâce). La socket n'entre dans la salle du bureau qu'ici :
+  // aucune diffusion ne lui parvient avant son init, ni message du chat, ni événement média. Puis onWelcome (sa room LiveKit).
+  function welcome(socket: TypedSocket, arrival: boolean, chatHistory: ChatMessage[]): void {
     const { userId } = socket.data;
     const self = d.world.get(userId)!;
     void socket.join(OFFICE_ROOM);
@@ -73,7 +87,7 @@ export function createPresence(d: PresenceDeps) {
       self,
       players: d.world.list().filter((p) => p.id !== userId),
       mapKey: d.mapKey,
-      chatHistory: [],
+      chatHistory,
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
     d.onWelcome?.(socket);
@@ -85,7 +99,11 @@ export function createPresence(d: PresenceDeps) {
     const { userId, name, avatarKey } = socket.data;
     try {
       await saves;   // un départ de cette personne est peut-être en cours d'écriture
-      const [saved, disabled] = await Promise.all([loadPosition(d.db, userId), isDisabled(d.db, userId)]);
+      const [saved, disabled, chatHistory] = await Promise.all([
+        loadPosition(d.db, userId),
+        isDisabled(d.db, userId),
+        readChatHistory(userId),
+      ]);
       if (halted || !socket.connected) return;
       // Retiré entre la lecture de sa session par le middleware et maintenant : member:removed n'a pas pu fermer cette socket,
       // qu'il ne connaissait pas encore.
@@ -99,10 +117,31 @@ export function createPresence(d: PresenceDeps) {
         const dir = saved && spot.x === saved.x && spot.y === saved.y ? saved.dir : DEFAULT_DIR;
         d.world.join({ id: userId, name, avatarKey, x: spot.x, y: spot.y, dir, status: d.world.rememberedStatus(userId) });
       }
-      welcome(socket, arrival);
+      welcome(socket, arrival, chatHistory);
     } catch (err) {
       logServerError(d.logger, { err, userId }, 'Arrivée au bureau impossible');
       // Le transport seulement : le client se reconnecte de lui-même, et réessaie.
+      if (socket.connected) socket.conn.close();
+    }
+  }
+
+  // Le retour pendant le délai de grâce, ou un onglet de plus : la personne est déjà au monde, son init n'attend que l'historique du
+  // chat. Pendant cette lecture, la socket peut être remplacée par un autre onglet, coupée par un retrait, ou fermée : elle n'entre
+  // alors pas.
+  async function rejoin(socket: TypedSocket): Promise<void> {
+    const { userId } = socket.data;
+    try {
+      const chatHistory = await readChatHistory(userId);
+      if (halted || !socket.connected) return;
+      // Une socket enregistrée garde sa personne au monde (ni le délai de grâce ni member:removed ne la retirent alors) : ce cas ne
+      // devrait pas se produire. Sans personne à montrer, le client se reconnecte et arrive pour de bon, au lieu d'attendre un init.
+      if (!d.world.get(userId)) {
+        socket.conn.close();
+        return;
+      }
+      welcome(socket, false, chatHistory);
+    } catch (err) {
+      logServerError(d.logger, { err, userId }, 'Retour au bureau impossible');
       if (socket.connected) socket.conn.close();
     }
   }
@@ -125,7 +164,7 @@ export function createPresence(d: PresenceDeps) {
     cancelGrace(userId);
 
     if (d.world.get(userId)) {
-      welcome(socket, false);
+      void rejoin(socket);
       return;
     }
     void arrive(socket);

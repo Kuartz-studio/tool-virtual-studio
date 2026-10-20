@@ -232,10 +232,15 @@ export function cutNetwork(socket: ClientSocket, { reconnect = true } = {}): voi
 
 // Une base lente, pour ouvrir à coup sûr les fenêtres de course : après hold(), les requêtes choisies par `which` (toutes par
 // défaut) attendent release(). release() est aussi appelée à la fin du test, avant la fermeture du serveur (qui écrit en base).
+// `reached` se résout quand la première requête choisie est retenue : le serveur attend alors vraiment la base.
 export function slowDatabase(srv: TestServer, which: (sql: string) => boolean = () => true) {
   let release!: () => void;
   const held = new Promise<void>((resolve) => {
     release = resolve;
+  });
+  let reach!: () => void;
+  const reached = new Promise<void>((resolve) => {
+    reach = resolve;
   });
   onTestFinished(() => release());
   const client = (srv.db as unknown as { $client: { query(sql: string, ...rest: unknown[]): Promise<unknown> } }).$client;
@@ -243,10 +248,14 @@ export function slowDatabase(srv: TestServer, which: (sql: string) => boolean = 
   return {
     hold(): void {
       vi.spyOn(client, 'query').mockImplementation(async (sql: string, ...rest: unknown[]) => {
-        if (which(sql)) await held;
+        if (which(sql)) {
+          reach();
+          await held;
+        }
         return query(sql, ...rest);
       });
     },
     release,
+    reached,
   };
 }
