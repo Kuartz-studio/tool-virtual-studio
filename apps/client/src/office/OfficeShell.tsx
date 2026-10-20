@@ -84,8 +84,8 @@ export function OfficeShell({
     chatToggle.current?.focus();
   }
 
-  // Le panneau Admin ne parle qu'à l'API (pas au bureau en temps réel) : son bouton n'attend pas l'`init`. Un membre n'a ni le bouton ni
-  // le panneau, et rien ne part vers /api/admin.
+  // Le panneau Admin envoie tout à l'API (rien au bureau en temps réel) ; du bureau, il ne lit que qui est là, pour relire ses listes quand
+  // quelqu'un d'inconnu arrive : son bouton n'attend pas l'`init`. Un membre n'a ni le bouton ni le panneau, et rien ne part vers /api/admin.
   const isAdmin = user.role === 'admin';
   const [adminOpen, setAdminOpen] = useState(false);
   const adminToggle = useRef<HTMLButtonElement>(null);

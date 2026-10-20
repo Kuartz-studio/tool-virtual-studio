@@ -647,7 +647,7 @@ describe('le panneau Admin', () => {
     expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
   });
 
-  test('il ne dépend pas du bureau (il ne parle qu\'à l\'API) : le bouton est actif avant l\'init', () => {
+  test('il n\'attend pas l\'init (il ne parle qu\'à l\'API, et ne lit du bureau que qui est là) : le bouton est actif avant elle', () => {
     renderShell({ role: 'admin', init: false });
     expect(adminToggle().disabled).toBe(false);
   });

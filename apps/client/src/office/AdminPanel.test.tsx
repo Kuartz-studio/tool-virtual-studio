@@ -108,6 +108,20 @@ async function openPanel(options?: Options) {
   return view;
 }
 
+// Le panneau, avec un bouton à côté, hors de lui (la page, le Chat…) : là où le focus peut passer pendant qu'une réponse se fait attendre.
+async function openPanelBeside(options: Options = {}) {
+  const { selfId = ADA.id, onClose = () => {} } = options;
+  render(
+    <>
+      <button type="button">Dehors</button>
+      <AdminPanel id="panneau-admin" selfId={selfId} onClose={onClose} />
+    </>,
+  );
+  await screen.findByRole('region', { name: /^Membres \(\d+\)$/ });
+  await screen.findByRole('region', { name: /^Invitations en attente \(\d+\)$/ });
+  return screen.getByRole('button', { name: 'Dehors' });
+}
+
 const panel = () => screen.getByRole('complementary', { name: fr.admin.title });
 const inviteSection = () => within(panel()).getByRole('region', { name: fr.admin.invite.title });
 const pendingSection = () => within(panel()).getByRole('region', { name: /^Invitations en attente/ });
@@ -232,6 +246,28 @@ describe('le panneau', () => {
     expect(within(pendingSection()).queryByRole('alert')).toBeNull();
   });
 
+  // « Réessayer » disparaît au clic (« Chargement… » le remplace) : le focus irait au haut de la page.
+  test.each([
+    ['les membres', 'GET /api/admin/members', membersSection, 'Membres (3)'],
+    ['les invitations', 'GET /api/admin/invitations', pendingSection, 'Invitations en attente (0)'],
+  ] as const)('« Réessayer » (%s) : le focus passe au titre de la section, qui reste là quand la liste arrive', async (_list, route, section, title) => {
+    const user = userEvent.setup();
+    let fail = true;
+    fakeApi({
+      'GET /api/admin/members': () => (route.includes('members') && fail ? json(500, { error: 'internal' }) : json(200, MEMBERS)),
+      'GET /api/admin/invitations': () => (route.includes('invitations') && fail ? json(500, { error: 'internal' }) : json(200, [])),
+    });
+    renderPanel();
+    const retry = await within(section()).findByRole('button', { name: fr.common.retry });
+    retry.focus();
+
+    fail = false;
+    await user.click(retry);
+    expect(document.activeElement).toBe(within(section()).getByRole('heading', { level: 3 }));
+    await screen.findByRole('heading', { level: 3, name: title });
+    expect(document.activeElement).toBe(within(section()).getByRole('heading', { level: 3 }));
+  });
+
   test('deux demandes en vol (StrictMode ouvre deux fois) : la réponse la plus récente gagne, même arrivée la première', async () => {
     const first = deferred<Response>();
     const second = deferred<Response>();
@@ -346,6 +382,99 @@ describe('inviter', () => {
     await act(async () => reply.resolve(json(201, invitation('inv-nina', 'nina@x.fr'))));
     expect(await within(inviteSection()).findByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }))).toBeTruthy();
     expect(emailField().value).toBe('bob@x.fr');
+  });
+
+  // Le POST est lent (l'e-mail part par Resend) : l'admin est passé à autre chose avant la réponse, qui ne lui reprend pas le focus.
+  describe('la réponse arrive après que le focus est passé ailleurs', () => {
+    const slowPost = () => {
+      const reply = deferred<Response>();
+      const answer = () => act(async () => reply.resolve(json(201, invitation('inv-nina', 'nina@x.fr'))));
+      const routes = (state: World) => ({
+        'POST /api/admin/invitations': async () => {
+          const response = await reply.promise;
+          state.invitations = [invitation('inv-nina', 'nina@x.fr'), ...state.invitations];
+          return response;
+        },
+      });
+      return { routes, answer };
+    };
+
+    test('la boîte de retrait ouverte entre-temps garde le focus : Tab et Échap y restent, et Échap ne ferme pas le panneau', async () => {
+      const user = userEvent.setup();
+      const onClose = vi.fn();
+      const { routes, answer } = slowPost();
+      serve({}, routes);
+      await openPanel({ onClose });
+      await user.type(emailField(), 'nina@x.fr');
+      await user.click(submitButton());
+      await user.click(removeButton('Bob'));
+      expect(document.activeElement).toBe(dialogButton(fr.admin.removal.cancel));
+
+      await answer();
+      await within(pendingSection()).findByText('nina@x.fr');
+      expect(document.activeElement).toBe(dialogButton(fr.admin.removal.cancel));
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    test('un élément hors du panneau garde le focus', async () => {
+      const user = userEvent.setup();
+      const { routes, answer } = slowPost();
+      serve({}, routes);
+      const outside = await openPanelBeside();
+      await user.type(emailField(), 'nina@x.fr');
+      await user.click(submitButton());
+      outside.focus();
+
+      await answer();
+      await within(pendingSection()).findByText('nina@x.fr');
+      expect(document.activeElement).toBe(outside);
+    });
+
+    test('un refus qui arrive tard ne reprend pas le focus non plus', async () => {
+      const user = userEvent.setup();
+      const reply = deferred<Response>();
+      serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
+      const outside = await openPanelBeside();
+      await user.type(emailField(), 'nina@x.fr');
+      await user.click(submitButton());
+      outside.focus();
+
+      await act(async () => reply.resolve(json(409, { error: 'already_invited' })));
+      await within(inviteSection()).findByRole('alert');
+      expect(document.activeElement).toBe(outside);
+    });
+
+    test('le focus est resté sur le bouton qui a envoyé : il revient au champ', async () => {
+      const user = userEvent.setup();
+      const { routes, answer } = slowPost();
+      serve({}, routes);
+      await openPanel();
+      await user.type(emailField(), 'nina@x.fr');
+      await user.click(submitButton());
+      expect(document.activeElement).toBe(submitButton());
+
+      await answer();
+      await within(pendingSection()).findByText('nina@x.fr');
+      expect(document.activeElement).toBe(emailField());
+    });
+
+    // Un bouton devenu inactif perd le focus (le navigateur le met sur la page) : le champ le reprend.
+    test('le focus n\'est nulle part (sur la page) : le champ le reprend', async () => {
+      const user = userEvent.setup();
+      const { routes, answer } = slowPost();
+      serve({}, routes);
+      await openPanel();
+      await user.type(emailField(), 'nina@x.fr');
+      emailField().blur();
+      fireEvent.submit(emailField().form!);
+      expect(document.activeElement).toBe(document.body);
+
+      await answer();
+      await within(pendingSection()).findByText('nina@x.fr');
+      expect(document.activeElement).toBe(emailField());
+    });
   });
 
   test('« Envoyer l\'invitation » est inactif tant que l\'adresse est vide (espaces compris)', async () => {
@@ -563,6 +692,25 @@ describe('invitations en attente', () => {
     await act(async () => reply.resolve(json(200, { ok: true })));
     await waitFor(() => expect(resendButton('nina@x.fr').hasAttribute('aria-disabled')).toBe(false));
     expect(document.activeElement).toBe(resendButton('nina@x.fr'));
+  });
+
+  test('annuler : la réponse qui arrive après que le focus est passé ailleurs ne le reprend pas (la ligne disparaît quand même)', async () => {
+    const user = userEvent.setup();
+    const reply = deferred<Response>();
+    serve({ invitations: PENDING }, (state) => ({
+      'DELETE /api/admin/invitations/inv-nina': async () => {
+        const response = await reply.promise;
+        state.invitations = state.invitations.filter((pending) => pending.id !== 'inv-nina');
+        return response;
+      },
+    }));
+    const outside = await openPanelBeside();
+    await user.click(revokeButton('nina@x.fr'));
+    outside.focus();
+
+    await act(async () => reply.resolve(json(200, { ok: true })));
+    await waitFor(() => expect(within(pendingSection()).queryByText('nina@x.fr')).toBeNull());
+    expect(document.activeElement).toBe(outside);
   });
 
   test('renvoyer : l\'e-mail n\'est pas parti (502) → le message le dit, l\'invitation est gardée', async () => {
@@ -861,6 +1009,27 @@ describe('retirer un membre', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(document.activeElement).toBe(removeButton('Ada'));
     expect(within(membersSection()).getAllByRole('listitem')).toHaveLength(3);
+  });
+
+  test('la réponse qui arrive après que le focus est passé ailleurs ne le reprend pas ; la boîte se ferme et la liste est relue', async () => {
+    const user = userEvent.setup();
+    const reply = deferred<Response>();
+    serve({}, (state) => ({
+      'DELETE /api/admin/members/bob': async () => {
+        const response = await reply.promise;
+        state.members = state.members.filter((member) => member.id !== 'bob');
+        return response;
+      },
+    }));
+    const outside = await openPanelBeside();
+    await user.click(removeButton('Bob'));
+    await user.click(dialogButton(fr.admin.removal.confirm));
+    outside.focus();
+
+    await act(async () => reply.resolve(json(200, { ok: true })));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    await waitFor(() => expect(within(membersSection()).queryByText('Bob')).toBeNull());
+    expect(document.activeElement).toBe(outside);
   });
 
   test('le membre a déjà été retiré (404) : le message le dit, et la liste est relue', async () => {

@@ -179,6 +179,15 @@ export function AdminPanel({ id, selfId, onClose }: { id?: string; selfId: strin
   );
 }
 
+// Rend le focus à `target` après une réponse du serveur, mais seulement s'il n'est pas passé ailleurs pendant l'attente : nulle part (un
+// bouton rendu inactif le perd), ou dans la section du geste (le bouton qui l'a lancé, la boîte de retrait). Sinon la réponse le
+// volerait à qui est passé à autre chose : la boîte de retrait ouverte entre-temps (derrière elle, Tab et Échap ne l'atteindraient plus,
+// et Échap fermerait le panneau), un champ du Chat. Le retour du focus au bouton quand on ferme la boîte, lui, est immédiat : sans ce test.
+function focusUnlessMoved(target: HTMLElement | null | undefined, section: HTMLElement | null): void {
+  const active = document.activeElement;
+  if (active === null || active === document.body || section?.contains(active)) target?.focus();
+}
+
 // ---- Inviter -----------------------------------------------------------------------------------------------------------------------
 
 // L'adresse et le rôle. Le champ ne se vide qu'à l'invitation envoyée : refusée, l'adresse reste, on la corrige. Le rôle revient alors
@@ -187,6 +196,7 @@ function InviteSection({ reloadInvitations }: { reloadInvitations(): Promise<voi
   const titleId = useId();
   const emailId = useId();
   const roleId = useId();
+  const section = useRef<HTMLElement>(null);
   const emailInput = useRef<HTMLInputElement>(null);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<Role>('member');
@@ -214,12 +224,12 @@ function InviteSection({ reloadInvitations }: { reloadInvitations(): Promise<voi
     }
     setSubmitting(false);
     // Le bouton a perdu le focus en devenant inactif : le champ le reprend, pour enchaîner ou corriger l'adresse.
-    emailInput.current?.focus();
+    focusUnlessMoved(emailInput.current, section.current);
     void reloadInvitations();
   }
 
   return (
-    <section className="admin-section" aria-labelledby={titleId}>
+    <section ref={section} className="admin-section" aria-labelledby={titleId}>
       <h3 id={titleId}>{fr.admin.invite.title}</h3>
       <form className="admin-invite" onSubmit={submit} noValidate>
         <div className="field">
@@ -267,6 +277,7 @@ function InviteSection({ reloadInvitations }: { reloadInvitations(): Promise<voi
 // `disabled` perd le focus, et la personne au clavier se retrouverait en haut de la page.
 function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingInvitation>; reloadMembers(): Promise<void> }) {
   const titleId = useId();
+  const section = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
@@ -290,7 +301,7 @@ function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingIn
       gone = notFound;
     }
     setBusy(false);
-    if (gone) heading.current?.focus();
+    if (gone) focusUnlessMoved(heading.current, section.current);
     void list.reload();
     // Une invitation qui n'est plus en attente a peut-être été acceptée : le compte est un nouveau membre.
     if (notFound) void reloadMembers();
@@ -298,13 +309,13 @@ function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingIn
 
   const invitations = list.items;
   return (
-    <section className="admin-section" aria-labelledby={titleId}>
+    <section ref={section} className="admin-section" aria-labelledby={titleId}>
       <h3 id={titleId} ref={heading} tabIndex={-1}>
         {invitations ? t(fr.admin.pending.titleCount, { count: invitations.length }) : fr.admin.pending.title}
       </h3>
       <FeedbackMessage feedback={feedback} />
       {invitations === null && !list.failed && <p className="admin-note">{fr.common.loading}</p>}
-      {list.failed && <LoadFailed message={fr.admin.pending.loadFailed} onRetry={() => void list.reload()} />}
+      {list.failed && <LoadFailed message={fr.admin.pending.loadFailed} onRetry={() => retry(list, heading.current)} />}
       {invitations?.length === 0 && <p className="admin-note">{fr.admin.pending.empty}</p>}
       {invitations && invitations.length > 0 && (
         <ul className="admin-list">
@@ -356,6 +367,7 @@ function InvitationsSection({ list, reloadMembers }: { list: AdminList<PendingIn
 
 function MembersSection({ list, selfId }: { list: AdminList<AdminMember>; selfId: string }) {
   const titleId = useId();
+  const section = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
   // Le retrait qu'on demande à confirmer, et le bouton qui l'a demandé (le focus lui revient si on renonce).
   const [removal, setRemoval] = useState<{ member: AdminMember; opener: HTMLElement } | null>(null);
@@ -391,19 +403,19 @@ function MembersSection({ list, selfId }: { list: AdminList<AdminMember>; selfId
     }
     setRemoving(false);
     setRemoval(null);
-    (gone ? heading.current : opener)?.focus();
+    focusUnlessMoved(gone ? heading.current : opener, section.current);
     void list.reload();
   }
 
   const members = list.items;
   return (
-    <section className="admin-section" aria-labelledby={titleId}>
+    <section ref={section} className="admin-section" aria-labelledby={titleId}>
       <h3 id={titleId} ref={heading} tabIndex={-1}>
         {members ? t(fr.admin.members.titleCount, { count: members.length }) : fr.admin.members.title}
       </h3>
       <FeedbackMessage feedback={feedback} />
       {members === null && !list.failed && <p className="admin-note">{fr.common.loading}</p>}
-      {list.failed && <LoadFailed message={fr.admin.members.loadFailed} onRetry={() => void list.reload()} />}
+      {list.failed && <LoadFailed message={fr.admin.members.loadFailed} onRetry={() => retry(list, heading.current)} />}
       {members && members.length > 0 && (
         <ul className="admin-list">
           {members.map((member) => (
@@ -436,6 +448,12 @@ function MembersSection({ list, selfId }: { list: AdminList<AdminMember>; selfId
       {removal && <RemovalDialog member={removal.member} busy={removing} onConfirm={() => void confirm()} onCancel={cancel} />}
     </section>
   );
+}
+
+// « Réessayer » : « Chargement… » prend sa place, et le focus tomberait en haut de la page. Il passe au titre de la section, tout de suite.
+function retry(list: AdminList<unknown>, heading: HTMLElement | null): void {
+  heading?.focus();
+  void list.reload();
 }
 
 function LoadFailed({ message, onRetry }: { message: string; onRetry(): void }) {
