@@ -104,13 +104,6 @@ export async function waitForOffice(page: Page): Promise<void> {
   );
 }
 
-// Garde cette touche enfoncée jusqu'à ce que `reached` soit vrai, puis la relâche.
-export async function holdUntil(page: Page, key: string, reached: (feet: { x: number; y: number }) => boolean): Promise<void> {
-  await page.keyboard.down(key);
-  await expect.poll(async () => reached(await selfAt(page)), { intervals: [15], timeout: WALK_TIMEOUT }).toBe(true);
-  await page.keyboard.up(key);
-}
-
 // Garde cette touche enfoncée jusqu'à ce que l'avatar ne bouge plus (un mur l'arrête), puis la relâche. Renvoie où il s'est arrêté.
 export async function holdUntilStopped(page: Page, key: string): Promise<{ x: number; y: number }> {
   await page.keyboard.down(key);

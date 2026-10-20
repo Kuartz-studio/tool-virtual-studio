@@ -1,7 +1,6 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import {
   expectInOffice,
-  holdUntil,
   holdUntilStopped,
   inviteAndJoin,
   joinOffice,
@@ -231,7 +230,7 @@ test('planche d\'avatar introuvable : le même message à la place de la carte',
 
 // ---- L'avatar local -------------------------------------------------------------------------------------------------------
 //
-// La carte de développement et les aides (joinOffice, selfAt, holdUntil…) : helpers.ts.
+// La carte de développement et les aides (joinOffice, selfAt, holdUntilStopped…) : helpers.ts.
 //
 // Tous les tests partagent le serveur, et ceux des autres fichiers tournent en même temps : leurs avatars apparaissent au même point
 // d'apparition et se promènent dans la même carte. Les tests de ce fichier regardent l'avatar local, souvent à l'écran : ils cachent
@@ -534,15 +533,17 @@ test('les pixels restent nets pour un avatar arrêté à x entier, dans une fen�
   await joinOfficeAlone(page, 'Ida');
 
   // Un x entier, au milieu de la zone que la caméra suit (x de 320 à 448) : l'avatar contre la face est du bureau du milieu (les
-  // colonnes 11 et 12, x de 352 à 416, y de 288 à 320). Le corps (de x − 10 à x + 10) s'arrête en x = 416 + 10 = 426. Pour y
-  // arriver : à droite du bureau (x ≥ 440), en face de lui (y ≥ 295 : le bas du corps, à y + 1, est sous le haut du bureau), puis
-  // vers la gauche.
-  await holdUntil(page, 'ArrowRight', ({ x }) => x >= 440);
-  await holdUntil(page, 'ArrowDown', ({ y }) => y >= 295);
+  // colonnes 11 et 12, x de 352 à 416, y de 288 à 320). Le corps (de x − 10 à x + 10, de y − 11 à y + 1) s'y arrête en
+  // x = 416 + 10 = 426, s'il est en face du bureau : y de 288 à 330. L'avatar est posé à droite du bureau, au milieu de cette bande
+  // (window.__office.teleport), puis marche vers la gauche jusqu'au bureau.
+  //
+  // Posé, et non amené au clavier : il fallait relâcher ArrowDown dans cette bande de 43 px (moins de 270 ms de marche), et sur une
+  // machine chargée, la position lue trop rarement et la touche relâchée trop tard laissaient l'avatar descendre jusqu'à y = 346 : il
+  // passait sous le bureau, jusqu'au mur (x = 42).
+  await page.evaluate(() => window.__office!.teleport(450, 309));
+  await expect.poll(() => selfAt(page), { timeout: WALK_TIMEOUT }).toMatchObject({ x: 450, y: 309 });
   const stopped = await holdUntilStopped(page, 'ArrowLeft');
-  expect(stopped.x).toBe(426);
-  expect(stopped.y).toBeGreaterThan(287);
-  expect(stopped.y).toBeLessThan(331);
+  expect(stopped).toEqual({ x: 426, y: 309 });
   await restingAt(page);
 
   const png = await page.screenshot({ style: HIDE_OVERLAY });
