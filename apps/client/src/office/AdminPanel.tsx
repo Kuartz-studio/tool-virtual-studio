@@ -238,11 +238,25 @@ const DAY_MS = 24 * 3600 * 1000;
 // La durée de validité d'une invitation, en jours, telle que le serveur la fixe (INVITATION_TTL_MS).
 const INVITATION_DAYS = Math.round(INVITATION_TTL_MS / DAY_MS);
 
-// L'emplacement de la boîte sous une section : une région vivante (aria-live) qui existe avant la boîte, vide, pour qu'un lecteur
-// d'écran annonce la boîte quand elle paraît. (Ce n'est pas une région role="status" : chaque section en a déjà une, pour ses messages.)
+// L'emplacement de la boîte sous une section. Une région vivante (aria-live), qui existe avant la boîte et vide, ne porte que la phrase
+// de la boîte : un lecteur d'écran l'annonce quand elle paraît. Le lien (son jeton ouvre un compte), les boutons et la durée de validité
+// n'y sont pas : le focus, qui va à « Copier le lien », les présente à qui le suit. (Ce n'est pas une région role="status" : chaque
+// section en a déjà une, pour ses messages.) Le conteneur est un groupe nommé par la phrase tant que la boîte est là.
 function LinkSlot({ links, place, section }: { links: Links; place: ShownLink['place']; section: RefObject<HTMLElement | null> }) {
+  const introId = useId();
   const shown = links.shown?.place === place ? links.shown : null;
-  return <div aria-live="polite">{shown && <LinkBox key={shown.key} shown={shown} section={section} onDismiss={() => dismiss(links)} />}</div>;
+  return (
+    <div className="admin-link" data-open={shown ? 'true' : undefined} role={shown ? 'group' : undefined} aria-labelledby={shown ? introId : undefined}>
+      <div aria-live="polite">
+        {shown && (
+          <p id={introId} className="admin-link-intro">
+            {shown.intro}
+          </p>
+        )}
+      </div>
+      {shown && <LinkBox key={shown.key} shown={shown} introId={introId} section={section} onDismiss={() => dismiss(links)} />}
+    </div>
+  );
 }
 
 // Masquer la boîte rend le focus au bouton du geste, avant qu'elle ne disparaisse avec celui qu'elle avait.
@@ -252,10 +266,10 @@ function dismiss(links: Links): void {
   target?.focus();
 }
 
-// La phrase, le lien dans un champ en lecture seule, « Copier le lien » et « Masquer », puis la durée de validité. À son apparition,
-// le focus va à « Copier le lien », sauf s'il était passé ailleurs pendant l'attente (focusUnlessMoved).
-function LinkBox({ shown, section, onDismiss }: { shown: ShownLink; section: RefObject<HTMLElement | null>; onDismiss(): void }) {
-  const introId = useId();
+// Le lien dans un champ en lecture seule (nommé par la phrase, qui est dans LinkSlot), « Copier le lien » et « Masquer », puis la durée
+// de validité. À son apparition, le focus va à « Copier le lien », sauf s'il était passé ailleurs pendant l'attente (focusUnlessMoved).
+// « Copié » s'écrit dans une région vivante déjà là, vide : la seule autre chose qu'un lecteur d'écran annonce.
+function LinkBox({ shown, introId, section, onDismiss }: { shown: ShownLink; introId: string; section: RefObject<HTMLElement | null>; onDismiss(): void }) {
   const hintId = useId();
   const field = useRef<HTMLInputElement>(null);
   const copyButton = useRef<HTMLButtonElement>(null);
@@ -286,10 +300,7 @@ function LinkBox({ shown, section, onDismiss }: { shown: ShownLink; section: Ref
   }
 
   return (
-    <div className="admin-link" role="group" aria-labelledby={introId}>
-      <p id={introId} className="admin-link-intro">
-        {shown.intro}
-      </p>
+    <>
       <input
         ref={field}
         className="admin-link-field"
@@ -310,11 +321,13 @@ function LinkBox({ shown, section, onDismiss }: { shown: ShownLink; section: Ref
           {fr.admin.link.dismiss}
         </button>
       </div>
-      {copied && <p className="admin-link-copied">{copied === 'copied' ? fr.admin.link.copied : fr.admin.link.selected}</p>}
+      <p className="admin-link-copied" aria-live="polite">
+        {copied === 'copied' ? fr.admin.link.copied : copied === 'selected' ? fr.admin.link.selected : ''}
+      </p>
       <p id={hintId} className="admin-link-hint">
         {shown.validity}
       </p>
-    </div>
+    </>
   );
 }
 

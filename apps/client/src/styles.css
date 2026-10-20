@@ -1085,8 +1085,9 @@ a {
 }
 
 /* Un lien à transmettre (sans e-mail) : la phrase qui le présente, le lien dans un champ à copier, « Copier le lien » et « Masquer »,
-   puis sa durée de validité. La région vivante qui l'entoure est vide, et sans marge, tant qu'il n'y en a pas. */
-.admin-link {
+   puis sa durée de validité. Le conteneur existe toujours, vide (sa région vivante y attend la phrase) : sans boîte, il n'a ni cadre ni
+   marge. */
+.admin-link[data-open] {
   margin: 0 0 12px;
   padding: 12px;
   background: var(--background);
@@ -1134,6 +1135,11 @@ a {
   margin: 8px 0 0;
   font-size: 0.85rem;
   color: var(--success-text);
+}
+
+/* « Copié » n'a pas encore de texte : sa région vivante est là, sans prendre de place. */
+.admin-link-copied:empty {
+  margin: 0;
 }
 
 .admin-link-hint {

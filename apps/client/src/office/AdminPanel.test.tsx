@@ -1199,20 +1199,42 @@ describe('inviter sans e-mail', () => {
     expect(routesOf(api).slice(-2)).toEqual(['POST /api/admin/invitations', 'GET /api/admin/invitations']);
   });
 
-  test('la boîte est dans une région vivante qui existait déjà, vide, et le focus va sur « Copier le lien »', async () => {
+  // Un lecteur d'écran lit ce qui s'ajoute à une région vivante : seule la phrase de la boîte y paraît. Le lien (et son jeton), les
+  // boutons et la durée de validité n'y sont pas : le focus, qui va sur « Copier le lien », les présente à qui le suit.
+  test('la phrase de la boîte paraît dans une région vivante qui existait déjà, vide ; le lien et les boutons n\'y sont pas ; le focus va sur « Copier le lien »', async () => {
     const user = userEvent.setup();
     serve({}, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
-    const live = inviteSection().querySelector('[aria-live="polite"]')!;
+    const live = inviteSection().querySelector('.admin-link > [aria-live="polite"]')!;
     expect(live.textContent).toBe('');
 
     await invite(user, 'nina@x.fr');
     const box = await boxIn(inviteSection(), created);
-    expect(inviteSection().querySelector('[aria-live="polite"]')).toBe(live);
-    expect(live.contains(box)).toBe(true);
+    expect(inviteSection().querySelector('.admin-link > [aria-live="polite"]')).toBe(live);   // la même région, qui existait avant la boîte
+    expect(live.textContent).toBe(created);
+    expect(live.contains(fieldOf(box))).toBe(false);
+    expect(live.contains(copyOf(box))).toBe(false);
+    expect(live.contains(dismissOf(box))).toBe(false);
+    expect(live.textContent).not.toContain(LINK);
+    expect(live.textContent).not.toContain('jeton-nina');
+    expect(live.textContent).not.toContain(t(fr.admin.invite.validity, { days: DAYS }));
+    // Aucune région vivante de la section ne porte un champ ou un bouton, ni le lien.
+    for (const region of inviteSection().querySelectorAll('[aria-live]')) {
+      expect(region.querySelector('input, button')).toBeNull();
+      expect(region.textContent).not.toContain('jeton-nina');
+    }
     // Le message d'avant garde sa région role="status" à lui, vide : la boîte n'en prend pas la place.
     expect(within(inviteSection()).getByRole('status').textContent).toBe('');
     expect(document.activeElement).toBe(copyOf(box));
+  });
+
+  test('sans boîte, la région vivante de la section est vide et le conteneur n\'est pas un groupe', async () => {
+    serve();
+    await openPanel({ mail: 'none' });
+    for (const section of [inviteSection(), pendingSection(), membersSection()]) {
+      expect(section.querySelector('.admin-link > [aria-live="polite"]')?.textContent).toBe('');
+      expect(within(section).queryByRole('group')).toBeNull();
+    }
   });
 
   test('« Copier le lien » met le lien dans le presse-papiers et dit « Copié »', async () => {
@@ -1224,12 +1246,16 @@ describe('inviter sans e-mail', () => {
     const box = await boxIn(inviteSection(), created);
     stubClipboard(writeText);
     expect(within(box).queryByText(fr.admin.link.copied)).toBeNull();
+    // « Copié » s'écrit dans une région vivante déjà là, vide : un lecteur d'écran l'annonce.
+    const feedback = box.querySelector('.admin-link-copied')!;
+    expect(feedback.getAttribute('aria-live')).toBe('polite');
+    expect(feedback.textContent).toBe('');
 
     await user.click(copyOf(box));
 
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText).toHaveBeenCalledWith(LINK);
-    expect(await within(box).findByText(fr.admin.link.copied)).toBeTruthy();
+    expect(await within(box).findByText(fr.admin.link.copied)).toBe(feedback);
     expect(within(box).queryByText(fr.admin.link.selected)).toBeNull();
     // Le focus reste sur le bouton.
     expect(document.activeElement).toBe(copyOf(box));
