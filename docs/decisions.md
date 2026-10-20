@@ -125,11 +125,6 @@ Pendant l'exécution du plan, certaines questions n'avaient pas de réponse dans
 
 Ce sont des points connus, notés pour plus tard. Aucun ne bloque un premier usage par l'équipe.
 
-**À faire bientôt (petits correctifs) :**
-- **Délai PostgreSQL dans une transaction.** Si une requête bloque plus de 20 s à l'intérieur d'une transaction, la connexion peut revenir au pool avec la transaction encore ouverte. Les écritures suivantes sur cette connexion ne seraient alors pas validées. Correctif : `statement_timeout: 10_000`, et `query_timeout` monté à environ 15 s, dans `apps/server/src/db/client.ts`.
-- **Journaux de Better Auth.** Dans deux cas rares, le texte d'une erreur de base passe par le message du journal sans masquage des valeurs (`apps/server/src/auth/auth-logger.ts`).
-- **Ne pas déranger après un rechargement.** Après un rechargement de page, le statut affiché vient du serveur, mais l'onglet ne le considère pas comme « choisi ». Il serait donc perdu au redémarrage suivant du serveur. Correctif : adopter comme choix un statut autre que « Disponible » reçu dans `init`.
-
 **Robustesse, sans effet en pratique :**
 - `OfficePage` : un clic sur « Entrer » avant la fin du montage ne connecterait pas. C'est impossible en pratique.
 
