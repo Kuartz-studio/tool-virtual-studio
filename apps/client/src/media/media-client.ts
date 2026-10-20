@@ -25,12 +25,15 @@ export interface MediaParticipant {
 // - local : micro et caméra voulus (hors room aussi : ils s'allument en entrant), et le partage d'écran en cours. C'est ce que le
 //   serveur apprend (media:state) et montre aux autres ;
 // - error : permission_denied quand le navigateur a refusé le micro ou la caméra, ou qu'ils sont absents ou inutilisables (on reste
-//   dans la room, en réception seule) ; connection_failed quand la room n'a pas pu être rejointe, ou que la connexion est perdue.
+//   dans la room, en réception seule) ; connection_failed quand la room n'a pas pu être rejointe, ou que la connexion est perdue ;
+// - audioBlocked : dans une room, le navigateur bloque la lecture du son des autres faute d'un geste de la personne (Safari, quand on
+//   n'a pas de micro). startAudio(), appelé dans un clic (« Activer le son »), la lance.
 export interface MediaSnapshot {
   room: string | null;
   participants: MediaParticipant[];
   local: MediaState;
   error: 'permission_denied' | 'connection_failed' | null;
+  audioBlocked: boolean;
 }
 
 // Les préférences, enregistrées dans le navigateur (prefs.ts) : les périphériques choisis (absents : ceux du système), et le micro et
@@ -65,6 +68,10 @@ export interface MediaClient {
   setScreenShare(on: boolean): Promise<void>;
   // Les périphériques (pris tout de suite dans une room) et le micro et la caméra voulus.
   setPrefs(p: MediaPrefs): Promise<void>;
+  // Lance la lecture du son des autres. Les navigateurs ne la permettent qu'après un geste de la personne : à appeler dans un clic
+  // (« Entrer », « Activer le son »). Elle part tout de suite, hors de la file des opérations, pour rester dans ce geste. Hors room :
+  // rien. Refusée, audioBlocked le dit.
+  startAudio(): Promise<void>;
   // Montre dans cet élément la caméra ou le partage d'écran de cette personne, et le suit (piste qui arrive, change ou part, room qui
   // change) jusqu'à l'appel de la fonction rendue.
   attach(el: HTMLVideoElement, participantId: string, source: VideoSource): () => void;
@@ -95,6 +102,8 @@ export interface TransportEvents {
   disconnected(reason: 'removed' | 'lost'): void;
   // Le partage d'écran s'est arrêté sans nous (le bouton « Arrêter le partage » du navigateur).
   screenShareEnded(): void;
+  // Le navigateur permet (true) ou bloque (false) la lecture du son des autres, dans cette room.
+  audioPlayback(allowed: boolean): void;
 }
 
 // La room elle-même, sans logique : le client média (MediaSession) décide quand se connecter, quoi allumer, et que faire d'un échec.
@@ -109,6 +118,9 @@ export interface MediaTransport {
   setSource(source: LocalSource, on: boolean): Promise<void>;
   // Passe à ces périphériques (ceux qui sont choisis), dans la room.
   useDevices(devices: MediaDevices): Promise<void>;
+  // Lance la lecture du son des autres dans la room (dans le geste de la personne) ; rejette si le navigateur la refuse. Hors room :
+  // rien.
+  startAudio(): Promise<void>;
   // Les participants de la room, soi-même d'abord ; [] hors connexion.
   participants(): MediaParticipant[];
   attach(el: HTMLVideoElement, participantId: string, source: VideoSource): () => void;

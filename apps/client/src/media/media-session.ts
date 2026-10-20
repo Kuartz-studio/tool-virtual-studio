@@ -69,6 +69,10 @@ export class MediaSession implements MediaClient {
       this.setLocal('screen', false);
       this.refreshParticipants();
     },
+    // Le transport ne parle que de la room en cours (connectée, ou qui se connecte).
+    audioPlayback: (allowed) => {
+      if (this.snapshot.room !== null) this.update({ audioBlocked: !allowed });
+    },
   };
 
   constructor(
@@ -76,7 +80,13 @@ export class MediaSession implements MediaClient {
     prefs: MediaPrefs,
   ) {
     this.chosenDevices = devicesOf(prefs);
-    this.snapshot = { room: null, participants: [], local: { mic: prefs.mic, cam: prefs.cam, screen: false }, error: null };
+    this.snapshot = {
+      room: null,
+      participants: [],
+      local: { mic: prefs.mic, cam: prefs.cam, screen: false },
+      error: null,
+      audioBlocked: false,
+    };
   }
 
   getSnapshot(): MediaSnapshot {
@@ -138,6 +148,14 @@ export class MediaSession implements MediaClient {
     return this.transport.attach(el, participantId, source);
   }
 
+  // Hors de la file, et tout de suite : le navigateur ne laisse lancer le son que pendant le geste de la personne, qui ne doit pas
+  // attendre une opération en cours (un micro dont l'accès est encore demandé).
+  startAudio(): Promise<void> {
+    return this.transport.startAudio().catch(() => {
+      // Refusé (hors d'un geste) : le son reste bloqué, et audioBlocked le dit déjà.
+    });
+  }
+
   // Résolue quand les opérations demandées jusqu'ici sont finies, et celles demandées entre-temps (pour les tests, qui n'ont pas la
   // promesse d'une opération lancée par une consigne du serveur).
   idle(): Promise<void> {
@@ -159,6 +177,9 @@ export class MediaSession implements MediaClient {
 
     const session = ++this.session;
     this.update({ room: p.room, participants: [], error: this.snapshot.error === 'connection_failed' ? null : this.snapshot.error });
+    // Un abonné, prévenu juste au-dessus, a pu quitter cette room ou en demander une autre dans l'appel même : son départ a déjà eu
+    // lieu (dropUnwantedRoom, quand rien n'était encore connecté), et une connexion lancée maintenant ne serait plus jamais quittée.
+    if (this.session !== session) return;
     try {
       await this.transport.connect(p, this.chosenDevices, this.events);
     } catch {
@@ -257,8 +278,8 @@ export class MediaSession implements MediaClient {
     this.endSession(reason === 'lost' ? { error: 'connection_failed' } : {}, false);
   }
 
-  // Finit la session : plus de room, ni de participants, ni de partage d'écran. `disconnect` : quitter aussi la room chez le
-  // transport (pas quand LiveKit l'a déjà fait).
+  // Finit la session : plus de room, ni de participants, ni de partage d'écran, ni de son bloqué (la room suivante dira le sien).
+  // `disconnect` : quitter aussi la room chez le transport (pas quand LiveKit l'a déjà fait).
   private endSession(patch: Partial<MediaSnapshot>, disconnect: boolean): void {
     this.session += 1;
     this.connected = false;
@@ -273,7 +294,7 @@ export class MediaSession implements MediaClient {
         });
       this.leaving = leaving;
     }
-    this.update({ room: null, participants: [], local: { ...this.snapshot.local, screen: false }, ...patch });
+    this.update({ room: null, participants: [], local: { ...this.snapshot.local, screen: false }, audioBlocked: false, ...patch });
   }
 
   private refreshParticipants(): void {
@@ -354,6 +375,7 @@ function sameSnapshot(a: MediaSnapshot, b: MediaSnapshot): boolean {
   return (
     a.room === b.room &&
     a.error === b.error &&
+    a.audioBlocked === b.audioBlocked &&
     a.local.mic === b.local.mic &&
     a.local.cam === b.local.cam &&
     a.local.screen === b.local.screen &&

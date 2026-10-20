@@ -9,23 +9,10 @@ import {
   type RoomEventCallbacks,
   type RoomOptions,
 } from 'livekit-client';
-import type {
-  LocalSource,
-  MediaClient,
-  MediaDevices,
-  MediaParticipant,
-  MediaPrefs,
-  MediaTransport,
-  TransportEvents,
-  VideoSource,
-} from './media-client';
-import { MediaSession } from './media-session';
+import type { LocalSource, MediaDevices, MediaParticipant, MediaTransport, TransportEvents, VideoSource } from './media-client';
 
-// Le client média de l'appli : la logique de MediaSession, sur LiveKit (livekit-client 2). Rien n'est créé ni demandé aux
-// périphériques avant le premier join.
-export function createLiveKitMediaClient(prefs: MediaPrefs): MediaClient {
-  return new MediaSession(new LiveKitTransport(), prefs);
-}
+// Le transport LiveKit (livekit-client 2), sous la logique de MediaSession. L'appli ne l'importe pas directement : create-media-client.ts
+// ne charge ce module (et livekit-client avec lui) qu'au premier join. Rien n'est créé ni demandé aux périphériques avant.
 
 // Les événements de la room après lesquels les participants sont à relire (et les vidéos à rattacher).
 const CHANGES = [
@@ -120,6 +107,12 @@ export class LiveKitTransport implements MediaTransport {
     }
   }
 
+  // La lecture des éléments audio de la room, dans le geste de la personne. Refusée, LiveKit dit le son bloqué
+  // (AudioPlaybackStatusChanged) et lève.
+  async startAudio(): Promise<void> {
+    await this.room?.startAudio();
+  }
+
   // Attend ce travail de LiveKit, mais pas au-delà du départ de la room. Une demande d'accès peut rester sans réponse, et LiveKit
   // retient jusqu'à 15 s une publication dans une room fermée : le client média, qui a déjà quitté cette room, n'a pas à l'attendre.
   // Abandonné, le travail finit seul (LiveKit arrête la piste qu'il n'a pas pu publier), et son échec ne compte plus.
@@ -169,6 +162,9 @@ export class LiveKitTransport implements MediaTransport {
       if (publication.source === Track.Source.ScreenShare) events.screenShareEnded();
       changed();
     });
+    // Le son des autres permis ou bloqué par le navigateur : LiveKit le dit dès la connexion (son AudioContext ne démarre pas sans
+    // geste), et quand un élément audio ne peut pas jouer.
+    on(RoomEvent.AudioPlaybackStatusChanged, (playing) => events.audioPlayback(playing));
     for (const event of CHANGES) on(event, changed);
     // La room terminée sans nous : retirés exprès, ou la connexion perdue (LiveKit a déjà essayé de la reprendre).
     on(RoomEvent.Disconnected, (reason) => {

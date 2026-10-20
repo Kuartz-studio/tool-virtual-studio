@@ -41,6 +41,11 @@ class FakeLiveKit implements MediaTransport {
   // Les autres personnes de la room (celle où l'on est, ou celle qu'on va rejoindre), dans leur ordre d'arrivée.
   readonly remotes: Remote[] = [];
   speaking = new Set<string>();
+  // Le son des autres : bloqué par le navigateur (blockAudio) ; startAudio le débloque, sauf s'il est refusé (refuseAudioStart). Les
+  // appels à startAudio dans une room sont comptés.
+  audioBlocked = false;
+  audioStartRefused = false;
+  audioStarts = 0;
   private room: string | null = null;
   private events: TransportEvents | null = null;
   private published = { mic: false, cam: false, screen: false };
@@ -96,6 +101,22 @@ class FakeLiveKit implements MediaTransport {
     this.devices = { ...devices };
   }
 
+  // Comme LiveKit : hors room, rien ; refusé (hors d'un geste), il lève et le son reste bloqué.
+  async startAudio(): Promise<void> {
+    if (this.room === null) return;
+    this.audioStarts += 1;
+    if (this.audioStartRefused) {
+      throw new DOMException('play() failed because the user didn\'t interact with the document first.', 'NotAllowedError');
+    }
+    this.setAudioBlocked(false);
+  }
+
+  setAudioBlocked(blocked: boolean): void {
+    if (this.room === null || this.audioBlocked === blocked) return;
+    this.audioBlocked = blocked;
+    this.events?.audioPlayback(!blocked);
+  }
+
   participants(): MediaParticipant[] {
     if (this.room === null) return [];
     const local: MediaParticipant = { ...this.self, isLocal: true, ...this.published, speaking: this.speaking.has(this.self.id) };
@@ -142,6 +163,7 @@ class FakeLiveKit implements MediaTransport {
     this.published = { mic: false, cam: false, screen: false };
     this.remotes.splice(0);
     this.speaking.clear();
+    this.audioBlocked = false;
   }
 }
 
@@ -150,7 +172,7 @@ class FakeLiveKit implements MediaTransport {
 // - deviceLog : ce qui est demandé aux périphériques, `mic:on`, `cam:off`, `screen:on`, `devices:{…}` ;
 // - les commandes des tests jouent LiveKit et le navigateur : refuser un périphérique (ou le faire échouer autrement), faire
 //   attendre un périphérique, faire échouer ou attendre la connexion, faire entrer, changer, parler ou partir des gens, arrêter le
-//   partage d'écran depuis le navigateur, perdre la connexion ou en être retiré.
+//   partage d'écran depuis le navigateur, perdre la connexion ou en être retiré, bloquer le son des autres.
 // Comme LiveKit, une connexion quittée pendant qu'elle se fait est annulée (et échoue). Comme LiveKitTransport, un appel aux
 // périphériques qui attend encore quand la room part finit tout de suite.
 // L'identité de la personne (soi-même, dans participants) est `moi`, « Moi », sauf autre choix.
@@ -255,5 +277,20 @@ export class FakeMediaClient extends MediaSession {
   // à un changement de groupe ; un autre onglet).
   dropConnection(reason: 'removed' | 'lost' = 'lost'): void {
     this.livekit.drop(reason);
+  }
+
+  // Le navigateur bloque le son des autres dans la room en cours (Safari, sans micro), jusqu'à un startAudio dans un geste.
+  blockAudio(): void {
+    this.livekit.setAudioBlocked(true);
+  }
+
+  // startAudio est refusé (appelé hors d'un geste) : le son reste bloqué.
+  refuseAudioStart(refuse = true): void {
+    this.livekit.audioStartRefused = refuse;
+  }
+
+  // Les startAudio reçus dans une room.
+  get audioStarts(): number {
+    return this.livekit.audioStarts;
   }
 }

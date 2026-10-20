@@ -1,8 +1,9 @@
 import type { MediaJoinPayload } from '@bureau/shared';
 import { DisconnectReason, RoomEvent, Track } from 'livekit-client';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { createLiveKitMediaClient } from './livekit-media-client';
+import { LiveKitTransport } from './livekit-media-client';
 import type { MediaClient, MediaPrefs } from './media-client';
+import { MediaSession } from './media-session';
 
 // L'adaptateur LiveKit, sur une fausse Room (livekit-client remplacé, sauf ses énumérations) : ce qu'il demande à LiveKit, et ce qu'il
 // fait de ses événements. La logique (file, rooms, erreurs) est celle de MediaSession, éprouvée par le faux client.
@@ -91,6 +92,18 @@ const lk = vi.hoisted(() => {
       log.push(`switch:${kind}:${deviceId}`);
       return true;
     });
+    // Comme LiveKit : startAudio lance la lecture des éléments audio ; hors d'un geste, le navigateur la refuse, la Room dit le son
+    // bloqué (AudioPlaybackStatusChanged), et startAudio lève.
+    static refuseAudio = false;
+    canPlaybackAudio = true;
+    readonly startAudio = vi.fn(async () => {
+      log.push('startAudio');
+      if (FakeRoom.refuseAudio) {
+        this.setPlayback(false);
+        throw new DOMException('play() failed because the user didn\'t interact with the document first.', 'NotAllowedError');
+      }
+      this.setPlayback(true);
+    });
 
     constructor(readonly options: unknown) {
       FakeRoom.instances.push(this);
@@ -122,6 +135,13 @@ const lk = vi.hoisted(() => {
       return identity === this.localParticipant.identity ? this.localParticipant : this.remoteParticipants.get(identity);
     }
 
+    // La lecture de l'audio permise ou bloquée par le navigateur, comme handleAudioPlaybackStarted et handleAudioPlaybackFailed.
+    setPlayback(playing: boolean): void {
+      if (this.canPlaybackAudio === playing) return;
+      this.canPlaybackAudio = playing;
+      this.emit('audioPlaybackChanged', playing);
+    }
+
     // Une personne arrive dans la room.
     arrive(identity: string, name?: string): FakeParticipant {
       const participant = new FakeParticipant(identity, name, false);
@@ -148,12 +168,14 @@ afterEach(async () => {
   lk.FakeRoom.instances.splice(0);
   lk.FakeRoom.failConnect = false;
   lk.FakeRoom.holdConnect = null;
+  lk.FakeRoom.refuseAudio = false;
   lk.log.splice(0);
   document.body.innerHTML = '';
 });
 
+// La logique de MediaSession sur LiveKitTransport : le client média de l'appli, sans le chargement à la demande (create-media-client.ts).
 function client(prefs: MediaPrefs = { mic: false, cam: false }): MediaClient {
-  const created = createLiveKitMediaClient(prefs);
+  const created = new MediaSession(new LiveKitTransport(), prefs);
   clients.push(created);
   return created;
 }
@@ -163,7 +185,7 @@ const audioElements = () => [...document.querySelectorAll('audio')];
 // Laisse le client avancer aussi loin qu'il peut (la fausse Room n'attend que des promesses, ou ce que retient le test).
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
-describe('createLiveKitMediaClient', () => {
+describe('LiveKitTransport, sous MediaSession', () => {
   test('aucune Room ni aucun périphérique avant le premier join, même en changeant micro, caméra et préférences', async () => {
     const media = client({ mic: true, cam: true });
     await media.setMic(false);
@@ -190,6 +212,7 @@ describe('createLiveKitMediaClient', () => {
       participants: [{ id: 'moi', name: 'Moi', isLocal: true, mic: true, cam: true, screen: false, speaking: false }],
       local: { mic: true, cam: true, screen: false },
       error: null,
+      audioBlocked: false,
     });
   });
 
@@ -488,5 +511,54 @@ describe('la vidéo (attach)', () => {
     lastRoom().localParticipant.publications.set(Track.Source.Camera, { source: Track.Source.Camera, videoTrack: camera });
     await joined;
     expect(camera.attach).toHaveBeenCalledExactlyOnceWith(video);
+  });
+});
+
+describe('le son des autres', () => {
+  test('startAudio : room.startAudio() dans la room ; hors room, aucune Room n\'est créée', async () => {
+    const media = client();
+    await media.startAudio();
+    expect(lk.FakeRoom.instances).toHaveLength(0);
+    await media.join(payload('r1'));
+    await media.startAudio();
+    expect(lastRoom().startAudio).toHaveBeenCalledOnce();
+  });
+
+  test('AudioPlaybackStatusChanged : le son bloqué (audioBlocked), puis permis', async () => {
+    const media = client();
+    await media.join(payload('r1'));
+    lastRoom().setPlayback(false);
+    expect(media.getSnapshot().audioBlocked).toBe(true);
+    lastRoom().setPlayback(true);
+    expect(media.getSnapshot().audioBlocked).toBe(false);
+  });
+
+  test('bloqué dès la connexion (LiveKit le dit pendant room.connect) : audioBlocked aussi', async () => {
+    lk.FakeRoom.holdConnect = new Promise(() => {});
+    const media = client();
+    void media.join(payload('r1'));
+    await flush();
+    lastRoom().setPlayback(false);
+    expect(media.getSnapshot()).toMatchObject({ room: 'r1', audioBlocked: true });
+  });
+
+  test('startAudio refusé hors d\'un geste (LiveKit lève) : rien ne rejette, et le son reste bloqué', async () => {
+    const media = client();
+    await media.join(payload('r1'));
+    lk.FakeRoom.refuseAudio = true;
+    await expect(media.startAudio()).resolves.toBeUndefined();
+    expect(media.getSnapshot().audioBlocked).toBe(true);
+    lk.FakeRoom.refuseAudio = false;
+    await media.startAudio();
+    expect(media.getSnapshot().audioBlocked).toBe(false);
+  });
+
+  test('après la room, plus rien de ses événements de lecture', async () => {
+    const media = client();
+    await media.join(payload('r1'));
+    const room = lastRoom();
+    await media.leave();
+    room.setPlayback(false);
+    expect(media.getSnapshot().audioBlocked).toBe(false);
   });
 });

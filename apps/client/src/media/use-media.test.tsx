@@ -211,7 +211,7 @@ describe('l\'état local, envoyé au serveur (media:state)', () => {
 describe('ce que le hook rend et annonce', () => {
   test('rend l\'état du client, à jour à chaque changement', async () => {
     const { socket, client, hook } = setup({ mic: true, cam: false });
-    expect(hook.result.current).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: null });
+    expect(hook.result.current).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: null, audioBlocked: false });
 
     await serverSays(socket, client, 'r1');
     act(() => client.addRemote({ id: 'ana', name: 'Ana', cam: true }));

@@ -32,7 +32,7 @@ describe('avant d\'entrer dans une room', () => {
     await client.leave();
     expect(client.deviceLog).toEqual([]);
     expect(client.journal).toEqual([]);
-    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null });
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null, audioBlocked: false });
   });
 
   test('l\'état local suit les préférences, puis les changements : il servira en entrant', async () => {
@@ -59,6 +59,7 @@ describe('entrer dans une room', () => {
       participants: [me({ mic: true })],
       local: { mic: true, cam: false, screen: false },
       error: null,
+      audioBlocked: false,
     });
   });
 
@@ -72,6 +73,7 @@ describe('entrer dans une room', () => {
       participants: [me(), { id: 'ana', name: 'Ana', isLocal: false, mic: true, cam: true, screen: false, speaking: false }],
       local: { mic: false, cam: false, screen: false },
       error: 'permission_denied',
+      audioBlocked: false,
     });
   });
 
@@ -108,7 +110,7 @@ describe('entrer dans une room', () => {
     const client = new FakeMediaClient({ mic: true, cam: false });
     client.failConnections();
     await client.join(payload('r1'));
-    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: 'connection_failed' });
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: 'connection_failed', audioBlocked: false });
     expect(client.deviceLog).toEqual([]);
 
     client.failConnections(false);
@@ -171,7 +173,7 @@ describe('entrer dans une room', () => {
     await joined;
     expect(client.journal).toEqual(['join:r1', 'leave']);
     expect(client.deviceLog).toEqual([]);
-    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null });
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null, audioBlocked: false });
     // L'annulation n'est pas un échec : connection_failed n'est jamais annoncé, même un instant.
     expect(errors).not.toContain('connection_failed');
   });
@@ -228,6 +230,7 @@ describe('la room qui se termine pendant qu\'un micro ou une caméra s\'allume',
       participants: [],
       local: { mic: true, cam: false, screen: false },
       error: reason === 'lost' ? 'connection_failed' : null,
+      audioBlocked: false,
     });
 
     const second = client.join(payload('r2'));
@@ -246,7 +249,7 @@ describe('la room qui se termine pendant qu\'un micro ou une caméra s\'allume',
     await flush();
     client.dropConnection('removed');
     await joined;
-    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: false, cam: true, screen: false }, error: null });
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: false, cam: true, screen: false }, error: null, audioBlocked: false });
   });
 
   test('rallumer la caméra, et la room retirée pendant ce temps : la caméra voulue reste, sans erreur', async () => {
@@ -351,7 +354,7 @@ describe('dans une room', () => {
     await client.join(payload('r1'));
     await client.setScreenShare(true);
     await client.leave();
-    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null });
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null, audioBlocked: false });
     await client.join(payload('r2'));
     expect(client.deviceLog).toEqual(['mic:on', 'cam:on', 'screen:on', 'mic:on', 'cam:on']);
   });
@@ -362,7 +365,7 @@ describe('dans une room', () => {
     client.addRemote({ id: 'ana', name: 'Ana' });
     await client.setScreenShare(true);
     client.dropConnection();
-    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: 'connection_failed' });
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: 'connection_failed', audioBlocked: false });
 
     await client.join(payload('r1'));
     expect(client.journal).toEqual(['join:r1', 'join:r1']);
@@ -374,7 +377,7 @@ describe('dans une room', () => {
     await client.join(payload('r1'));
     await client.setScreenShare(true);
     client.dropConnection('removed');
-    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: null });
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: null, audioBlocked: false });
 
     // Le media:leave qui suit (ou qui croisait le retrait) ne trouve plus rien à quitter ; le join suivant rejoint.
     await client.leave();
@@ -460,5 +463,96 @@ describe('l\'état, pour l\'interface', () => {
     expect(client.attachments).toEqual([{ el: video, participantId: 'ana', source: 'screen' }]);
     detach();
     expect(client.attachments).toEqual([]);
+  });
+});
+
+describe('un abonné qui change de room pendant l\'annonce de la connexion', () => {
+  // doJoin annonce la room (room: r1) avant de se connecter : un abonné peut alors quitter la room, ou en demander une autre, dans
+  // l'appel même. La connexion de r1 ne doit plus partir : son départ (dropUnwantedRoom) a déjà eu lieu, et rien ne la quitterait.
+  test('leave dans l\'abonné qui voit « room: r1 » : la connexion à r1 ne part pas (pas de room laissée ouverte)', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: false });
+    client.subscribe((s) => {
+      if (s.room === 'r1') void client.leave();
+    });
+    await client.join(payload('r1'));
+    await client.idle();
+    // Le départ demandé au transport (rien n'y était encore connecté), et aucune connexion à r1.
+    expect(client.journal).toEqual(['leave']);
+    expect(client.getSnapshot()).toMatchObject({ room: null, participants: [], error: null });
+  });
+
+  test('join d\'une autre room dans l\'abonné : seule la seconde se connecte', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: false });
+    let first = true;
+    client.subscribe((s) => {
+      if (s.room === 'r1' && first) {
+        first = false;
+        void client.join(payload('r2'));
+      }
+    });
+    await client.join(payload('r1'));
+    await client.idle();
+    expect(client.journal).toEqual(['leave', 'join:r2']);
+    expect(client.getSnapshot()).toMatchObject({ room: 'r2', participants: [me()] });
+  });
+});
+
+describe('le son des autres (startAudio, audioBlocked)', () => {
+  test('hors room : startAudio ne fait rien (et ne rejette pas), et le son n\'est pas bloqué', async () => {
+    const client = new FakeMediaClient();
+    await expect(client.startAudio()).resolves.toBeUndefined();
+    expect(client.audioStarts).toBe(0);
+    expect(client.getSnapshot().audioBlocked).toBe(false);
+  });
+
+  test('le navigateur bloque le son (Safari, en réception seule) : audioBlocked ; startAudio, dans un clic, le débloque', async () => {
+    const client = new FakeMediaClient();
+    await client.join(payload('r1'));
+    client.blockAudio();
+    expect(client.getSnapshot().audioBlocked).toBe(true);
+    await client.startAudio();
+    expect(client.audioStarts).toBe(1);
+    expect(client.getSnapshot().audioBlocked).toBe(false);
+  });
+
+  test('startAudio part tout de suite, hors de la file : le geste de la personne n\'attend pas une opération en cours', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: false });
+    await client.join(payload('r1'));
+    client.blockAudio();
+    const release = client.holdDevices();
+    const turnedOn = client.setMic(true);   // l'accès au micro attend la réponse de la personne
+    const started = client.startAudio();
+    expect(client.audioStarts).toBe(1);
+    await started;
+    expect(client.getSnapshot().audioBlocked).toBe(false);
+    release();
+    await turnedOn;
+  });
+
+  test('startAudio refusé (hors d\'un geste) : le son reste bloqué, sans erreur et sans rejet', async () => {
+    const client = new FakeMediaClient();
+    await client.join(payload('r1'));
+    client.blockAudio();
+    client.refuseAudioStart();
+    await expect(client.startAudio()).resolves.toBeUndefined();
+    expect(client.getSnapshot()).toMatchObject({ audioBlocked: true, error: null });
+  });
+
+  test('la room quittée, perdue ou changée : le son n\'est plus bloqué (la room suivante le dira)', async () => {
+    const client = new FakeMediaClient();
+    await client.join(payload('r1'));
+    client.blockAudio();
+    await client.leave();
+    expect(client.getSnapshot().audioBlocked).toBe(false);
+
+    await client.join(payload('r1'));
+    client.blockAudio();
+    client.dropConnection('lost');
+    expect(client.getSnapshot().audioBlocked).toBe(false);
+
+    await client.join(payload('r1'));
+    client.blockAudio();
+    await client.join(payload('r2'));
+    expect(client.getSnapshot().audioBlocked).toBe(false);
   });
 });
