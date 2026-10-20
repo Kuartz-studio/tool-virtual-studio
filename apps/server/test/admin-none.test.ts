@@ -1,5 +1,6 @@
 import request, { type Response } from 'supertest';
 import { describe, expect, test, vi } from 'vitest';
+import { inviteAdmin } from '../src/admin/invite-admin';
 import { createApp } from '../src/app';
 import { createMemoryMailer } from '../src/mail/mailer';
 import { captureLogs } from './helpers/logs';
@@ -484,4 +485,26 @@ describe('mot de passe oublié, demandé par n\'importe qui, sans e-mail', () =>
 test('MAILER=none avec un autre mailer → l\'application refuse de démarrer', async () => {
   const t = await createNoneTestApp();
   expect(() => createApp({ ...t, mailer: createMemoryMailer() })).toThrow(/MAILER=none/);
+});
+
+// Le seul admin a perdu son mot de passe, et personne ne peut lui donner de lien : l'exploitant crée un second admin avec la commande
+// (`admin:invite`, qui passe par inviteAdmin), l'accepte, et demande le lien du premier par « Lien de mot de passe ». Une adresse avec
+// un « + » convient (sans e-mail, elle n'a même pas besoin de recevoir quoi que ce soit). Le README le décrit.
+test('un admin seul qui perd son mot de passe : un second admin, créé par la commande, lui donne un lien', async () => {
+  const t = await createNoneTestApp();
+  const first = await asAdmin(t, 'camille@x.fr', 'Camille');
+  // Le panneau n'a pas de « Lien de mot de passe » sur la ligne de son propre compte : il faut un autre admin.
+  const { link } = await inviteAdmin('Camille+admin2@X.fr', t);
+  expect(link.startsWith(`${t.env.APP_URL}/rejoindre?token=`)).toBe(true);
+  const accepted = await accept(t, tokenOf(link), 'Second');
+  expect(accepted.status).toBe(201);
+  const cookie = (accepted.get('Set-Cookie') ?? []).map((setCookie) => setCookie.split(';')[0]).join('; ');
+  expect(await findUserByEmail(t.db, 'camille+admin2@x.fr')).toMatchObject({ role: 'admin' });
+
+  const res = await resetLink(t, cookie, first.userId);
+  expect(res.status).toBe(200);
+  const token = await resetTokenOf(t, res.body.link as string);
+  expect((await request(t.app).post('/api/auth/reset-password').send({ token, newPassword: NEW_PASSWORD })).status).toBe(200);
+  expect((await signIn(t, 'camille@x.fr', NEW_PASSWORD)).status).toBe(200);
+  expect((await signIn(t, 'camille@x.fr', TEST_PASSWORD)).status).toBe(401);
 });
