@@ -18,6 +18,7 @@ import { bindKeyboard, DirectionInput } from '../input';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { MoveSender } from '../move-sender';
 import { LocalPlayer } from '../objects/LocalPlayer';
+import { SpeakingRings } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
 import { cameraBounds, chooseZoom } from '../zoom';
 
@@ -30,7 +31,8 @@ const clock = () => performance.now();
 //
 // Le jeu ne démarre qu'après le premier `init` du serveur (OfficePage) : la scène lit au magasin où le serveur l'a placée et qui est
 // là, puis suit le bus (office-connection.ts) : positions des autres, arrivées, départs, statuts, profils, corrections, et un nouvel
-// `init` à chaque reconnexion. Elle envoie l'état de l'avatar local sur le bus (`local:move`), au rythme de MoveSender.
+// `init` à chaque reconnexion. Elle envoie l'état de l'avatar local sur le bus (`local:move`), au rythme de MoveSender. Qui parle dans
+// la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette.
 export class Office extends Scene {
   private officeMap: OfficeMap;
   private tilemap: Phaser.Tilemaps.Tilemap;
@@ -41,6 +43,7 @@ export class Office extends Scene {
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
   private othersVisible = true;
+  private rings: SpeakingRings;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
   private readonly bodyFits = (x: number, y: number): boolean => avatarBodyFits(this.officeMap, x, y);
 
@@ -79,6 +82,7 @@ export class Office extends Scene {
     this.physics.add.collider(this.player, collisions);
     this.debug.self = { id: me.id, ...this.feet() };
     this.moveSender = new MoveSender();
+    this.rings = new SpeakingRings((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
 
     // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
     // qui n'existait pas encore, n'a pas reçu).
@@ -103,6 +107,7 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:correct', ({ x, y }) => this.onCorrect(x, y)),
       listenOnBus(EventBus, 'net:status', ({ id, status }) => this.onStatus(id, status)),
       listenOnBus(EventBus, 'net:profile', (p) => this.onProfile(p)),
+      listenOnBus(EventBus, 'media:speaking', (ids) => this.rings.update(ids)),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
 
@@ -233,6 +238,7 @@ export class Office extends Scene {
     if (p.id === this.selfId || this.remotes.has(p.id)) return;
     const remote = new RemotePlayer(this, p, now, { zoom: this.cameras.main.zoom, bodyFits: this.bodyFits });
     remote.setVisible(this.othersVisible);
+    remote.setSpeaking(this.rings.isSpeaking(p.id));
     this.remotes.set(p.id, remote);
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };
   }

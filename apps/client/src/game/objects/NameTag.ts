@@ -90,7 +90,7 @@ export class NameTag {
     this.container.destroy();
   }
 
-  // La pastille, centrée sur x, son bas sur l'origine du conteneur : le point, puis le nom.
+  // La pastille, centrée sur x, son bas sur l'origine du conteneur : l'anneau et le point, puis le nom.
   private layout(): void {
     const width = PAD_X + 2 * DOT_RADIUS + DOT_GAP + this.label.width + PAD_X;
     const height = Math.max(this.label.height, 2 * RING_RADIUS) + 2 * PAD_Y;
@@ -100,5 +100,35 @@ export class NameTag {
     this.dot.setPosition(left + PAD_X + DOT_RADIUS, middle);
     this.ring.setPosition(left + PAD_X + DOT_RADIUS, middle);
     this.label.setPosition(left + PAD_X + 2 * DOT_RADIUS + DOT_GAP, middle);
+  }
+}
+
+// Ce qui porte l'étiquette d'une personne : l'avatar local ou un avatar distant (setSpeaking passe à leur NameTag).
+export interface SpeakingTarget {
+  setSpeaking(speaking: boolean): void;
+}
+
+// L'anneau de parole des étiquettes, d'après l'événement de bus `media:speaking` (media/use-media.ts) : les identifiants de ceux qui
+// parlent dans la conversation, soi-même compris, à chaque changement, et [] en la quittant. Seuls les anneaux qui changent sont
+// touchés. `targetOf` rend l'avatar d'une personne, ou undefined si la scène ne la dessine pas ; un avatar créé ensuite (quelqu'un qui
+// arrive) prend son anneau d'emblée : isSpeaking.
+export class SpeakingRings {
+  private speaking = new Set<string>();
+
+  constructor(private readonly targetOf: (id: string) => SpeakingTarget | undefined) {}
+
+  update(ids: readonly string[]): void {
+    const next = new Set(ids);
+    for (const id of this.speaking) {
+      if (!next.has(id)) this.targetOf(id)?.setSpeaking(false);
+    }
+    for (const id of next) {
+      if (!this.speaking.has(id)) this.targetOf(id)?.setSpeaking(true);
+    }
+    this.speaking = next;
+  }
+
+  isSpeaking(id: string): boolean {
+    return this.speaking.has(id);
   }
 }

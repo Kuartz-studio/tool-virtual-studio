@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createInvitation, expectInOffice, inviteAndJoin, joinWithLink, lastMail, officeBar, signIn, submitJoinForm, uniqueEmail } from './helpers';
+import { createInvitation, enterOffice, expectInOffice, inviteAndJoin, joinWithLink, lastMail, officeBar, signIn, submitJoinForm, uniqueEmail } from './helpers';
 
 test('invitation → compte → bureau → déconnexion → connexion', async ({ page }) => {
   const lea = { email: uniqueEmail('lea'), name: 'Léa', password: 'motdepasse-de-lea' };
@@ -18,8 +18,9 @@ test('invitation → compte → bureau → déconnexion → connexion', async ({
 
   await signIn(page, lea);
   await expect(page).toHaveURL('/');
-  // La session survit à un rechargement de la page (cookie).
+  // La session survit à un rechargement de la page (cookie) : l'écran d'entrée, puis le bureau.
   await page.reload();
+  await enterOffice(page);
   await expectInOffice(page, 'Léa');
   await expect(officeBar(page).getByRole('button', { name: 'Statut : Disponible' })).toBeVisible();
 });
@@ -68,6 +69,7 @@ test('lien réutilisé → message « déjà utilisé »', async ({ page }) => {
   await expect(page.getByLabel('Mot de passe', { exact: true })).toHaveCount(0);
   // Zoé est toujours connectée : la page la renvoie à son bureau.
   await page.getByRole('link', { name: 'Aller au bureau' }).click();
+  await enterOffice(page);
   await expectInOffice(page, 'Zoé');
 });
 

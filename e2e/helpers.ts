@@ -24,7 +24,8 @@ export async function lastMail(request: APIRequestContext, to: string): Promise<
   return res.ok() ? ((await res.json()) as { subject: string; link: string }) : null;
 }
 
-// La barre du bas du bureau (le groupe « Barre du bureau ») : le nom de la personne, son statut, Personnes et Se déconnecter.
+// La barre du bas du bureau (le groupe « Barre du bureau ») : le nom de la personne, son statut, micro, caméra et partage d'écran,
+// Personnes et Se déconnecter.
 export function officeBar(page: Page): Locator {
   return page.getByRole('group', { name: 'Barre du bureau' });
 }
@@ -34,31 +35,43 @@ export async function expectInOffice(page: Page, name: string): Promise<void> {
   await expect(officeBar(page).getByText(name, { exact: true })).toBeVisible();
 }
 
-// Remplit le formulaire de la page « Rejoindre » (déjà ouverte, ou qui va s'afficher), crée le compte et attend le bureau.
+// La page du bureau s'ouvre sur l'écran d'entrée (micro et caméra, ici les faux de Chromium : playwright.config.ts) : « Entrer », ou
+// « Entrer quand même » quand ils sont refusés, puis la barre du bureau s'affiche. À chaque arrivée sur la page : connexion,
+// rechargement, nouvel onglet.
+export async function enterOffice(page: Page): Promise<void> {
+  await page.getByRole('button', { name: /^Entrer( quand même)?$/ }).click();
+  await expect(officeBar(page)).toBeVisible();
+}
+
+// Remplit le formulaire de la page « Rejoindre » (déjà ouverte, ou qui va s'afficher), crée le compte, passe l'écran d'entrée
+// (« Entrer ») et attend le bureau.
 export async function submitJoinForm(page: Page, { name, password }: Pick<Account, 'name' | 'password'>): Promise<void> {
   await page.getByLabel('Nom affiché', { exact: true }).fill(name);
   await page.getByLabel('Mot de passe', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Créer mon compte' }).click();
+  await enterOffice(page);
   await expectInOffice(page, name);
 }
 
-// Ouvre un lien d'invitation, crée le compte et attend le bureau.
+// Ouvre un lien d'invitation, crée le compte, entre et attend le bureau.
 export async function joinWithLink(page: Page, link: string, account: Pick<Account, 'name' | 'password'>): Promise<void> {
   await page.goto(link);
   await submitJoinForm(page, account);
 }
 
-// Invite cette adresse, crée son compte depuis le lien de l'invitation, et attend le bureau : la page reste connectée.
+// Invite cette adresse, crée son compte depuis le lien de l'invitation, clique sur « Entrer » et attend le bureau : la page reste
+// connectée.
 export async function inviteAndJoin(page: Page, { email, name, password }: Account): Promise<void> {
   await joinWithLink(page, await createInvitation(page.request, email), { name, password });
 }
 
-// Se connecte depuis la page de connexion et attend le bureau.
+// Se connecte depuis la page de connexion, entre et attend le bureau.
 export async function signIn(page: Page, { email, password, name }: Account): Promise<void> {
   await page.goto('/connexion');
   await page.getByLabel('Adresse e-mail', { exact: true }).fill(email);
   await page.getByLabel('Mot de passe', { exact: true }).fill(password);
   await page.getByRole('button', { name: 'Se connecter' }).click();
+  await enterOffice(page);
   await expectInOffice(page, name);
 }
 
@@ -79,7 +92,7 @@ export async function selfAt(page: Page): Promise<{ id: string; x: number; y: nu
   return self;
 }
 
-// Un compte neuf, dans le bureau prêt. Renvoie le compte (pour se reconnecter).
+// Un compte neuf, entré dans le bureau prêt. Renvoie le compte (pour se reconnecter).
 export async function joinOffice(page: Page, name: string): Promise<Account> {
   // L'adresse e-mail n'a pas d'accent : « Zoé » devient zoe.
   const slug = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
@@ -89,7 +102,7 @@ export async function joinOffice(page: Page, name: string): Promise<Account> {
   return account;
 }
 
-// Attend le bureau prêt (le serveur a envoyé son état, la carte est construite), puis un moment de jeu.
+// Attend le bureau prêt (on est entré, le serveur a envoyé son état, la carte est construite), puis un moment de jeu.
 export async function waitForOffice(page: Page): Promise<void> {
   await page.waitForFunction(() => window.__office?.ready);
   // Les premières images, qui compilent les shaders et envoient les textures à la carte graphique, sont les plus lentes. Une marche

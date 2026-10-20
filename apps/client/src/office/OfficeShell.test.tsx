@@ -1,8 +1,9 @@
-import type { PublicPlayer } from '@bureau/shared';
+import type { MediaJoinPayload, PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { fr } from '../i18n/fr';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { fr, t } from '../i18n/fr';
+import { FakeMediaClient } from '../media/fake-media-client';
 import { useOfficeStore } from '../state/office-store';
 import { fakeApi, json } from '../test/fake-api';
 import { FakeSocket } from '../test/fake-socket';
@@ -20,6 +21,13 @@ const player = (id: string, name: string): PublicPlayer => ({
   media: { mic: false, cam: false, screen: false },
 });
 
+const payload = (room: string): MediaJoinPayload => ({ url: 'wss://livekit.test', room, token: `jeton-${room}` });
+const clients: FakeMediaClient[] = [];
+
+afterEach(async () => {
+  for (const client of clients.splice(0)) await client.leave();
+});
+
 beforeEach(() => {
   useOfficeStore.getState().reset();
   fakeApi({
@@ -34,31 +42,50 @@ beforeEach(() => {
 interface Options {
   signingOut?: boolean;
   connecting?: boolean;
+  reconnecting?: boolean;
   errors?: string[];
   onSignOut?: () => void;
   onUseHere?: () => void;
+  onReconnect?: () => void;
   init?: boolean;
 }
 
-// Le bureau, avec une socket connectée. `init` : le serveur a envoyé l'état de départ.
-function renderShell({ signingOut = false, connecting = false, errors = [], onSignOut = () => {}, onUseHere = () => {}, init = true }: Options = {}) {
+// Le bureau, avec une socket connectée et un faux client média (hors conversation). `init` : le serveur a envoyé l'état de départ.
+function renderShell({
+  signingOut = false,
+  connecting = false,
+  reconnecting = false,
+  errors = [],
+  onSignOut = () => {},
+  onUseHere = () => {},
+  onReconnect = () => {},
+  init = true,
+}: Options = {}) {
   const socket = new FakeSocket();
   socket.serverAccepts();
+  const client = new FakeMediaClient({ mic: true, cam: false }, { id: 'moi', name: 'Léa' });
+  clients.push(client);
   if (init) act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [] }));
-  const view = render(
+  const shell = () => (
     <OfficeShell
       user={{ name: 'Léa' }}
       socket={socket.asSocket()}
+      media={{ client, snapshot: client.getSnapshot() }}
+      onReconnect={onReconnect}
       onSignOut={onSignOut}
       signingOut={signingOut}
       onUseHere={onUseHere}
       connecting={connecting}
+      reconnecting={reconnecting}
       errors={errors}
     >
       <div data-testid="jeu" />
-    </OfficeShell>,
+    </OfficeShell>
   );
-  return { socket, ...view };
+  const view = render(shell());
+  // Le client a changé (la page le suit par useMedia) : la page se redessine.
+  const refresh = () => view.rerender(shell());
+  return { socket, client, refresh, ...view };
 }
 
 const bar = () => screen.getByRole('group', { name: fr.office.barLabel });
@@ -76,21 +103,48 @@ describe('la mise en page', () => {
     expect(screen.getByRole('heading', { level: 1, name: fr.common.appName })).toBeTruthy();
   });
 
-  test('un emplacement vide en haut pour les vignettes vidéo, et une zone vide au milieu de la barre pour ses commandes (tâche 20)', () => {
-    const { container } = renderShell();
-    const top = container.querySelector('.office-ui > [data-slot="video-tiles"]')!;
-    expect(top).toBeTruthy();
+  test('en haut, les vignettes de la conversation : rien hors conversation ; la sienne et celles des autres dedans', async () => {
+    const { container, client, refresh } = renderShell();
+    const top = container.querySelector('.office-ui > .office-top')!;
     expect(top.childElementCount).toBe(0);
-    const middle = bar().querySelector('[data-slot="controls"]')!;
-    expect(middle).toBeTruthy();
-    expect(middle.childElementCount).toBe(0);
+    await act(() => client.join(payload('r1')));
+    act(() => client.addRemote({ id: 'bob', name: 'Bob' }));
+    refresh();
+    const tiles = within(top as HTMLElement).getByRole('list', { name: fr.media.tiles.label });
+    expect(within(tiles).getAllByRole('listitem')).toHaveLength(2);
+    expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : le nom, le statut, puis Personnes et Se déconnecter', () => {
+  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Personnes et Se déconnecter', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Personnes', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Personnes', 'Se déconnecter']);
     expect(within(bar()).getByText('Léa')).toBeTruthy();
+  });
+
+  test('les commandes de la barre parlent au client média', async () => {
+    const user = userEvent.setup();
+    const { client, refresh } = renderShell();
+    await user.click(within(bar()).getByRole('button', { name: fr.media.controls.mic }));
+    expect(client.getSnapshot().local.mic).toBe(false);
+    refresh();
+    expect(within(bar()).getByRole('button', { name: fr.media.controls.mic }).getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('« Connexion perdue, reconnexion… » quand la connexion est tombée après l\'arrivée', () => {
+    renderShell({ reconnecting: true });
+    expect(screen.getByRole('status').textContent).toBe(fr.office.reconnecting);
+  });
+
+  test('la connexion audio et vidéo a échoué : « Reconnecter », en haut, appelle onReconnect', async () => {
+    const user = userEvent.setup();
+    const onReconnect = vi.fn();
+    const { client, refresh } = renderShell({ onReconnect });
+    client.failConnections();
+    await act(() => client.join(payload('r1')));
+    refresh();
+    await user.click(screen.getByRole('button', { name: fr.media.reconnect }));
+    expect(onReconnect).toHaveBeenCalledOnce();
   });
 
   test('le nom affiché est celui de la session avant l\'init, puis celui que le serveur donne (un changement de nom suit)', () => {

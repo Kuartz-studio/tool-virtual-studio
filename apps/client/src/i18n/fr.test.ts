@@ -19,6 +19,13 @@ test('les textes attendus par les tests de bout en bout', () => {
   expect(fr.office.statusMenu.label).toBe('Statut');
   expect(t(fr.office.statusMenu.current, { status: fr.status.dnd })).toBe('Statut : Ne pas déranger');
   expect(fr.office.people.you).toBe('(toi)');
+  expect(fr.media.check.title).toBe('Prêt à entrer ?');
+  expect(fr.media.check.enter).toBe('Entrer');
+  expect(fr.media.check.enterAnyway).toBe('Entrer quand même');
+  expect(fr.media.check.preview).toBe('Aperçu de ta caméra');
+  expect(fr.media.permissionDenied).toBe('Sans micro ni caméra, tu pourras quand même écouter et écrire.');
+  expect(fr.media.controls.mic).toBe('Micro');
+  expect(fr.office.reconnecting).toBe('Connexion perdue, reconnexion…');
 });
 
 test('les statuts : Disponible, Occupé, Absent, Ne pas déranger (spec §10)', () => {

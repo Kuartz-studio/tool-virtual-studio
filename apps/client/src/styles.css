@@ -10,6 +10,9 @@
   --error-background: #fdecec;
   --success-text: #1d5b36;
   --success-background: #e6f5ec;
+  --warning-text: #6b4100;
+  --warning-background: #fff3dc;
+  --speaking: #22c55e;
 
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   line-height: 1.5;
@@ -206,7 +209,7 @@ a {
   pointer-events: none;
 }
 
-/* Les vignettes vidéo (tâche 20). Vide : sans hauteur, il ne cache rien. */
+/* Les vignettes de la conversation, en haut au milieu. Hors conversation, vide : sans hauteur, il ne cache rien. */
 .office-top {
   position: absolute;
   top: var(--bar-gap);
@@ -219,6 +222,151 @@ a {
 
 .office-top > * {
   pointer-events: auto;
+}
+
+/* Les vignettes : ce qui ne marche pas, la liste, puis la vignette agrandie. */
+.video-strip {
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-tiles {
+  max-width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 2px;
+  overflow-x: auto;
+  list-style: none;
+}
+
+/* Une vignette : la vidéo (ou les initiales), le nom en bas à gauche. Un bouton : un clic l'agrandit ou la réduit. */
+.tile {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  padding: 0;
+  overflow: hidden;
+  color: #ffffff;
+  background: #2b3047;
+  border: none;
+  border-radius: 10px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 6px 16px rgb(0 0 0 / 28%);
+  cursor: pointer;
+}
+
+.tile:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Qui parle : un anneau de la couleur « Disponible », comme celui de son étiquette dans le jeu. */
+.tile[data-speaking] {
+  box-shadow: 0 0 0 3px var(--speaking), 0 6px 16px rgb(0 0 0 / 28%);
+}
+
+.tile-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #1d2030;
+}
+
+/* Un écran partagé se lit en entier : pas de recadrage. */
+.tile-screen .tile-video {
+  object-fit: contain;
+}
+
+/* Sa propre caméra, vue comme dans une glace. */
+.tile-video-mirrored {
+  transform: scaleX(-1);
+}
+
+.tile-initials {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  font-size: 1rem;
+  font-weight: 600;
+  background: #4a5272;
+  border-radius: 50%;
+  transform: translate(-50%, -60%);
+}
+
+.tile-label {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  max-width: calc(100% - 12px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: rgb(0 0 0 / 55%);
+  border-radius: 6px;
+}
+
+.tile-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-muted {
+  display: flex;
+  flex: none;
+  color: #ff8a8a;
+}
+
+/* La vignette agrandie (un partage d'écran, ou celle qu'on a cliquée), sous la liste. */
+.video-stage {
+  width: min(960px, 100%);
+}
+
+.video-stage .tile {
+  width: 100%;
+  max-height: calc(100dvh - 2 * var(--bar-height) - 160px);
+  border-radius: 12px;
+}
+
+.video-stage .tile-initials {
+  width: 88px;
+  height: 88px;
+  font-size: 2rem;
+}
+
+/* Ce qui ne marche pas dans la conversation, au-dessus des vignettes. */
+.video-notice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 12px;
+  margin: 0;
+  padding: 8px 12px;
+  color: #ffffff;
+  text-align: center;
+  background: rgb(29 32 48 / 90%);
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 28%);
+}
+
+.video-notice .bar-button {
+  color: var(--text);
+  background: var(--surface);
 }
 
 /* La connexion au bureau, en attendant le premier état du serveur : au milieu de la page, sur le fond du jeu. */
@@ -246,6 +394,16 @@ a {
 
 .office-banners .alert {
   margin: 0;
+}
+
+/* La connexion au bureau tombée, que Socket.io rétablit seul. */
+.office-reconnecting {
+  margin: 0;
+  padding: 10px 12px;
+  color: var(--warning-text);
+  text-align: center;
+  background: var(--warning-background);
+  border-radius: 8px;
 }
 
 /* Les panneaux, à droite, de haut en bas de la page, au-dessus de la barre. */
@@ -349,6 +507,36 @@ a {
 .bar-button-caret {
   font-size: 0.7rem;
   color: var(--text-muted);
+}
+
+/* Micro, caméra et partage d'écran, au milieu de la barre. */
+.media-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+  pointer-events: auto;
+}
+
+.icon {
+  flex: none;
+}
+
+/* Micro ou caméra coupés : en rouge, qu'on le voie d'un coup d'œil. */
+.media-button[aria-pressed='false']:not(.media-share) {
+  color: var(--error-text);
+  background: var(--error-background);
+  border-color: #efc2c2;
+}
+
+/* Le partage d'écran en cours. */
+.media-share[aria-pressed='true'] {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 /* Le point d'un statut : de la couleur du statut (posée par StatusDot, qui la tient de STATUS_COLORS, comme l'étiquette de l'avatar).
@@ -538,4 +726,153 @@ a {
 .replaced-card p {
   margin: 0 0 20px;
   color: var(--text-muted);
+}
+
+/* L'écran d'entrée : une carte au milieu de la page, avec l'aperçu de sa caméra. */
+.device-check {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+}
+
+.device-check-card {
+  width: 100%;
+  max-width: 520px;
+  padding: 28px 32px 32px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 8%);
+}
+
+.device-check-card h1 {
+  margin: 0 0 4px;
+  font-size: 1.5rem;
+}
+
+.device-check-intro {
+  margin: 0 0 16px;
+  color: var(--text-muted);
+}
+
+/* Sur un écran large, deux colonnes : tout tient dans la hauteur d'un portable, « Entrer » compris. */
+@media (min-width: 760px) {
+  .device-check-card {
+    max-width: 880px;
+  }
+
+  .device-check-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+  }
+
+  .device-check-settings .device-toggles {
+    margin-top: 0;
+  }
+}
+
+.device-preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #1d2030;
+  border-radius: 10px;
+}
+
+.device-preview-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.device-preview-mirrored {
+  transform: scaleX(-1);
+}
+
+.device-preview-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #c9cfda;
+}
+
+/* Le niveau du micro : une barre qui suit le volume (son transform est posé à chaque image). */
+.device-meter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.device-meter-bar {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  background: var(--background);
+  border-radius: 3px;
+}
+
+.device-meter-level {
+  display: block;
+  height: 100%;
+  background: var(--speaking);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.device-check-hint {
+  margin: 10px 0 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.device-toggles {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0 4px;
+}
+
+.device-selects {
+  display: grid;
+  gap: 0 12px;
+  margin-top: 12px;
+}
+
+.field select {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.field select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.field select:disabled {
+  color: var(--text-muted);
+  background: var(--background);
+}
+
+.device-check-message {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  color: var(--warning-text);
+  background: var(--warning-background);
+  border-radius: 8px;
+}
+
+.device-check-enter {
+  width: 100%;
 }

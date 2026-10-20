@@ -3,11 +3,16 @@ import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { EventBus } from '../game/EventBus';
+import { fr } from '../i18n/fr';
+import type { FakeMediaClient } from '../media/fake-media-client';
+import type { MediaPrefs } from '../media/media-client';
+import { savePrefs } from '../media/prefs';
 import { routes } from '../router';
 import { useOfficeStore } from '../state/office-store';
 import { fakeAuth, resetFakeAuth, setFakeSession } from '../test/fake-auth-client';
+import { FakeMediaDevices, installMediaDevices } from '../test/fake-media-devices';
 import type { FakeSocket } from '../test/fake-socket';
 import { findOfficeFor } from '../test/office';
 import { renderRoute } from '../test/render';
@@ -26,6 +31,20 @@ vi.mock('../net/socket', async () => {
       const socket = new FakeSocket();
       sockets.push(socket);
       return socket;
+    },
+  };
+});
+
+// L'audio et la vidéo : un faux client média à chaque entrée dans le bureau (le vrai chargerait LiveKit). startAudio est espionné.
+const mediaClients = vi.hoisted(() => [] as FakeMediaClient[]);
+vi.mock('../media/create-media-client', async () => {
+  const { FakeMediaClient } = await import('../media/fake-media-client');
+  return {
+    createMediaClient: (prefs: MediaPrefs) => {
+      const client = new FakeMediaClient(prefs, { id: 'u-lea', name: 'Léa' });
+      vi.spyOn(client, 'startAudio');
+      mediaClients.push(client);
+      return client;
     },
   };
 });
@@ -49,22 +68,165 @@ const socket = (): FakeSocket => {
   return last;
 };
 
+// L'écran d'entrée demande le micro et la caméra : un faux navigator.mediaDevices qui les accorde.
+let uninstallDevices: () => void;
 beforeEach(() => {
   resetFakeAuth();
   sockets.length = 0;
+  mediaClients.length = 0;
+  localStorage.clear();
   useOfficeStore.getState().reset();
+  uninstallDevices = installMediaDevices(new FakeMediaDevices());
+});
+afterEach(() => {
+  uninstallDevices();
 });
 
-// Ouvre le bureau, et attend que la page ait ouvert sa connexion. La barre ne suffit pas : la page n'ouvre la connexion que dans un
-// effet, que React passe après avoir affiché la page, dans une autre tâche ; sur une machine chargée, la barre est trouvée avant
+// Ouvre la page : l'écran d'entrée, et la connexion déjà ouverte derrière lui. L'écran ne suffit pas : la page n'ouvre la connexion que
+// dans un effet, que React passe après avoir affiché la page, dans une autre tâche ; sur une machine chargée, l'écran est trouvé avant
 // (c'était l'instabilité de ce fichier : `sockets` encore vide, « La page n'a pas ouvert de connexion »).
-async function openOffice() {
+async function openPage() {
   setFakeSession(LEA);
   const router = renderRoute('/');
-  await findOfficeFor('Léa');
+  await screen.findByRole('heading', { level: 1, name: fr.media.check.title });
   await waitFor(() => expect(sockets.at(-1)?.connectCalls).toBe(1));
   return router;
 }
+
+// « Entrer » : le bureau s'affiche.
+async function enter() {
+  await userEvent.click(screen.getByRole('button', { name: fr.media.check.enter }));
+  await findOfficeFor('Léa');
+}
+
+// La page ouverte, et le bureau, après « Entrer ».
+async function openOffice() {
+  const router = await openPage();
+  await enter();
+  return router;
+}
+
+const payload = (token = 'jeton') => ({ url: 'wss://livekit.test', room: 'r1', token });
+
+test('l\'écran d\'entrée d\'abord : la connexion est ouverte derrière lui, mais ni barre, ni jeu, ni audio ; « Entrer » ouvre le bureau', async () => {
+  await openPage();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+  });
+  // L'init est arrivé (le magasin le sait) : on est pourtant encore à l'écran d'entrée.
+  expect(useOfficeStore.getState().mapKey).toBe('dev-office');
+  expect(screen.queryByRole('group', { name: fr.office.barLabel })).toBeNull();
+  expect(screen.queryByTestId('jeu')).toBeNull();
+  expect(mediaClients).toHaveLength(0);
+
+  await enter();
+  expect(await screen.findByTestId('jeu')).toBeTruthy();
+  expect(screen.queryByRole('heading', { level: 1, name: fr.media.check.title })).toBeNull();
+  expect(mediaClients).toHaveLength(1);
+});
+
+test('« Entrer » : le client média reçoit les préférences de l\'écran d\'entrée, et le son est lancé dans le clic même (startAudio)', async () => {
+  savePrefs({ mic: false, cam: true });
+  await openPage();
+  await enter();
+  const [client] = mediaClients;
+  expect(client!.getSnapshot().local).toEqual({ mic: false, cam: true, screen: false });
+  expect(client!.startAudio).toHaveBeenCalledOnce();
+});
+
+test('une consigne média reçue pendant l\'écran d\'entrée est suivie après « Entrer » (le serveur ne la redit pas)', async () => {
+  await openPage();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+    socket().receive('media:join', payload());
+  });
+  // Personne ne la suit encore : pas de client média avant « Entrer », donc rien de demandé aux périphériques.
+  expect(mediaClients).toHaveLength(0);
+  await enter();
+  const [client] = mediaClients;
+  await act(() => client!.idle());
+  expect(client!.journal).toEqual(['join:r1']);
+  expect(client!.getSnapshot().room).toBe('r1');
+});
+
+test('remplacé par un autre onglet pendant l\'écran d\'entrée : « Entrer » ne rejoint pas la room (c\'est celle de l\'autre onglet)', async () => {
+  await openPage();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+    socket().receive('media:join', payload());
+    socket().receive('session:replaced');
+    socket().serverDisconnects();
+  });
+  await enter();
+  const [client] = mediaClients;
+  await act(() => client!.idle());
+  expect(client!.journal).toEqual([]);
+  expect(screen.getByRole('dialog', { name: fr.office.replaced })).toBeTruthy();
+});
+
+test('« Connexion perdue, reconnexion… » quand la connexion tombe après l\'arrivée, jusqu\'à l\'init du retour', async () => {
+  await openOffice();
+  // Avant la première arrivée, c'est « Connexion au bureau… ».
+  expect(screen.queryByText(fr.office.reconnecting)).toBeNull();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+  });
+  expect(screen.queryByText(fr.office.reconnecting)).toBeNull();
+
+  act(() => socket().connectionDrops());
+  expect(screen.getByRole('status').textContent).toBe(fr.office.reconnecting);
+  // Reconnectée, mais le serveur ne nous a pas encore replacés.
+  act(() => socket().serverAccepts());
+  expect(screen.getByText(fr.office.reconnecting)).toBeTruthy();
+  act(() => socket().receive('init', init()));
+  expect(screen.queryByText(fr.office.reconnecting)).toBeNull();
+});
+
+test('pas de « Connexion perdue » quand un autre onglet a pris la place, ni pendant qu\'on se déconnecte', async () => {
+  await openOffice();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+  });
+  let finishSignOut!: () => void;
+  fakeAuth.signOut.mockImplementationOnce(
+    () => new Promise((resolve) => (finishSignOut = () => resolve({ data: { success: true }, error: null }))),
+  );
+  await userEvent.click(screen.getByRole('button', { name: fr.office.signOut }));
+  expect(socket().active).toBe(false);
+  expect(screen.queryByText(fr.office.reconnecting)).toBeNull();
+  finishSignOut();
+  await waitFor(() => expect(screen.queryByRole('group', { name: fr.office.barLabel })).toBeNull());
+});
+
+test('la connexion audio et vidéo a échoué : « Reconnecter » ferme et rouvre la connexion au bureau, et la consigne redite la rétablit', async () => {
+  await openOffice();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+  });
+  const [client] = mediaClients;
+  client!.failConnections();
+  act(() => socket().receive('media:join', payload('jeton-1')));
+  await act(() => client!.idle());
+
+  await userEvent.click(await screen.findByRole('button', { name: fr.media.reconnect }));
+  expect(socket().disconnectCalls).toBe(1);
+  expect(socket().connectCalls).toBe(2);
+  client!.failConnections(false);
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+    socket().receive('media:join', payload('jeton-2'));
+  });
+  await act(() => client!.idle());
+  expect(client!.getSnapshot().room).toBe('r1');
+  expect(screen.queryByRole('button', { name: fr.media.reconnect })).toBeNull();
+});
 
 test('le bureau ouvre la connexion au serveur, écouteurs posés avant connect(), et attend son init', async () => {
   await openOffice();
@@ -232,12 +394,15 @@ test('la déconnexion échoue : le message, et la connexion au bureau est rouver
   expect(socket().active).toBe(true);
 });
 
-test('quitter le bureau : connexion fermée, écouteurs retirés, magasin vidé', async () => {
+test('quitter le bureau : connexion fermée, écouteurs retirés, magasin vidé, room audio et vidéo quittée', async () => {
   await openOffice();
   act(() => {
     socket().serverAccepts();
     socket().receive('init', init());
+    socket().receive('media:join', payload());
   });
+  const [client] = mediaClients;
+  await act(() => client!.idle());
   expect(useOfficeStore.getState().mapKey).toBe('dev-office');
   const listenersOnBus = EventBus.listenerCount('local:move');
   expect(listenersOnBus).toBe(1);
@@ -246,6 +411,8 @@ test('quitter le bureau : connexion fermée, écouteurs retirés, magasin vidé'
   expect(socket().listenerCount()).toBe(0);
   expect(EventBus.listenerCount('local:move')).toBe(0);
   expect(useOfficeStore.getState().mapKey).toBeNull();
+  await client!.idle();
+  expect(client!.journal).toEqual(['join:r1', 'leave']);
 });
 
 // En développement, StrictMode monte la page, la démonte, puis la remonte : deux connexions sont créées l'une après l'autre. Seule la
@@ -258,7 +425,9 @@ test('StrictMode (développement) : la dernière connexion est la seule ouverte,
       <RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/'] })} />
     </StrictMode>,
   );
-  await findOfficeFor('Léa');
+  await screen.findByRole('heading', { level: 1, name: fr.media.check.title });
+  await waitFor(() => expect(sockets).toHaveLength(2));
+  await enter();
 
   expect(sockets).toHaveLength(2);
   const [first, second] = sockets as [FakeSocket, FakeSocket];

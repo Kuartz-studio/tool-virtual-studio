@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { avatarsOf, joinOffice, officeBar, selfAt, waitForOffice, WALK_TIMEOUT } from './helpers';
+import { avatarsOf, enterOffice, joinOffice, officeBar, selfAt, waitForOffice, WALK_TIMEOUT } from './helpers';
 
 // La présence dans l'interface : le menu des statuts, le panneau Personnes et l'écran « Ouvert dans un autre onglet ».
 // Chaque personne a son navigateur (un contexte : ses cookies, donc sa session). Tous les tests partagent le serveur, et donc ses
@@ -89,6 +89,7 @@ test('le statut survit à un rechargement de la page : A le retrouve, et B ne le
   await expect(panel.locator(`[data-user="${a.id}"][data-status="away"]`)).toBeVisible();
 
   await a.page.reload();
+  await enterOffice(a.page);
   await waitForOffice(a.page);
   await expect(statusButton(a.page, 'Absent')).toBeVisible();
   // Revenue dans le délai de grâce : B n'a rien vu, ni départ ni changement.
@@ -105,9 +106,10 @@ test('deuxième onglet de A → le premier affiche l\'écran « Ouvert dans un a
   const panelOfB = await openPeople(b.page);
   const first = a.page;
 
-  // Un deuxième onglet, avec la même session.
+  // Un deuxième onglet, avec la même session. Sa connexion s'ouvre dès l'écran d'entrée, et prend la place du premier.
   const second = await a.context.newPage();
   await second.goto('/');
+  await enterOffice(second);
   await waitForOffice(second);
 
   // Le premier est remplacé : l'écran, et sa barre est inerte (le clavier ne l'atteint plus).
@@ -157,6 +159,7 @@ test('A ferme son onglet → B le voit passer en « Hors ligne » après le dél
   // Il revient (un nouvel onglet, la session est celle du contexte) : en ligne de nouveau.
   const back = await a.context.newPage();
   await back.goto('/');
+  await enterOffice(back);
   await waitForOffice(back);
   await expect(online.locator(`[data-user="${a.id}"]`)).toBeVisible({ timeout: WALK_TIMEOUT });
   await expect(offline.locator(`[data-user="${a.id}"]`)).toHaveCount(0);

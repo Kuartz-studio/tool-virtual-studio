@@ -2,6 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import {
   avatarsOf,
   createInvitation,
+  enterOffice,
   joinOffice,
   playerSeenBy,
   restingAt,
@@ -185,9 +186,11 @@ test('A marche puis s\'arrête pendant que le jeu de B charge : B le voit à sa 
   await pageB.getByLabel('Nom affiché', { exact: true }).fill('Béatrice');
   await pageB.getByLabel('Mot de passe', { exact: true }).fill('motdepasse-de-beatrice');
 
-  // A marche déjà quand le serveur construit l'init de B : B l'y reçoit « en marche ».
+  // A marche déjà quand le serveur construit l'init de B : B l'y reçoit « en marche » (pendant son écran d'entrée : sa connexion est
+  // déjà ouverte). Le jeu de B ne démarre qu'après « Entrer ».
   await a.page.keyboard.down('ArrowRight');
   await pageB.getByRole('button', { name: 'Créer mon compte' }).click();
+  await enterOffice(pageB);
   await requested;
   // Puis A s'arrête pendant que le jeu de B charge : son arrêt, et son renvoi 500 ms plus tard, arrivent avant la scène de B.
   await a.page.waitForTimeout(300);
@@ -217,6 +220,7 @@ test('A recharge la page : B voit toujours un seul A', async ({ browser }) => {
   await expect.poll(() => playerSeenBy(b.page, a.id)).toMatchObject({ x: before.x, y: before.y });
 
   await a.page.reload();
+  await enterOffice(a.page);
   await waitForOffice(a.page);
   // A revient là où il était (le serveur l'a gardé pendant la coupure) : son init le dit.
   expect(await selfAt(a.page)).toEqual({ id: a.id, x: before.x, y: before.y });
