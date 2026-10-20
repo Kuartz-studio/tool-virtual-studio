@@ -64,6 +64,27 @@ describe('erreurs de l\'API, toujours en JSON', () => {
     expect(printed).not.toContain(SECRET_TOKEN);
   });
 
+  // Drizzle cite les paramètres d'une requête qui échoue dans son erreur (DrizzleQueryError : message, pile, `params`). Pour la lecture
+  // d'une session, c'est le jeton de la session : il ouvrirait le compte à qui lit le journal.
+  test('la base tombe pendant la lecture d\'une session : le journal dit l\'erreur, sans le jeton de session', async () => {
+    const { logger, lines } = captureLogs();
+    const t = await createTestApp({ logger });
+    const { cookie } = await t.inviteAndAccept('lea@x.fr');
+    // Le cookie : « <nom>=<jeton>.<signature> » ; la base garde le jeton.
+    const sessionToken = decodeURIComponent(cookie.slice(cookie.indexOf('=') + 1)).split('.')[0]!;
+    expect(sessionToken.length).toBeGreaterThan(20);
+    const client = (t.db as unknown as { $client: { query(...args: unknown[]): Promise<unknown> } }).$client;
+    vi.spyOn(client, 'query').mockRejectedValue(Object.assign(new Error('Connection terminated unexpectedly'), { code: '08006' }));
+
+    const res = await request(t.app).get('/api/members').set('Cookie', cookie);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    const logged = JSON.stringify(lines);
+    expect(lines.filter((line) => (line.level as number) >= 50).length).toBeGreaterThan(0);
+    expect(logged).toContain('Failed query');   // c'est bien l'erreur de Drizzle qui est journalisée
+    expect(logged).toContain('Connection terminated unexpectedly');
+    expect(logged).not.toContain(sessionToken);
+  });
+
   test('journal actif : l\'erreur 500 ne s\'écrit qu\'une fois, dans le journal', async () => {
     const { logger } = captureLogs();
     const t = await createTestApp({ logger });

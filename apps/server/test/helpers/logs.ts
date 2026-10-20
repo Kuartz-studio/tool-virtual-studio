@@ -1,7 +1,8 @@
 import { Writable } from 'node:stream';
-import { pino } from 'pino';
+import { createLogger } from '../../src/logger';
 
-// Un journal pino dont on garde les lignes (objets JSON), pour vérifier ce que le serveur journalise.
+// Un journal comme celui de production (createLogger : niveau info, erreurs sans les paramètres des requêtes) dont on garde les lignes
+// (objets JSON), pour vérifier ce que le serveur journalise.
 export function captureLogs() {
   const lines: Array<Record<string, unknown>> = [];
   const stream = new Writable({
@@ -10,5 +11,5 @@ export function captureLogs() {
       done();
     },
   });
-  return { logger: pino({ level: 'info' }, stream), lines };
+  return { logger: createLogger({ NODE_ENV: 'production' }, stream), lines };
 }
