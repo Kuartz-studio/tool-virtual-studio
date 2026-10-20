@@ -8,17 +8,19 @@ import { createDb, isPgliteUrl } from './db/client';
 import { runMigrations } from './db/migrate';
 import { loadEnv, type Env } from './env';
 import { createLogger } from './logger';
-import { createMemoryMailer, createResendMailer, type Mailer } from './mail/mailer';
+import { createMemoryMailer, createNoneMailer, createResendMailer, type Mailer } from './mail/mailer';
 import { attachRealtime, loadOfficeMap, type Realtime } from './realtime/io';
 import { createServerEvents } from './server-events';
 
-// Resend en production. Avec MAILER=memory rien ne part : en développement, l'objet et le lien de chaque e-mail
-// s'affichent dans le journal, pour pouvoir suivre une invitation ou une réinitialisation sans boîte mail.
+// Resend ou, sans e-mail, none en production. Avec MAILER=none, rien ne part et rien n'est journalisé : l'admin copie les liens
+// depuis l'appli. Avec MAILER=memory rien ne part non plus : en développement, l'objet et le lien de chaque e-mail s'affichent
+// dans le journal, pour pouvoir suivre une invitation ou une réinitialisation sans boîte mail.
 function createMailerFromEnv(env: Env, logger: Logger): Mailer {
   if (env.MAILER === 'resend') {
     // loadEnv exige RESEND_API_KEY et MAIL_FROM avec MAILER=resend.
     return createResendMailer({ apiKey: env.RESEND_API_KEY!, from: env.MAIL_FROM! });
   }
+  if (env.MAILER === 'none') return createNoneMailer();
   if (env.NODE_ENV !== 'development') return createMemoryMailer();
   return createMemoryMailer({
     onSend: (mail) => logger.info({ to: mail.to, subject: mail.subject, link: mail.link }, 'E-mail non envoyé (MAILER=memory)'),

@@ -4,17 +4,19 @@ import { createInvitationService } from '../auth/invitations';
 import { createDb, isPgliteUrl } from '../db/client';
 import { runMigrations } from '../db/migrate';
 import { loadEnv, type Env } from '../env';
-import { createMemoryMailer, createResendMailer, type Mailer } from '../mail/mailer';
+import { createMemoryMailer, createNoneMailer, createResendMailer, type Mailer } from '../mail/mailer';
 
 const USAGE = 'Usage : pnpm --filter @bureau/server admin:invite <adresse e-mail>';
 
 function createMailerFromEnv(env: Env): Mailer {
   // loadEnv exige RESEND_API_KEY et MAIL_FROM avec MAILER=resend.
-  return env.MAILER === 'resend' ? createResendMailer({ apiKey: env.RESEND_API_KEY!, from: env.MAIL_FROM! }) : createMemoryMailer();
+  if (env.MAILER === 'resend') return createResendMailer({ apiKey: env.RESEND_API_KEY!, from: env.MAIL_FROM! });
+  return env.MAILER === 'none' ? createNoneMailer() : createMemoryMailer();
 }
 
 // La commande `pnpm --filter @bureau/server admin:invite <adresse>` : crée une invitation admin pour cette adresse, l'envoie par
-// e-mail et affiche le lien. C'est ainsi que naît le premier admin, avant qu'un panneau d'administration soit accessible.
+// e-mail (avec MAILER=resend) et affiche le lien. Avec MAILER=none ou memory, rien ne part : le lien affiché est la seule porte
+// d'entrée. C'est ainsi que naît le premier admin, avant qu'un panneau d'administration soit accessible.
 // Renvoie le code de sortie : 0 si l'invitation est créée et envoyée, 1 sinon, avec un message en français sur stderr.
 export async function adminInviteCommand(args: string[], source: Record<string, string | undefined> = process.env): Promise<number> {
   if (args.length !== 1) {
@@ -61,7 +63,7 @@ export async function adminInviteCommand(args: string[], source: Record<string, 
     console.log(
       env.MAILER === 'resend'
         ? `E-mail envoyé à ${email.data}.`
-        : 'Aucun e-mail envoyé (MAILER=memory) : transmettre le lien ci-dessous à la personne.',
+        : `Aucun e-mail envoyé (MAILER=${env.MAILER}) : transmettre le lien ci-dessous à la personne.`,
     );
     console.log(`Lien : ${link}`);
     return 0;

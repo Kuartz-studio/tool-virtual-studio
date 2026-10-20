@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { renderInvitationEmail } from './templates/invitation-email';
+import { createResetLinkStore, type ResetLinkStore } from './reset-link-store';
 import { renderResetPasswordEmail } from './templates/reset-password-email';
 
 // Les deux méthodes rejettent la promesse quand l'e-mail n'a pas pu partir.
@@ -56,6 +57,29 @@ export function createMemoryMailer(o: { onSend?: (mail: SentMail) => void } = {}
       const wanted = to.toLowerCase();
       return sent.filter((mail) => mail.to.toLowerCase() === wanted).at(-1);
     },
+  };
+}
+
+export type NoneMailer = Mailer & { resetLinks: ResetLinkStore };
+
+// Le mailer sans e-mail (MAILER=none), reconnu à sa réserve de liens.
+export function isNoneMailer(mailer: Mailer): mailer is NoneMailer {
+  return typeof (mailer as Partial<NoneMailer>).resetLinks?.take === 'function';
+}
+
+// MAILER=none : aucun e-mail ne part, et rien n'est rendu ni envoyé nulle part. Les liens d'invitation sont donnés à l'admin par
+// les routes admin (admin-routes.ts) et par la commande admin:invite, qui ne passent pas par `sendInvitation` : il ne fait rien.
+// Le lien d'un mot de passe oublié, lui, est créé par Better Auth, qui le confie à `sendPasswordReset` : le mailer le garde dans
+// une petite réserve en mémoire (reset-link-store.ts) que la route de l'admin vide aussitôt. Rien n'est écrit dans le journal : le
+// jeton du lien ouvre le compte.
+export function createNoneMailer(o: { resetLinks?: ResetLinkStore } = {}): NoneMailer {
+  const resetLinks = o.resetLinks ?? createResetLinkStore();
+  return {
+    async sendInvitation() {},
+    async sendPasswordReset({ to, link }) {
+      resetLinks.put(to, link);
+    },
+    resetLinks,
   };
 }
 

@@ -54,6 +54,28 @@ test('admin:invite crée une invitation admin dans la base PGlite, affiche le li
   }
 }, 60_000);
 
+// MAILER=none : comme avec memory, rien ne part et le lien affiché est la seule porte d'entrée ; le message dit le mode en cours.
+test('admin:invite avec MAILER=none affiche le lien, sans envoyer d\'e-mail', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'bureau-admin-invite-none-'));
+  onTestFinished(() => rmSync(dir, { recursive: true, force: true }));
+  const databaseUrl = `pglite://${join(dir, 'base')}`;
+
+  const run = await runCommand(['root@x.fr'], { ...config, DATABASE_URL: databaseUrl, MAILER: 'none' });
+  expect(run.code, run.stderr).toBe(0);
+  expect(run.stdout).toMatch(/Aucun e-mail envoyé \(MAILER=none\)/);
+  expect(run.stdout).not.toMatch(/MAILER=memory/);
+  const link = run.stdout.match(/https?:\/\/\S+/)?.[0];
+  expect(link).toMatch(/^http:\/\/localhost:4000\/rejoindre\?token=[\w-]+$/);
+
+  const { db, close } = await createDb(databaseUrl);
+  try {
+    const token = new URL(link!).searchParams.get('token')!;
+    expect(await createInvitationService(db).check(token)).toMatchObject({ status: 'valid', invitation: { email: 'root@x.fr', role: 'admin', invitedBy: null } });
+  } finally {
+    await close();
+  }
+}, 60_000);
+
 test('admin:invite échoue avec un message en français : adresse absente ou invalide, configuration invalide, base en mémoire, base injoignable', async () => {
   const cases = [
     { name: 'sans adresse', args: [], env: { ...config, DATABASE_URL: 'pglite://.data/jamais' }, stderr: /Usage/ },

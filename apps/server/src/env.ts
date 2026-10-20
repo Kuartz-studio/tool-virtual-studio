@@ -15,7 +15,11 @@ const envSchema = z
       .transform((url) => url.replace(/\/+$/, '')),
     DATABASE_URL: z.string({ error: 'obligatoire' }),
     BETTER_AUTH_SECRET: z.string({ error: 'obligatoire (32 caractères minimum)' }).min(32, '32 caractères minimum'),
-    MAILER: z.enum(['resend', 'memory'], { error: 'doit valoir resend ou memory' }).default('memory'),
+    // resend : les e-mails partent par Resend. none : aucun e-mail, l'admin copie lui-même les liens d'invitation et de mot de passe
+    // depuis l'appli (le mode le moins cher, accepté en production). memory : rien ne part, les e-mails restent en mémoire
+    // (développement et tests seulement).
+    MAILER: z.enum(['resend', 'none', 'memory'], { error: 'doit valoir resend, none ou memory' }).default('memory'),
+    // Obligatoires avec MAILER=resend seulement.
     RESEND_API_KEY: z.string().optional(),
     MAIL_FROM: z.string().optional(),
     // Sans les trois variables LiveKit, l'audio et la vidéo sont désactivés.
@@ -33,7 +37,7 @@ const envSchema = z
     const refuse = (name: string, message: string) => ctx.issues.push({ code: 'custom', input: env, path: [name], message });
     if (env.NODE_ENV === 'production') {
       if (isPgliteUrl(env.DATABASE_URL)) refuse('DATABASE_URL', 'memory:// et pglite:// sont refusées en production : utiliser une base PostgreSQL');
-      if (env.MAILER !== 'resend') refuse('MAILER', 'doit valoir resend en production');
+      if (env.MAILER === 'memory') refuse('MAILER', 'doit valoir resend ou none en production');
     }
     if (env.MAILER === 'resend') {
       if (!env.RESEND_API_KEY) refuse('RESEND_API_KEY', 'obligatoire avec MAILER=resend');

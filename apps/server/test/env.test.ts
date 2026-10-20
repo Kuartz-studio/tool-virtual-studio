@@ -15,6 +15,24 @@ test('production refuse memory:// et MAILER=memory', () => {
   expect(() => loadEnv({ ...base, DATABASE_URL: 'postgres://x', MAILER: 'memory' })).toThrow(/MAILER/);
 });
 
+// Sans e-mail (MAILER=none), l'admin copie lui-même les liens d'invitation et de mot de passe : c'est le mode le moins cher, et il est
+// accepté en production. Seul memory, qui ne livre rien à personne, y reste refusé.
+test('production accepte MAILER=none, sans RESEND_API_KEY ni MAIL_FROM, et refuse toujours MAILER=memory', () => {
+  const production = { NODE_ENV: 'production', APP_URL: 'https://b.fr', BETTER_AUTH_SECRET: 'x'.repeat(32), DATABASE_URL: 'postgres://u:p@db:5432/bureau' };
+  const env = loadEnv({ ...production, MAILER: 'none' });
+  expect(env).toMatchObject({ NODE_ENV: 'production', MAILER: 'none' });
+  expect([env.RESEND_API_KEY, env.MAIL_FROM]).toEqual([undefined, undefined]);
+  expect(() => loadEnv({ ...production, MAILER: 'memory' })).toThrow(/MAILER : doit valoir resend ou none en production/);
+  // Sans MAILER, le défaut est memory : refusé en production, où il faut choisir.
+  expect(() => loadEnv(production)).toThrow(/MAILER : doit valoir resend ou none en production/);
+});
+
+test('MAILER=none ne demande rien d\'autre, en développement non plus', () => {
+  expect(loadEnv({ ...valid, MAILER: 'none' }).MAILER).toBe('none');
+  // Des variables Resend laissées dans le fichier .env ne gênent pas.
+  expect(loadEnv({ ...valid, MAILER: 'none', RESEND_API_KEY: 'k', MAIL_FROM: 'a@b.fr' }).MAILER).toBe('none');
+});
+
 // Les routes de test (E2E=1) créent des invitations sans session admin et lisent les e-mails envoyés.
 test('production refuse E2E=1', () => {
   const production = {
@@ -28,6 +46,7 @@ test('production refuse E2E=1', () => {
 // Avec Resend, les tests e2e enverraient de vrais e-mails à leurs adresses inventées, et /api/test/mails/last n'aurait rien à lire.
 test('E2E=1 exige MAILER=memory', () => {
   expect(() => loadEnv({ ...valid, E2E: '1', MAILER: 'resend', RESEND_API_KEY: 'k', MAIL_FROM: 'a@b.fr' })).toThrow(/E2E : exige MAILER=memory/);
+  expect(() => loadEnv({ ...valid, E2E: '1', MAILER: 'none' })).toThrow(/E2E : exige MAILER=memory/);
   expect(loadEnv({ ...valid, E2E: '1', MAILER: 'memory' }).E2E).toBe('1');
 });
 
@@ -94,6 +113,7 @@ test.each([
   ['PORT', 'qui n\'est pas un nombre', { PORT: 'abc' }],
   ['PORT', 'trop grand', { PORT: '70000' }],
   ['MAILER', 'inconnu', { MAILER: 'smtp' }],
+  ['MAILER', 'inconnu (casse)', { MAILER: 'None' }],
   ['AUTH_RATE_LIMIT', 'inconnu', { AUTH_RATE_LIMIT: 'maybe' }],
   ['E2E', 'autre que 1', { E2E: 'true' }],
 ])('%s %s → erreur qui le nomme', (name, _case, patch) => {
