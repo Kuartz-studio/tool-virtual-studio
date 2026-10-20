@@ -322,6 +322,48 @@ describe('POST /api/admin/members/:id/reset-link', () => {
     expect(elapsed).toBeLessThan(5000);
   }, 15_000);
 
+  // La route publique de Better Auth reste ouverte à tous pendant que l'admin attend son lien : seul le contexte de la demande de l'admin
+  // laisse sendResetPassword livrer un lien (reset-link-context.ts). Une demande publique pour la même adresse, arrivée entre-temps,
+  // ne livre ni ne garde rien, et ne change pas le résultat de l'admin.
+  test('une demande publique pour la même adresse pendant l\'attente de l\'admin ne livre rien et ne change pas son lien', async () => {
+    const t = await createNoneTestApp();
+    const admin = await asAdmin(t);
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    // La livraison du lien à la réserve est retenue : la route de l'admin attend, la demande publique passe pendant ce temps.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const deliver = t.mailer.sendPasswordReset;
+    const send = vi.spyOn(t.mailer, 'sendPasswordReset').mockImplementation(async (mail) => {
+      await gate;
+      await deliver(mail);
+    });
+
+    const pending = resetLink(t, admin.cookie, lea.userId).then((res) => res);
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1), { timeout: 4000 });   // Better Auth a confié le lien de l'admin
+
+    const publicRequest = await request(t.app)
+      .post('/api/auth/request-password-reset')
+      .send({ email: 'lea@x.fr', redirectTo: `${t.env.APP_URL}/reinitialiser` });
+    expect(publicRequest.status).toBe(200);
+    expect(publicRequest.body).toEqual({ status: true, message: 'If this email exists in our system, check your email for the reset link' });
+    // La demande publique n'a rien livré : un seul appel au mailer (celui de l'admin), et rien dans la réserve.
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(t.mailer.resetLinks.size).toBe(0);
+
+    release();
+    const res = await pending;
+    expect(res.status).toBe(200);
+    // Le lien rendu est celui de la demande de l'admin, et il marche.
+    const delivered = send.mock.calls[0]![0];
+    expect(delivered.to).toBe('lea@x.fr');
+    expect(res.body.link).toBe(delivered.link);
+    expect(await resetTokenOf(t, res.body.link as string)).toBeTruthy();
+    expect(t.mailer.resetLinks.size).toBe(0);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   test('Better Auth qui échoue → 502 reset_failed, journalisé sans adresse ni lien', async () => {
     const { logger, lines } = captureLogs();
     const t = await createNoneTestApp({ logger });
@@ -335,6 +377,40 @@ describe('POST /api/admin/members/:id/reset-link', () => {
     const failure = lines.find((line) => line.msg === 'Création du lien de mot de passe impossible');
     expect(failure).toMatchObject({ level: 50, userId: lea.userId, err: { message: 'La base est tombée' } });
     expect(JSON.stringify(lines)).not.toContain('lea@x.fr');
+  });
+
+  // Une trace de qui a demandé un lien et pour qui : l'identifiant de l'admin et celui du membre, jamais le lien ni l'adresse.
+  test('une demande réussie laisse une ligne de journal (qui, pour qui), sans lien ni adresse', async () => {
+    const { logger, lines } = captureLogs();
+    const t = await createNoneTestApp({ logger });
+    const admin = await asAdmin(t);
+    const lea = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
+
+    const res = await resetLink(t, admin.cookie, lea.userId);
+    expect(res.status).toBe(200);
+
+    const written = lines.filter((line) => line.msg === 'Lien de mot de passe créé');
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({ level: 30, actorId: admin.userId, userId: lea.userId });
+    expect(Object.keys(written[0]!).sort()).toEqual(['actorId', 'hostname', 'level', 'msg', 'pid', 'time', 'userId']);
+    const link = res.body.link as string;
+    const journal = JSON.stringify(lines);
+    expect(journal).not.toContain(link);
+    expect(journal).not.toContain(new URL(link).pathname.split('/').at(-1)!);
+    expect(journal).not.toContain('lea@x.fr');
+    expect(journal).not.toContain('admin@x.fr');
+    expect(journal).not.toContain('Léa');
+  });
+
+  test('un refus ou un échec ne laisse pas cette ligne', async () => {
+    const { logger, lines } = captureLogs();
+    const t = await createNoneTestApp({ logger });
+    const admin = await asAdmin(t);
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    expect((await resetLink(t, admin.cookie, 'inconnu')).status).toBe(404);
+    vi.spyOn(t.auth.api, 'requestPasswordReset').mockRejectedValue(new Error('La base est tombée'));
+    expect((await resetLink(t, admin.cookie, lea.userId)).status).toBe(502);
+    expect(lines.some((line) => line.msg === 'Lien de mot de passe créé')).toBe(false);
   });
 
   test('le lien et son jeton ne sont jamais journalisés', async () => {

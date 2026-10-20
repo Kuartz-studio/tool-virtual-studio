@@ -170,7 +170,7 @@ export function adminRoutes(d: {
   // MAILER=none seulement (sinon 404) : le lien par lequel un membre choisit un nouveau mot de passe, que l'admin lui transmet. C'est
   // la demande de mot de passe oublié de Better Auth, faite pour le compte de ce membre, dont le lien est repris au mailer au lieu
   // d'être envoyé. Mêmes règles que le lien de l'e-mail : valable une heure, un seul usage ; réinitialiser ferme les sessions du
-  // compte et coupe ses connexions au bureau (auth.ts). Le lien n'est ni journalisé ni gardé : il n'existe que dans cette réponse.
+  // compte et coupe ses connexions au bureau (auth.ts). Le lien n'est ni journalisé ni gardé : il n'existe que dans cette réponse (le journal dit seulement qui l'a demandé, et pour qui).
   // Un lien par demande, et les demandes pour un même membre passent l'une après l'autre : chacune reprend le sien.
   router.post('/members/:id/reset-link', async (req, res) => {
     if (!resetLinks) {
@@ -204,6 +204,8 @@ export function adminRoutes(d: {
         res.status(502).json({ error: 'reset_failed' });
         return;
       }
+      // Qui a demandé un lien, et pour qui : leurs identifiants seulement. Ni le lien (son jeton ouvre le compte) ni l'adresse.
+      logger.info({ actorId: res.locals.user!.id, userId: member.id }, 'Lien de mot de passe créé');
       res.json({ link });
     });
   });
