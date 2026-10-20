@@ -374,7 +374,8 @@ test("une cible en attente ne reprend pas l'id d'un groupe qui existe : ceux qui
   s = run([A, B, player('C', at(6, 7)), player('D', at(12, 14), { moving: true }), player('E', at(14, 14), { moving: true })], s, 750);
   expect(s.pending).toEqual({ C: { target: 'g1', since: 750 } });
   // Moins de 500 ms plus tard, C s'arrête près de D et E, qui s'arrêtent aussi. {C, D, E}, la plus grande grappe, ne reprend pas
-  // g1 par la cible de C : elle reçoit g2. A et B ne changent de rien, et C n'entre jamais dans g1.
+  // g1 par la cible de C : A et B le prennent dès la première passe, par leurs deux voix d'id actuel, et une cible en attente ne
+  // prend jamais un groupe qui existe. {C, D, E} reçoit g2 ; A et B ne changent de rien, et C n'entre jamais dans g1.
   const states = steps([A, B, player('C', at(13, 13)), player('D', at(12, 14)), player('E', at(14, 14))], s, 1000, 1500);
   expect(states.map((st) => st.assignment)).toEqual([
     { A: 'g1', B: 'g1', C: null, D: null, E: null },
@@ -386,6 +387,23 @@ test("une cible en attente ne reprend pas l'id d'un groupe qui existe : ceux qui
     g1: { id: 'g1', members: ['A', 'B'], zoneId: null },
     g2: { id: 'g2', members: ['C', 'D', 'E'], zoneId: null },
   });
+});
+
+test("une cible en attente ne suit pas un groupe qui existe quand ses membres s'en vont : ceux qui attendaient en forment un nouveau", () => {
+  let s = step([player('A', at(2, 7)), player('B', at(4, 7))], EMPTY_GROUPING, 0, 500);   // g1 = {A, B}
+  // C et D s'arrêtent près de B à 750 ms : ils attendent g1.
+  const C = player('C', at(6, 7));
+  const D = player('D', at(6, 8));
+  s = run([player('A', at(2, 7)), player('B', at(4, 7)), C, D], s, 750);
+  expect(s.pending).toEqual({ C: { target: 'g1', since: 750 }, D: { target: 'g1', since: 750 } });
+  // A et B s'éloignent l'un de l'autre à 1000 ms : chacun seul, ils attendent de quitter g1. {C, D} ne reprend pas g1, qui existe
+  // encore : g2, qu'ils attendent depuis 1000 ms. Sans cela, ils entreraient dans g1 à 1250 ms, avec A et B déjà loin.
+  const states = steps([player('A', at(2, 13)), player('B', at(20, 13)), C, D], s, 1000, 1500);
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: 'g1', B: 'g1', C: null, D: null },
+    { A: 'g1', B: 'g1', C: null, D: null },
+    { A: null, B: null, C: 'g2', D: 'g2' },
+  ]);
 });
 
 test("sortir de la salle et s'arrêter près de quelqu'un : hors du groupe de la salle dans le même appel, dans le nouveau groupe 500 ms plus tard", () => {
@@ -420,6 +438,100 @@ test("un groupe du couloir dont deux membres entrent dans la salle : celui qui r
     pending: {},
     nextId: 2,
   });
+});
+
+// ---- Revue, tour 1 : un id va à la grappe qui compte le plus de ses membres -------------------------------------------------
+
+// Toutes les façons d'ordonner la liste.
+function permutations<T>(items: readonly T[]): T[][] {
+  if (items.length <= 1) return [[...items]];
+  return items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]));
+}
+
+test("un membre du groupe du couloir entre dans la salle : ceux qui restent gardent l'id, lui rejoint la salle après 500 ms", () => {
+  // g1 = {B, C, D} dans le couloir ; A est seul dans la salle.
+  const A = player('A', at(12, 3));
+  const C = player('C', at(12, 6));
+  const D = player('D', at(14, 6));
+  const s = step([A, player('B', at(10, 6)), C, D], EMPTY_GROUPING, 0, 500);
+  expect(s.assignment).toEqual({ A: null, B: 'g1', C: 'g1', D: 'g1' });
+  // B entre dans la salle. {A, B} et {C, D} ont la même taille et A < C, mais g1 a deux voix chez {C, D}, une seule chez {A, B} :
+  // C et D, qui n'ont pas bougé, gardent g1 ; B attend 500 ms le groupe de la salle, g2.
+  const states = steps([A, player('B', at(10, 4)), C, D], s, 750, 1250);
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: null, B: 'g1', C: 'g1', D: 'g1' },
+    { A: null, B: 'g1', C: 'g1', D: 'g1' },
+    { A: 'g2', B: 'g2', C: 'g1', D: 'g1' },
+  ]);
+  expect(states.at(-1)!.groups).toEqual({
+    g1: { id: 'g1', members: ['C', 'D'], zoneId: null },
+    g2: { id: 'g2', members: ['A', 'B'], zoneId: ROOM },
+  });
+});
+
+test("même scène, quel que soit l'ordre des ids : les 24 façons de nommer les quatre personnes", () => {
+  for (const [inRoom, mover, stay1, stay2] of permutations(['A', 'B', 'C', 'D'])) {
+    const still = [player(inRoom, at(12, 3)), player(stay1, at(12, 6)), player(stay2, at(14, 6))];
+    const s = step([...still, player(mover, at(10, 6))], EMPTY_GROUPING, 0, 500);
+    const states = steps([...still, player(mover, at(10, 4))], s, 750, 1250);
+    const roles = (st: GroupingState) => [st.assignment[inRoom], st.assignment[mover], st.assignment[stay1], st.assignment[stay2]];
+    expect(states.map(roles), `${inRoom} dans la salle, ${mover} y entre, ${stay1} et ${stay2} restent`).toEqual([
+      [null, 'g1', 'g1', 'g1'],
+      [null, 'g1', 'g1', 'g1'],
+      ['g2', 'g2', 'g1', 'g1'],
+    ]);
+  }
+});
+
+test("une grappe plus grande ne prend pas l'id d'un groupe sur une seule voix ; l'attente de ses membres continue", () => {
+  const C = player('C', at(12, 6));
+  const D = player('D', at(14, 6));
+  let s = step([player('B', at(10, 6)), C, D], EMPTY_GROUPING, 0, 500);   // g1 = {B, C, D} dans le couloir
+  // A et E arrivent dans la salle à 750 ms : ils attendent un nouveau groupe, g2.
+  const A = player('A', at(12, 3));
+  const E = player('E', at(9, 2));
+  s = run([A, player('B', at(10, 6)), C, D, E], s, 750);
+  expect(s.pending).toEqual({ A: { target: 'g2', since: 750 }, E: { target: 'g2', since: 750 } });
+  // B entre dans la salle à 1000 ms. {A, B, E} (3) est plus grande que {C, D} (2), mais g1 n'y a qu'une voix, contre deux : C et D
+  // gardent g1, et {A, B, E} reprend g2, la cible de A et E, dont l'attente continue.
+  const states = steps([A, player('B', at(10, 4)), C, D, E], s, 1000, 1500);
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: null, B: 'g1', C: 'g1', D: 'g1', E: null },
+    { A: 'g2', B: 'g1', C: 'g1', D: 'g1', E: 'g2' },   // 1250 : 500 ms après leur arrivée
+    { A: 'g2', B: 'g2', C: 'g1', D: 'g1', E: 'g2' },   // 1500 : 500 ms après l'entrée de B
+  ]);
+});
+
+test("à voix égales, la plus grande grappe garde l'id, même si l'autre a le plus petit id de membre", () => {
+  const row7 = (id: string, tx: number) => player(id, at(tx, 7));
+  const s = step([row7('A', 13), row7('B', 15), row7('C', 17), row7('D', 19)], EMPTY_GROUPING, 0, 500);   // g1 = {A, B, C, D}
+  // A et B partent ensemble ligne 14 ; E s'arrête près de D. g1 a deux voix chez {C, D, E} comme chez {A, B} : {C, D, E}, plus
+  // grande, le garde ; {A, B} reçoit g2.
+  const states = steps([player('A', at(13, 14)), player('B', at(15, 14)), row7('C', 17), row7('D', 19), row7('E', 21)], s, 750, 1250);
+  expect(states.at(-1)!.assignment).toEqual({ A: 'g2', B: 'g2', C: 'g1', D: 'g1', E: 'g1' });
+});
+
+test("une cible en attente se prend aussi aux voix : ceux qui l'attendent le plus nombreux gardent leur attente", () => {
+  // A, B et D s'arrêtent en ligne à 0 ms : ils attendent g1. C est seul, loin.
+  const B = player('B', at(6, 7));
+  const D = player('D', at(8, 7));
+  const C = player('C', at(2, 14));
+  const s = run([player('A', at(4, 7)), B, C, D], EMPTY_GROUPING, 0);
+  expect(s.pending).toEqual({ A: { target: 'g1', since: 0 }, B: { target: 'g1', since: 0 }, D: { target: 'g1', since: 0 } });
+  // À 250 ms, A s'arrête près de C. {A, C} et {B, D} ont la même taille et A < B, mais g1 a deux voix chez {B, D}, une chez {A, C} :
+  // B et D, qui n'ont pas bougé, gardent leur attente et sont groupés à 500 ms ; {A, C} reçoit g2.
+  const states = steps([player('A', at(4, 14)), B, C, D], s, 250, 750);
+  expect(states[0]!.pending).toEqual({
+    A: { target: 'g2', since: 250 },
+    B: { target: 'g1', since: 0 },
+    C: { target: 'g2', since: 250 },
+    D: { target: 'g1', since: 0 },
+  });
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: null, B: null, C: null, D: null },
+    { A: null, B: 'g1', C: null, D: 'g1' },
+    { A: 'g2', B: 'g1', C: 'g2', D: 'g1' },
+  ]);
 });
 
 // ---- Propriétés, sur des marches au hasard ----------------------------------------------------------------------------------
@@ -524,8 +636,27 @@ function randomWalk(seed: number, count: number): Frame[] {
   return frames;
 }
 
-// Ce qui doit être vrai de chaque état rendu, quel que soit le passé : la liste des écarts (vide si tout va bien).
-function violations(s: GroupingState, prev: GroupingState, players: ProximityPlayer[], now: number): string[] {
+// Les groupes de prev dont aucun membre n'a bougé (position, marche), changé de statut ni quitté le bureau depuis l'appel précédent
+// (previous : ses joueurs). Deux conditions de plus, sans lesquelles des changements voulus défont le groupe : au moins deux membres
+// (un groupe d'un membre n'existe que tant que quelqu'un est en route vers lui, et se dissout s'il fait demi-tour), et aucun
+// changement déjà en cours chez ses membres (une attente commencée plus tôt aboutit même si tout le monde reste immobile : c'est ainsi
+// que D et E rejoignent g2 dans la fusion).
+function unchangedGroups(prev: GroupingState, players: ProximityPlayer[], previous: ProximityPlayer[]): string[] {
+  const now = new Map(players.map((p) => [p.id, p]));
+  const was = new Map(previous.map((p) => [p.id, p]));
+  const unchanged = (id: string) => {
+    const a = was.get(id);
+    const b = now.get(id);
+    return a !== undefined && b !== undefined && a.x === b.x && a.y === b.y && a.moving === b.moving && a.status === b.status;
+  };
+  return Object.values(prev.groups)
+    .filter((g) => g.members.length >= 2 && g.members.every((m) => unchanged(m) && !Object.hasOwn(prev.pending, m)))
+    .map((g) => g.id);
+}
+
+// Ce qui doit être vrai de chaque état rendu, quel que soit le passé : la liste des écarts (vide si tout va bien). previous : les
+// joueurs de l'appel précédent, celui qui a rendu prev.
+function violations(s: GroupingState, prev: GroupingState, players: ProximityPlayer[], previous: ProximityPlayer[], now: number): string[] {
   const out: string[] = [];
   const present = players.map((p) => p.id).sort();
   const byId = new Map(players.map((p) => [p.id, p]));
@@ -553,6 +684,7 @@ function violations(s: GroupingState, prev: GroupingState, players: ProximityPla
     if (w.target === s.assignment[id]) out.push(`${id} attend ${w.target}, où il est déjà`);
     if (!(now - w.since >= 0 && now - w.since < GROUP_DEBOUNCE_MS)) out.push(`${id} attend depuis ${now - w.since} ms`);
   }
+  const unexcused = new Map<string, string[]>();   // groupe → ceux qui en sont sortis sans attente mûre, Ne pas déranger ni sortie de zone
   for (const p of players) {
     const g = s.assignment[p.id] ?? null;
     const before = prev.assignment[p.id] ?? null;
@@ -577,12 +709,21 @@ function violations(s: GroupingState, prev: GroupingState, players: ProximityPla
       const outsiders = (s.groups[g]?.members ?? []).filter((m) => byId.has(m) && zoneOf(byId.get(m)!) !== wasZone);
       if (outsiders.length > 0) out.push(`${p.id}, resté dans la zone ${wasZone}, est dans ${g} avec ${outsiders} qui sont dehors`);
     }
-    // Quitter son groupe : après 500 ms, ou tout de suite en Ne pas déranger, hors de la zone d'un groupe de zone, ou quand le
-    // groupe est dissous (il n'y reste personne).
-    if (g === null && before !== null) {
-      const dissolved = !Object.values(s.assignment).includes(before);
-      if (!matured && p.status !== 'dnd' && !leftZone && !dissolved) out.push(`${p.id} quitte ${before} sans attendre`);
+    if (g === null && before !== null && !matured && p.status !== 'dnd' && !leftZone) {
+      unexcused.set(before, [...(unexcused.get(before) ?? []), p.id]);
     }
+  }
+  // Quitter son groupe : après 500 ms, ou tout de suite en Ne pas déranger ou hors de la zone d'un groupe de zone, ou par la
+  // dissolution du groupe : il n'y restait que lui (les autres en sont sortis pour leur propre raison, ou sont partis), et personne
+  // n'était en route vers lui.
+  for (const [gid, leavers] of unexcused) {
+    const dissolved = leavers.length === 1 && !Object.values(s.assignment).includes(gid) && !awaited.has(gid);
+    if (!dissolved) out.push(`${leavers} quitte(nt) ${gid} sans attendre, et ${gid} n'a pas été dissous`);
+  }
+  // Un groupe garde son id quand aucun de ses membres n'a bougé, changé de statut ni quitté le bureau : tous y restent.
+  for (const gid of unchangedGroups(prev, players, previous)) {
+    const gone = prev.groups[gid]!.members.filter((m) => s.assignment[m] !== gid);
+    if (gone.length > 0) out.push(`${gid} : aucun membre n'a bougé ni changé, mais ${gone} n'y sont plus`);
   }
   if (s.nextId < prev.nextId) out.push(`nextId recule : ${prev.nextId} → ${s.nextId}`);
   for (const id of [...Object.keys(s.groups), ...awaited]) {
@@ -641,16 +782,19 @@ describe('propriétés, sur des marches au hasard', () => {
   const SEEDS = Array.from({ length: 30 }, (_, i) => 1000 + i);
 
   test("à chaque appel : état cohérent, résultat indépendant de l'ordre des joueurs, état reçu jamais modifié", () => {
-    const seen = { openGroups: 0, zoneGroups: 0, alone: 0, immediate: 0, switches: 0, zoneExitsToCluster: 0, openToZone: 0 };
+    const seen = { openGroups: 0, zoneGroups: 0, alone: 0, immediate: 0, switches: 0, zoneExitsToCluster: 0, openToZone: 0, unchangedGroups: 0 };
     for (const seed of SEEDS) {
       const random = mulberry32(seed + 1);
       let s = EMPTY_GROUPING;
+      let previous: ProximityPlayer[] = [];
       for (const [k, { players, now }] of randomWalk(seed, 300).entries()) {
         // Figés : computeGroups lèverait une TypeError en modifiant l'état reçu ou la liste des joueurs.
         const prev = deepFreeze(s);
         const next = computeGroups(deepFreeze(players), map, prev, now);
         const context = `graine ${seed}, appel ${k} (t = ${now})`;
-        expect(violations(next, prev, players, now), context).toEqual([]);
+        expect(violations(next, prev, players, previous, now), context).toEqual([]);
+        seen.unchangedGroups += unchangedGroups(prev, players, previous).length;
+        previous = players;
         expect(JSON.stringify(computeGroups(shuffled(players, random), map, prev, now)), context).toBe(JSON.stringify(next));
         // Ce que la marche a fait passer par le calcul, pour vérifier qu'elle couvre les cas intéressants.
         const groups = Object.values(next.groups);

@@ -3,8 +3,10 @@ import type { OfficeMap } from '../map/parse-map';
 import { zoneAt } from '../map/queries';
 import type { ProximityPlayer } from '../protocol';
 
-// Un groupe de conversation : une room LiveKit pour le serveur. Ses membres sont dans l'ordre lexicographique ; zoneId est la zone
-// isolante (salle de réunion, espace de bureau) du groupe, où sont tous ses membres, ou null dans un espace ouvert.
+// Un groupe de conversation : une room LiveKit pour le serveur. Ses membres sont dans l'ordre lexicographique. zoneId : la zone
+// isolante (salle de réunion, espace de bureau) dont c'est le groupe, et tous ses membres y sont ; ou null pour un groupe d'espace
+// ouvert, dont un membre peut se trouver dans une zone le temps d'attendre le groupe de celle-ci (500 ms après y être entré). C'est la
+// zone de la grappe qui a pris son id au dernier calcul, ou, si aucune ne l'a pris, celle qu'il avait.
 export interface Group {
   id: string;
   members: string[];
@@ -44,11 +46,15 @@ const LEAVE_SQ = LEAVE_DISTANCE_PX * LEAVE_DISTANCE_PX;
 // 4 fois par seconde par le serveur. Le résultat est un état neuf, qui ne dépend que des arguments, pas de l'ordre de la liste :
 // - dans une zone isolante, tous les éligibles (pas en Ne pas déranger) forment un groupe, à partir de deux ;
 // - dans les espaces ouverts, on se relie à moins de 3 cases et à l'arrêt, on reste relié jusqu'à 4 cases, de proche en proche ;
-// - un changement ne s'applique qu'après 500 ms, sauf deux sorties, immédiates : passer en Ne pas déranger, et quitter la zone d'un
-//   groupe de zone (même pour rejoindre une autre grappe, qu'on attend alors 500 ms). Un groupe réduit à un membre, vers qui
-//   personne n'est en route, est dissous aussitôt ;
+// - un changement ne s'applique qu'après 500 ms, sauf ces cas, immédiats :
+//   · passer en Ne pas déranger fait sortir de son groupe ;
+//   · se trouver hors de la zone de son groupe quand c'est un groupe de zone fait sortir du groupe : qu'on vienne de quitter la zone,
+//     ou que, resté dehors, on voie son groupe d'espace ouvert devenir celui de la zone (sa plus grande partie y est entrée et la
+//     grappe de la zone a pris son id). On en sort même si l'on veut rejoindre une autre grappe, qu'on attend alors 500 ms ;
+//   · un groupe réduit à un membre, vers qui personne n'est en route, est dissous ;
 // - personne hors d'une zone n'est jamais dans le groupe de cette zone ;
-// - quand des groupes fusionnent ou se séparent, la plus grande grappe garde son id (sa room), les autres en changent.
+// - quand des groupes fusionnent ou se séparent, chaque id va à la grappe qui compte le plus de ses membres : la plus grande partie
+//   garde sa room, les autres en changent.
 export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: GroupingState, now: number): GroupingState {
   // Les joueurs présents, dans l'ordre lexicographique de leur id, avec leur zone : zoneOf(p) = zoneAt(map, p.x, p.y)?.id ?? null.
   const present = [...new Map(players.map((p) => [p.id, p])).values()]
@@ -102,27 +108,43 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
     if (component.length >= 2) clusters.push({ members: component.sort(compare), zoneId: null });
   }
 
-  // 3. Les identifiants, de la plus grande grappe à la plus petite (à égalité : celle du plus petit id de membre) :
-  //    - l'id actuel le plus fréquent parmi ses membres, pas encore pris, et qui ne sort pas de sa zone : celui d'un groupe d'espace
-  //      ouvert, ou d'un groupe de la zone de la grappe. L'id d'un groupe de zone ne sert jamais hors de sa zone ;
-  //    - sinon leur cible en attente la plus fréquente, pas encore prise, parmi les ids qui ne sont pas encore des groupes (un groupe
-  //      qui se forme garde son id pendant l'attente) ;
-  //    - sinon un nouvel id, `g${nextId++}`.
-  //    À égalité, l'ordre lexicographique. claimed : les ids pris par une grappe, avec sa zone.
+  // 3. Les identifiants, pris aux voix : un id va à la grappe qui compte le plus de ses membres, la plus grande partie d'un groupe qui
+  //    se sépare garde donc sa room, quelle que soit la taille des autres grappes et l'ordre des ids des joueurs.
+  //    a. Ids actuels : chaque paire (grappe, id actuel d'au moins un de ses membres), permise si l'id ne sort pas de sa zone (celui
+  //       d'un groupe d'espace ouvert, ou d'un groupe de la zone de la grappe : l'id d'un groupe de zone ne sert jamais hors de sa
+  //       zone) ; voix = ses membres qui sont dans ce groupe.
+  //    b. Pour les grappes restées sans id : leurs cibles en attente, parmi les ids qui ne sont pas encore des groupes (un groupe qui
+  //       se forme garde son id pendant l'attente) ; voix = ses membres qui attendent cet id.
+  //    Dans chaque passe, les paires par voix décroissantes, puis taille de grappe décroissante, puis plus petit id de membre, puis id
+  //    (ordre lexicographique) ; une paire n'est retenue que si ni sa grappe ni son id ne le sont déjà.
+  //    c. Les grappes restantes reçoivent un nouvel id, `g${nextId++}`, de la plus grande à la plus petite (à égalité : celle du
+  //       plus petit id de membre).
+  //    claimed : les ids pris par une grappe, avec sa zone.
   clusters.sort((a, b) => b.members.length - a.members.length || compare(a.members[0]!, b.members[0]!));
   let nextId = prev.nextId;
   const claimed = new Map<string, string | null>();
-  const wanted = new Map<string, string>();   // voulu, pour les membres d'une grappe ; null pour les autres
-  const free = (id: string) => !claimed.has(id);
+  const idOf = new Map<Cluster, string>();
   const prevZone = (id: string): string | null => own(prev.groups, id)?.zoneId ?? null;
+  const claimByVotes = (votesOf: (cluster: Cluster) => Map<string, number>) => {
+    const pairs = clusters
+      .flatMap((cluster, rank) => (idOf.has(cluster) ? [] : [...votesOf(cluster)].map(([id, votes]) => ({ cluster, rank, id, votes }))))
+      .sort((a, b) => b.votes - a.votes || a.rank - b.rank || compare(a.id, b.id));
+    for (const { cluster, id } of pairs) {
+      if (idOf.has(cluster) || claimed.has(id)) continue;
+      idOf.set(cluster, id);
+      claimed.set(id, cluster.zoneId);
+    }
+  };
+  claimByVotes((cluster) => votes(cluster.members.map(current), (g) => prevZone(g) === null || prevZone(g) === cluster.zoneId));
+  claimByVotes((cluster) => votes(cluster.members.map((m) => own(prev.pending, m)?.target ?? null), (g) => own(prev.groups, g) === undefined));
   for (const cluster of clusters) {
-    const id =
-      mostFrequent(cluster.members.map(current), (g) => free(g) && (prevZone(g) === null || prevZone(g) === cluster.zoneId)) ??
-      mostFrequent(cluster.members.map((m) => own(prev.pending, m)?.target ?? null), (g) => free(g) && own(prev.groups, g) === undefined) ??
-      `g${nextId++}`;
+    if (idOf.has(cluster)) continue;
+    const id = `g${nextId++}`;
+    idOf.set(cluster, id);
     claimed.set(id, cluster.zoneId);
-    for (const m of cluster.members) wanted.set(m, id);
   }
+  const wanted = new Map<string, string>();   // voulu, pour les membres d'une grappe ; null pour les autres
+  for (const [cluster, id] of idOf) for (const m of cluster.members) wanted.set(m, id);
   // La zone d'un groupe à cet appel : celle de la grappe qui a pris son id, sinon celle qu'il avait. Un groupe d'espace ouvert dont
   // la grappe d'une zone a pris l'id est donc déjà, à cet appel, le groupe de cette zone.
   const zoneOfGroup = (id: string): string | null => (claimed.has(id) ? (claimed.get(id) ?? null) : prevZone(id));
@@ -195,20 +217,11 @@ function own<T>(record: Record<string, T>, key: string): T | undefined {
   return Object.hasOwn(record, key) ? record[key] : undefined;
 }
 
-// L'id le plus fréquent de la liste parmi ceux qu'`allowed` accepte (null ne compte jamais) ; à égalité, le premier dans l'ordre
-// lexicographique.
-function mostFrequent(ids: Array<string | null>, allowed: (id: string) => boolean): string | null {
+// Le nombre de voix de chaque id de la liste, parmi ceux qu'`allowed` accepte (null ne compte jamais).
+function votes(ids: Array<string | null>, allowed: (id: string) => boolean): Map<string, number> {
   const counts = new Map<string, number>();
   for (const id of ids) {
     if (id !== null && allowed(id)) counts.set(id, (counts.get(id) ?? 0) + 1);
   }
-  let best: string | null = null;
-  let bestCount = 0;
-  for (const [id, count] of counts) {
-    if (count > bestCount || (count === bestCount && best !== null && compare(id, best) < 0)) {
-      best = id;
-      bestCount = count;
-    }
-  }
-  return best;
+  return counts;
 }
