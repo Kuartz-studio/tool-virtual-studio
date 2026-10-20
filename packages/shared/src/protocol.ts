@@ -26,7 +26,9 @@ export interface ChatMessage { id: string; channel: ChatChannel; userId: string;
 export interface InitPayload { self: PublicPlayer; players: PublicPlayer[]; mapKey: string; chatHistory: ChatMessage[] }
 export interface WorldTick { t: number; moves: Array<{ id: string } & MovePayload> }
 export interface MediaJoinPayload { url: string; room: string; token: string }
-export type ChatAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'no_group' };
+// La réponse du serveur à `chat:send` : `invalid` (charge utile refusée), `rate_limited` (trop de messages), `no_group` (« À proximité »
+// sans personne autour), `unavailable` (le serveur n'a pas pu enregistrer le message : la base est en panne ; le message n'est pas parti).
+export type ChatAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'no_group' | 'unavailable' };
 
 export interface ServerToClientEvents {
   init: (p: InitPayload) => void;

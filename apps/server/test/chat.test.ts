@@ -263,14 +263,14 @@ describe('chat:send, canal Tout le monde', () => {
     expect(await srv.db.$count(chatMessage)).toBe(CHAT_RATE.max + 2);
   });
 
-  test('un texte que PostgreSQL refuse (un caractère NUL) : invalid, journalisé sans le texte, rien n\'est envoyé, et le chat continue', async () => {
+  test('un texte que PostgreSQL refuse (un caractère NUL) : unavailable, journalisé sans le texte, rien n\'est envoyé, et le chat continue', async () => {
     const { logger, lines } = captureLogs();
     const srv = await startTestServer({ logger });
     const a = await enterRecorded(srv, 'a@x.fr');
     const b = await enterRecorded(srv, 'b@x.fr');
 
-    // L'accusé n'a pas de code pour une panne du serveur : le message n'est pas parti, c'est ce que dit `invalid`.
-    expect(await send(a.socket, everyone('un secret\u0000à ne pas écrire dans les journaux'))).toEqual({ ok: false, error: 'invalid' });
+    // Le message n'a pas pu être enregistré, et le client n'y peut rien : `unavailable` (la cause est dans le journal).
+    expect(await send(a.socket, everyone('un secret\u0000à ne pas écrire dans les journaux'))).toEqual({ ok: false, error: 'unavailable' });
     expect(lines.filter((line) => line.level === 50)).toEqual([
       expect.objectContaining({
         msg: 'Enregistrement du message impossible',

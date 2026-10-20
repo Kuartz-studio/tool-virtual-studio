@@ -87,7 +87,8 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   // 1. charge utile invalide (chatSendSchema : 1 à 500 caractères une fois coupés) : `invalid` ;
   // 2. débit dépassé (CHAT_RATE) : `rate_limited`. La limite est celle du compte, pas de la socket : se reconnecter ne la remet pas à
   //    zéro. Elle est commune aux deux canaux, et passe avant leurs règles ;
-  // 3. canal `all` : enregistré, puis envoyé à tout le bureau, émetteur compris (c'est sa confirmation) ;
+  // 3. canal `all` : enregistré, puis envoyé à tout le bureau, émetteur compris (c'est sa confirmation) ; `unavailable` si la base ne
+  //    l'enregistre pas ;
   // 4. canal `nearby` : envoyé à chaque socket de chaque membre du groupe actuel de l'émetteur, lui compris, sans rien enregistrer ;
   //    `no_group` s'il n'est dans aucun groupe. Jamais vers le bureau entier : le groupe vient de l'émetteur, personne d'autre n'y entre.
   // Le texte part tel que le schéma l'a rendu (coupé), sans traitement HTML : le client l'affiche comme du texte. L'auteur, le nom,
@@ -119,8 +120,8 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
       stored = await d.chat.post(userId, text);
     } catch (err) {
       logServerError(d.logger, { err, userId }, 'Enregistrement du message impossible');
-      // L'accusé n'a pas de code pour une panne du serveur : le message n'est pas parti, c'est ce que dit `invalid`.
-      return reply({ ok: false, error: 'invalid' });
+      // Une panne du serveur, pas un défaut du message : `unavailable` (le message n'est pas parti ; le client peut réessayer).
+      return reply({ ok: false, error: 'unavailable' });
     }
     // Retiré (member:removed) pendant l'écriture : plus rien ne part en son nom.
     if (!d.world.get(userId)) return;
