@@ -63,11 +63,18 @@ test('toute autre URL : pool node-postgres', async () => {
 });
 
 // Une base qui ne répond plus (bloquée, réseau coupé) ne doit pas tout bloquer avec elle : les arrivées au bureau, l'historique du chat,
-// les enregistrements périodiques, l'arrêt. Le pool de l'application a des délais : 5 s pour se connecter, 10 s par requête.
-test('le pool node-postgres de l\'application : 5 s pour se connecter, 10 s par requête', async () => {
+// les enregistrements périodiques, l'arrêt. Le pool de l'application a des délais : 5 s pour se connecter, 10 s par requête côté serveur
+// (statement_timeout : la base annule l'instruction, la transaction en cours échoue puis est annulée), 15 s côté client (query_timeout :
+// filet pour un réseau coupé), et 30 s au plus de transaction ouverte sans rien faire.
+test('le pool node-postgres de l\'application : 5 s pour se connecter, 10 s par instruction côté base, 15 s côté client', async () => {
   const { db, close } = await createDb('postgres://bureau:bureau@127.0.0.1:1/bureau');
   const pool = (db as unknown as { $client: Pool }).$client;
-  expect(pool.options).toMatchObject({ connectionTimeoutMillis: 5_000, query_timeout: 10_000 });
+  expect(pool.options).toMatchObject({
+    connectionTimeoutMillis: 5_000,
+    statement_timeout: 10_000,
+    query_timeout: 15_000,
+    idle_in_transaction_session_timeout: 30_000,
+  });
   await close();
 });
 
@@ -82,6 +89,8 @@ test('la commande de migration ouvre sa base sans ces délais', async () => {
   const pool = ((await create.mock.results[0]!.value) as { db: { $client: Pool } }).db.$client;
   expect(pool.options.connectionTimeoutMillis).toBeUndefined();
   expect(pool.options.query_timeout).toBeUndefined();
+  expect(pool.options.statement_timeout).toBeUndefined();
+  expect(pool.options.idle_in_transaction_session_timeout).toBeUndefined();
 
   const { db, close } = await createDb(url, { timeouts: false });
   expect((db as unknown as { $client: Pool }).$client.options).not.toHaveProperty('query_timeout');

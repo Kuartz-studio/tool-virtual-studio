@@ -36,11 +36,24 @@ export function isPgliteUrl(url: string): boolean {
   return url.startsWith(MEMORY_PREFIX) || url.startsWith(PGLITE_PREFIX);
 }
 
-// Les délais du pool node-postgres : 5 s pour obtenir une connexion, 10 s pour la réponse d'une requête. Sans eux, une base qui ne
-// répond plus (bloquée, réseau coupé) bloquerait tout avec elle : les arrivées au bureau, l'historique du chat, les enregistrements
-// périodiques des positions, l'arrêt du serveur. La requête en retard échoue (« timeout exceeded when trying to connect », « Query
-// read timeout »), comme une base tombée.
-const POOL_TIMEOUTS = { connectionTimeoutMillis: 5_000, query_timeout: 10_000 };
+// Les délais du pool node-postgres : 5 s pour obtenir une connexion, 10 s pour une instruction. Sans eux, une base qui ne répond plus
+// (bloquée, réseau coupé) bloquerait tout avec elle : les arrivées au bureau, l'historique du chat, les enregistrements périodiques des
+// positions, l'arrêt du serveur. La requête en retard échoue (« timeout exceeded when trying to connect », « canceling statement due to
+// statement timeout »), comme une base tombée.
+// - statement_timeout est le délai de la base : elle annule elle-même l'instruction, et l'erreur arrive au client. C'est le délai qui
+//   compte. query_timeout, côté client, laisserait l'instruction courir : pg abandonne les requêtes en attente mais pas celle qui
+//   s'exécute, et Drizzle annule alors une transaction (ROLLBACK en file) et rend la connexion au pool sans erreur ; si l'instruction
+//   finit plus tard, la connexion revient au pool avec sa transaction encore ouverte, et les écritures suivantes n'y sont jamais validées.
+// - query_timeout (15 s) n'est donc qu'un filet, pour un réseau coupé où la base ne peut pas répondre : plus long que statement_timeout,
+//   pour que l'erreur de la base passe en premier.
+// - idle_in_transaction_session_timeout : la base ferme la connexion d'une transaction restée ouverte sans rien faire 30 s ; le pool
+//   la jette. La seule transaction du serveur (retirer un membre) enchaîne ses instructions sans attente.
+const POOL_TIMEOUTS = {
+  connectionTimeoutMillis: 5_000,
+  statement_timeout: 10_000,
+  query_timeout: 15_000,
+  idle_in_transaction_session_timeout: 30_000,
+};
 
 // `memory://` : PGlite en mémoire (tests, e2e). `pglite://<dossier>` : PGlite enregistré dans ce dossier,
 // relatif au dossier de travail (développement local, sans Docker). Toute autre URL : pool node-postgres, avec ses délais
