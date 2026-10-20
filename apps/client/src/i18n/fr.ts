@@ -66,6 +66,8 @@ export const fr = {
     submit: 'Envoyer le lien',
     submitting: 'Envoi…',
     sent: 'Si un compte existe pour {email}, un e-mail vient de partir avec un lien pour choisir un nouveau mot de passe. Ce lien est valable une heure.',
+    // Serveur sans e-mail (MAILER=none) : un admin envoie le lien lui-même (panneau Admin, « Lien de mot de passe »).
+    noMail: 'Les e-mails ne sont pas activés sur ce bureau. Demande à un admin de t\'envoyer un lien de réinitialisation.',
     backToLogin: 'Retour à la connexion',
   },
   resetPassword: {
