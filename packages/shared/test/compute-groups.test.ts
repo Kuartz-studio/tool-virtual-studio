@@ -347,13 +347,79 @@ test("entrer dans la salle où un groupe parle : 500 ms d'attente, comme ailleur
   expect(steps([...room, player('C', at(10, 4))], s, 750, 1250).map((st) => st.assignment.C)).toEqual([null, null, 'g1']);
 });
 
-test('sortir de la salle à deux : la conversation continue, hors de la salle', () => {
-  let s = step([player('A', at(9, 2)), player('B', at(12, 3))], EMPTY_GROUPING, 0, 500);
+test('sortir de la salle à deux : coupés tout de suite, ensemble dans le couloir 500 ms plus tard, dans un nouveau groupe', () => {
+  const s = step([player('A', at(9, 2)), player('B', at(12, 3))], EMPTY_GROUPING, 0, 500);
   expect(s.groups.g1?.zoneId).toBe(ROOM);
-  // A et B sortent ensemble et s'arrêtent dans le couloir, à 64 px l'un de l'autre : même groupe, qui n'est plus celui de la salle.
-  s = run([player('A', at(9, 7)), player('B', at(11, 7))], s, 750);
-  expect(s).toEqual({ assignment: { A: 'g1', B: 'g1' }, groups: { g1: { id: 'g1', members: ['A', 'B'], zoneId: null } }, pending: {}, nextId: 2 });
-  expect(busyZoneIds(s)).toEqual(new Set());
+  // A et B sortent ensemble et s'arrêtent dans le couloir, à 64 px l'un de l'autre. L'id du groupe de la salle ne sort pas de la
+  // salle : leur grappe du couloir reçoit g2, qu'ils rejoignent avec le délai habituel.
+  const states = steps([player('A', at(9, 7)), player('B', at(11, 7))], s, 750, 1250);
+  expect(states[0]).toEqual({
+    assignment: { A: null, B: null },
+    groups: {},
+    pending: { A: { target: 'g2', since: 750 }, B: { target: 'g2', since: 750 } },
+    nextId: 3,
+  });
+  expect(states.map((st) => st.assignment.A)).toEqual([null, null, 'g2']);
+  expect(states.at(-1)!.groups).toEqual({ g2: { id: 'g2', members: ['A', 'B'], zoneId: null } });
+  expect(busyZoneIds(states.at(-1)!)).toEqual(new Set());
+});
+
+// ---- Décisions du contrôleur, après la première version ---------------------------------------------------------------------
+
+test("une cible en attente ne reprend pas l'id d'un groupe qui existe : ceux qui n'ont pas bougé gardent leur room", () => {
+  const A = player('A', at(2, 7));
+  const B = player('B', at(4, 7));
+  let s = step([A, B], EMPTY_GROUPING, 0, 500);
+  // C s'arrête à 64 px de B : il attend de rejoindre g1. D et E marchent, loin de là.
+  s = run([A, B, player('C', at(6, 7)), player('D', at(12, 14), { moving: true }), player('E', at(14, 14), { moving: true })], s, 750);
+  expect(s.pending).toEqual({ C: { target: 'g1', since: 750 } });
+  // Moins de 500 ms plus tard, C s'arrête près de D et E, qui s'arrêtent aussi. {C, D, E}, la plus grande grappe, ne reprend pas
+  // g1 par la cible de C : elle reçoit g2. A et B ne changent de rien, et C n'entre jamais dans g1.
+  const states = steps([A, B, player('C', at(13, 13)), player('D', at(12, 14)), player('E', at(14, 14))], s, 1000, 1500);
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: 'g1', B: 'g1', C: null, D: null, E: null },
+    { A: 'g1', B: 'g1', C: null, D: null, E: null },
+    { A: 'g1', B: 'g1', C: 'g2', D: 'g2', E: 'g2' },
+  ]);
+  for (const st of states) expect('A' in st.pending || 'B' in st.pending).toBe(false);
+  expect(states.at(-1)!.groups).toEqual({
+    g1: { id: 'g1', members: ['A', 'B'], zoneId: null },
+    g2: { id: 'g2', members: ['C', 'D', 'E'], zoneId: null },
+  });
+});
+
+test("sortir de la salle et s'arrêter près de quelqu'un : hors du groupe de la salle dans le même appel, dans le nouveau groupe 500 ms plus tard", () => {
+  const room = [player('B', at(12, 3)), player('D', at(11, 2))];
+  const C = player('C', at(10, 7));   // dans le couloir, seul
+  const s = step([player('A', at(9, 2)), ...room, C], EMPTY_GROUPING, 0, 500);
+  expect(s.assignment).toEqual({ A: 'g1', B: 'g1', C: null, D: 'g1' });
+  // A sort et s'arrête à 32 px de C. Leur grappe passe avant celle de la salle ({A, C} contre {B, D} : A < B), mais ne reprend pas
+  // g1, l'id d'un groupe de la salle.
+  const states = steps([player('A', at(10, 6)), ...room, C], s, 750, 1250);
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: null, B: 'g1', C: null, D: 'g1' },   // 750 : A n'est plus dans le groupe de la salle
+    { A: null, B: 'g1', C: null, D: 'g1' },
+    { A: 'g2', B: 'g1', C: 'g2', D: 'g1' },   // 1250 : A et C ensemble, dans un nouveau groupe
+  ]);
+  expect(states[0]!.pending).toEqual({ A: { target: 'g2', since: 750 }, C: { target: 'g2', since: 750 } });
+  expect(states.at(-1)!.groups).toEqual({
+    g1: { id: 'g1', members: ['B', 'D'], zoneId: ROOM },
+    g2: { id: 'g2', members: ['A', 'C'], zoneId: null },
+  });
+});
+
+test("un groupe du couloir dont deux membres entrent dans la salle : celui qui reste dehors en sort dans le même appel", () => {
+  const C = player('C', at(10, 6));
+  let s = step([player('A', at(9, 6)), player('B', at(11, 6)), C], EMPTY_GROUPING, 0, 500);
+  expect(s.groups).toEqual({ g1: { id: 'g1', members: ['A', 'B', 'C'], zoneId: null } });
+  // A et B entrent dans la salle : leur grappe de la salle reprend g1, qui devient le groupe de la salle dans ce même appel.
+  s = run([player('A', at(9, 4)), player('B', at(11, 4)), C], s, 750);
+  expect(s).toEqual({
+    assignment: { A: 'g1', B: 'g1', C: null },
+    groups: { g1: { id: 'g1', members: ['A', 'B'], zoneId: ROOM } },
+    pending: {},
+    nextId: 2,
+  });
 });
 
 // ---- Propriétés, sur des marches au hasard ----------------------------------------------------------------------------------
@@ -462,6 +528,7 @@ function randomWalk(seed: number, count: number): Frame[] {
 function violations(s: GroupingState, prev: GroupingState, players: ProximityPlayer[], now: number): string[] {
   const out: string[] = [];
   const present = players.map((p) => p.id).sort();
+  const byId = new Map(players.map((p) => [p.id, p]));
   if (JSON.stringify(Object.keys(s.assignment).sort()) !== JSON.stringify(present)) {
     out.push(`assignment ne couvre pas exactement les joueurs présents : ${Object.keys(s.assignment)} / ${present}`);
   }
@@ -475,6 +542,11 @@ function violations(s: GroupingState, prev: GroupingState, players: ProximityPla
     for (const m of g.members) if (s.assignment[m] !== gid) out.push(`${gid} compte ${m}, affecté à ${s.assignment[m]}`);
     if (g.members.length < 2 && !awaited.has(gid)) out.push(`${gid} : ${g.members.length} membre, et personne en route`);
     if (g.zoneId !== null && !ISOLATING_ZONES.has(g.zoneId)) out.push(`${gid} : zone ${g.zoneId} inconnue`);
+    // Personne hors d'une zone n'est dans le groupe de cette zone.
+    for (const m of g.members) {
+      const where = byId.has(m) ? zoneOf(byId.get(m)!) : undefined;
+      if (g.zoneId !== null && where !== g.zoneId) out.push(`${m} est dans ${gid}, le groupe de la zone ${g.zoneId}, depuis la zone ${where}`);
+    }
   }
   for (const [id, w] of Object.entries(s.pending)) {
     if (!present.includes(id)) out.push(`${id} est parti mais attend encore`);
@@ -493,12 +565,23 @@ function violations(s: GroupingState, prev: GroupingState, players: ProximityPla
     if (g !== null && g !== before && zoneOf(p) !== s.groups[g]?.zoneId) {
       out.push(`${p.id} entre dans ${g} (zone ${s.groups[g]?.zoneId}) depuis la zone ${zoneOf(p)}`);
     }
+    // La zone de son ancien groupe à cet appel : celle du groupe rendu s'il existe encore (la grappe qui a repris son id l'a peut-être
+    // fait entrer dans une zone), sinon celle qu'il avait.
+    const beforeZone = before === null ? null : Object.hasOwn(s.groups, before) ? s.groups[before]!.zoneId : (prev.groups[before]?.zoneId ?? null);
+    const leftZone = beforeZone !== null && zoneOf(p) !== beforeZone;
+    // Sortir de la zone d'un groupe de zone : à null dans le même appel, quelle que soit la grappe voulue.
+    if (leftZone && g !== null) out.push(`${p.id} est sorti de la zone ${beforeZone} de ${before}, mais est affecté à ${g}`);
+    // Qui était dans le groupe d'une zone et y est resté n'est avec personne de l'extérieur : l'id du groupe ne sort pas de la zone.
+    const wasZone = before === null ? null : (prev.groups[before]?.zoneId ?? null);
+    if (wasZone !== null && zoneOf(p) === wasZone && g !== null) {
+      const outsiders = (s.groups[g]?.members ?? []).filter((m) => byId.has(m) && zoneOf(byId.get(m)!) !== wasZone);
+      if (outsiders.length > 0) out.push(`${p.id}, resté dans la zone ${wasZone}, est dans ${g} avec ${outsiders} qui sont dehors`);
+    }
     // Quitter son groupe : après 500 ms, ou tout de suite en Ne pas déranger, hors de la zone d'un groupe de zone, ou quand le
     // groupe est dissous (il n'y reste personne).
     if (g === null && before !== null) {
-      const zone = prev.groups[before]?.zoneId ?? null;
       const dissolved = !Object.values(s.assignment).includes(before);
-      if (!matured && p.status !== 'dnd' && !(zone !== null && zoneOf(p) !== zone) && !dissolved) out.push(`${p.id} quitte ${before} sans attendre`);
+      if (!matured && p.status !== 'dnd' && !leftZone && !dissolved) out.push(`${p.id} quitte ${before} sans attendre`);
     }
   }
   if (s.nextId < prev.nextId) out.push(`nextId recule : ${prev.nextId} → ${s.nextId}`);
@@ -558,7 +641,7 @@ describe('propriétés, sur des marches au hasard', () => {
   const SEEDS = Array.from({ length: 30 }, (_, i) => 1000 + i);
 
   test("à chaque appel : état cohérent, résultat indépendant de l'ordre des joueurs, état reçu jamais modifié", () => {
-    const seen = { openGroups: 0, zoneGroups: 0, alone: 0, immediate: 0, switches: 0 };
+    const seen = { openGroups: 0, zoneGroups: 0, alone: 0, immediate: 0, switches: 0, zoneExitsToCluster: 0, openToZone: 0 };
     for (const seed of SEEDS) {
       const random = mulberry32(seed + 1);
       let s = EMPTY_GROUPING;
@@ -574,11 +657,15 @@ describe('propriétés, sur des marches au hasard', () => {
         if (groups.some((g) => g.zoneId === null)) seen.openGroups++;
         if (groups.some((g) => g.zoneId !== null)) seen.zoneGroups++;
         if (groups.some((g) => g.members.length === 1)) seen.alone++;
+        // Un groupe d'espace ouvert repris par la grappe d'une zone.
+        if (groups.some((g) => g.zoneId !== null && Object.hasOwn(prev.groups, g.id) && prev.groups[g.id]!.zoneId === null)) seen.openToZone++;
         for (const { id } of players) {
           const before = prev.assignment[id] ?? null;
           const after = next.assignment[id];
           if (before !== null && after === null && prev.pending[id]?.target !== null) seen.immediate++;
           if (before !== null && after !== null && before !== after) seen.switches++;
+          // Sorti d'un groupe de zone tout de suite, et en route vers une grappe hors de la zone.
+          if (before !== null && after === null && prev.groups[before]?.zoneId != null && next.pending[id]?.target != null) seen.zoneExitsToCluster++;
         }
         s = next;
       }
