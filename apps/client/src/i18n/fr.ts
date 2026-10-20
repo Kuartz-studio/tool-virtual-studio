@@ -82,7 +82,7 @@ export const fr = {
     replaced: 'Ouvert dans un autre onglet',
     replacedHint: 'Le bureau ne peut être ouvert que dans un onglet à la fois. Utilise-le ici pour reprendre la main : l\'autre onglet s\'arrêtera.',
     useHere: 'Utiliser ici',
-    // La barre du bas : ton nom, ton statut, les commandes.
+    // Le nom, pour les lecteurs d'écran, de la barre du bas : ton nom, ton statut, les commandes.
     barLabel: 'Barre du bureau',
     statusMenu: {
       label: 'Statut',

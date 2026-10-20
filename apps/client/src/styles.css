@@ -193,9 +193,9 @@ a {
 }
 
 /* Par-dessus la carte : les vignettes (en haut), les panneaux (à droite) et la barre (en bas). Tout est posé sur le jeu, rien ne lui
-   prend de place : ouvrir un panneau ne redimensionne pas le canevas. La couche laisse passer la souris, sauf sur ses éléments. */
-/* --bar-gap et --bar-height : l'écart de la barre au bord de la page et sa hauteur (bouton, marges). Les panneaux et les messages
-   s'arrêtent au-dessus. */
+   prend de place : ouvrir un panneau ne redimensionne pas le canevas. La couche laisse passer la souris, sauf sur ses éléments.
+   --bar-gap et --bar-height : l'écart de la barre au bord de la page, et sa hauteur ; les panneaux et les messages s'arrêtent
+   au-dessus. */
 .office-ui {
   --bar-gap: 12px;
   --bar-height: 52px;
