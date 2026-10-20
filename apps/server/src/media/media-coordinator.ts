@@ -109,8 +109,10 @@ export class MediaCoordinator {
     }
   }
 
+  // Un échec n'est qu'un avertissement : le client quitte la room de lui-même en recevant media:leave, le retrait n'est qu'une sûreté
+  // (et « introuvable », la personne déjà partie, est ignoré par le backend).
   private remove(backend: MediaBackend, room: string, userId: string): void {
-    backend.removeParticipant(room, userId).catch((err: unknown) => this.report({ err, userId, room }, 'Retrait d\'un participant LiveKit impossible'));
+    backend.removeParticipant(room, userId).catch((err: unknown) => this.logger?.warn({ err, userId, room }, 'Retrait d\'un participant LiveKit impossible'));
   }
 
   private report(fields: Record<string, unknown>, message: string): void {

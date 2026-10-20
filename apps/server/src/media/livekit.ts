@@ -15,6 +15,11 @@ export const LIVEKIT_VARIABLES = ['LIVEKIT_URL', 'LIVEKIT_API_KEY', 'LIVEKIT_API
 
 type LiveKitEnv = Partial<Pick<Env, (typeof LIVEKIT_VARIABLES)[number]>>;
 
+// Le délai d'une requête à l'API de LiveKit (un retrait), en secondes. Un retrait qui traîne peut arriver après le retour de la personne
+// dans la même room, et l'en chasser : il a peu de temps. livekit-server-sdk attend 10 s par défaut, et sur LiveKit Cloud réessaie dans
+// d'autres régions ; sous 5 s (MIN_FAILOVER_TIMEOUT_SECONDS), il ne fait qu'un essai.
+const ROOM_SERVICE_TIMEOUT_S = 3;
+
 // L'API de LiveKit (RoomService) se joint en HTTP, à l'origine de l'adresse WebSocket que les clients rejoignent : wss:// → https://,
 // ws:// → http://. Une adresse déjà en http(s) garde son schéma. Toute autre valeur est une erreur de configuration : elle arrête le
 // démarrage plutôt que de laisser chaque client échouer à se connecter.
@@ -42,7 +47,7 @@ export function roomServiceUrl(url: string): string {
 export function createLiveKitBackend(env: LiveKitEnv): MediaBackend | null {
   const { LIVEKIT_URL: url, LIVEKIT_API_KEY: apiKey, LIVEKIT_API_SECRET: apiSecret } = env;
   if (!url || !apiKey || !apiSecret) return null;
-  const rooms = new RoomServiceClient(roomServiceUrl(url), apiKey, apiSecret);
+  const rooms = new RoomServiceClient(roomServiceUrl(url), apiKey, apiSecret, { requestTimeout: ROOM_SERVICE_TIMEOUT_S });
   return {
     url,
     mintToken({ room, identity, name }) {

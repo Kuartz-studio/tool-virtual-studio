@@ -168,7 +168,9 @@ describe('MediaCoordinator.apply', () => {
     expect(await media.currentJoin('a')).toBeNull();
   });
 
-  test('removeParticipant qui échoue : journalisé avec la room et la personne, sans jeton ; apply ne rejette pas', async () => {
+  // Un avertissement, pas une erreur : le client quitte la room de lui-même en recevant media:leave, le retrait n'est qu'une sûreté.
+  // (« Introuvable », la personne déjà partie, est ignoré par le backend : createLiveKitBackend.)
+  test('removeParticipant qui échoue : un avertissement (warn) avec la room et la personne, sans jeton ; apply ne rejette pas', async () => {
     const { backend } = fakeBackend();
     const failure = deferred<void>();
     backend.removeParticipant = vi.fn(async () => {
@@ -185,8 +187,9 @@ describe('MediaCoordinator.apply', () => {
     expect(of('c')).toEqual([`join ${BOOT}-g2`]);
 
     await failure.promise;
-    await vi.waitFor(() => expect(lines.filter((line) => line.level === 50)).toHaveLength(2));
-    expect(lines.filter((line) => line.level === 50)).toEqual(
+    await vi.waitFor(() => expect(lines.filter((line) => line.level === 40)).toHaveLength(2));
+    expect(lines.filter((line) => (line.level as number) >= 50)).toEqual([]);
+    expect(lines.filter((line) => line.level === 40)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ room: `${BOOT}-g1`, userId: 'a', err: expect.objectContaining({ message: 'LiveKit injoignable' }) }),
         expect.objectContaining({ room: `${BOOT}-g1`, userId: 'b' }),
@@ -368,5 +371,25 @@ describe('createLiveKitBackend', () => {
     await expect(backend.removeParticipant(`${BOOT}-g1`, 'a')).rejects.toThrow('invalid token');
     fetchSpy.mockRejectedValueOnce(new TypeError('fetch failed'));
     await expect(backend.removeParticipant(`${BOOT}-g1`, 'a')).rejects.toThrow('fetch failed');
+  });
+
+  // Un retrait qui traîne peut arriver après le retour de la personne dans la même room, et l'en chasser : il a peu de temps. Par
+  // défaut, livekit-server-sdk attend 10 s, et sur LiveKit Cloud réessaie dans deux autres régions (près de 30 s en tout). Avec un
+  // délai de moins de 5 s, il ne fait qu'un essai.
+  test('removeParticipant : un seul essai, de 3 s au plus, même sur LiveKit Cloud', async () => {
+    const backend = createLiveKitBackend({ ...LIVEKIT, LIVEKIT_URL: 'wss://bureau.livekit.cloud' })!;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const timeoutSpy = vi.spyOn(AbortSignal, 'timeout');
+    onTestFinished(() => {
+      fetchSpy.mockRestore();
+      timeoutSpy.mockRestore();
+    });
+
+    fetchSpy.mockRejectedValue(new TypeError('fetch failed'));
+    await expect(backend.removeParticipant(`${BOOT}-g1`, 'a')).rejects.toThrow('fetch failed');
+    expect(fetchSpy).toHaveBeenCalledOnce();   // ni découverte des régions, ni autre essai
+    expect(String(fetchSpy.mock.calls[0]![0])).toBe('https://bureau.livekit.cloud/twirp/livekit.RoomService/RemoveParticipant');
+    expect(timeoutSpy).toHaveBeenCalledWith(3000);
+    expect(fetchSpy.mock.calls[0]![1]!.signal).toBe(timeoutSpy.mock.results[0]!.value);
   });
 });
