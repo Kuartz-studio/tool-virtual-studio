@@ -162,3 +162,61 @@ L'appli tourne sur Railway : un service construit depuis le `Dockerfile` de la r
 6. Créer le premier admin, avec la CLI de Railway liée au projet : `railway run pnpm --filter @bureau/server admin:invite <adresse e-mail>` (voir « Premier admin »). Tant que son adresse est en `….railway.internal`, la base n'est joignable que depuis le réseau privé de Railway : si la commande ne l'atteint pas depuis le poste, la lancer dans le conteneur du service (`railway ssh -- node /app/apps/server/dist/cli/admin-invite.js <adresse e-mail>`), ou lui donner l'adresse publique de la base (`DATABASE_PUBLIC_URL`, variable du service PostgreSQL).
 
 Ensuite, chaque `git push` sur `main` redéploie : l'image est reconstruite et les migrations passent avant le serveur. Une version dont le démarrage échoue (configuration invalide, migration en erreur) ne répond pas à `/api/health` et n'est pas mise en service.
+
+## Exploitation
+
+Les gestes de tous les jours, une fois le bureau en ligne. Le détail technique est dans « Panneau admin », « Premier admin », « Déployer » et « Audio et vidéo » ; ici, ce qu'il y a à faire.
+
+### Inviter
+
+1. Connecte-toi avec un compte admin et ouvre « Admin » dans la barre du bas (le tout premier admin vient de la commande de « Premier admin »).
+2. Saisis l'adresse e-mail, choisis le rôle (« Membre » par défaut, « Admin » pour qui doit aussi administrer), puis valide.
+3. La personne reçoit un e-mail avec un lien d'inscription, **valable 7 jours** (`INVITATION_TTL_MS`, `packages/shared/src/constants.ts`).
+4. Au-delà, le lien ne marche plus mais l'invitation reste dans « Invitations en attente », marquée « expirée ». « Renvoyer » envoie un nouveau lien, valable 7 jours à son tour ; l'ancien ne marche plus.
+5. Si l'e-mail n'est pas parti (`mail_failed`), l'invitation est gardée : elle est dans la liste, et « Renvoyer » refait l'envoi. Une adresse déjà invitée ne peut pas l'être une seconde fois (`already_invited`) : renvoie ou annule l'invitation existante.
+
+### Retirer
+
+1. Dans « Membres », clique sur « Retirer » à côté de la personne. Une boîte de dialogue demande confirmation, en nommant la personne.
+2. Une fois confirmé, le compte est désactivé (pas supprimé) et la personne est déconnectée tout de suite : sa page revient à la connexion.
+3. Limite connue de la V1 : **un retrait est définitif**. Il n'y a pas de réactivation dans l'appli, et l'adresse retirée ne peut plus être invitée (`already_member`, « Cette adresse a déjà un compte (actif ou retiré) »). Avant de retirer, vérifie donc que c'est bien voulu.
+4. Le serveur refuse aussi qu'on se retire soi-même (`self`) ou qu'on retire le dernier admin actif (`last_admin`) : il en faut toujours un.
+
+### Suivre la consommation LiveKit
+
+- L'audio et la vidéo tournent sur l'offre gratuite de LiveKit Cloud (offre Build) : **5 000 minutes par mois**. Une minute compte pour chaque personne connectée à une conversation (`docs/conception.md`, §8.5).
+- Les minutes se lisent dans le tableau de bord de LiveKit Cloud, sur le projet dont les clés sont dans les variables `LIVEKIT_*`. Rien ne les compte dans l'appli.
+- Une semaine environ après le lancement, relève les minutes consommées et rapporte-les au mois.
+- Si l'équipe approche de 5 000 minutes, passe à l'offre **Ship** (environ 50 $ par mois : 150 000 minutes, puis 0,0005 $ la minute ; tarifs vérifiés le 19/10/2026 dans la conception). N'attends pas la limite : la page de tarifs de LiveKit ne dit pas ce qui arrive quand l'offre gratuite l'atteint.
+
+### Déployer
+
+- Un `git push` sur `main` redéploie sur Railway : l'image est reconstruite, les migrations passent, puis la nouvelle version remplace l'ancienne dès que `/api/health` répond (détails dans « Déployer » et « Première mise en ligne »). Après un déploiement, `curl https://<domaine>/api/health` doit répondre `{"ok":true}`.
+- Pendant un redéploiement, **tout le monde est déconnecté**, puis les navigateurs se reconnectent seuls à la nouvelle version. À l'arrêt, le serveur enregistre la position de chaque personne présente avant de fermer les connexions : chacun retrouve sa place. Les conversations audio et vidéo se reforment ensuite d'après les positions retrouvées.
+- À vérifier dans les réglages du service Railway : le délai laissé entre SIGTERM et SIGKILL. Il doit couvrir l'enregistrement des positions, la fermeture des connexions, du serveur HTTP et de la base ; le serveur n'a pas de minuterie à lui. Si Railway tue le processus avant la fin, les gens retrouvent leur dernière position enregistrée, qui date de 60 secondes au plus (les positions sont enregistrées toutes les 60 secondes). Aucune valeur n'est vérifiée à ce jour : lis-la dans Railway avant le premier lancement.
+
+### Checklist du premier vrai lancement
+
+Production (variables du service Railway, voir « Première mise en ligne ») :
+
+- [ ] `MAILER=resend`, avec `RESEND_API_KEY` et `MAIL_FROM` (un domaine d'envoi vérifié dans Resend).
+- [ ] `LIVEKIT_URL`, `LIVEKIT_API_KEY` et `LIVEKIT_API_SECRET` en place : le journal de démarrage ne contient pas « LiveKit non configuré : audio et vidéo désactivés ».
+- [ ] `MAP_KEY=office`, **seulement quand `apps/client/public/assets/maps/office.json` existe** (la carte définitive, dessinée dans Tiled) et que `pnpm --filter @bureau/server map:check ../client/public/assets/maps/office.json` sort avec le code 0. Aujourd'hui seule `dev-office.json` existe : `MAP_KEY` vaut `dev-office`, et une carte absente empêche le serveur de démarrer.
+- [ ] Une invitation réelle arrive dans la boîte de réception, pas dans les spams.
+
+Essais à plusieurs, en vrai : deux personnes, puis trois, sur Chrome, Firefox et Safari, dont une sur le partage de connexion d'un téléphone.
+
+- [ ] La conversation démarre en s'arrêtant à côté de quelqu'un.
+- [ ] Passer dans une allée ne connecte personne.
+- [ ] La salle de réunion est privée.
+- [ ] Le partage d'écran fonctionne.
+- [ ] Après un redéploiement, tout le monde revient seul.
+- [ ] Le statut « Ne pas déranger » est respecté.
+- [ ] L'avatar passe devant et derrière les meubles.
+- [ ] Environ 60 images par seconde pendant une visio, mesurées avec l'onglet Performance du navigateur, sur un portable milieu de gamme (`docs/conception.md`, §14).
+
+Lancement :
+
+- [ ] Envoyer les invitations à l'équipe depuis le panneau admin.
+- [ ] Poser à LimeZu la question de la licence par personne.
+- [ ] Une semaine après : relever les minutes LiveKit et décider du passage à l'offre Ship (voir « Suivre la consommation LiveKit »).
