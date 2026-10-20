@@ -13,6 +13,8 @@ export interface OfficeDebug {
   // Les autres joueurs que la scène dessine, par identifiant : leurs pieds à l'écran (en pixels de la carte, arrondis : ils glissent
   // d'une position reçue à l'autre, avec un peu de retard), et l'avatar dessiné. Une entrée par avatar créé, retirée avec lui.
   players: Record<string, { x: number; y: number; avatarKey: string | null }>;
+  // L'audio et la vidéo : la room LiveKit où l'on est, ou que l'on rejoint (null hors conversation), et le nombre de vignettes
+  // (tâche 20). C'est l'objet mediaDebug, ci-dessous.
   media: { room: string | null; tiles: number };
   // Place l'avatar local à cet endroit (en pixels) et le dit au serveur, qui l'accepte si la case est praticable (événement
   // `debug:teleport`, que le serveur n'enregistre qu'avec E2E=1 ; refusé, le `move` qui suit est corrigé).
@@ -29,6 +31,10 @@ declare global {
     __office?: OfficeDebug;
   }
 }
+
+// La part audio/vidéo de window.__office. Elle vit avec la connexion média (media/use-media.ts tient `room` à jour), et non avec la
+// scène, qui n'existe qu'une fois le jeu chargé et que la page recrée pour une autre carte : la scène met cet objet-là dans le sien.
+export const mediaDebug: OfficeDebug['media'] = { room: null, tiles: 0 };
 
 // Expose l'objet sous window.__office dans le build des tests de bout en bout, et ne fait rien dans les autres.
 export function exposeDebug(h: OfficeDebug): void {

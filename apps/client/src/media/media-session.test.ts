@@ -1,0 +1,326 @@
+import type { MediaJoinPayload } from '@bureau/shared';
+import { describe, expect, test, vi } from 'vitest';
+import { FakeMediaClient } from './fake-media-client';
+import type { MediaSnapshot } from './media-client';
+
+// La logique du client média (MediaSession), éprouvée par le faux client : la même, branchée sur un faux LiveKit qui tient un journal
+// (`journal` pour les rooms, `deviceLog` pour les périphériques).
+
+const payload = (room: string): MediaJoinPayload => ({ url: 'wss://livekit.test', room, token: `jeton-${room}` });
+
+const me = (patch: Partial<MediaSnapshot['participants'][number]> = {}) => ({
+  id: 'moi',
+  name: 'Moi',
+  isLocal: true,
+  mic: false,
+  cam: false,
+  screen: false,
+  speaking: false,
+  ...patch,
+});
+
+describe('avant d\'entrer dans une room', () => {
+  test('rien n\'est demandé aux périphériques : ni à la création, ni en changeant micro, caméra, préférences ou partage', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    await client.setMic(false);
+    await client.setCam(false);
+    await client.setPrefs({ mic: true, cam: true, audioInput: 'micro-usb' });
+    await client.setScreenShare(true);
+    await client.leave();
+    expect(client.deviceLog).toEqual([]);
+    expect(client.journal).toEqual([]);
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null });
+  });
+
+  test('l\'état local suit les préférences, puis les changements : il servira en entrant', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: true });
+    expect(client.getSnapshot().local).toEqual({ mic: false, cam: true, screen: false });
+    await client.setMic(true);
+    await client.setCam(false);
+    expect(client.getSnapshot().local).toEqual({ mic: true, cam: false, screen: false });
+
+    await client.join(payload('r1'));
+    expect(client.deviceLog).toEqual(['mic:on']);
+  });
+});
+
+describe('entrer dans une room', () => {
+  test('micro et caméra suivent les préférences, avec les périphériques choisis', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false, audioInput: 'micro-usb', videoInput: 'webcam', audioOutput: 'casque' });
+    await client.join(payload('r1'));
+    expect(client.journal).toEqual(['join:r1']);
+    expect(client.devices).toEqual({ audioInput: 'micro-usb', videoInput: 'webcam', audioOutput: 'casque' });
+    expect(client.deviceLog).toEqual(['mic:on']);
+    expect(client.getSnapshot()).toEqual({
+      room: 'r1',
+      participants: [me({ mic: true })],
+      local: { mic: true, cam: false, screen: false },
+      error: null,
+    });
+  });
+
+  test('micro et caméra refusés (ou absents) : on entre quand même, en réception seule, avec permission_denied', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    client.denyDevices('mic', 'cam');
+    client.addRemote({ id: 'ana', name: 'Ana', mic: true, cam: true });
+    await client.join(payload('r1'));
+    expect(client.getSnapshot()).toEqual({
+      room: 'r1',
+      participants: [me(), { id: 'ana', name: 'Ana', isLocal: false, mic: true, cam: true, screen: false, speaking: false }],
+      local: { mic: false, cam: false, screen: false },
+      error: 'permission_denied',
+    });
+  });
+
+  test('seule la caméra refusée : le micro marche, et permission_denied quand même', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    client.denyDevices('cam');
+    await client.join(payload('r1'));
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ mic: true })], local: { mic: true, cam: false }, error: 'permission_denied' });
+  });
+
+  test('seul le micro refusé : la caméra marche, et l\'erreur reste (elle n\'est pas effacée par la caméra qui suit)', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    client.denyDevices('mic');
+    await client.join(payload('r1'));
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ cam: true })], local: { mic: false, cam: true }, error: 'permission_denied' });
+  });
+
+  test('après un refus, rien n\'est redemandé en changeant de room ; rallumer le micro redemande, et efface l\'erreur si c\'est accepté', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    client.denyDevices('mic', 'cam');
+    await client.join(payload('r1'));
+    await client.join(payload('r2'));
+    expect(client.deviceLog).toEqual(['mic:on', 'cam:on']);
+
+    await client.setMic(true);
+    expect(client.getSnapshot()).toMatchObject({ local: { mic: false, cam: false }, error: 'permission_denied' });
+    client.allowDevices();
+    await client.setMic(true);
+    expect(client.deviceLog).toEqual(['mic:on', 'cam:on', 'mic:on', 'mic:on']);
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ mic: true })], local: { mic: true, cam: false }, error: null });
+  });
+
+  test('connexion impossible : room null et connection_failed ; le join suivant réessaie, et l\'erreur s\'efface', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    client.failConnections();
+    await client.join(payload('r1'));
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: 'connection_failed' });
+    expect(client.deviceLog).toEqual([]);
+
+    client.failConnections(false);
+    await client.join(payload('r1'));
+    expect(client.journal).toEqual(['join:r1', 'join:r1']);
+    expect(client.getSnapshot()).toMatchObject({ room: 'r1', error: null });
+  });
+
+  test('connexion impossible, puis media:leave : l\'erreur s\'efface (cette room n\'est plus attendue), sans rien quitter', async () => {
+    const client = new FakeMediaClient();
+    client.failConnections();
+    await client.join(payload('r1'));
+    await client.leave();
+    expect(client.journal).toEqual(['join:r1']);
+    expect(client.getSnapshot()).toMatchObject({ room: null, error: null });
+  });
+
+  test('une room rejointe pendant qu\'on la rejoint déjà, ou rejointe à nouveau : une seule connexion', async () => {
+    const client = new FakeMediaClient();
+    const release = client.holdConnections();
+    const first = client.join(payload('r1'));
+    const second = client.join(payload('r1'));
+    release();
+    await Promise.all([first, second]);
+    await client.join(payload('r1'));
+    expect(client.journal).toEqual(['join:r1']);
+  });
+
+  test('couper le micro pendant la connexion : il n\'est jamais allumé', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    const release = client.holdConnections();
+    const joined = client.join(payload('r1'));
+    const muted = client.setMic(false);
+    expect(client.getSnapshot().local.mic).toBe(false);
+    release();
+    await Promise.all([joined, muted]);
+    expect(client.deviceLog).not.toContain('mic:on');
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ cam: true })], local: { mic: false, cam: true } });
+  });
+
+  test('les opérations passent l\'une après l\'autre, dans l\'ordre des appels', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: false });
+    const release = client.holdConnections();
+    const done = [client.join(payload('r1')), client.leave(), client.join(payload('r2'))];
+    expect(client.journal).toEqual(['join:r1']);
+    release();
+    await Promise.all(done);
+    expect(client.journal).toEqual(['join:r1', 'leave', 'join:r2']);
+    expect(client.getSnapshot().room).toBe('r2');
+  });
+});
+
+describe('dans une room', () => {
+  test('micro et caméra : allumés et éteints à la demande', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    await client.join(payload('r1'));
+    await client.setMic(false);
+    await client.setCam(false);
+    await client.setCam(true);
+    expect(client.deviceLog).toEqual(['mic:on', 'cam:on', 'mic:off', 'cam:off', 'cam:on']);
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ cam: true })], local: { mic: false, cam: true } });
+  });
+
+  test('rallumer la caméra toujours refusée : elle reste éteinte, avec permission_denied', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    client.denyDevices('cam');
+    await client.setCam(true);
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ mic: true })], local: { mic: true, cam: false }, error: 'permission_denied' });
+  });
+
+  test('setPrefs : les nouveaux périphériques, et micro et caméra qui suivent', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    await client.join(payload('r1'));
+    await client.setPrefs({ audioInput: 'micro-usb', videoInput: 'webcam', mic: false, cam: true });
+    expect(client.deviceLog).toEqual(['mic:on', 'cam:on', 'devices:{"audioInput":"micro-usb","videoInput":"webcam"}', 'mic:off', 'cam:on']);
+    expect(client.devices).toEqual({ audioInput: 'micro-usb', videoInput: 'webcam' });
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ cam: true })], local: { mic: false, cam: true } });
+  });
+
+  test('partage d\'écran : allumé et éteint ; arrêté par le navigateur (« Arrêter le partage »)', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: false });
+    await client.join(payload('r1'));
+    await client.setScreenShare(true);
+    expect(client.getSnapshot()).toMatchObject({ participants: [me({ screen: true })], local: { screen: true } });
+    await client.setScreenShare(false);
+    expect(client.getSnapshot()).toMatchObject({ participants: [me()], local: { screen: false } });
+
+    await client.setScreenShare(true);
+    client.endScreenShare();
+    expect(client.getSnapshot()).toMatchObject({ participants: [me()], local: { screen: false } });
+    expect(client.deviceLog).toEqual(['screen:on', 'screen:off', 'screen:on']);
+  });
+
+  test('partage d\'écran refusé ou annulé (choix de l\'écran fermé) : rien ne change, et ce n\'est pas une erreur', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: false });
+    await client.join(payload('r1'));
+    client.refuseScreenShare();
+    await client.setScreenShare(true);
+    expect(client.getSnapshot()).toMatchObject({ local: { screen: false }, error: null });
+  });
+
+  test('quitter : les pistes s\'arrêtent, le partage d\'écran avec ; micro et caméra voulus restent pour la room suivante', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    await client.join(payload('r1'));
+    await client.setScreenShare(true);
+    await client.leave();
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null });
+    await client.join(payload('r2'));
+    expect(client.deviceLog).toEqual(['mic:on', 'cam:on', 'screen:on', 'mic:on', 'cam:on']);
+  });
+
+  test('connexion perdue (LiveKit renonce à se reconnecter) : room null, personne, connection_failed ; le même join reconnecte', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    client.addRemote({ id: 'ana', name: 'Ana' });
+    await client.setScreenShare(true);
+    client.dropConnection();
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: 'connection_failed' });
+
+    await client.join(payload('r1'));
+    expect(client.journal).toEqual(['join:r1', 'join:r1']);
+    expect(client.getSnapshot()).toMatchObject({ room: 'r1', error: null });
+  });
+
+  test('retiré de la room exprès (le serveur, à un changement de groupe ; un autre onglet) : plus de room, mais pas d\'erreur', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    await client.setScreenShare(true);
+    client.dropConnection('removed');
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: false, screen: false }, error: null });
+
+    // Le media:leave qui suit (ou qui croisait le retrait) ne trouve plus rien à quitter ; le join suivant rejoint.
+    await client.leave();
+    await client.join(payload('r2'));
+    expect(client.journal).toEqual(['join:r1', 'join:r2']);
+    expect(client.getSnapshot()).toMatchObject({ room: 'r2', error: null });
+  });
+
+  test('participants : soi-même d\'abord, puis les autres dans leur ordre d\'arrivée, avec ce qu\'ils publient et qui parle', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    client.addRemote({ id: 'zoe', name: 'Zoé', cam: true });
+    client.addRemote({ id: 'ana', name: 'Ana', mic: true, screen: true });
+    client.setSpeaking('ana', 'moi');
+    expect(client.getSnapshot().participants).toEqual([
+      me({ mic: true, speaking: true }),
+      { id: 'zoe', name: 'Zoé', isLocal: false, mic: false, cam: true, screen: false, speaking: false },
+      { id: 'ana', name: 'Ana', isLocal: false, mic: true, cam: false, screen: true, speaking: true },
+    ]);
+    client.removeRemote('zoe');
+    expect(client.getSnapshot().participants.map((p) => p.id)).toEqual(['moi', 'ana']);
+  });
+});
+
+describe('l\'état, pour l\'interface', () => {
+  test('subscribe : l\'état tout de suite, puis chaque changement une fois ; plus rien après le désabonnement', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    const seen: MediaSnapshot[] = [];
+    const unsubscribe = client.subscribe((s) => seen.push(s));
+    expect(seen).toEqual([client.getSnapshot()]);
+
+    await client.setMic(false);
+    expect(seen).toHaveLength(2);
+    expect(seen[1]!.local.mic).toBe(false);
+    // Rien de changé : rien d'annoncé.
+    await client.setMic(false);
+    await client.leave();
+    expect(seen).toHaveLength(2);
+
+    unsubscribe();
+    await client.setMic(true);
+    expect(seen).toHaveLength(2);
+  });
+
+  test('un abonné qui lève ne prive pas les autres de l\'état ni n\'arrête l\'opération ; son erreur est relancée à part', async () => {
+    vi.useFakeTimers();
+    try {
+      const client = new FakeMediaClient({ mic: true, cam: true });
+      let armed = false;
+      client.subscribe(() => {
+        if (armed) throw new Error('abonné en panne');
+      });
+      const rooms: Array<string | null> = [];
+      client.subscribe((s) => rooms.push(s.room));
+      armed = true;
+
+      await client.join(payload('r1'));
+      expect(rooms.at(-1)).toBe('r1');
+      expect(client.deviceLog).toEqual(['mic:on', 'cam:on']);
+      expect(client.getSnapshot().participants).toEqual([me({ mic: true, cam: true })]);
+      expect(() => vi.runAllTimers()).toThrow('abonné en panne');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('getSnapshot rend le même objet tant que rien ne change (pour useSyncExternalStore), un nouveau à chaque changement', async () => {
+    const client = new FakeMediaClient();
+    await client.join(payload('r1'));
+    const before = client.getSnapshot();
+    client.setSpeaking();
+    client.updateRemote('personne', { mic: true });
+    expect(client.getSnapshot()).toBe(before);
+    client.setSpeaking('moi');
+    expect(client.getSnapshot()).not.toBe(before);
+    expect(before.participants[0]!.speaking).toBe(false);
+  });
+
+  test('attach : passé au transport (qui suit la piste de la personne), et la fonction rendue détache', async () => {
+    const client = new FakeMediaClient();
+    const video = document.createElement('video');
+    const detach = client.attach(video, 'ana', 'screen');
+    expect(client.attachments).toEqual([{ el: video, participantId: 'ana', source: 'screen' }]);
+    detach();
+    expect(client.attachments).toEqual([]);
+  });
+});

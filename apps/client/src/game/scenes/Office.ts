@@ -12,7 +12,7 @@ import { Scale, Scene, Scenes } from 'phaser';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { useOfficeStore } from '../../state/office-store';
 import { avatarObjectName } from '../avatars';
-import { exposeDebug, type OfficeDebug } from '../debug';
+import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { EventBus } from '../EventBus';
 import { bindKeyboard, DirectionInput } from '../input';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
@@ -53,7 +53,7 @@ export class Office extends Scene {
       ready: false,
       self: null,
       players: {},
-      media: { room: null, tiles: 0 },
+      media: mediaDebug,
       teleport: (x, y) => this.teleport(x, y),
       showOthers: (visible) => this.showOthers(visible),
       avatarsOf: (id) => this.children.list.filter((object) => object.name === avatarObjectName(id)).length,

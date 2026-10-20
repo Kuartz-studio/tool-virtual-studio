@@ -4,7 +4,7 @@ import type { OfficeState } from '../state/office-store';
 import type { OfficeSocket } from './socket';
 
 // Les événements du bus (game/EventBus.ts) entre la connexion et le jeu. `net:*` va de la connexion au jeu ; `local:*`, du jeu à la
-// connexion, qui l'envoie au serveur.
+// connexion, qui l'envoie au serveur ; `media:*`, de l'audio/vidéo (media/use-media.ts) au jeu.
 export interface OfficeBusEvents {
   'net:init': (p: InitPayload) => void;
   'net:tick': (p: WorldTick) => void;
@@ -16,6 +16,9 @@ export interface OfficeBusEvents {
   'local:move': (p: MovePayload) => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
+  // Qui parle dans la room audio/vidéo, soi-même compris (les identifiants des comptes), à chaque changement ; [] en la quittant. Le
+  // jeu dessine l'anneau de parole sur leurs étiquettes (tâche 20).
+  'media:speaking': (ids: string[]) => void;
 }
 
 // Un écouteur, typé comme ceux d'eventemitter3 : ce que l'événement porte, il le reçoit (emitOnBus et listenOnBus le typent).
