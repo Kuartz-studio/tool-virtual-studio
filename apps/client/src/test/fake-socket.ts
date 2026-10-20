@@ -3,8 +3,18 @@ import type { OfficeSocket } from '../net/socket';
 
 type Listener = (...args: never[]) => void;
 
+// Un message envoyé avec un accusé de réception (`socket.timeout(ms).emit(événement, charge, rappel)`), dont le serveur n'a pas encore
+// répondu. Le rappel suit Socket.io : `(erreur, ...réponse)`, l'erreur étant null quand le serveur répond.
+export interface PendingAck {
+  event: string;
+  payload: unknown;
+  // Le délai demandé à Socket.io (`socket.timeout(ms)`).
+  timeoutMs: number;
+  callback: (error: Error | null, ...response: unknown[]) => void;
+}
+
 // Une fausse socket du bureau, pour les tests : elle retient ce que le client envoie (`sent`), et les tests jouent le serveur
-// (`receive`, `serverAccepts`, `serverRefuses`…). `connected` et `active` suivent les règles de socket.io-client :
+// (`receive`, `serverAccepts`, `serverRefuses`, `serverAcks`…). `connected` et `active` suivent les règles de socket.io-client :
 // - active : la socket est ouverte ou essaie de l'être (après connect(), et tant que Socket.io réessaie seul après une panne du
 //   réseau) ; un refus du serveur (connect_error d'un middleware) ou une déconnexion voulue (par le serveur ou par le client) la
 //   rend inactive : plus rien ne se fait sans un nouvel appel à connect() ;
@@ -17,6 +27,8 @@ export class FakeSocket {
   // Le nombre d'écouteurs posés au moment de chaque connect() : ils doivent l'être avant le premier message du serveur.
   readonly listenersAtConnect: number[] = [];
   readonly sent: Array<[event: string, payload: unknown]> = [];
+  // Les accusés de réception en attente, du plus ancien au plus récent (serveur qui n'a pas répondu, ni délai écoulé).
+  readonly pendingAcks: PendingAck[] = [];
   private readonly listeners = new Map<string, Set<Listener>>();
 
   on(event: string, fn: Listener): this {
@@ -33,6 +45,18 @@ export class FakeSocket {
   emit(event: string, payload?: unknown): this {
     this.sent.push([event, payload]);
     return this;
+  }
+
+  // `socket.timeout(ms).emit(événement, charge, rappel)` : le message part comme avec emit() (il est dans `sent`), et son rappel attend
+  // le serveur (serverAcks) ou le délai (ackTimesOut).
+  timeout(timeoutMs: number): { emit(event: string, payload: unknown, callback: PendingAck['callback']): boolean } {
+    return {
+      emit: (event, payload, callback) => {
+        this.sent.push([event, payload]);
+        this.pendingAcks.push({ event, payload, timeoutMs, callback });
+        return true;
+      },
+    };
   }
 
   connect(): this {
@@ -98,6 +122,16 @@ export class FakeSocket {
     this.fire('disconnect', 'io server disconnect');
   }
 
+  // Le serveur répond à l'accusé en attente le plus ancien de cet événement (sans en attendre un : le test s'est trompé).
+  serverAcks(event: string, ...response: unknown[]): void {
+    this.takeAck(event).callback(null, ...response);
+  }
+
+  // Le délai de l'accusé en attente le plus ancien de cet événement s'écoule sans réponse : Socket.io appelle le rappel avec une erreur.
+  ackTimesOut(event: string): void {
+    this.takeAck(event).callback(new Error('operation has timed out'));
+  }
+
   // Ce que le client a envoyé pour cet événement, dans l'ordre.
   sentOf(event: string): unknown[] {
     return this.sent.filter(([name]) => name === event).map(([, payload]) => payload);
@@ -105,6 +139,12 @@ export class FakeSocket {
 
   asSocket(): OfficeSocket {
     return this as unknown as OfficeSocket;
+  }
+
+  private takeAck(event: string): PendingAck {
+    const index = this.pendingAcks.findIndex((ack) => ack.event === event);
+    if (index === -1) throw new Error(`Aucun accusé de « ${event} » n'attend de réponse.`);
+    return this.pendingAcks.splice(index, 1)[0]!;
   }
 
   private fire(event: string, ...args: unknown[]): void {

@@ -1,4 +1,4 @@
-import type { MediaJoinPayload, PublicPlayer } from '@bureau/shared';
+import type { ChatMessage, MediaJoinPayload, PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -90,6 +90,18 @@ function renderShell({
 
 const bar = () => screen.getByRole('group', { name: fr.office.barLabel });
 const toggle = () => within(bar()).getByRole('button', { name: fr.office.people.toggle }) as HTMLButtonElement;
+const chatToggle = () => within(bar()).getByRole('button', { name: /^Chat/ }) as HTMLButtonElement;
+const chatPanel = () => screen.getByRole('complementary', { name: fr.chat.title });
+const chatInput = () => screen.getByRole('textbox') as HTMLInputElement;
+const chatMessage = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
+  id,
+  channel: 'all',
+  userId: 'bob',
+  name: 'Bob',
+  text: `message ${id}`,
+  sentAt: '2026-10-20T10:00:00.000Z',
+  ...over,
+});
 
 describe('la mise en page', () => {
   test('le jeu occupe la page, sous le reste ; la page a son titre', () => {
@@ -115,10 +127,10 @@ describe('la mise en page', () => {
     expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Personnes et Se déconnecter', () => {
+  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Chat, Personnes et Se déconnecter', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Personnes', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Se déconnecter']);
     expect(within(bar()).getByText('Léa')).toBeTruthy();
   });
 
@@ -275,6 +287,231 @@ describe('le panneau Personnes', () => {
   test('il est inactif tant que le serveur n\'a pas dit qui est là (avant l\'init)', () => {
     renderShell({ init: false });
     expect(toggle().disabled).toBe(true);
+  });
+});
+
+describe('le panneau Chat', () => {
+  test('fermé au départ ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    // Fermé, il n'est pas dans la page pour un lecteur d'écran ni pour le clavier.
+    expect(screen.queryByRole('complementary', { name: fr.chat.title })).toBeNull();
+    expect(screen.queryByRole('textbox')).toBeNull();
+    expect(chatToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(chatToggle().hasAttribute('aria-controls')).toBe(false);
+
+    await user.click(chatToggle());
+    expect(chatToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(chatToggle().getAttribute('aria-controls')).toBe(chatPanel().id);
+    expect(chatPanel().id).not.toBe('');
+
+    await user.click(chatToggle());
+    expect(screen.queryByRole('complementary', { name: fr.chat.title })).toBeNull();
+    expect(chatToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(chatToggle().hasAttribute('aria-controls')).toBe(false);
+  });
+
+  test('il s\'ouvre dans la couche par-dessus le jeu, à droite : le jeu ne bouge pas', async () => {
+    const user = userEvent.setup();
+    const { container } = renderShell();
+    const game = screen.getByTestId('jeu');
+    await user.click(chatToggle());
+    expect(container.querySelector('.office-ui .office-side')?.contains(chatPanel())).toBe(true);
+    expect(screen.getByTestId('jeu')).toBe(game);
+    await user.click(chatToggle());
+    expect(screen.getByTestId('jeu')).toBe(game);
+  });
+
+  test('à l\'ouverture le focus passe au champ du message ; Échap ferme et rend le focus au bouton, à chaque fois', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    for (let times = 0; times < 2; times++) {
+      await user.click(chatToggle());
+      expect(document.activeElement).toBe(chatInput());
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('complementary', { name: fr.chat.title })).toBeNull();
+      expect(document.activeElement).toBe(chatToggle());
+    }
+  });
+
+  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(chatToggle());
+    await user.click(screen.getByRole('button', { name: fr.chat.close }));
+    expect(screen.queryByRole('complementary', { name: fr.chat.title })).toBeNull();
+    expect(document.activeElement).toBe(chatToggle());
+  });
+
+  test('au clavier : Entrée ouvre le panneau, le focus est dans le champ', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    chatToggle().focus();
+    await user.keyboard('{Enter}');
+    expect(chatPanel()).toBeTruthy();
+    expect(document.activeElement).toBe(chatInput());
+  });
+
+  test('fermé, le panneau garde le brouillon et l\'onglet : on les retrouve à la réouverture', async () => {
+    const user = userEvent.setup();
+    const { client, refresh } = renderShell();
+    await act(() => client.join(payload('r1')));
+    refresh();
+    await user.click(chatToggle());
+    await user.click(screen.getByRole('tab', { name: fr.chat.tabs.nearby }));
+    await user.type(chatInput(), 'Pas fini');
+    await user.keyboard('{Escape}');
+    await user.click(chatToggle());
+    expect(screen.getByRole('tab', { name: fr.chat.tabs.nearby }).getAttribute('aria-selected')).toBe('true');
+    expect(chatInput().value).toBe('Pas fini');
+    expect(document.activeElement).toBe(chatInput());
+  });
+
+  test('il liste les messages, ceux de l\'historique et ceux qui arrivent, et envoie par la socket de la page', async () => {
+    const user = userEvent.setup();
+    const { socket } = renderShell();
+    act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [chatMessage('m1')] }));
+    await user.click(chatToggle());
+    expect(within(screen.getByRole('log')).getAllByRole('listitem')).toHaveLength(1);
+    act(() => useOfficeStore.getState().addChatMessage(chatMessage('m2')));
+    expect(within(screen.getByRole('log')).getAllByRole('listitem')).toHaveLength(2);
+
+    await user.type(chatInput(), 'Salut{Enter}');
+    expect(socket.sentOf('chat:send')).toEqual([{ channel: 'all', text: 'Salut' }]);
+  });
+
+  test('« À proximité » s\'ouvre avec la room du client média : en conversation seulement', async () => {
+    const user = userEvent.setup();
+    const { client, refresh } = renderShell();
+    await user.click(chatToggle());
+    const nearby = () => screen.getByRole('tab', { name: fr.chat.tabs.nearby }) as HTMLButtonElement;
+    expect(nearby().disabled).toBe(true);
+    await act(() => client.join(payload('r1')));
+    refresh();
+    expect(nearby().disabled).toBe(false);
+    await act(() => client.leave());
+    refresh();
+    expect(nearby().disabled).toBe(true);
+  });
+
+  test('il est inactif tant que le serveur n\'a pas dit qui est là (avant l\'init)', () => {
+    renderShell({ init: false });
+    expect(chatToggle().disabled).toBe(true);
+  });
+
+  test('Chat et Personnes peuvent être ouverts ensemble, Personnes au-dessus', async () => {
+    const user = userEvent.setup();
+    const { container } = renderShell();
+    await user.click(chatToggle());
+    await user.click(toggle());
+    const side = container.querySelector('.office-ui .office-side')!;
+    expect([...side.querySelectorAll(':scope > aside')].map((panel) => panel.querySelector('h2')?.textContent)).toEqual([fr.office.people.title, fr.chat.title]);
+    await user.click(toggle());
+    expect(chatPanel()).toBeTruthy();
+    expect(screen.queryByRole('complementary', { name: fr.office.people.title })).toBeNull();
+  });
+
+  test('la colonne de droite sait si le chat est ouvert (Personnes lui laisse alors de la place)', async () => {
+    const user = userEvent.setup();
+    const { container } = renderShell();
+    const side = container.querySelector('.office-side')!;
+    expect(side.hasAttribute('data-chat-open')).toBe(false);
+    await user.click(chatToggle());
+    expect(side.getAttribute('data-chat-open')).toBe('true');
+    await user.click(chatToggle());
+    expect(side.hasAttribute('data-chat-open')).toBe(false);
+  });
+
+  test('l\'écran « Ouvert dans un autre onglet » rend le panneau inerte avec le reste', async () => {
+    const user = userEvent.setup();
+    const { container } = renderShell();
+    await user.click(chatToggle());
+    act(() => useOfficeStore.getState().setReplaced(true));
+    expect(container.querySelector('.office-ui')?.contains(chatPanel())).toBe(true);
+    expect(container.querySelector('.office-ui')?.hasAttribute('inert')).toBe(true);
+  });
+
+  describe('le badge de non-lus', () => {
+    const badge = () => chatToggle().querySelector('.bar-badge');
+
+    test('rien tant qu\'il n\'y a rien de nouveau ; l\'historique de l\'arrivée est lu', () => {
+      renderShell({ init: false });
+      act(() =>
+        useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [chatMessage('m1'), chatMessage('m2')] }),
+      );
+      expect(badge()).toBeNull();
+      expect(chatToggle().getAttribute('aria-label')).toBeNull();
+      expect(chatToggle().textContent).toBe('Chat');
+    });
+
+    test('sur le bouton fermé : le nombre de nouveaux messages « Tout le monde » des autres, et un nom accessible qui le dit', () => {
+      renderShell();
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m1')));
+      expect(badge()?.textContent).toBe('1');
+      expect(chatToggle().getAttribute('aria-label')).toBe('Chat, 1 nouveau message');
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m2')));
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m3')));
+      expect(badge()?.textContent).toBe('3');
+      expect(chatToggle().getAttribute('aria-label')).toBe('Chat, 3 nouveaux messages');
+      // Le badge est décoratif : le nom accessible dit déjà le nombre.
+      expect(badge()?.getAttribute('aria-hidden')).toBe('true');
+      expect(screen.getByRole('button', { name: 'Chat, 3 nouveaux messages' })).toBeTruthy();
+    });
+
+    test('ni les siens, ni « À proximité » ne comptent', () => {
+      renderShell();
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m1', { userId: 'moi', name: 'Léa' })));
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('n1', { channel: 'nearby' })));
+      expect(badge()).toBeNull();
+    });
+
+    test('au-delà de 99, « 99+ » (le nom accessible, lui, donne le nombre)', () => {
+      renderShell();
+      for (let i = 1; i <= 120; i++) act(() => useOfficeStore.getState().addChatMessage(chatMessage(`m${i}`)));
+      expect(badge()?.textContent).toBe('99+');
+      expect(chatToggle().getAttribute('aria-label')).toBe('Chat, 120 nouveaux messages');
+    });
+
+    test('l\'ouverture les lit : le badge disparaît, et ne revient pas pour ce qui arrive panneau ouvert, ni à la fermeture', async () => {
+      const user = userEvent.setup();
+      renderShell();
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m1')));
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m2')));
+      expect(badge()?.textContent).toBe('2');
+
+      await user.click(chatToggle());
+      expect(badge()).toBeNull();
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m3')));
+      expect(badge()).toBeNull();
+      await user.click(chatToggle());
+      expect(badge()).toBeNull();
+
+      // Fermé de nouveau : on compte ce qui est arrivé depuis.
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m4')));
+      expect(badge()?.textContent).toBe('1');
+    });
+
+    test('pas de badge sur le bouton ouvert, même pour des messages que l\'onglet affiché ne montre pas (À proximité) ; à la fermeture ils comptent', async () => {
+      const user = userEvent.setup();
+      const { client, refresh } = renderShell();
+      await act(() => client.join(payload('r1')));
+      refresh();
+      await user.click(chatToggle());
+      await user.click(screen.getByRole('tab', { name: fr.chat.tabs.nearby }));
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m1')));
+      expect(badge()).toBeNull();
+      await user.click(chatToggle());
+      expect(badge()?.textContent).toBe('1');
+    });
+
+    test('le message « Tout le monde » lu en direct panneau ouvert est lu : il ne revient pas en badge', async () => {
+      const user = userEvent.setup();
+      renderShell();
+      await user.click(chatToggle());
+      act(() => useOfficeStore.getState().addChatMessage(chatMessage('m1')));
+      await user.click(chatToggle());
+      expect(badge()).toBeNull();
+    });
   });
 });
 

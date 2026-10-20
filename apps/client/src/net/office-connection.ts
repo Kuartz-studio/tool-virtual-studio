@@ -46,6 +46,8 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // Branche la connexion sur l'état de l'interface (le magasin) et sur le jeu (le bus) :
 // - ce que le serveur dit va au magasin (arrivées, départs, statuts, médias, profils, onglet remplacé), puis au jeu, qui le lit déjà
 //   à jour ; les positions (`world:tick`) vont au jeu, et aux dernières positions du magasin, que React ne voit pas changer ;
+// - le chat est pour l'interface seule : l'historique « Tout le monde » (dans l'`init`) et chaque message (`chat:message`, le sien
+//   compris) vont au magasin, pas au jeu ;
 // - les consignes audio/vidéo (`media:join`, `media:leave`) : la dernière est retenue au magasin (mediaInstruction), le temps de la
 //   connexion qui l'a reçue. L'audio et la vidéo ne les suivent qu'après « Entrer », et la rejouent alors : le serveur ne redit pas
 //   une consigne. La connexion coupée l'oublie : pendant la coupure, le serveur a pu sortir la personne de son groupe (au-delà du
@@ -98,6 +100,7 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     },
     'media:join': (p) => state().setMediaInstruction({ type: 'join', p }),
     'media:leave': () => state().setMediaInstruction({ type: 'leave' }),
+    'chat:message': (m) => state().addChatMessage(m),
   };
   const onDisconnect = () => {
     state().setReady(false);

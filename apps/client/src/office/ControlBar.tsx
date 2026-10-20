@@ -5,7 +5,7 @@ import type { OfficeSocket } from '../net/socket';
 import { CameraIcon, MicIcon, ScreenIcon } from './icons';
 import { StatusMenu } from './StatusMenu';
 
-// Le bouton d'un panneau de droite (Personnes ; le chat et l'admin viendront) : il dit si le panneau est ouvert, et le bascule.
+// Le bouton d'un panneau de droite (Chat et Personnes ; l'admin viendra) : il dit si le panneau est ouvert, et le bascule.
 export interface PanelToggle {
   label: string;
   open: boolean;
@@ -15,7 +15,13 @@ export interface PanelToggle {
   panelId?: string;
   // Pour rendre le focus au bouton quand le panneau se ferme.
   buttonRef?: Ref<HTMLButtonElement>;
+  // Un compteur sur le bouton (les messages non lus du chat), à partir de 1 : `count` s'affiche (« 99+ » au-delà de 99), et `label`
+  // est ce qu'un lecteur d'écran en entend (« 3 nouveaux messages »), ajouté au nom du bouton.
+  badge?: { count: number; label: string };
 }
+
+// Le plus grand nombre écrit sur un compteur.
+const BADGE_MAX = 99;
 
 interface ControlBarProps {
   // Le nom de la personne, tel que le serveur le dit (ou celui de la session avant).
@@ -87,20 +93,30 @@ export function ControlBar({ name, socket, client, snapshot, panels, onSignOut, 
         </div>
       </div>
       <div className="office-bar-end">
-        {panels.map((panel) => (
-          <button
-            key={panel.label}
-            ref={panel.buttonRef}
-            type="button"
-            className="bar-button"
-            aria-expanded={panel.open}
-            aria-controls={panel.open ? panel.panelId : undefined}
-            disabled={panel.disabled}
-            onClick={panel.onToggle}
-          >
-            {panel.label}
-          </button>
-        ))}
+        {panels.map((panel) => {
+          const badge = panel.badge && panel.badge.count > 0 ? panel.badge : null;
+          return (
+            <button
+              key={panel.label}
+              ref={panel.buttonRef}
+              type="button"
+              className="bar-button"
+              aria-expanded={panel.open}
+              aria-controls={panel.open ? panel.panelId : undefined}
+              aria-label={badge ? `${panel.label}, ${badge.label}` : undefined}
+              disabled={panel.disabled}
+              onClick={panel.onToggle}
+            >
+              {panel.label}
+              {/* Décoratif : le nom du bouton dit déjà le nombre. */}
+              {badge && (
+                <span className="bar-badge" aria-hidden="true">
+                  {badge.count > BADGE_MAX ? `${BADGE_MAX}+` : badge.count}
+                </span>
+              )}
+            </button>
+          );
+        })}
         <button type="button" className="bar-button" onClick={onSignOut} disabled={signingOut}>
           {signingOut ? fr.office.signingOut : fr.office.signOut}
         </button>

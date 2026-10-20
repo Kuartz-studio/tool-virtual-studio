@@ -25,9 +25,35 @@ export async function lastMail(request: APIRequestContext, to: string): Promise<
 }
 
 // La barre du bas du bureau (le groupe « Barre du bureau ») : le nom de la personne, son statut, micro, caméra et partage d'écran,
-// Personnes et Se déconnecter.
+// Chat, Personnes et Se déconnecter.
 export function officeBar(page: Page): Locator {
   return page.getByRole('group', { name: 'Barre du bureau' });
+}
+
+// Le bouton Chat de la barre : son nom devient « Chat, N nouveaux messages » quand il y en a de non lus.
+export function chatToggle(page: Page): Locator {
+  return officeBar(page).getByRole('button', { name: /^Chat/ });
+}
+
+// Ouvre le panneau Chat de cette page, et le renvoie : le focus est dans le champ du message.
+export async function openChat(page: Page): Promise<Locator> {
+  await chatToggle(page).click();
+  const panel = page.getByRole('complementary', { name: 'Chat' });
+  await expect(panel).toBeVisible();
+  await expect(panel.getByRole('textbox')).toBeFocused();
+  return panel;
+}
+
+// Écrit ce texte dans le champ du panneau Chat, et l'envoie avec Entrée (dans l'onglet choisi).
+export async function say(panel: Locator, text: string): Promise<void> {
+  const box = panel.getByRole('textbox');
+  await box.fill(text);
+  await box.press('Enter');
+}
+
+// Les messages de l'onglet affiché du panneau Chat qui portent ce texte.
+export function messagesWith(panel: Locator, text: string): Locator {
+  return panel.getByRole('log').getByRole('listitem').filter({ hasText: text });
 }
 
 // Le bureau est affiché pour cette personne : son nom est dans la barre du bas.

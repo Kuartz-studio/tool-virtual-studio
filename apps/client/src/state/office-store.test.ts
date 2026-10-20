@@ -1,6 +1,6 @@
-import type { InitPayload, PublicPlayer } from '@bureau/shared';
-import { beforeEach, expect, test } from 'vitest';
-import { createOfficeStore, useOfficeStore } from './office-store';
+import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer } from '@bureau/shared';
+import { beforeEach, describe, expect, test } from 'vitest';
+import { createOfficeStore, selectChatUnread, useOfficeStore } from './office-store';
 
 const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => ({
   id,
@@ -115,8 +115,21 @@ test('reset : l\'état de départ (une autre session, un autre compte)', () => {
   store.getState().applyInit(init(SELF, [A]));
   store.getState().setReplaced(true);
   store.getState().setMediaInstruction({ type: 'leave' });
+  store.getState().addChatMessage(msg('m1'));
+  store.getState().addChatMessage(msg('n1', { channel: 'nearby' }));
   store.getState().reset();
-  expect(store.getState()).toMatchObject({ selfId: null, self: null, mapKey: null, players: {}, replaced: false, ready: false, mediaInstruction: null });
+  expect(store.getState()).toMatchObject({
+    selfId: null,
+    self: null,
+    mapKey: null,
+    players: {},
+    replaced: false,
+    ready: false,
+    mediaInstruction: null,
+    chatAll: [],
+    chatNearby: [],
+    chatReadId: null,
+  });
 });
 
 test('ready : faux au départ ; vrai à l\'init (le serveur nous a placés) ; faux quand la connexion est coupée', () => {
@@ -199,4 +212,159 @@ test('useOfficeStore est le magasin de l\'appli', () => {
   useOfficeStore.getState().applyInit(init(SELF, [A]));
   expect(useOfficeStore.getState().selfId).toBe('moi');
   useOfficeStore.getState().reset();
+});
+
+// ---- Le chat ---------------------------------------------------------------------------------------------------------------------
+
+const msg = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
+  id,
+  channel: 'all',
+  userId: 'a',
+  name: 'A',
+  text: `texte ${id}`,
+  sentAt: '2026-10-20T10:00:00.000Z',
+  ...over,
+});
+const initWith = (chatHistory: ChatMessage[], players: PublicPlayer[] = [A]): InitPayload => ({ self: SELF, players, mapKey: 'dev-office', chatHistory });
+const ids = (list: ChatMessage[]) => list.map((m) => m.id);
+const many = (count: number, prefix = 'm', over: Partial<ChatMessage> = {}) => Array.from({ length: count }, (_, i) => msg(`${prefix}${i + 1}`, over));
+
+describe('chat', () => {
+  test('avant tout init : aucun message, rien de lu', () => {
+    expect(store.getState()).toMatchObject({ chatAll: [], chatNearby: [], chatReadId: null });
+    expect(selectChatUnread(store.getState())).toBe(0);
+  });
+
+  test('init : l\'historique « Tout le monde » est la liste, dans l\'ordre du serveur (du plus ancien au plus récent)', () => {
+    store.getState().applyInit(initWith([msg('m1'), msg('m2'), msg('m3')]));
+    expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2', 'm3']);
+    expect(store.getState().chatNearby).toEqual([]);
+  });
+
+  test('un nouvel init (retour après une coupure, nouvel onglet) remplace « Tout le monde » par l\'historique, et garde « À proximité »', () => {
+    store.getState().applyInit(initWith([msg('m1'), msg('m2')]));
+    store.getState().addChatMessage(msg('m3'));
+    store.getState().addChatMessage(msg('n1', { channel: 'nearby' }));
+    // Le serveur ne redit jamais « À proximité », qu'il ne garde pas ; l'historique, lui, fait foi pour « Tout le monde ».
+    store.getState().applyInit(initWith([msg('m2'), msg('m3'), msg('m4')]));
+    expect(ids(store.getState().chatAll)).toEqual(['m2', 'm3', 'm4']);
+    expect(ids(store.getState().chatNearby)).toEqual(['n1']);
+    store.getState().applyInit(initWith([]));
+    expect(store.getState().chatAll).toEqual([]);
+    expect(ids(store.getState().chatNearby)).toEqual(['n1']);
+  });
+
+  test('addChatMessage : chaque canal à sa liste, à la suite de ce qu\'il y a', () => {
+    store.getState().applyInit(initWith([msg('m1')]));
+    store.getState().addChatMessage(msg('m2'));
+    store.getState().addChatMessage(msg('n1', { channel: 'nearby' }));
+    store.getState().addChatMessage(msg('m3'));
+    store.getState().addChatMessage(msg('n2', { channel: 'nearby' }));
+    expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2', 'm3']);
+    expect(ids(store.getState().chatNearby)).toEqual(['n1', 'n2']);
+  });
+
+  test('un message déjà là (même id) n\'est pas ajouté deux fois, et l\'état reste le même objet', () => {
+    store.getState().applyInit(initWith([msg('m1')]));
+    store.getState().addChatMessage(msg('m2'));
+    store.getState().addChatMessage(msg('n1', { channel: 'nearby' }));
+    const before = store.getState();
+    // Celui de l'historique, un message du direct reçu deux fois : un seul.
+    store.getState().addChatMessage(msg('m1'));
+    store.getState().addChatMessage(msg('m2'));
+    store.getState().addChatMessage(msg('n1', { channel: 'nearby' }));
+    expect(store.getState()).toBe(before);
+    expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2']);
+  });
+
+  test('l\'historique est dédoublonné aussi (le premier exemplaire reste)', () => {
+    store.getState().applyInit(initWith([msg('m1'), msg('m2', { text: 'premier' }), msg('m2', { text: 'second' }), msg('m3')]));
+    expect(store.getState().chatAll.map((m) => [m.id, m.text])).toEqual([
+      ['m1', 'texte m1'],
+      ['m2', 'premier'],
+      ['m3', 'texte m3'],
+    ]);
+  });
+
+  test('les 200 derniers messages seulement (CHAT_HISTORY_LIMIT) : à l\'init, en direct, et pour « À proximité »', () => {
+    expect(CHAT_HISTORY_LIMIT).toBe(200);
+    store.getState().applyInit(initWith(many(205)));
+    expect(store.getState().chatAll).toHaveLength(200);
+    expect(store.getState().chatAll[0]!.id).toBe('m6');
+    expect(store.getState().chatAll.at(-1)!.id).toBe('m205');
+
+    store.getState().addChatMessage(msg('m206'));
+    expect(store.getState().chatAll).toHaveLength(200);
+    expect(store.getState().chatAll[0]!.id).toBe('m7');
+    expect(store.getState().chatAll.at(-1)!.id).toBe('m206');
+
+    for (const m of many(230, 'n', { channel: 'nearby' })) store.getState().addChatMessage(m);
+    expect(store.getState().chatNearby).toHaveLength(200);
+    expect(store.getState().chatNearby[0]!.id).toBe('n31');
+    expect(store.getState().chatNearby.at(-1)!.id).toBe('n230');
+  });
+
+  describe('non lus', () => {
+    test('au premier init, l\'historique est lu : rien de non lu', () => {
+      store.getState().applyInit(initWith([msg('m1'), msg('m2')]));
+      expect(store.getState().chatReadId).toBe('m2');
+      expect(selectChatUnread(store.getState())).toBe(0);
+    });
+
+    test('un historique vide au premier init : tout ce qui arrive ensuite, des autres, est non lu', () => {
+      store.getState().applyInit(initWith([]));
+      expect(store.getState().chatReadId).toBeNull();
+      store.getState().addChatMessage(msg('m1'));
+      store.getState().addChatMessage(msg('m2'));
+      expect(selectChatUnread(store.getState())).toBe(2);
+    });
+
+    test('les messages des autres reçus depuis le dernier lu ; les siens ne comptent pas', () => {
+      store.getState().applyInit(initWith([msg('m1')]));
+      store.getState().addChatMessage(msg('m2'));
+      store.getState().addChatMessage(msg('m3', { userId: 'moi', name: 'MOI' }));
+      store.getState().addChatMessage(msg('m4', { userId: 'b', name: 'B' }));
+      expect(selectChatUnread(store.getState())).toBe(2);
+    });
+
+    test('« À proximité » ne compte pas', () => {
+      store.getState().applyInit(initWith([msg('m1')]));
+      store.getState().addChatMessage(msg('n1', { channel: 'nearby' }));
+      expect(selectChatUnread(store.getState())).toBe(0);
+    });
+
+    test('markChatRead : tout ce qui est là est lu ; la suite compte de nouveau', () => {
+      store.getState().applyInit(initWith([msg('m1')]));
+      store.getState().addChatMessage(msg('m2'));
+      store.getState().addChatMessage(msg('m3'));
+      expect(selectChatUnread(store.getState())).toBe(2);
+      store.getState().markChatRead();
+      expect(store.getState().chatReadId).toBe('m3');
+      expect(selectChatUnread(store.getState())).toBe(0);
+      store.getState().addChatMessage(msg('m4'));
+      expect(selectChatUnread(store.getState())).toBe(1);
+    });
+
+    test('markChatRead sans rien de nouveau ne change rien (l\'état reste le même objet)', () => {
+      store.getState().applyInit(initWith([msg('m1')]));
+      const before = store.getState();
+      store.getState().markChatRead();
+      expect(store.getState()).toBe(before);
+    });
+
+    test('un init de retour : ce qui est arrivé pendant la coupure est non lu, ce qui était lu le reste', () => {
+      store.getState().applyInit(initWith([msg('m1'), msg('m2')]));
+      store.getState().setReady(false);
+      store.getState().applyInit(initWith([msg('m1'), msg('m2'), msg('m3'), msg('m4', { userId: 'moi', name: 'MOI' }), msg('m5')]));
+      expect(store.getState().chatReadId).toBe('m2');
+      expect(selectChatUnread(store.getState())).toBe(2);
+    });
+
+    test('le dernier message lu n\'est plus dans la liste (200 de plus depuis) : tous ceux des autres sont non lus', () => {
+      store.getState().applyInit(initWith([msg('m1')]));
+      for (const m of many(210, 'x')) store.getState().addChatMessage(m);
+      expect(store.getState().chatAll.some((m) => m.id === 'm1')).toBe(false);
+      expect(selectChatUnread(store.getState())).toBe(200);
+    });
+  });
 });

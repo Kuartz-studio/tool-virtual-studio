@@ -105,6 +105,39 @@ export const fr = {
       forbiddenOrigin: 'Le bureau refuse la connexion depuis cette page : ouvre l\'appli à son adresse habituelle.',
     },
   },
+  // Le chat : le panneau de droite, ses deux onglets (spec §9), le champ du message et ce qui peut mal tourner à l'envoi.
+  chat: {
+    toggle: 'Chat',
+    title: 'Chat',
+    close: 'Fermer le panneau Chat',
+    tabsLabel: 'Canaux du chat',
+    tabs: { all: 'Tout le monde', nearby: 'À proximité' },
+    // L'infobulle de l'onglet À proximité quand on ne peut pas l'ouvrir : il n'y a de conversation qu'avec quelqu'un.
+    nearbyUnavailable: 'Disponible pendant une conversation.',
+    // Le nom, pour les lecteurs d'écran, de la liste des messages de chaque onglet, et du champ qui les écrit.
+    log: { all: 'Messages de tout le monde', nearby: 'Messages de la conversation' },
+    input: { all: 'Message à tout le monde', nearby: 'Message à la conversation' },
+    empty: {
+      all: 'Aucun message pour l\'instant. Écris le premier !',
+      nearby: 'Ces messages ne vont qu\'aux personnes de ta conversation, et ne sont pas conservés.',
+    },
+    you: '(toi)',
+    placeholder: 'Écrire un message…',
+    send: 'Envoyer',
+    // Dans l'onglet À proximité, hors conversation : on y lit encore ce qui s'est dit, mais personne ne recevrait ce qu'on écrit.
+    noConversation: 'Personne n\'est à proximité. Rapproche-toi de quelqu\'un pour lui écrire ici.',
+    // La connexion au bureau est tombée : le message ne partirait pas.
+    reconnecting: 'Connexion perdue : tu pourras écrire dès qu\'elle sera rétablie.',
+    // Le message n'est pas parti, et son texte reste dans le champ. Un cas, un message (la réponse du serveur : ChatAck).
+    invalid: 'Ce message n\'a pas pu être envoyé : il est vide ou trop long.',
+    rateLimited: 'Tu écris trop vite. Patiente quelques secondes, puis réessaie.',
+    noGroup: 'Personne n\'est à proximité : ton message n\'est pas parti.',
+    unavailable: 'Le serveur n\'a pas pu enregistrer ton message. Réessaie dans un instant.',
+    timeout: 'Pas de réponse du serveur : ton message n\'est peut-être pas parti. Réessaie dans un instant.',
+    // Les messages non lus, sur le bouton du panneau fermé (le nombre y est écrit, ceci est son nom pour les lecteurs d'écran).
+    unreadOne: '{count} nouveau message',
+    unreadMany: '{count} nouveaux messages',
+  },
   // L'audio et la vidéo : l'écran d'entrée, les vignettes et les commandes de la barre.
   media: {
     // Micro et caméra refusés ou absents, ou l'un des deux refusé et l'autre coupé.

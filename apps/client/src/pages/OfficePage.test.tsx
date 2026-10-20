@@ -1,5 +1,5 @@
-import type { InitPayload, PublicPlayer } from '@bureau/shared';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
@@ -469,5 +469,136 @@ test('StrictMode (développement) : la dernière connexion est la seule ouverte,
   await user.click(await screen.findByRole('button', { name: 'Statut : Disponible' }));
   await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
   expect(second.sentOf('status:set')).toEqual(['dnd']);
+  expect(first.sent).toEqual([]);
+});
+
+// ---- Le chat, de la connexion au panneau ----------------------------------------------------------------------------------------
+
+const chatMessage = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
+  id,
+  channel: 'all',
+  userId: 'u-bob',
+  name: 'Bob',
+  text: `message ${id}`,
+  sentAt: '2026-10-20T10:00:00.000Z',
+  ...over,
+});
+const chatTexts = () => within(screen.getByRole('log')).queryAllByRole('listitem').map((item) => item.querySelector('.chat-text')?.textContent);
+// Le bouton du panneau Chat : son nom devient « Chat, N nouveaux messages » quand il y en a de non lus.
+const openChat = () => userEvent.click(screen.getByRole('button', { name: /^Chat/ }));
+
+test('le chat : l\'historique de l\'init et les messages reçus sont dans le panneau ; un message écrit part au serveur, et revient par chat:message', async () => {
+  const user = userEvent.setup();
+  await openOffice();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', { ...init(), chatHistory: [chatMessage('m1', { text: 'Bonjour' })] });
+  });
+  await openChat();
+  expect(chatTexts()).toEqual(['Bonjour']);
+  act(() => socket().receive('chat:message', chatMessage('m2', { text: 'Du nouveau' })));
+  expect(chatTexts()).toEqual(['Bonjour', 'Du nouveau']);
+
+  await user.type(screen.getByRole('textbox'), 'Salut{Enter}');
+  expect(socket().sentOf('chat:send')).toEqual([{ channel: 'all', text: 'Salut' }]);
+  // Le serveur renvoie le message à tout le monde, l'émetteur compris, puis répond.
+  act(() => {
+    socket().receive('chat:message', chatMessage('m3', { userId: 'u-lea', name: 'Léa', text: 'Salut' }));
+    socket().serverAcks('chat:send', { ok: true });
+  });
+  expect(chatTexts()).toEqual(['Bonjour', 'Du nouveau', 'Salut']);
+  expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe('');
+});
+
+test('le chat : un message reçu panneau fermé fait un badge sur le bouton, que l\'ouverture efface', async () => {
+  await openOffice();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', { ...init(), chatHistory: [chatMessage('m1')] });
+  });
+  expect(screen.getByRole('button', { name: fr.chat.toggle })).toBeTruthy();
+  act(() => socket().receive('chat:message', chatMessage('m2')));
+  expect(screen.getByRole('button', { name: 'Chat, 1 nouveau message' })).toBeTruthy();
+  await openChat();
+  expect(screen.getByRole('button', { name: fr.chat.toggle })).toBeTruthy();
+});
+
+test('le chat : l\'onglet À proximité s\'ouvre avec la room du serveur (media:join), et se ferme avec elle (media:leave)', async () => {
+  await openOffice();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', init());
+  });
+  const [client] = mediaClients;
+  await openChat();
+  const nearby = () => screen.getByRole('tab', { name: fr.chat.tabs.nearby }) as HTMLButtonElement;
+  expect(nearby().disabled).toBe(true);
+
+  act(() => socket().receive('media:join', payload()));
+  await act(() => client!.idle());
+  expect(nearby().disabled).toBe(false);
+  await userEvent.click(nearby());
+  act(() => socket().receive('chat:message', chatMessage('n1', { channel: 'nearby', text: 'psst' })));
+  expect(chatTexts()).toEqual(['psst']);
+  await userEvent.type(screen.getByRole('textbox'), 'Oui{Enter}');
+  expect(socket().sentOf('chat:send')).toEqual([{ channel: 'nearby', text: 'Oui' }]);
+
+  act(() => socket().receive('media:leave'));
+  await act(() => client!.idle());
+  // Choisi, l'onglet reste lisible, mais on n'y écrit plus.
+  expect(chatTexts()).toEqual(['psst']);
+  expect(screen.getByText(fr.chat.noConversation)).toBeTruthy();
+  await userEvent.click(screen.getByRole('tab', { name: fr.chat.tabs.all }));
+  expect(nearby().disabled).toBe(true);
+});
+
+test('le chat, connexion coupée puis revenue : on ne peut pas écrire entre-temps, l\'init redonne l\'historique, et À proximité reste', async () => {
+  const user = userEvent.setup();
+  await openOffice();
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', { ...init(), chatHistory: [chatMessage('m1')] });
+  });
+  await openChat();
+  act(() => socket().receive('chat:message', chatMessage('m2')));
+
+  act(() => socket().connectionDrops());
+  const send = screen.getByRole('button', { name: fr.chat.send }) as HTMLButtonElement;
+  await user.type(screen.getByRole('textbox'), 'Salut');
+  expect(send.disabled).toBe(true);
+  expect(screen.getByText(fr.chat.reconnecting)).toBeTruthy();
+
+  // Revenue : le serveur redit le chat, avec ce qui s'est écrit pendant la coupure.
+  act(() => {
+    socket().serverAccepts();
+    socket().receive('init', { ...init(), chatHistory: [chatMessage('m1'), chatMessage('m2'), chatMessage('m3')] });
+  });
+  expect(chatTexts()).toEqual(['message m1', 'message m2', 'message m3']);
+  expect(send.disabled).toBe(false);
+  await user.click(send);
+  expect(socket().sentOf('chat:send')).toEqual([{ channel: 'all', text: 'Salut' }]);
+});
+
+test('StrictMode (développement) : le panneau Chat s\'ouvre sur son champ, et envoie par la dernière connexion', async () => {
+  const user = userEvent.setup();
+  setFakeSession(LEA);
+  render(
+    <StrictMode>
+      <RouterProvider router={createMemoryRouter(routes, { initialEntries: ['/'] })} />
+    </StrictMode>,
+  );
+  await screen.findByRole('heading', { level: 1, name: fr.media.check.title });
+  await waitFor(() => expect(sockets).toHaveLength(2));
+  await enter();
+  const [first, second] = sockets as [FakeSocket, FakeSocket];
+  act(() => {
+    second.serverAccepts();
+    second.receive('init', { ...init(), chatHistory: [chatMessage('m1')] });
+  });
+  await user.click(await screen.findByRole('button', { name: fr.chat.toggle }));
+  expect(document.activeElement).toBe(screen.getByRole('textbox'));
+  expect(chatTexts()).toEqual(['message m1']);
+  await user.keyboard('Salut{Enter}');
+  expect(second.sentOf('chat:send')).toEqual([{ channel: 'all', text: 'Salut' }]);
   expect(first.sent).toEqual([]);
 });

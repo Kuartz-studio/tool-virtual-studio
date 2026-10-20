@@ -198,6 +198,27 @@ describe('la barre', () => {
     expect(button('Personnes').disabled).toBe(true);
   });
 
+  test('un panneau avec un compteur (badge) : le nombre est affiché, le nom accessible le dit, et rien sans compteur', () => {
+    const toggle: PanelToggle = { label: 'Chat', open: false, onToggle: () => {}, badge: { count: 3, label: '3 nouveaux messages' } };
+    const { view, client } = renderBar({ panels: [toggle] });
+    expect(button('Chat, 3 nouveaux messages').querySelector('.bar-badge')?.textContent).toBe('3');
+    expect(button('Chat, 3 nouveaux messages').querySelector('.bar-badge')?.getAttribute('aria-hidden')).toBe('true');
+    // Le texte visible du bouton reste son libellé (le nom accessible le contient).
+    expect(button('Chat, 3 nouveaux messages').textContent).toBe('Chat3');
+
+    const rerender = (panel: PanelToggle) =>
+      view.rerender(
+        <ControlBar name="Léa" socket={null} client={client} snapshot={client.getSnapshot()} panels={[panel]} onSignOut={() => {}} signingOut={false} />,
+      );
+    rerender({ ...toggle, badge: { count: 250, label: '250 nouveaux messages' } });
+    expect(button('Chat, 250 nouveaux messages').querySelector('.bar-badge')?.textContent).toBe('99+');
+    rerender({ ...toggle, badge: undefined });
+    expect(button('Chat').querySelector('.bar-badge')).toBeNull();
+    expect(button('Chat').hasAttribute('aria-label')).toBe(false);
+    rerender({ ...toggle, badge: { count: 0, label: 'aucun' } });
+    expect(button('Chat').querySelector('.bar-badge')).toBeNull();
+  });
+
   test('Se déconnecter appelle onSignOut ; pendant la déconnexion, « Déconnexion… », inactif', async () => {
     const user = userEvent.setup();
     const onSignOut = vi.fn();

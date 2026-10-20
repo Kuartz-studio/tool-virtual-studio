@@ -1,9 +1,10 @@
-import { useId, useRef, useState, type ReactNode } from 'react';
-import { fr } from '../i18n/fr';
+import { Activity, useId, useRef, useState, type ReactNode } from 'react';
+import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
-import { useOfficeStore } from '../state/office-store';
+import { selectChatUnread, useOfficeStore } from '../state/office-store';
+import { ChatPanel } from './ChatPanel';
 import { ControlBar } from './ControlBar';
 import { PeoplePanel } from './PeoplePanel';
 import { ReplacedScreen } from './ReplacedScreen';
@@ -34,8 +35,9 @@ interface OfficeShellProps {
 
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
 // - en haut, les vignettes de la conversation (VideoStrip) ;
-// - à droite, les panneaux (pour l'instant Personnes) ;
-// - en bas, la barre de commandes (ControlBar) : ton nom, ton statut, micro, caméra et partage d'écran, Personnes et la déconnexion.
+// - à droite, les panneaux (Personnes, Chat), qui peuvent être ouverts ensemble : Personnes au-dessus ;
+// - en bas, la barre de commandes (ControlBar) : ton nom, ton statut, micro, caméra et partage d'écran, Chat, Personnes et la
+//   déconnexion.
 // Rien de cela ne prend de place au jeu : les éléments sont posés sur lui, et ouvrir un panneau ne redimensionne pas le canevas (ni
 // ne change le zoom de la caméra).
 //
@@ -68,6 +70,17 @@ export function OfficeShell({
     peopleToggle.current?.focus();
   }
 
+  const [chatOpen, setChatOpen] = useState(false);
+  const chatToggle = useRef<HTMLButtonElement>(null);
+  const chatId = useId();
+  // Les messages « Tout le monde » des autres que le panneau, fermé, n'a pas montrés : le badge du bouton.
+  const unread = useOfficeStore(selectChatUnread);
+
+  function closeChat() {
+    setChatOpen(false);
+    chatToggle.current?.focus();
+  }
+
   return (
     <main className="office">
       <h1 className="visually-hidden">{fr.common.appName}</h1>
@@ -93,13 +106,31 @@ export function OfficeShell({
             ))}
           </div>
         )}
-        <div className="office-side">{peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}</div>
+        <div className="office-side" data-chat-open={chatOpen ? 'true' : undefined}>
+          {peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}
+          {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont
+              arrêtés : il ne prend pas le focus, et ne lit rien. À l'affichage, ils reprennent (focus dans le champ, messages lus). */}
+          <Activity mode={chatOpen ? 'visible' : 'hidden'}>
+            <ChatPanel id={chatId} socket={socket} room={media.snapshot.room} onClose={closeChat} />
+          </Activity>
+        </div>
         <ControlBar
           name={name}
           socket={socket}
           client={media.client}
           snapshot={media.snapshot}
           panels={[
+            {
+              label: fr.chat.toggle,
+              open: chatOpen,
+              disabled: !knowsWhoIsHere,
+              panelId: chatId,
+              buttonRef: chatToggle,
+              onToggle: () => (chatOpen ? closeChat() : setChatOpen(true)),
+              // Ouvert, il n'y a rien de non lu à signaler : le panneau montre tout.
+              badge:
+                !chatOpen && unread > 0 ? { count: unread, label: t(unread === 1 ? fr.chat.unreadOne : fr.chat.unreadMany, { count: unread }) } : undefined,
+            },
             {
               label: fr.office.people.toggle,
               open: peopleOpen,

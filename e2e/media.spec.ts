@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
-import { createInvitation, expectInOffice, officeBar, selfAt, uniqueEmail, waitForOffice, WALK_TIMEOUT } from './helpers';
+import { createInvitation, enterOffice, expectInOffice, messagesWith, officeBar, openChat, say, selfAt, uniqueEmail, waitForOffice, WALK_TIMEOUT } from './helpers';
 
 // L'audio et la vidéo de proximité, de bout en bout, avec un vrai serveur LiveKit. En local : `livekit-server --dev`, puis
 //   E2E_LIVEKIT_URL=ws://localhost:7880 E2E_LIVEKIT_API_KEY=devkey E2E_LIVEKIT_API_SECRET=secret pnpm e2e e2e/media.spec.ts
@@ -223,4 +223,68 @@ test('passer en « Ne pas déranger » retire les vignettes des deux', async ({ 
   await expect(cameraTiles(b.page)).toHaveCount(0, { timeout: 5000 });
   expect(await roomOf(a.page)).toBeNull();
   expect(await roomOf(b.page)).toBeNull();
+});
+
+// Le chat « À proximité » (spec §9) demande une conversation, donc une room : sans elle, l'onglet est inactif. Le reste du chat, « Tout le
+// monde », est dans chat.spec.ts.
+test('chat À proximité : A et B en conversation s\'écrivent, C n\'en voit rien ; hors conversation, l\'onglet est inactif', async ({ browser }) => {
+  test.slow();
+  const a = await newPerson(browser, 'Alexandre');
+  await teleport(a.page, at(14, 7));
+  const c = await newPerson(browser, 'Clemence');
+  await teleport(c.page, at(20, 13));
+  const nearbyTab = (page: Page) => page.getByRole('tab', { name: 'À proximité' });
+  const everyoneTab = (page: Page) => page.getByRole('tab', { name: 'Tout le monde' });
+
+  // Seuls, A et C ne peuvent pas écrire à proximité.
+  const panelOfA = await openChat(a.page);
+  const panelOfC = await openChat(c.page);
+  await expect(nearbyTab(a.page)).toBeDisabled();
+  await expect(nearbyTab(c.page)).toBeDisabled();
+
+  // B arrive à côté de A : leur conversation ouvre l'onglet chez eux deux, et pas chez C.
+  const b = await newPerson(browser, 'Baudouin');
+  await teleport(b.page, at(15, 7));
+  await expectConversation(a, b, WALK_TIMEOUT);
+  const panelOfB = await openChat(b.page);
+  await expect(nearbyTab(a.page)).toBeEnabled();
+  await expect(nearbyTab(b.page)).toBeEnabled();
+  await expect(nearbyTab(c.page)).toBeDisabled();
+
+  // A écrit à proximité : B le reçoit, signé A, dans son onglet À proximité, et A le voit aussi.
+  const text = `Chut, ça reste entre nous (${Date.now()})`;
+  await nearbyTab(a.page).click();
+  await say(panelOfA, text);
+  await expect(panelOfA.getByRole('textbox')).toHaveValue('');
+  await expect(messagesWith(panelOfA, text)).toHaveCount(1);
+  await expect(messagesWith(panelOfA, text)).toContainText('(toi)');
+  await nearbyTab(b.page).click();
+  await expect(messagesWith(panelOfB, text)).toHaveCount(1);
+  await expect(messagesWith(panelOfB, text)).toContainText('Alexandre');
+  await expect(messagesWith(panelOfB, text)).not.toContainText('(toi)');
+
+  // Ni « Tout le monde » (chez A, chez B, chez C), ni C n'en ont rien : il est arrivé chez B, il aurait déjà atteint C.
+  for (const [page, panel] of [[a.page, panelOfA], [b.page, panelOfB], [c.page, panelOfC]] as const) {
+    await everyoneTab(page).click();
+    await expect(messagesWith(panel, text)).toHaveCount(0);
+  }
+  await c.page.waitForTimeout(500);
+  await expect(messagesWith(panelOfC, text)).toHaveCount(0);
+
+  // Rien n'est gardé : B recharge la page, et le message ne revient pas (ni dans « Tout le monde », ni ailleurs).
+  await b.page.reload();
+  await enterOffice(b.page);
+  await waitForOffice(b.page);
+  const panelOfBAgain = await openChat(b.page);
+  await expect(messagesWith(panelOfBAgain, text)).toHaveCount(0);
+
+  // B s'éloigne : la conversation finit. L'onglet de A, resté sur À proximité, garde ce qui s'est dit, mais on n'y écrit plus.
+  await nearbyTab(a.page).click();
+  await expect(messagesWith(panelOfA, text)).toHaveCount(1);
+  await teleport(b.page, at(3, 13));
+  await expect.poll(() => roomOf(a.page), { timeout: 5000 }).toBeNull();
+  await expect(nearbyTab(a.page)).toHaveAttribute('aria-selected', 'true');
+  await expect(messagesWith(panelOfA, text)).toHaveCount(1);
+  await expect(panelOfA.getByText('Personne n\'est à proximité. Rapproche-toi de quelqu\'un pour lui écrire ici.')).toBeVisible();
+  await expect(panelOfA.getByRole('button', { name: 'Envoyer' })).toBeDisabled();
 });

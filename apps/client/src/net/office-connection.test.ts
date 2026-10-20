@@ -1,4 +1,4 @@
-import type { InitPayload, PublicPlayer } from '@bureau/shared';
+import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createOfficeStore } from '../state/office-store';
 import { FakeBus, FakeSocket } from '../test/fake-socket';
@@ -182,6 +182,57 @@ describe('connectOffice', () => {
     socket.receive('init', init());
     bus.emit('local:teleport', { x: 300, y: 400 });
     expect(socket.sentOf('debug:teleport')).toEqual([{ x: 300, y: 400 }]);
+  });
+
+  describe('le chat', () => {
+    const msg = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
+      id,
+      channel: 'all',
+      userId: 'a',
+      name: 'A',
+      text: `texte ${id}`,
+      sentAt: '2026-10-20T10:00:00.000Z',
+      ...over,
+    });
+    const initWith = (chatHistory: ChatMessage[]): InitPayload => ({ ...init(), chatHistory });
+    const ids = (list: ChatMessage[]) => list.map((m) => m.id);
+
+    test('init : l\'historique « Tout le monde » va au magasin', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', initWith([msg('m1'), msg('m2')]));
+      expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2']);
+    });
+
+    test('chat:message : au magasin, dans la liste de son canal ; pas au jeu', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', initWith([msg('m1')]));
+      socket.receive('chat:message', msg('m2'));
+      socket.receive('chat:message', msg('n1', { channel: 'nearby' }));
+      expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2']);
+      expect(ids(store.getState().chatNearby)).toEqual(['n1']);
+      expect(bus.emitted.map(([event]) => event)).toEqual(['net:init']);
+    });
+
+    test('un message reçu deux fois (une fois dans l\'init, une fois en direct) n\'est dans la liste qu\'une fois', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', initWith([msg('m1')]));
+      socket.receive('chat:message', msg('m1'));
+      socket.receive('chat:message', msg('m2'));
+      socket.receive('chat:message', msg('m2'));
+      expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2']);
+    });
+
+    test('après une coupure, l\'init du retour redonne « Tout le monde » ; « À proximité », que le serveur ne redit pas, reste', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', initWith([msg('m1')]));
+      socket.receive('chat:message', msg('n1', { channel: 'nearby' }));
+      socket.connectionDrops();
+      socket.serverAccepts();
+      socket.receive('init', initWith([msg('m1'), msg('m2')]));
+      expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2']);
+      expect(ids(store.getState().chatNearby)).toEqual(['n1']);
+    });
   });
 
   test('la fonction rendue retire tous ses écouteurs, de la socket comme du bus : plus rien ne passe', () => {
