@@ -28,6 +28,17 @@ Copier `.env.example` en `.env` à la racine, puis lancer `pnpm dev`. Deux serve
 
 On ouvre l'appli sur http://localhost:5173. Le navigateur ne voit que Vite : `APP_URL` doit donc valoir `http://localhost:5173`, et non l'adresse du serveur, car c'est l'origine des cookies de session et des liens des e-mails, et la seule page d'où le temps réel accepte une connexion (`.env.example` le fait déjà). Le port 5173 est fixe : s'il est occupé, Vite s'arrête au lieu d'en prendre un autre.
 
+## Version sandbox (faux live)
+
+`pnpm dev:sim` lance le bureau comme `pnpm dev`, avec le **faux live** : l'audio et la vidéo sont simulés et LiveKit n'est jamais appelé, même si les variables `LIVEKIT_*` du `.env` sont renseignées. On y teste les zones sonores sans mettre à jour la prod.
+
+- Le panneau **Bac à sable** (barre du bas) fait apparaître des personnes fictives, donne à chacune un fichier audio (mp3, wav, ogg, m4a…) et les retire.
+- Un fichier audio est joué **en boucle** chez celles et ceux qui sont dans la même room que la personne fictive. On dépose ses fichiers dans `sim-audio/` (à la racine, jamais versionné) ou on les importe depuis le panneau.
+- Pour la **déplacer**, on l'attrape à la souris et on la lâche : elle **marche** jusqu'à l'endroit lâché (un marqueur le montre), en contournant les murs et les meubles, à 110 px/s. Elle ne se téléporte pas.
+- Ces personnes sont de vrais joueurs du monde du serveur : le vrai calcul des groupes s'applique (zones de bureau et salle de réunion sans distance, cercle de 3 cases à l'arrêt, sortie à 4 cases, délai de 500 ms). Une zone voisine ne s'entend pas.
+
+Côté code : `SIM=1` (serveur : `apps/server/src/sim/`, un faux backend média à la place de LiveKit, les routes `/api/sim`, les personnes fictives) et `VITE_SIM=1` (client : `apps/client/src/sim/`, un faux transport média qui joue les fichiers, et le panneau). Le serveur refuse `SIM=1` en production, et sans `VITE_SIM=1` le code du faux live n'entre pas dans le build du client. Voir `.env.example` pour `SIM_AUDIO_DIR`, `LISTEN_HOST` (adresse d'écoute) et les ports `PORT` / `API_PORT` que le client lit quand le serveur et lui sont lancés séparément (le workspace PM2).
+
 ## Appli compilée
 
 `pnpm build` compile le client dans `apps/client/dist` et le serveur dans `apps/server/dist`. Le serveur compilé sert alors le client lui-même, sur une seule origine, quand `CLIENT_DIST_DIR` lui indique le dossier du client (chemin relatif au dossier de lancement) :

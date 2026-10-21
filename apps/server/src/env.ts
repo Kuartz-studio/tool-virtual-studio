@@ -6,10 +6,15 @@ import { isPgliteUrl } from './db/client';
 // Cartes Tiled du client. Le même chemin vaut depuis apps/server/src (tsx) et depuis apps/server/dist (tsup).
 const DEFAULT_MAPS_DIR = resolve(import.meta.dirname, '../../client/public/assets/maps');
 
+// Les fichiers audio du faux live. Comme les cartes, le même chemin vaut depuis apps/server/src (tsx) et depuis apps/server/dist (tsup).
+const DEFAULT_SIM_AUDIO_DIR = resolve(import.meta.dirname, '../../../sim-audio');
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production'], { error: 'doit valoir development, test ou production' }).default('development'),
     PORT: z.coerce.number({ error: 'doit être un numéro de port (entier de 0 à 65535)' }).int().min(0).max(65535).default(4000),
+    // L'adresse d'écoute. Absente : toutes les interfaces (Railway, conteneur). 127.0.0.1 : cette machine seulement (le workspace PM2).
+    LISTEN_HOST: z.string().optional(),
     // Sans barre finale : les liens sont construits avec `${APP_URL}/chemin`.
     APP_URL: z
       .url({ protocol: /^https?$/, error: 'obligatoire, une URL http(s) comme https://bureau.exemple.fr' })
@@ -32,6 +37,10 @@ const envSchema = z
     MAPS_DIR: z.string().default(DEFAULT_MAPS_DIR),
     CLIENT_DIST_DIR: z.string().optional(),
     E2E: z.literal('1', { error: 'doit valoir 1 ou être absente' }).optional(),
+    // SIM=1 : le faux live des essais en local (`pnpm dev:sim`). Des personnes fictives, un faux audio : LiveKit n'est pas utilisé.
+    SIM: z.literal('1', { error: 'doit valoir 1 ou être absente' }).optional(),
+    // Le dossier des fichiers audio des personnes fictives. Par défaut : sim-audio, à la racine du dépôt.
+    SIM_AUDIO_DIR: z.string().default(DEFAULT_SIM_AUDIO_DIR),
     AUTH_RATE_LIMIT: z.enum(['on', 'off'], { error: 'doit valoir on ou off' }).default('on'),
   })
   .check((ctx) => {
@@ -45,6 +54,8 @@ const envSchema = z
       if (!env.RESEND_API_KEY) refuse('RESEND_API_KEY', 'obligatoire avec MAILER=resend');
       if (!env.MAIL_FROM) refuse('MAIL_FROM', 'obligatoire avec MAILER=resend');
     }
+    // SIM=1 donne à tout compte connecté le pouvoir de faire apparaître des gens dans le bureau et d'écrire des fichiers sur le serveur.
+    if (env.SIM && env.NODE_ENV === 'production') refuse('SIM', 'interdite en production : elle sert aux essais en local, avec des personnes fictives');
     // E2E=1 ouvre les routes de test : inviter sans session admin, lire les e-mails envoyés.
     if (env.E2E) {
       if (env.NODE_ENV === 'production') refuse('E2E', 'interdite en production : elle ouvre des routes de test sans contrôle d\'accès');

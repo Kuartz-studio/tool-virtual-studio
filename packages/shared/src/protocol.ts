@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import type { AvatarKey } from './avatars';
 import { CHAT_MAX_LENGTH, DISPLAY_NAME_MAX_LENGTH } from './constants';
+import type { SimRoomPayload } from './sim';
 
 export const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 export type Direction = (typeof DIRECTIONS)[number];
@@ -43,6 +44,7 @@ export interface ServerToClientEvents {
   'media:join': (p: MediaJoinPayload) => void;
   'media:leave': () => void;
   'session:replaced': () => void;
+  'sim:room': (p: SimRoomPayload) => void;   // seulement avec SIM=1 (le faux live, sim.ts)
 }
 
 export interface ClientToServerEvents {

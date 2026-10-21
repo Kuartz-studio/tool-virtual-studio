@@ -28,6 +28,8 @@ import { LIVEKIT_VARIABLES, createLiveKitBackend, type MediaBackend } from '../m
 import { MediaCoordinator, newBootId, type MediaEvent } from '../media/media-coordinator';
 import { createRateLimiter } from '../rate-limit';
 import type { ServerEvents } from '../server-events';
+import type { SimHost } from '../sim/sim-host';
+import { simOrigins } from '../sim/sim-origins';
 import { registerHandlers, startGroupTicks, startWorldTicks } from './handlers';
 import { createPresence } from './presence';
 import { socketAuth } from './socket-auth';
@@ -74,6 +76,11 @@ export interface RealtimeDeps {
    * null : désactivés. Les tests passent un faux.
    */
   media?: MediaBackend | null;
+  /**
+   * Le faux live (SIM=1) : son faux LiveKit remplace le vrai (`media` a alors la priorité, pour les tests), et ses personnes fictives
+   * entrent dans le monde. Absent : rien de cela.
+   */
+  sim?: SimHost;
   /** L'intervalle des pings du serveur : PING_INTERVAL_MS par défaut. */
   pingIntervalMs?: number;
   /** Le délai de réponse à un ping, au-delà duquel la connexion est coupée : PING_TIMEOUT_MS par défaut. */
@@ -151,7 +158,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
 
   // L'audio et la vidéo : LiveKit, s'il est configuré. Sans lui, les groupes sont calculés quand même (chat « À proximité », zones
   // occupées), mais aucun événement média ne part.
-  const media = d.media !== undefined ? d.media : createLiveKitBackend(d.env);
+  const media = d.media !== undefined ? d.media : d.sim ? d.sim.backend : createLiveKitBackend(d.env);
+  if (d.sim) logger.warn('Faux live (SIM=1) : audio et vidéo simulés, LiveKit n\'est pas utilisé');
   if (media === null) {
     logger.warn({ missing: LIVEKIT_VARIABLES.filter((name) => !d.env[name]) }, 'LiveKit non configuré : audio et vidéo désactivés');
   }
@@ -170,6 +178,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     socketAuth({
       auth: d.auth,
       appOrigin: new URL(d.env.APP_URL).origin,
+      alsoOrigins: simOrigins(d.env),
       limiter: createRateLimiter(SOCKET_CONNECT_RATE),
       logger,
     }),
@@ -268,9 +277,12 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     send: sendMedia,
     nameOf: (id) => world.get(id)?.name ?? id,
     groupsMs: d.groupsMs ?? GROUPS_TICK_MS,
+    onGroups: d.sim ? (state) => d.sim!.onGroups(state) : undefined,
     now,
     logger,
   });
+
+  d.sim?.start({ world, io, map: d.map, now, logger, roomFor: (groupId) => coordinator.roomFor(groupId), enteredSockets });
 
   const saveTimer = setInterval(() => presence.savePeriodically(), saveMs);
   saveTimer.unref();
@@ -282,6 +294,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       offSessionsRevoked();
       offProfileChanged();
       clearInterval(saveTimer);
+      d.sim?.stop();
       stopTicks();
       groups.stop();
       presence.halt();

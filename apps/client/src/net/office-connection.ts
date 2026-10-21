@@ -1,6 +1,7 @@
 import type { InitPayload, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
+import { setSimRoom, simConnectionLost } from '../sim/sim-room';
 import type { OfficeSocket } from './socket';
 
 // Les événements du bus (game/EventBus.ts) entre la connexion et le jeu. `net:*` va de la connexion au jeu ; `local:*`, du jeu à la
@@ -112,10 +113,14 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     'media:join': (p) => state().setMediaInstruction({ type: 'join', p }),
     'media:leave': () => state().setMediaInstruction({ type: 'leave' }),
     'chat:message': (m) => state().addChatMessage(m),
+    // Le faux live (SIM=1 côté serveur) : qui est dans la room, et leur son. Le serveur n'en envoie jamais autrement.
+    'sim:room': (p) => setSimRoom(p),
   };
   const onDisconnect = () => {
     state().setReady(false);
     state().setMediaInstruction(null);
+    // Le faux live (SIM=1) : sans serveur, plus rien ne dit quand quitter la room, dont les sons tourneraient sans fin. Sans effet ailleurs.
+    simConnectionLost();
   };
 
   // Les écouteurs de Socket.io sont typés événement par événement : la boucle passe par un type plus lâche.

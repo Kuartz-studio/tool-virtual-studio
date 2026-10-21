@@ -1,5 +1,6 @@
 import {
   avatarBodyFits,
+  isSimBot,
   parseOfficeMap,
   type InitPayload,
   type OfficeMap,
@@ -21,6 +22,7 @@ import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingRings } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
 import { cameraBounds, chooseZoom } from '../zoom';
+import { SimDrag } from '../../sim/sim-drag';
 
 // L'horloge des mouvements : celle de la cadence des `move` (MoveSender) et de la réception des positions des autres (SnapshotBuffer),
 // en ms. Jamais l'heure `t` des ticks du serveur, qui est celle de son horloge à lui.
@@ -44,6 +46,8 @@ export class Office extends Scene {
   private readonly remotes = new Map<string, RemotePlayer>();
   private othersVisible = true;
   private rings: SpeakingRings;
+  // Le faux live (VITE_SIM=1) : le glisser-déposer des personnes fictives. Absent d'un build normal.
+  private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
   private readonly bodyFits = (x: number, y: number): boolean => avatarBodyFits(this.officeMap, x, y);
 
@@ -141,6 +145,7 @@ export class Office extends Scene {
         entry.x = Math.round(drawn.x);
         entry.y = Math.round(drawn.y);
       }
+      this.simDrag?.arrived(remote.id, drawn);
     }
   }
 
@@ -238,12 +243,14 @@ export class Office extends Scene {
     if (p.id === this.selfId || this.remotes.has(p.id)) return;
     const remote = new RemotePlayer(this, p, now, { zoom: this.cameras.main.zoom, bodyFits: this.bodyFits });
     remote.setVisible(this.othersVisible);
+    if (isSimBot(p.id)) this.simDrag?.attach(remote);
     remote.setSpeaking(this.rings.isSpeaking(p.id));
     this.remotes.set(p.id, remote);
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };
   }
 
   private removeRemote(id: string): void {
+    this.simDrag?.clear(id);
     this.remotes.get(id)?.destroy();
     this.remotes.delete(id);
     delete this.debug.players[id];

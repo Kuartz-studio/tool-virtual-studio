@@ -27,10 +27,10 @@ export type SocketRefusal = 'forbidden_origin' | 'unauthorized' | 'disabled' | '
 // les en-têtes de sa réponse. Une poignée de main Socket.io n'a pas de réponse où le poser : la prolongation serait écrite en base
 // sans que le cookie du navigateur suive (require-session.ts). On la laisse donc aux routes HTTP, qui renvoient le cookie.
 async function identify(
-  d: { auth: Auth; appOrigin: string; limiter: RateLimiter },
+  d: { auth: Auth; appOrigin: string; alsoOrigins?: readonly string[]; limiter: RateLimiter },
   headers: IncomingHttpHeaders,
 ): Promise<SocketData | SocketRefusal> {
-  if (headers.origin !== undefined && headers.origin !== d.appOrigin) return 'forbidden_origin';
+  if (headers.origin !== undefined && headers.origin !== d.appOrigin && !d.alsoOrigins?.includes(headers.origin)) return 'forbidden_origin';
   let found;
   try {
     found = await d.auth.api.getSession({ headers: fromNodeHeaders(headers), query: { disableRefresh: true } });
@@ -49,8 +49,9 @@ async function identify(
 }
 
 // Le middleware `io.use` : pose socket.data (le compte) ou refuse la connexion. Une erreur inattendue est journalisée et refuse
-// la connexion (`unavailable`) sans rien faire tomber. `appOrigin` : l'origine de APP_URL (schéma, hôte et port).
-export function socketAuth(d: { auth: Auth; appOrigin: string; limiter: RateLimiter; logger: Logger }) {
+// la connexion (`unavailable`) sans rien faire tomber. `appOrigin` : l'origine de APP_URL (schéma, hôte et port) ; `alsoOrigins` : d'autres
+// origines acceptées (les alias de la machine du faux live, SIM=1).
+export function socketAuth(d: { auth: Auth; appOrigin: string; alsoOrigins?: readonly string[]; limiter: RateLimiter; logger: Logger }) {
   return (socket: TypedSocket, next: (err?: Error) => void): void => {
     identify(d, socket.request.headers).then(
       (result) => {

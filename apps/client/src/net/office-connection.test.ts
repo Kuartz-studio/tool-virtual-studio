@@ -1,5 +1,6 @@
 import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { getSimRoom, resetSimRoom, subscribeSimConnectionLost } from '../sim/sim-room';
 import { createOfficeStore } from '../state/office-store';
 import { FakeBus, FakeSocket } from '../test/fake-socket';
 import { connectOffice, retryDelay, superviseConnection } from './office-connection';
@@ -31,6 +32,27 @@ beforeEach(() => {
 });
 
 describe('connectOffice', () => {
+  test('connexion coupée : le faux live en est prévenu (ses sons s\'arrêtent), et plus après l\'arrêt de la connexion au jeu', () => {
+    const lost = vi.fn();
+    const off = subscribeSimConnectionLost(lost);
+    const disconnect = connectOffice(socket.asSocket(), store, bus);
+    socket.serverAccepts();
+    socket.receive('init', init([A]));
+    socket.connectionDrops();
+    expect(lost).toHaveBeenCalledTimes(1);
+    disconnect();
+    off();
+  });
+
+  test('sim:room (le faux live) : retenu pour le faux transport, rien d\'autre ne bouge', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    resetSimRoom();
+    const payload = { room: 'r-g1', members: [{ id: 'a', name: 'A', audio: '/api/sim/audio/voix.mp3' }] };
+    socket.receive('sim:room', payload);
+    expect(getSimRoom()).toEqual(payload);
+    expect(bus.emitted).toEqual([]);
+  });
+
   test('init : tout l\'état va au magasin, puis au jeu (net:init), qui y lit déjà le nouvel état', () => {
     connectOffice(socket.asSocket(), store, bus);
     let seenByGame: string[] = [];

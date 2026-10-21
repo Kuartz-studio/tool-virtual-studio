@@ -13,7 +13,13 @@ import { MediaSession } from './media-session';
 
 // Le client média de l'appli : la logique de MediaSession, sur LiveKit. livekit-client (plus de 100 ko) n'est téléchargé qu'au premier
 // join, c'est-à-dire à la première conversation : le bureau s'ouvre sans lui, et une personne qui reste seule ne le charge jamais.
+//
+// Avec VITE_SIM=1 (`pnpm dev:sim`), le faux live : la même logique, sur un faux transport qui joue en boucle le fichier audio des
+// personnes fictives de la room (sim/sim-transport.ts). Sans lui, ce code n'entre pas dans le build.
 export function createMediaClient(prefs: MediaPrefs): MediaClient {
+  if (__SIM__) {
+    return new MediaSession(new LazyTransport(async () => new (await import('../sim/sim-transport')).SimTransport()), prefs);
+  }
   return new MediaSession(new LazyTransport(async () => new (await import('./livekit-media-client')).LiveKitTransport()), prefs);
 }
 

@@ -1,5 +1,5 @@
 import { REMOTE_RENDER_DELAY_MS, type PublicPlayer, type Status } from '@bureau/shared';
-import type { GameObjects, Scene } from 'phaser';
+import type { GameObjects, Input, Scene } from 'phaser';
 import { animKey, avatarObjectName, avatarSpec, type AvatarSpec } from '../avatars';
 import { snapToPixels } from '../pixel-snap';
 import { SnapshotBuffer, type BodyFits, type Snapshot } from '../snapshot-buffer';
@@ -73,6 +73,14 @@ export class RemotePlayer {
 
   setSpeaking(speaking: boolean): void {
     this.tag.setSpeaking(speaking);
+  }
+
+  // Le glisser-déposer du faux live (VITE_SIM=1) : on attrape l'avatar à la souris, `drag` suit le pointeur, `drop` le lâche, à des
+  // coordonnées de la carte (pixels). L'avatar, lui, ne bouge pas : il reste là où le serveur le voit, et marche vers l'endroit lâché.
+  makeDraggable(on: { drag(x: number, y: number): void; drop(x: number, y: number): void }): void {
+    this.sprite.setInteractive({ draggable: true, useHandCursor: true });
+    this.sprite.on('drag', (pointer: Input.Pointer) => on.drag(pointer.worldX, pointer.worldY));
+    this.sprite.on('dragend', (pointer: Input.Pointer) => on.drop(pointer.worldX, pointer.worldY));
   }
 
   setZoom(zoom: number): void {

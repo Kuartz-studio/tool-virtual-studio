@@ -1,6 +1,7 @@
 export * from './constants';
 export * from './avatars';
 export * from './protocol';
+export * from './sim';
 export * from './map/tiled-types';
 export * from './map/parse-map';
 export * from './map/queries';

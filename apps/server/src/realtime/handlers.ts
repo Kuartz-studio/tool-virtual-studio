@@ -189,6 +189,8 @@ export interface GroupTicksDeps {
   /** Le nom affiché d'une personne, pour ses jetons. */
   nameOf: (id: string) => string;
   groupsMs: number;
+  /** Appelé avec les groupes à chaque calcul (le faux live, SIM=1, en dépend). Ne doit pas lever : une exception est journalisée. */
+  onGroups?: (state: GroupingState) => void;
   /** L'horloge du monde (monotone), celle des délais de computeGroups : jamais Date.now, qui peut sauter. */
   now: () => number;
   logger: Logger;
@@ -211,6 +213,11 @@ export function startGroupTicks(d: GroupTicksDeps): { stop(): void; state(): Gro
     const applied = d.coordinator.apply(state, next, d.send, d.nameOf);
     state = next;
     applying = true;
+    try {
+      d.onGroups?.(next);
+    } catch (err) {
+      logServerError(d.logger, { err }, 'Annonce des groupes impossible');
+    }
     applied
       .catch((err: unknown) => logServerError(d.logger, { err }, 'Envoi des rooms LiveKit impossible'))
       .finally(() => {

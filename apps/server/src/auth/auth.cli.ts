@@ -20,6 +20,7 @@ const env: Env = {
   MAILER: 'memory',
   MAP_KEY: 'dev-office',
   MAPS_DIR: '',
+  SIM_AUDIO_DIR: '',
   AUTH_RATE_LIMIT: 'on',
 };
 const mailer: Mailer = { sendInvitation: async () => {}, sendPasswordReset: async () => {} };

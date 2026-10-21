@@ -11,6 +11,7 @@ import { createLogger } from '../logger';
 import type { Mailer } from '../mail/mailer';
 import type { ServerEvents } from '../server-events';
 import { betterAuthLogger } from './auth-logger';
+import { simOrigins } from '../sim/sim-origins';
 import { invitationContext } from './invitation-context';
 import { resetLinkContext } from './reset-link-context';
 
@@ -84,7 +85,8 @@ export function createAuth({
         disabledAt: { type: 'date', required: false, input: false },
       },
     },
-    trustedOrigins: [env.APP_URL],
+    // Avec le faux live (SIM=1) : aussi les autres écritures de l'adresse de la machine (127.0.0.1 pour localhost), sinon [].
+    trustedOrigins: [env.APP_URL, ...simOrigins(env)],
     // Les routes de Better Auth qui changent le profil ou le compte répondent 404. PATCH /api/me est le seul chemin pour changer
     // son nom et son avatar : /update-user accepte n'importe quel nom (un nom de 41 caractères passe), sans displayNameSchema ni
     // la liste des avatars. Le changement d'adresse et la suppression de compte n'existent pas en V1 (désactivés par défaut :

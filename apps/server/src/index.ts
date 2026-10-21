@@ -11,6 +11,8 @@ import { createLogger } from './logger';
 import { createMemoryMailer, createNoneMailer, createResendMailer, type Mailer } from './mail/mailer';
 import { attachRealtime, loadOfficeMap, type Realtime } from './realtime/io';
 import { createServerEvents } from './server-events';
+import { SIM_ACCOUNT, ensureSimAccount, wantsSimAccount } from './sim/sim-account';
+import { createSimHost } from './sim/sim-host';
 
 // Resend ou, sans e-mail, none en production. Avec MAILER=none, rien ne part et rien n'est journalisé : l'admin copie les liens
 // depuis l'appli. Avec MAILER=memory rien ne part non plus : en développement, l'objet et le lien de chaque e-mail s'affichent
@@ -78,16 +80,26 @@ async function main(): Promise<void> {
     const events = createServerEvents({ onError: (err) => logger.error({ err }, 'Un écouteur d\'événement a échoué') });
     const auth = createAuth({ db, mailer, env, logger, events });
     const invitations = createInvitationService(db);
+    // Le faux live (SIM=1, base locale) : un compte de test, pour entrer sans invitation. Son identifiant est dans le journal.
+    if (wantsSimAccount(env)) {
+      const outcome = await ensureSimAccount({ db, auth });
+      logger.info(`Faux live : compte de test ${SIM_ACCOUNT.email} / ${SIM_ACCOUNT.password} (${outcome === 'created' ? 'créé' : 'déjà là'})`);
+    }
 
-    const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger }));
+    // Le faux live (SIM=1) : ses routes sont dans l'application, ses personnes fictives dans le temps réel.
+    const sim = env.SIM === '1' ? createSimHost(env) : undefined;
+
+    const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger, sim }));
     // Le temps réel partage le serveur HTTP de l'application : /socket.io, sur la même origine que le client et /api.
-    const realtime = attachRealtime(server, { auth, db, map, mapKey: env.MAP_KEY, events, env, logger });
+    const realtime = attachRealtime(server, { auth, db, map, mapKey: env.MAP_KEY, events, env, logger, sim });
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
-      server.listen(env.PORT, () => {
+      const listening = () => {
         server.off('error', reject);
         resolve();
-      });
+      };
+      if (env.LISTEN_HOST) server.listen(env.PORT, env.LISTEN_HOST, listening);
+      else server.listen(env.PORT, listening);
     });
     // Le port réel : PORT=0 laisse le système en choisir un libre.
     logger.info({ port: (server.address() as AddressInfo).port }, 'Serveur démarré');

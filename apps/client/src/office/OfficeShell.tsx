@@ -5,6 +5,7 @@ import { useMailMode } from '../lib/config';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
+import { SimPanel } from '../sim/SimPanel';
 import { selectChatUnread, useOfficeStore } from '../state/office-store';
 import { AdminPanel } from './AdminPanel';
 import { ChatPanel } from './ChatPanel';
@@ -100,6 +101,16 @@ export function OfficeShell({
     adminToggle.current?.focus();
   }
 
+  // Le faux live (pnpm dev:sim) : le panneau Bac à sable, pour tout le monde. Absent d'un build normal.
+  const [simOpen, setSimOpen] = useState(false);
+  const simToggle = useRef<HTMLButtonElement>(null);
+  const simId = useId();
+
+  function closeSim() {
+    setSimOpen(false);
+    simToggle.current?.focus();
+  }
+
   return (
     <main className="office">
       <h1 className="visually-hidden">{fr.common.appName}</h1>
@@ -128,6 +139,7 @@ export function OfficeShell({
         <div className="office-side" data-chat-open={chatOpen ? 'true' : undefined} data-admin-open={isAdmin && adminOpen ? 'true' : undefined}>
           {peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}
           {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} mail={mail} onClose={closeAdmin} />}
+          {__SIM__ && simOpen && <SimPanel id={simId} onClose={closeSim} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont
               arrêtés : il ne prend pas le focus, et ne lit rien. À l'affichage, ils reprennent (focus dans le champ, messages lus). */}
           <Activity mode={chatOpen ? 'visible' : 'hidden'}>
@@ -167,6 +179,17 @@ export function OfficeShell({
                     panelId: adminId,
                     buttonRef: adminToggle,
                     onToggle: () => (adminOpen ? closeAdmin() : setAdminOpen(true)),
+                  },
+                ]
+              : []),
+            ...(__SIM__
+              ? [
+                  {
+                    label: fr.sim.toggle,
+                    open: simOpen,
+                    panelId: simId,
+                    buttonRef: simToggle,
+                    onToggle: () => (simOpen ? closeSim() : setSimOpen(true)),
                   },
                 ]
               : []),

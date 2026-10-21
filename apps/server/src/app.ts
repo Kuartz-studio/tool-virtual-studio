@@ -14,6 +14,8 @@ import { createLogger } from './logger';
 import type { Mailer } from './mail/mailer';
 import { memberRoutes } from './members/member-routes';
 import type { ServerEvents } from './server-events';
+import type { SimHost } from './sim/sim-host';
+import { simRoutes } from './sim/sim-routes';
 import { testRoutes } from './testing/test-routes';
 
 // Les dépendances de l'application. Les tâches suivantes y ajoutent ce qui leur manque.
@@ -27,6 +29,8 @@ export interface AppDeps {
   events: ServerEvents;
   /** Reçoit les échecs d'envoi d'e-mail des routes admin et les erreurs des requêtes. Par défaut, le journal de createLogger(env). */
   logger?: Logger;
+  /** Le faux live (SIM=1) : ses routes sont sous /api/sim. Absent en production. */
+  sim?: SimHost;
 }
 
 export function createApp(deps: AppDeps): express.Express {
@@ -54,6 +58,7 @@ export function createApp(deps: AppDeps): express.Express {
   app.use('/api/invitations', invitationRoutes(deps));
   app.use('/api/admin', adminRoutes({ ...deps, logger }));
   if (deps.env.E2E === '1') app.use('/api/test', testRoutes(deps));
+  if (deps.sim) app.use('/api/sim', simRoutes({ auth: deps.auth, sim: deps.sim }));
   app.use('/api', memberRoutes(deps));
   // Une adresse inconnue sous /api répond en JSON, avant le client : jamais sa page HTML.
   app.use('/api', notFound);

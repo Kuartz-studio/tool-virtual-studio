@@ -117,6 +117,22 @@ export const fr = {
       forbiddenOrigin: 'Le bureau refuse la connexion depuis cette page : ouvre l\'appli à son adresse habituelle.',
     },
   },
+  // Le faux live (`pnpm dev:sim`) : le panneau « Bac à sable », réservé aux essais en local.
+  sim: {
+    toggle: 'Bac à sable',
+    title: 'Bac à sable',
+    close: 'Fermer le panneau Bac à sable',
+    intro: 'Simulation locale : des personnes fictives et un faux audio, sans LiveKit. Glisse une personne sur la carte pour la faire marcher.',
+    add: 'Ajouter une personne',
+    importAudio: 'Importer un fichier audio',
+    silence: 'Silence',
+    audioLabel: 'Fichier audio de {name}',
+    remove: 'Retirer {name}',
+    empty: 'Aucune personne fictive pour l\'instant.',
+    noAudio: 'Aucun fichier audio. Dépose-en dans le dossier sim-audio, ou importe-en un.',
+    loadFailed: 'Impossible de lire l\'état du bac à sable.',
+    actionFailed: 'Cette action a échoué.',
+  },
   // Le chat : le panneau de droite, ses deux onglets (spec §9), le champ du message et ce qui peut mal tourner à l'envoi.
   chat: {
     toggle: 'Chat',

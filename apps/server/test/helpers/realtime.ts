@@ -43,7 +43,7 @@ function listen(server: HttpServer, port: number): Promise<number> {
 // `realtime` est toujours l'instance en cours (elle change à chaque restart) : io, world, socketsOf, stop.
 export async function startTestServer(o: TestServerOptions = {}) {
   const { env, ...options } = o;
-  const t = await createTestApp({ env, logger: o.logger });
+  const t = await createTestApp({ env, logger: o.logger, sim: o.sim });
   const map = loadOfficeMap(t.env);
 
   function attach(server: HttpServer) {

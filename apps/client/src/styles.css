@@ -790,6 +790,51 @@ a {
 .chat-tab:hover:not(:disabled),
 .chat-tab[aria-selected='true'] {
   color: var(--text);
+/* Le panneau Bac à sable du faux live (pnpm dev:sim) : il garde l'aspect du panneau Personnes, et ne prend que la place de son contenu. */
+.sim-panel {
+  flex: 0 1 auto;
+  max-height: 55%;
+}
+
+.sim-intro,
+.sim-hint {
+  margin: 8px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.sim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.sim-bots {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sim-bot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-bot select {
+  min-width: 0;
+  font: inherit;
+  padding: 4px 6px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 }
 
 .chat-tab[aria-selected='true'] {

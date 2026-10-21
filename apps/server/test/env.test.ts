@@ -146,3 +146,28 @@ test('.env.example est une configuration valide', () => {
   const env = loadEnv(parseEnv(example));
   expect(env).toMatchObject({ NODE_ENV: 'development', PORT: 4000, DATABASE_URL: 'pglite://.data/dev', MAILER: 'memory', APP_URL: 'http://localhost:5173' });
 });
+
+// Le faux live (SIM=1) fait apparaître des gens dans le bureau et écrit des fichiers sur le serveur, pour tout compte connecté.
+test('SIM=1 : accepté en développement, refusé en production, et la valeur doit être 1', () => {
+  expect(loadEnv(valid).SIM).toBeUndefined();
+  expect(loadEnv({ ...valid, SIM: '1' }).SIM).toBe('1');
+  expect(loadEnv({ ...valid, SIM: '' }).SIM).toBeUndefined();
+  expect(() => loadEnv({ ...valid, SIM: 'oui' })).toThrow(/SIM : doit valoir 1/);
+  const production = {
+    NODE_ENV: 'production', APP_URL: 'https://b.fr', BETTER_AUTH_SECRET: 'x'.repeat(32),
+    DATABASE_URL: 'postgres://u:p@db:5432/bureau', MAILER: 'resend', RESEND_API_KEY: 'k', MAIL_FROM: 'a@b.fr',
+  };
+  expect(loadEnv(production).SIM).toBeUndefined();
+  expect(() => loadEnv({ ...production, SIM: '1' })).toThrow(/SIM : interdite en production/);
+});
+
+test('SIM_AUDIO_DIR : sim-audio à la racine du dépôt par défaut, ou le dossier donné', () => {
+  expect(loadEnv(valid).SIM_AUDIO_DIR).toBe(resolve(import.meta.dirname, '../../../sim-audio'));
+  expect(loadEnv({ ...valid, SIM_AUDIO_DIR: '/tmp/sons' }).SIM_AUDIO_DIR).toBe('/tmp/sons');
+});
+
+test('LISTEN_HOST : absent par défaut (toutes les interfaces), ou l\'adresse donnée', () => {
+  expect(loadEnv(valid).LISTEN_HOST).toBeUndefined();
+  expect(loadEnv({ ...valid, LISTEN_HOST: '' }).LISTEN_HOST).toBeUndefined();
+  expect(loadEnv({ ...valid, LISTEN_HOST: '127.0.0.1' }).LISTEN_HOST).toBe('127.0.0.1');
+});
