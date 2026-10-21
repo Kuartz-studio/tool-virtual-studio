@@ -8,6 +8,7 @@ import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from './io';
 import { loadPosition, savePositions } from './positions';
 import type { DeskController } from '../desks/desk-controller';
+import type { LightsService } from '../lights/lights-service';
 import { chooseSpawn } from './spawn';
 import type { World } from './world';
 
@@ -25,6 +26,8 @@ export interface PresenceDeps {
   chat: Pick<ChatService, 'recent'>;
   /** Les bureaux : une place pour qui arrive, et ce que dit chaque init à leur sujet. */
   desks: Pick<DeskController, 'assign' | 'initFor' | 'canStandAt'>;
+  /** La lumière du bureau : chaque init la dit, une fois lue en base. */
+  lights: Pick<LightsService, 'ready' | 'get'>;
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -79,6 +82,16 @@ export function createPresence(d: PresenceDeps) {
     }
   }
 
+  // La lumière est lue en base au démarrage : un init n'en part qu'une fois cette lecture finie. Illisible (la base est tombée), elle est
+  // journalisée et l'init la dit allumée : arriver au bureau ne dépend pas d'elle. Ne rejette jamais.
+  async function lightsLoaded(userId: string): Promise<void> {
+    try {
+      await d.lights.ready;
+    } catch (err) {
+      logServerError(d.logger, { err, userId }, 'Lumière du bureau illisible');
+    }
+  }
+
   // Envoie l'état de départ à la socket (l'historique du chat est lu avant : `chatHistory`), puis annonce l'arrivée aux autres si c'en
   // est une (pas pour un onglet de plus ni pour un retour pendant le délai de grâce). La socket n'entre dans la salle du bureau qu'ici :
   // aucune diffusion ne lui parvient avant son init, ni message du chat, ni événement média. Puis onWelcome (sa room LiveKit).
@@ -92,6 +105,7 @@ export function createPresence(d: PresenceDeps) {
       mapKey: d.mapKey,
       chatHistory,
       ...d.desks.initFor(socket),
+      lights: d.lights.get(),
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
     d.onWelcome?.(socket);
@@ -107,6 +121,7 @@ export function createPresence(d: PresenceDeps) {
         loadPosition(d.db, userId),
         isDisabled(d.db, userId),
         readChatHistory(userId),
+        lightsLoaded(userId),
       ]);
       if (halted || !socket.connected) return;
       // Retiré entre la lecture de sa session par le middleware et maintenant : member:removed n'a pas pu fermer cette socket,
@@ -138,7 +153,7 @@ export function createPresence(d: PresenceDeps) {
   async function rejoin(socket: TypedSocket): Promise<void> {
     const { userId } = socket.data;
     try {
-      const chatHistory = await readChatHistory(userId);
+      const [chatHistory] = await Promise.all([readChatHistory(userId), lightsLoaded(userId)]);
       if (halted || !socket.connected) return;
       // Une socket enregistrée garde sa personne au monde (ni le délai de grâce ni member:removed ne la retirent alors) : ce cas ne
       // devrait pas se produire. Sans personne à montrer, le client se reconnecte et arrive pour de bon, au lieu d'attendre un init.

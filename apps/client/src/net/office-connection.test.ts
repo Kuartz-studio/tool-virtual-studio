@@ -210,6 +210,67 @@ describe('connectOffice', () => {
     expect(socket.sentOf('debug:teleport')).toEqual([{ x: 300, y: 400 }]);
   });
 
+  describe('la lumière', () => {
+    const OFF = { on: false, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
+
+    test('init : l\'état de la lumière va au magasin ; sans lumière dans l\'init, elle est allumée', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init(), lights: OFF });
+      expect(store.getState().lights).toEqual(OFF);
+      socket.receive('init', init());
+      expect(store.getState().lights).toEqual({ on: true, by: null, at: 0 });
+    });
+
+    test('lights:changed : au magasin, puis au jeu et au son (lights:changed sur le bus), qui y lisent déjà le nouvel état', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      let seenByGame: boolean | null = null;
+      bus.on('lights:changed', () => {
+        seenByGame = store.getState().lights.on;
+      });
+      socket.receive('lights:changed', OFF);
+      expect(store.getState().lights).toEqual(OFF);
+      expect(bus.emittedOf('lights:changed')).toEqual([OFF]);
+      expect(seenByGame).toBe(false);
+      // Rallumée : de même.
+      const lit = { on: true, by: { id: 'moi', name: 'MOI' }, at: OFF.at + 5000 };
+      socket.receive('lights:changed', lit);
+      expect(store.getState().lights).toEqual(lit);
+      expect(bus.emittedOf('lights:changed')).toEqual([OFF, lit]);
+    });
+
+    test('local:lights part au serveur (lights:set) une fois l\'init reçu ; avant, et pendant une coupure, rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.connect();
+      bus.emit('local:lights', { on: false });
+      socket.serverAccepts();
+      bus.emit('local:lights', { on: false });
+      expect(socket.sentOf('lights:set')).toEqual([]);
+
+      socket.receive('init', init());
+      bus.emit('local:lights', { on: false });
+      expect(socket.sentOf('lights:set')).toEqual([{ on: false }]);
+      bus.emit('local:lights', { on: true });
+      expect(socket.sentOf('lights:set')).toEqual([{ on: false }, { on: true }]);
+
+      // Pendant une coupure, Socket.io garderait le message pour le rendre au retour, périmé.
+      socket.connectionDrops();
+      bus.emit('local:lights', { on: false });
+      socket.serverAccepts();
+      bus.emit('local:lights', { on: false });
+      expect(socket.sentOf('lights:set')).toEqual([{ on: false }, { on: true }]);
+    });
+
+    test('local:lights n\'est qu\'une demande : le magasin ne change qu\'à la réponse du serveur (lights:changed)', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      bus.emit('local:lights', { on: false });
+      expect(store.getState().lights.on).toBe(true);
+      socket.receive('lights:changed', OFF);
+      expect(store.getState().lights.on).toBe(false);
+    });
+  });
+
   describe('le chat', () => {
     const msg = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
       id,

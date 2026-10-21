@@ -11,6 +11,7 @@ import {
   isWalkablePoint,
   isWalkableTile,
   parseOfficeMap,
+  withinSwitchReach,
   zoneAt,
   type TiledMapJson,
   type TiledObject,
@@ -194,8 +195,9 @@ describe('lecture des zones', () => {
     expect(map.zones.find((z) => z.type === 'label')).toMatchObject({ name: null, text: 'DEV TEAM', x: 288, y: 256, width: 192, height: 32 });
     expect(map.zones.find((z) => z.type === 'private')).toMatchObject({ name: 'Salle de réunion', text: null });
     expect(map.zones.find((z) => z.type === 'spawn')).toMatchObject({ name: null, text: null, x: 64, y: 224, width: 32, height: 32 });
-    // La carte de développement n'a pas de porte (zone door) : les bureaux de la grande carte en ont (office.test.ts).
-    expect(new Set(map.zones.map((z) => z.type))).toEqual(new Set(ZONE_TYPES.filter((type) => type !== 'door')));
+    // La carte de développement n'a pas de porte (zone door) : les bureaux de la grande carte en ont (office.test.ts). Elle n'a pas non plus
+    // d'interrupteur (zone switch) : les tests de bout en bout lisent ses pixels, qu'une plaque au mur changerait.
+    expect(new Set(map.zones.map((z) => z.type))).toEqual(new Set(ZONE_TYPES.filter((type) => type !== 'door' && type !== 'switch')));
   });
 
   test('nom et texte : espaces de bord retirés, vides → null, propriété qui n\'est pas du texte ignorée', () => {
@@ -221,6 +223,70 @@ describe('lecture des zones', () => {
 
   test('une carte relue depuis un fichier JSON donne la même carte', () => {
     expect(parseOfficeMap(JSON.parse(JSON.stringify(devJson())))).toEqual(map);
+  });
+});
+
+describe('les interrupteurs de lumière', () => {
+  test('une zone switch d\'une case : un interrupteur au centre de la case, en pixels', () => {
+    const m = withZones([rect({ id: 1, type: 'spawn', x: 64, y: 224 }), rect({ id: 2, type: 'switch', x: 416, y: 160 })]);
+    const parsed = parseOfficeMap(m);
+    expect(parsed.switches).toEqual([{ x: 432, y: 176 }]);
+    // Une zone parmi les autres : elle garde son rang, et ne devient ni une pièce ni un repère.
+    expect(parsed.zones.map((z) => z.type)).toEqual(['spawn', 'switch']);
+    expect(zoneAt(parsed, 432, 176)).toBeNull();
+  });
+
+  test('plusieurs interrupteurs, dans l\'ordre de la carte ; une zone plus large est prise par son centre', () => {
+    const m = withZones([
+      rect({ id: 1, type: 'spawn', x: 64, y: 224 }),
+      rect({ id: 2, type: 'switch', x: 96, y: 32 }),
+      rect({ id: 3, type: 'switch', x: 64, y: 96, width: 64, height: 64 }),
+    ]);
+    expect(parseOfficeMap(m).switches).toEqual([{ x: 112, y: 48 }, { x: 96, y: 128 }]);
+  });
+
+  test('sans zone switch : aucun interrupteur (la carte de développement : ses pixels sont lus par les tests de bout en bout)', () => {
+    expect(map.switches).toEqual([]);
+    expect(zonesLayer(devJson()).objects.some((o) => o.type === 'switch')).toBe(false);
+  });
+
+  test('un interrupteur est un rectangle comme les autres zones : un point de Tiled est refusé', () => {
+    const m = withZones([rect({ id: 1, type: 'spawn', x: 64, y: 224 }), rect({ id: 2, type: 'switch', x: 416, y: 160, point: true })]);
+    expect(() => parseOfficeMap(m)).toThrow(/ce n'est pas un rectangle \(c'est un point\)/);
+  });
+});
+
+describe('withinSwitchReach : à 3 cases ou moins d\'un interrupteur', () => {
+  const at = { x: 432, y: 176 };
+  const reach = 3 * 32;
+
+  test('à 3 cases : à portée ; un pixel de plus : plus à portée', () => {
+    expect(withinSwitchReach({ x: at.x, y: at.y + reach }, [at])).toBe(true);
+    expect(withinSwitchReach({ x: at.x + reach, y: at.y }, [at])).toBe(true);
+    expect(withinSwitchReach({ x: at.x, y: at.y + reach + 1 }, [at])).toBe(false);
+    expect(withinSwitchReach({ x: at.x - reach - 1, y: at.y }, [at])).toBe(false);
+  });
+
+  test('à 4 cases : trop loin, et pile dessus : à portée', () => {
+    expect(withinSwitchReach({ x: at.x, y: at.y + 4 * 32 }, [at])).toBe(false);
+    expect(withinSwitchReach(at, [at])).toBe(true);
+  });
+
+  test('la distance est celle du plan (euclidienne), pas un carré : en diagonale, 3 cases dans chaque sens sont trop loin', () => {
+    expect(withinSwitchReach({ x: at.x + 64, y: at.y + 64 }, [at])).toBe(true);   // 2 cases dans chaque sens : 2,83 cases
+    expect(withinSwitchReach({ x: at.x + 72, y: at.y + 72 }, [at])).toBe(false);   // 2,25 cases dans chaque sens : 3,18 cases
+  });
+
+  test('plusieurs interrupteurs : le plus proche compte ; aucun : jamais à portée', () => {
+    const far = { x: 1040, y: 336 };
+    expect(withinSwitchReach({ x: far.x, y: far.y + 64 }, [at, far])).toBe(true);
+    expect(withinSwitchReach({ x: 700, y: 256 }, [at, far])).toBe(false);
+    expect(withinSwitchReach(at, [])).toBe(false);
+  });
+
+  test('une position qui n\'est pas un nombre fini n\'est à portée de rien', () => {
+    expect(withinSwitchReach({ x: Number.NaN, y: at.y }, [at])).toBe(false);
+    expect(withinSwitchReach({ x: Number.POSITIVE_INFINITY, y: at.y }, [at])).toBe(false);
   });
 });
 

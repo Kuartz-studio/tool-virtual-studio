@@ -476,3 +476,47 @@ describe('zoom', () => {
     expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
   });
 });
+
+describe('la lumière', () => {
+  const OFF = { on: false, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
+  const ON = { on: true, by: { id: 'b', name: 'B' }, at: 1_700_000_050_000 };
+  const LIT = { on: true, by: null, at: 0 };
+
+  test('allumée au départ, tant que le serveur n\'a rien dit', () => {
+    expect(store.getState().lights).toEqual(LIT);
+  });
+
+  test('l\'init donne son état ; un init sans lumière (un serveur qui n\'en dit rien) la dit allumée', () => {
+    store.getState().applyInit({ ...init(SELF, [A]), lights: OFF });
+    expect(store.getState().lights).toEqual(OFF);
+    store.getState().applyInit(init(SELF, [A]));
+    expect(store.getState().lights).toEqual(LIT);
+  });
+
+  test('un init de retour (reconnexion) remplace ce que l\'on croyait : le serveur fait foi', () => {
+    store.getState().applyInit({ ...init(SELF, [A]), lights: OFF });
+    store.getState().applyInit({ ...init(SELF, [A]), lights: ON });
+    expect(store.getState().lights).toEqual(ON);
+  });
+
+  test('setLights : l\'état que le serveur annonce, avec son auteur', () => {
+    store.getState().setLights(OFF);
+    expect(store.getState().lights).toEqual(OFF);
+    store.getState().setLights(ON);
+    expect(store.getState().lights).toEqual(ON);
+  });
+
+  test('setLights ne change que la lumière : les joueurs restent les mêmes objets', () => {
+    store.getState().applyInit(init(SELF, [A]));
+    const before = store.getState();
+    store.getState().setLights(OFF);
+    expect(store.getState().players).toBe(before.players);
+    expect(store.getState().self).toBe(before.self);
+  });
+
+  test('reset rallume (un autre compte, une autre session)', () => {
+    store.getState().applyInit({ ...init(SELF, [A]), lights: OFF });
+    store.getState().reset();
+    expect(store.getState().lights).toEqual(LIT);
+  });
+});

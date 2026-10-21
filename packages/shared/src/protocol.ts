@@ -66,11 +66,16 @@ export const activityInputSchema = z.object({
 // L'identifiant d'un état d'activité à prendre (`state:set`), ou null pour revenir à un statut ordinaire.
 export const activityIdSchema = z.string().min(1).max(64).nullable();
 
+// La demande d'allumer ou d'éteindre la lumière du bureau (`lights:set`) : l'état voulu, et non une bascule. Une demande répétée, ou qui
+// croise celle d'un autre, ne change donc rien : le serveur fait foi, et tout le monde finit dans le même état.
+export const lightsSetSchema = z.object({ on: z.boolean() });
+
 export type MovePayload = z.infer<typeof moveSchema>;
 export type ActivityInput = z.infer<typeof activityInputSchema>;
 export type DeskCommand = z.infer<typeof deskCommandSchema>;
 export type MediaState = z.infer<typeof mediaStateSchema>;
 export type ChatSendPayload = z.infer<typeof chatSendSchema>;
+export type LightsSetPayload = z.infer<typeof lightsSetSchema>;
 
 export interface ActivityState extends ActivityInput { id: string }
 // `activity` : l'état d'activité qu'elle a choisi (absent ou null : un statut ordinaire, `status`). Il passe avant `status` pour le point
@@ -98,6 +103,9 @@ export interface DeskInfo {
 export interface DeskBan { id: string; name: string }
 // Quelqu'un qui toque à la porte d'un bureau.
 export interface DeskKnock { key: string; userId: string; name: string }
+// La lumière du bureau, la même pour tout le monde. `by` : qui l'a changée en dernier (null : personne n'y a touché, ou son compte n'existe
+// plus), `at` : quand, en ms depuis 1970 (0 : jamais).
+export interface LightsState { on: boolean; by: { id: string; name: string } | null; at: number }
 export interface InitPayload {
   self: PublicPlayer;
   players: PublicPlayer[];
@@ -109,6 +117,8 @@ export interface InitPayload {
   closedDesks: string[];
   // Ceux qu'elle a exclus de son bureau (vide sans bureau).
   deskBans: DeskBan[];
+  // La lumière du bureau. Absente : allumée.
+  lights?: LightsState;
 }
 export interface WorldTick { t: number; moves: Array<{ id: string } & MovePayload> }
 export interface MediaJoinPayload { url: string; room: string; token: string }
@@ -139,6 +149,7 @@ export interface ServerToClientEvents {
   'desk:access': (p: { closed: string[] }) => void;       // à une personne : les places dont la porte lui est fermée
   'desk:bans': (p: DeskBan[]) => void;                    // à un propriétaire : ceux qu'il a exclus
   'desk:knock': (p: DeskKnock) => void;                   // à un propriétaire : quelqu'un toque à sa porte
+  'lights:changed': (p: LightsState) => void;             // à tout le bureau : la lumière vient d'être allumée ou éteinte
   'media:join': (p: MediaJoinPayload) => void;
   'media:leave': () => void;
   'session:replaced': () => void;
@@ -152,5 +163,6 @@ export interface ClientToServerEvents {
   'media:state': (m: MediaState) => void;
   'chat:send': (p: ChatSendPayload, ack: (r: ChatAck) => void) => void;
   'desk:do': (p: DeskCommand, ack: (r: DeskAck) => void) => void;
+  'lights:set': (p: LightsSetPayload) => void;   // allumer ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
 }

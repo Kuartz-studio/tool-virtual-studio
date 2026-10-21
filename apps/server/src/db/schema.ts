@@ -1,5 +1,5 @@
 import type { PlacedItem, Role } from '@bureau/shared';
-import { boolean, index, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { user } from './auth-schema';
 
 // Le schéma complet de la base : drizzle-kit en tire les migrations (drizzle/), createDb le donne à Drizzle.
@@ -72,3 +72,12 @@ export const activityState = pgTable(
   },
   (table) => [index('activity_state_user_id_idx').on(table.userId)],
 );
+
+// La lumière du bureau, la même pour tout le monde : une seule ligne (id = 1), écrite au premier changement. Sans ligne, la lumière est
+// allumée. `changedBy` est celui qui l'a changée en dernier (null si son compte n'existe plus), `changedAt` le moment du changement.
+export const officeLights = pgTable('office_lights', {
+  id: integer('id').primaryKey().default(1),
+  on: boolean('on').notNull().default(true),
+  changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+});

@@ -76,6 +76,11 @@ export const ACTIVITY_LABEL_MAX_LENGTH = 24;
 export const ACTIVITY_MAX_PER_USER = 12;
 export const DESK_RATE = { max: 10, windowMs: 2_000 };
 export const DESK_KNOCK_COOLDOWN_MS = 5_000;
+// La lumière du bureau, une pour tout le monde, que l'on change à l'interrupteur du couloir. Une personne la change au plus une fois par
+// LIGHTS_RATE_MS (le serveur ignore ce qui vient avant), et seulement de près : à LIGHT_SWITCH_REACH_TILES cases ou moins de la plaque
+// (withinSwitchReach, la même règle pour le serveur et pour le client).
+export const LIGHTS_RATE_MS = 800;
+export const LIGHT_SWITCH_REACH_TILES = 3;
 export const SESSION_TTL_S = 30 * 24 * 3600;
 export const LIVEKIT_TOKEN_TTL_S = 600;
 export const OFFICE_ROOM = 'office';

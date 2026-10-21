@@ -8,6 +8,7 @@ import {
   type DeskInfo,
   type DeskKnock,
   type InitPayload,
+  type LightsState,
   type MediaJoinPayload,
   type MediaState,
   type OfficeMap,
@@ -104,6 +105,9 @@ export interface OfficeState {
   deskKnocks: DeskKnock[];
   // Un message passager sur les bureaux (porte fermée, toc toc envoyé), qui s'efface de lui-même ; null sans message.
   deskNotice: string | null;
+  // La lumière du bureau, la même pour tout le monde : allumée tant que le serveur n'a rien dit, puis celle du dernier `init` ou de
+  // `lights:changed`. Le jeu l'obscurcit quand elle est éteinte ; `by` et `at` disent qui l'a changée en dernier, et quand.
+  lights: LightsState;
   // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
   // null avant le jeu, et en dehors de lui.
   officeMap: OfficeMap | null;
@@ -122,6 +126,8 @@ export interface OfficeState {
   addDeskKnock(knock: DeskKnock): void;
   dismissDeskKnock(userId: string): void;
   setOfficeMap(map: OfficeMap | null): void;
+  // La lumière du bureau, telle que le serveur l'annonce (`lights:changed`) : le serveur fait foi, rien n'est changé avant son annonce.
+  setLights(lights: LightsState): void;
   setDeskNotice(text: string | null): void;
   // Le zoom : un niveau donné (ramené aux bornes), un cran plus près ou plus loin, la vue de départ.
   setZoomLevel(level: number): void;
@@ -196,11 +202,15 @@ type Data = Pick<
   | 'deskBans'
   | 'deskKnocks'
   | 'deskNotice'
+  | 'lights'
   | 'officeMap'
   | 'decorEditor'
   | 'zoomLevel'
   | 'positions'
 >;
+
+// La lumière que personne n'a touchée : allumée, jamais changée. C'est aussi celle d'un `init` qui n'en dit rien.
+const LIGHTS_ON: LightsState = { on: true, by: null, at: 0 };
 
 const initialData = (): Data => ({
   selfId: null,
@@ -221,6 +231,7 @@ const initialData = (): Data => ({
   deskBans: [],
   deskKnocks: [],
   deskNotice: null,
+  lights: LIGHTS_ON,
   officeMap: null,
   decorEditor: null,
   zoomLevel: DEFAULT_ZOOM_LEVEL,
@@ -296,6 +307,8 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           deskBans: p.deskBans,
           // Les toc toc d'avant la coupure sont périmés : la personne n'est peut-être plus là pour les entendre.
           deskKnocks: [],
+          // La lumière du moment : celle que l'on croyait avant une coupure n'a plus cours.
+          lights: p.lights ?? LIGHTS_ON,
         }));
       },
 
@@ -336,6 +349,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
         set((state) => ({ deskKnocks: [...state.deskKnocks.filter((k) => k.userId !== knock.userId), knock] })),
       dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
       setOfficeMap: (officeMap) => set({ officeMap }),
+      setLights: (lights) => set({ lights }),
       setDeskNotice: (deskNotice) => set({ deskNotice }),
       setZoomLevel: (level) => set({ zoomLevel: clampZoomLevel(level) }),
       stepZoom: (step) => set((state) => ({ zoomLevel: stepZoomLevel(state.zoomLevel, step) })),

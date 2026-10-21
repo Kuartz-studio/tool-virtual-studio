@@ -1,4 +1,4 @@
-import { AVATAR_BODY } from '../constants';
+import { AVATAR_BODY, LIGHT_SWITCH_REACH_TILES, TILE_SIZE } from '../constants';
 import type { OfficeMap, Zone, ZoneType } from './parse-map';
 
 // Une case est praticable si elle est dans la carte et que le calque `collisions` n'y a pas de tuile.
@@ -47,4 +47,12 @@ export function zoneAt(m: OfficeMap, x: number, y: number, types: readonly ZoneT
     if (x >= zone.x && x < zone.x + zone.width && y >= zone.y && y < zone.y + zone.height) return zone;
   }
   return null;
+}
+
+// Cette position (les pieds d'un avatar, en pixels) est à portée d'un interrupteur de lumière : à LIGHT_SWITCH_REACH_TILES cases ou moins
+// du centre de l'un d'eux, en ligne droite. Le serveur la pose pour accepter `lights:set`, le client pour montrer qu'on peut appuyer :
+// une seule règle. Une position qui n'est pas un nombre fini n'est à portée de rien.
+export function withinSwitchReach(pos: { x: number; y: number }, switches: ReadonlyArray<{ x: number; y: number }>): boolean {
+  const reach = LIGHT_SWITCH_REACH_TILES * TILE_SIZE;
+  return switches.some((s) => Math.hypot(pos.x - s.x, pos.y - s.y) <= reach);
 }

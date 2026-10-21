@@ -5,6 +5,7 @@ import {
   CHAT_RATE,
   DISCONNECT_GRACE_MS,
   GROUPS_TICK_MS,
+  LIGHTS_RATE_MS,
   OFFICE_ROOM,
   POSITION_SAVE_INTERVAL_MS,
   SOCKET_CONNECT_RATE,
@@ -28,6 +29,7 @@ import { createDeskController } from '../desks/desk-controller';
 import { DeskService } from '../desks/desk-service';
 import type { Db } from '../db/client';
 import type { Env } from '../env';
+import { LightsService } from '../lights/lights-service';
 import { createLogger, logServerError } from '../logger';
 import { LIVEKIT_VARIABLES, createLiveKitBackend, type MediaBackend } from '../media/livekit';
 import { MediaCoordinator, newBootId, type MediaEvent } from '../media/media-coordinator';
@@ -92,6 +94,8 @@ export interface RealtimeDeps {
   activities?: ActivityService;
   /** Les bureaux. Par défaut, ceux de la base (DeskService) pour cette carte ; les tests peuvent en passer un réglé à leur main. */
   desks?: DeskService;
+  /** La lumière du bureau. Par défaut, celle de la base (LightsService) ; les tests peuvent en passer une réglée à leur main. */
+  lights?: LightsService;
   /** L'intervalle des pings du serveur : PING_INTERVAL_MS par défaut. */
   pingIntervalMs?: number;
   /** Le délai de réponse à un ping, au-delà duquel la connexion est coupée : PING_TIMEOUT_MS par défaut. */
@@ -107,6 +111,8 @@ export interface Realtime {
   socketsOf(userId: string): string[];
   /** Les bureaux : qui occupe quelle place, et qui peut y entrer. */
   desks: DeskService;
+  /** La lumière du bureau : allumée ou éteinte pour tout le monde, gardée d'un redémarrage à l'autre. */
+  lights: LightsService;
   /** Les groupes de conversation et leurs rooms LiveKit : groupMembersOf sert au chat « À proximité ». */
   coordinator: MediaCoordinator;
   /**
@@ -224,6 +230,11 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     logger,
   });
 
+  // La lumière du bureau (lue en base au démarrage, relue dans chaque init), et la limite de débit de ses changements : par compte, commune
+  // à toutes ses sockets, sur l'horloge du temps réel.
+  const lights = d.lights ?? new LightsService(d.db);
+  const lightsLimiter = createRateLimiter({ max: 1, windowMs: LIGHTS_RATE_MS, now });
+
   const presence = createPresence({
     io,
     world,
@@ -235,6 +246,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     logger,
     chat,
     desks: deskController,
+    lights,
     onWelcome: resyncMedia,
   });
 
@@ -296,6 +308,9 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       socketsOf: enteredSockets,
       desks: deskController,
       activity: activityController,
+      lights,
+      lightsLimiter,
+      switches: d.map.switches,
     });
   });
   // Un membre retiré : sa place est libre pour les autres.
@@ -362,6 +377,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     world,
     socketsOf: (userId) => presence.socketsOf(userId),
     desks,
+    lights,
     coordinator,
     stop,
   };

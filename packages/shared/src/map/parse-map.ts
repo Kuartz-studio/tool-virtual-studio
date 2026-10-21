@@ -1,7 +1,7 @@
 import { isWalkablePoint } from './queries';
 import type { TiledLayer, TiledMapJson, TiledObject, TiledObjectLayer, TiledTileLayer } from './tiled-types';
 
-export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label'] as const;
+export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch'] as const;
 export type ZoneType = (typeof ZONE_TYPES)[number];
 
 // Un rectangle du calque `zones`, en pixels.
@@ -22,7 +22,8 @@ export function deskKey(zone: Pick<Zone, 'name' | 'id'>): string {
   return zone.name ?? zone.id;
 }
 
-// Ce que le serveur et le client savent de la carte : la taille, les cases bloquantes, les zones et le point d'apparition.
+// Ce que le serveur et le client savent de la carte : la taille, les cases bloquantes, les zones, le point d'apparition et les
+// interrupteurs de lumière.
 export interface OfficeMap {
   widthTiles: number;
   heightTiles: number;
@@ -30,6 +31,8 @@ export interface OfficeMap {
   blocked: Uint8Array;   // une case par octet, ligne après ligne : 1 = bloquée
   zones: Zone[];
   spawn: { x: number; y: number };   // en pixels
+  // Le centre de chaque zone `switch` (une case, posée sur un mur : la plaque), en pixels, dans l'ordre de la carte.
+  switches: Array<{ x: number; y: number }>;
 }
 
 // Pourquoi une carte est refusée :
@@ -59,7 +62,8 @@ const TILE_ID_MASK = 0x1fffffff;
 const MAX_GID = 0xffffffff;
 
 // Lit la carte exportée de Tiled (JSON, tilesets intégrés, calques en CSV) : les cases bloquantes viennent du calque
-// `collisions` (n'importe quelle tuile bloque), les zones du calque `zones`, et l'apparition est le centre de la zone `spawn`.
+// `collisions` (n'importe quelle tuile bloque), les zones du calque `zones`, l'apparition est le centre de la zone `spawn`, et chaque
+// interrupteur de lumière le centre d'une zone `switch`.
 export function parseOfficeMap(json: TiledMapJson): OfficeMap {
   const layers: TiledLayer[] = Array.isArray(json.layers) ? json.layers : [];
 
@@ -80,6 +84,7 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
     blocked,
     zones,
     spawn: { x: spawnZone.x + spawnZone.width / 2, y: spawnZone.y + spawnZone.height / 2 },
+    switches: zones.filter((zone) => zone.type === 'switch').map((zone) => ({ x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 })),
   };
   if (!isWalkablePoint(map, map.spawn.x, map.spawn.y)) {
     throw new MapError(

@@ -17,6 +17,7 @@ function grid(rows: string[]): OfficeMap {
     blocked: Uint8Array.from(rows.flatMap((row) => [...row].map((c) => (c === '#' ? 1 : 0)))),
     zones: [],
     spawn: { x: 16, y: 16 },
+    switches: [],
   };
 }
 

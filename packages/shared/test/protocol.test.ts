@@ -1,5 +1,5 @@
 import { expect, test } from 'vitest';
-import { moveSchema, chatSendSchema, statusSchema, displayNameSchema, isAvatarKey } from '../src';
+import { moveSchema, chatSendSchema, statusSchema, displayNameSchema, isAvatarKey, lightsSetSchema, LIGHTS_RATE_MS, LIGHT_SWITCH_REACH_TILES } from '../src';
 
 test('move : entiers et direction connue', () => {
   expect(moveSchema.safeParse({ x: 10, y: 20, dir: 'down', moving: true }).success).toBe(true);
@@ -25,4 +25,17 @@ test('avatars : personnage prêt à l\'emploi, personnage assemblé, ou rien', (
   expect(isAvatarKey('c.3.2.1-99.0.0')).toBe(false);
   expect(isAvatarKey('dev-red')).toBe(false);
   expect(isAvatarKey('nope')).toBe(false);
+});
+test('lumière : lights:set demande un état (un booléen), rien d\'autre', () => {
+  expect(lightsSetSchema.safeParse({ on: false }).success).toBe(true);
+  expect(lightsSetSchema.safeParse({ on: true }).success).toBe(true);
+  expect(lightsSetSchema.safeParse({ on: 'non' }).success).toBe(false);
+  expect(lightsSetSchema.safeParse({ on: 0 }).success).toBe(false);
+  expect(lightsSetSchema.safeParse({}).success).toBe(false);
+  expect(lightsSetSchema.safeParse(null).success).toBe(false);
+  expect(lightsSetSchema.parse({ on: false, by: 'moi' })).toEqual({ on: false });   // l'auteur est celui du serveur : un champ en trop est écarté
+});
+test('lumière : un changement par personne et par 800 ms, un interrupteur à 3 cases', () => {
+  expect(LIGHTS_RATE_MS).toBe(800);
+  expect(LIGHT_SWITCH_REACH_TILES).toBe(3);
 });

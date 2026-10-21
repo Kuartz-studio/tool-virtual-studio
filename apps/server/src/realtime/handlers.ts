@@ -11,9 +11,11 @@ import {
   chatSendSchema,
   deskCommandSchema,
   computeGroups,
+  lightsSetSchema,
   mediaStateSchema,
   moveSchema,
   statusSchema,
+  withinSwitchReach,
   type ChatAck,
   type ChatMessage,
   type DeskAck,
@@ -26,6 +28,7 @@ import type { ActivityController } from '../activity/activity-controller';
 import type { ChatService } from '../chat/chat-service';
 import type { DeskController } from '../desks/desk-controller';
 import type { Env } from '../env';
+import type { LightsService } from '../lights/lights-service';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
 import { createRateLimiter, type RateLimiter } from '../rate-limit';
@@ -50,6 +53,12 @@ export interface HandlerDeps {
   desks: Pick<DeskController, 'run'>;
   /** Les états d'activité : `state:set` y passe, et un statut ordinaire en efface un. */
   activity: Pick<ActivityController, 'choose' | 'clear'>;
+  /** La lumière du bureau : `lights:set` la change. */
+  lights: Pick<LightsService, 'get' | 'set'>;
+  /** La limite de débit des changements de lumière (une prise par LIGHTS_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
+  lightsLimiter: RateLimiter;
+  /** Les interrupteurs de la carte (leur centre, en pixels) : sans l'un d'eux à portée, la lumière ne se change pas. */
+  switches: ReadonlyArray<{ x: number; y: number }>;
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
@@ -182,6 +191,30 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
       logServerError(d.logger, { err, userId }, 'Commande de bureau impossible');
       reply({ ok: false, error: 'unavailable' });
     });
+  });
+
+  // Allumer ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
+  // monde voit la personne (jamais là où elle dit être). Aucune réponse, quoi qu'il arrive : la confirmation est `lights:changed`, que tout
+  // le bureau reçoit, émetteur compris. Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme
+  // pour le chat. Puis, dans cet ordre, ce qui ne passe pas est ignoré :
+  // 1. charge utile invalide (lightsSetSchema) ;
+  // 2. trop loin de tout interrupteur ;
+  // 3. la lumière est déjà dans l'état demandé : la demande est idempotente, elle ne change rien et ne compte pas dans la limite ;
+  // 4. plus d'un changement par personne et par LIGHTS_RATE_MS : la limite est celle du compte, que se reconnecter ne remet pas à zéro.
+  // Les changements passent l'un après l'autre (LightsService) : deux personnes qui demandent le même état en même temps ne le changent
+  // qu'une fois, et une seule diffusion part. Une base qui n'enregistre pas le changement le laisse sans effet : journalisé, rien ne part.
+  socket.on('lights:set', (payload) => {
+    const me = d.world.get(userId);
+    if (!me || !socket.rooms.has(OFFICE_ROOM)) return;
+    const request = lightsSetSchema.safeParse(payload);
+    if (!request.success || !withinSwitchReach(me, d.switches)) return;
+    if (d.lights.get().on === request.data.on || !d.lightsLimiter.take(userId)) return;
+    d.lights.set(request.data.on, { id: userId, name: me.name }).then(
+      (state) => {
+        if (state) io.to(OFFICE_ROOM).emit('lights:changed', state);
+      },
+      (err: unknown) => logServerError(d.logger, { err, userId }, 'Changement de la lumière impossible'),
+    );
   });
 
   // Réservé aux tests de bout en bout : sans E2E=1 (que loadEnv refuse en production), l'événement n'existe pas. Le joueur est posé

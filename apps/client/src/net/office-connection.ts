@@ -1,4 +1,4 @@
-import type { ActivityState, InitPayload, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { ActivityState, InitPayload, LightsState, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -8,7 +8,8 @@ import { sendDeskCommand } from './desk-commands';
 import type { OfficeSocket } from './socket';
 
 // Les événements du bus (game/EventBus.ts) entre la connexion et le jeu. `net:*` va de la connexion au jeu ; `local:*`, du jeu à la
-// connexion, qui l'envoie au serveur ; `media:*`, de l'audio/vidéo (media/use-media.ts) au jeu.
+// connexion, qui l'envoie au serveur ; `media:*`, de l'audio/vidéo (media/use-media.ts) au jeu ; `lights:changed`, de la connexion à
+// qui veut réagir à un changement de lumière (le jeu, le son, les messages passagers).
 export interface OfficeBusEvents {
   'net:init': (p: InitPayload) => void;
   'net:tick': (p: WorldTick) => void;
@@ -18,9 +19,15 @@ export interface OfficeBusEvents {
   'net:status': (p: { id: string; status: Status }) => void;
   'net:activity': (p: { id: string; activity: ActivityState | null }) => void;
   'net:profile': (p: { id: string; name: string; avatarKey: string | null }) => void;
+  // La lumière du bureau vient d'être allumée ou éteinte, par quelqu'un (soi-même compris) : le serveur l'annonce à tout le bureau. Le magasin
+  // la dit déjà à jour quand l'événement part. Pas à l'arrivée : l'état d'un `init` n'est pas un changement.
+  'lights:changed': (p: LightsState) => void;
   'local:move': (p: MovePayload) => void;
   // Le jeu : la personne a cliqué sur la porte fermée de ce bureau, près de elle. La connexion toque pour elle (`desk:do`, knock).
   'local:knock': (p: { key: string }) => void;
+  // Le jeu : la personne actionne l'interrupteur de la lumière, de près. La connexion demande l'état voulu au serveur (`lights:set`) ; la
+  // lumière ne change qu'à son annonce (`lights:changed`).
+  'local:lights': (p: { on: boolean }) => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
   // Qui parle dans la room audio/vidéo, soi-même compris (les identifiants des comptes), à chaque changement ; [] en la quittant. Le
@@ -62,7 +69,9 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 //   consigne. La connexion coupée l'oublie : pendant la coupure, le serveur a pu sortir la personne de son groupe (au-delà du
 //   délai de grâce), et il redit la consigne du moment après l'init de la connexion suivante ;
 // - la connexion est prête (`ready`, au magasin) une fois l'`init` de cette connexion reçu, et ne l'est plus dès qu'elle est coupée ;
-// - ce que le jeu produit (`local:move`, `local:teleport`) part au serveur, mais seulement quand la connexion est prête. Avant, le
+// - la lumière du bureau (`lights:changed`, et celle de l'`init`) va au magasin, puis au bus (`lights:changed`) : le jeu l'obscurcit, le son
+//   fait son bruit d'interrupteur ;
+// - ce que le jeu produit (`local:move`, `local:teleport`, `local:lights`) part au serveur, mais seulement quand la connexion est prête. Avant, le
 //   serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure, Socket.io garderait les messages et les enverrait au
 //   retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
 //
@@ -140,6 +149,11 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     'desk:access': (p) => state().setClosedDesks(p.closed),
     'desk:bans': (bans) => state().setDeskBans(bans),
     'desk:knock': (knock) => state().addDeskKnock(knock),
+    // La lumière : le magasin d'abord (le jeu et l'interface y lisent le nouvel état), puis le bus, pour le jeu, le son et les messages.
+    'lights:changed': (lights) => {
+      state().setLights(lights);
+      emitOnBus(bus, 'lights:changed', lights);
+    },
     // Le faux live (SIM=1 côté serveur) : qui est dans la room, et leur son. Le serveur n'en envoie jamais autrement.
     'sim:room': (p) => setSimRoom(p),
   };
@@ -161,6 +175,9 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:teleport', (p) => {
       if (state().ready) socket.emit('debug:teleport', p);
+    }),
+    listenOnBus(bus, 'local:lights', ({ on }) => {
+      if (state().ready) socket.emit('lights:set', { on });
     }),
     listenOnBus(bus, 'local:knock', ({ key }) => {
       if (!state().ready) return;
