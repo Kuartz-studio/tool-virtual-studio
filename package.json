@@ -10,7 +10,7 @@
     "test": "vitest run",
     "typecheck": "pnpm -r typecheck && tsc -p e2e",
     "dev": "pnpm -r --parallel dev",
-    "dev:sim": "SIM=1 VITE_SIM=1 pnpm -r --parallel dev",
+    "dev:sim": "SIM=1 VITE_SIM=1 MAP_KEY=office pnpm -r --parallel dev",
     "build": "pnpm --filter @bureau/client build && pnpm --filter @bureau/server build",
     "e2e": "playwright test -c e2e/playwright.config.ts"
   },

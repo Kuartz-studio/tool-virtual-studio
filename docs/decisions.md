@@ -129,14 +129,24 @@ Ajoutés après la première version, d'après la demande « update ». Là auss
 
 | Décision | Pourquoi | Si c'est faux |
 |---|---|---|
-| La grande carte est du code (`OFFICE`), comme `DEV_OFFICE`, avec les mêmes 5 tuiles de développement | Cohérent avec la carte existante ; l'habillage définitif (assets, Tiled) reste à faire | Les meubles se ressemblent tous (une même tuile pour le canapé, la table et l'arcade) |
-| 73 × 39 cases, 20 bureaux de 7 × 5, une grande salle de 23 × 13, une salle de réunion de 13 × 7 | Une équipe d'une vingtaine de personnes ; chaque pièce assez grande pour y circuler | Plus ou moins de places : changer les constantes de `office.ts` |
+| La grande carte est du code (`OFFICE`, dessinée avec `MapCanvas`), habillée des images du pack LimeZu (sols, murs, meubles) | Le plan reste vérifiable par des tests (atteignabilité, pièces closes) ; les images viennent d'un pipeline (`gen:assets`) | Dessiner la carte dans Tiled : garder les noms des zones et le calque `objets` |
+| 66 × 47 cases, **6 bureaux de 9 × 7** (63 cases à décorer, contre 35 avant), une grande salle de 17 × 10, une salle de réunion de 14 × 10, une **zone détente de 42 × 12** | Moins de bureaux, plus grands et décorables ; la place gagnée sert à vivre ensemble (piscine, salon, musique) | Plus ou moins de places : changer les constantes de `office.ts` (les clés `A1`…`A6` restent) |
 | `MAP_KEY` garde `dev-office` par défaut ; la bascule est `MAP_KEY=office` | Le README demandait déjà une bascule volontaire ; les tests et les e2e restent sur la petite carte | Oublier la variable laisse la petite carte (3 bureaux) |
 | Un bureau = deux zones de même nom (`desk` + `door`), la clé de la place | Le nom de la zone est stable quand la carte change ; la porte sert au client (obstacle visuel et physique) | Une zone renommée dans Tiled détache son bureau en base |
 | Le premier arrivé sans bureau reçoit la première place libre | « Chaque personne possède son propre bureau (attribué) » | Quelqu'un voudrait choisir : il change de place dans le panneau |
 | Fermer la porte bloque l'entrée seulement : qui est déjà dedans reste | Évite de téléporter quelqu'un sans le dire ; « Exclure » existe pour ça | Quelqu'un reste dans un bureau fermé jusqu'à ce qu'on l'exclue |
 | Les exclus et les admis ne sont pas enregistrés (valables le temps du serveur) | Moins de tables ; un redéploiement les efface, ce qui est une porte qui se rouvre | Un exclu revient après un déploiement : le réexclure |
 | « Toquer » est un clic sur la porte, de près (3 cases), une fois toutes les 5 s | Pas de touche de plus à retenir ; évite le harcèlement | Un clic maladroit hors de portée affiche « porte fermée » sans toquer |
+| La zone détente est une zone `private` (comme la salle de réunion) : tout le monde s'y entend | « Comme meeting, tout le monde s'entend dans cette grande zone » | Quelqu'un voudrait un coin plus calme : le déplacer dans un bureau ou la salle de réunion |
+| La piscine est dessinée avec des tuiles de sol turquoise et une margelle faite par le script (le pack n'a pas d'eau) ; on ne marche pas dans l'eau | Aucune tuile d'eau dans le pack ; un bassin qui bloque évite des avatars qui flottent | Remplacer par de vraies tuiles d'eau si le pack en reçoit |
+| Les murs horizontaux font 2 cases de haut, les verticaux 1 (convention des planches LimeZu) | C'est ainsi que sont dessinées les planches de murs | Les cartes d'avant (murs de 1 case) ne se lisent plus pareil ; elles sont régénérées |
+| Le pack LimeZu n'est pas dans le dépôt : un script (`gen:assets`) range ce qui sert, le résultat est commité | La licence interdit de redistribuer les images ; les fichiers rangés sont utilisés dans l'appli | Le dépôt doit rester privé ; le crédit LimeZu est obligatoire |
+| Les « singles » du pack Office (pièces de meubles modulaires) ne servent pas : les objets sont découpés à la main dans la grande planche | Un single n'est qu'un morceau de bureau ; une entrée de la curation est un objet entier | Plus d'éléments : ajouter une entrée dans `scripts/assets/curation/` et relancer `gen:assets` |
+| Un avatar est une clé texte (`p.07` ou `c.corps.yeux.tenue.coiffure.accessoire`), assemblée dans le navigateur | Pas d'image par personne à stocker ni à servir ; le serveur ne garde qu'une chaîne qu'il valide | Un build qui ne connaît pas une pièce affiche le personnage prêt de la personne |
+| Sans avatar choisi, chaque personne a un des 20 personnages prêts, toujours le même (d'après son identifiant) | Un bureau peuplé de clones ne ressemble à rien | Deux personnes peuvent avoir le même, tant qu'elles n'ont pas choisi |
+| La déco d'un bureau appartient à la personne (table `desk_setup`), pas à la place | Elle suit son occupant quand il change de place, et reste s'il rend le bureau | Une personne retirée emporte sa déco (suppression en cascade) |
+| Toute la déco s'enregistre d'un bloc et le serveur la valide en entier (`checkDecor`) | Un seul message, pas d'état à moitié valable ; le client et le serveur appliquent la même règle | Un geste valable seul peut être refusé en bloc : le message dit pourquoi |
+| Les meubles solides d'un bureau n'arrêtent que celui qui les voit | Le serveur ne connaît que les cases de la carte ; refuser les pas contre un meuble coûterait un état de plus | Un client modifié traverse un meuble de bureau (comme il traverserait un tapis) |
 | Le son suit la distance par une courbe douce (100 % jusqu'à 6 cases, silence à 14) | « Une grande zone à 100 %, puis ça réduit petit à petit » ; valeurs de départ, à régler à l'usage | Le rayon est trop grand ou trop petit : `AUDIO_FULL_DISTANCE_PX` et `AUDIO_SILENT_DISTANCE_PX` |
 | Dans un espace ouvert, on rejoint la room à 14 cases, qu'on marche ou non | Le volume rend la voix inaudible à cette distance : plus besoin d'attendre l'arrêt | Plus de monde par room LiveKit (donc plus de minutes) dans l'espace ouvert |
 | Le volume est réglé par le client (`setVolume`), pas par le serveur | Le client connaît les positions à 10 Hz sans aller-retour | Un client modifié entend tout : le son d'un espace ouvert n'est pas un secret |
@@ -163,8 +173,6 @@ Ce sont des points connus, notés pour plus tard. Aucun ne bloque un premier usa
 - Un client modifié pourrait rejoindre une salle audio/vidéo avec un ancien jeton pendant environ 11 minutes après en être sorti. Il apparaîtrait dans les vignettes.
 - La vérification de vitesse des déplacements est souple. Les murs restent infranchissables.
 - Un onglet resté ouvert pendant plusieurs jours garde l'ancien code. Il propose de recharger quand un fichier manque.
-- Tant que les tâches 23 et 24 ne sont pas faites :
-  - tout le monde a le même avatar par défaut ;
-  - il n'y a pas de réglages dans le bureau : nom, avatar et mot de passe ne se changent pas (le mot de passe passe par « mot de passe oublié ») ;
-  - micro et caméra ne se choisissent que sur l'écran d'entrée, en rechargeant la page ;
-  - la carte est la carte de développement.
+- Les réglages dans le bureau :
+  - l'avatar se change (panneau Personnage), pas le nom ni le mot de passe (le mot de passe passe par « mot de passe oublié ») ;
+  - micro et caméra ne se choisissent que sur l'écran d'entrée, en rechargeant la page.
