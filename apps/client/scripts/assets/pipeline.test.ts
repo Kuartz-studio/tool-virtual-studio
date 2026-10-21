@@ -7,6 +7,7 @@ import { ATLAS_MARGIN, packImages } from './pack';
 import { extract, segmentSheet } from './segment';
 import { ASSETS_DIR } from './build-assets';
 import { mapFiles, MAPS_DIR } from './build-map';
+import { BIG_FOOTPRINT_CELLS, BIG_ITEM_TILES, defaultsOf, type ResolvedEntry } from './decor';
 import { readFileSync } from 'node:fs';
 
 const solid = (w: number, h: number, a = 255): Img => {
@@ -126,5 +127,43 @@ describe('les assets rangés dans l\'appli', () => {
     for (const { path, content } of mapFiles()) {
       expect(readFileSync(join(MAPS_DIR, path), 'utf8'), path).toBe(content);
     }
+  });
+});
+
+describe('qui arrête l\'avatar : les gros éléments seuls', () => {
+  const entry = (cat: ResolvedEntry['cat'], rect: ResolvedEntry['rect'], more: Partial<ResolvedEntry> = {}): ResolvedEntry => ({ sheet: 'of', name: 'x', cat, rect, ...more });
+
+  test('un petit meuble se traverse, un gros l\'arrête', () => {
+    expect([BIG_ITEM_TILES, BIG_FOOTPRINT_CELLS]).toEqual([3, 2]);
+    // Une plante d'une seule case, petite ou haute : traversable ; un palmier (2 cases au sol) : non.
+    expect(defaultsOf(entry('plantes', [6, 10, 1, 2])).solid).toBe(false);
+    expect(defaultsOf(entry('plantes', [6, 7, 1, 3])).solid).toBe(false);
+    expect(defaultsOf(entry('plantes', [13, 0, 2, 2])).solid).toBe(true);
+    // Un bureau, une bibliothèque, un frigo (1 case au sol mais 3 d'image) : gros.
+    expect(defaultsOf(entry('bureaux', [7, 28, 3, 2])).solid).toBe(true);
+    expect(defaultsOf(entry('rangement', [3, 13, 2, 2])).solid).toBe(true);
+    expect(defaultsOf(entry('cafe', [9, 23, 1, 3])).solid).toBe(true);
+    // Une petite table (1 × 2 cases d'image, 1 au sol) et une imprimante d'une case : traversables.
+    expect(defaultsOf(entry('rangement', [0, 0, 1, 2], { claim: 1 })).solid).toBe(false);
+  });
+
+  test('les sièges, les objets posés sur un meuble et les tapis ne bloquent jamais, même grands', () => {
+    expect(defaultsOf(entry('sieges', [1, 28, 3, 2])).solid).toBe(false);
+    expect(defaultsOf(entry('ecrans', [14, 12, 3, 3])).solid).toBe(false);
+    expect(defaultsOf(entry('deco', [0, 0, 4, 3], { kind: 'floor' })).solid).toBe(false);
+  });
+
+  test('la curation peut dire solid elle-même, dans un sens comme dans l\'autre', () => {
+    expect(defaultsOf(entry('plantes', [6, 10, 1, 2], { solid: true })).solid).toBe(true);
+    expect(defaultsOf(entry('bureaux', [7, 28, 3, 2], { solid: false })).solid).toBe(false);
+  });
+
+  test('dans la banque : aucune plante d\'une case ne bloque, et les gros meubles bloquent tous', () => {
+    const plants = DECOR_ITEMS.filter((item) => item.cat === 'plantes' && item.kind === 'object');
+    expect(plants.length).toBeGreaterThan(5);
+    for (const plant of plants) expect(plant.solid, plant.name).toBe(plant.w * plant.claim >= BIG_FOOTPRINT_CELLS);
+    const bigDesks = DECOR_ITEMS.filter((item) => item.cat === 'bureaux' && item.kind === 'object' && item.w * item.h >= 6);
+    expect(bigDesks.length).toBeGreaterThan(10);
+    for (const desk of bigDesks) expect(desk.solid, desk.name).toBe(true);
   });
 });

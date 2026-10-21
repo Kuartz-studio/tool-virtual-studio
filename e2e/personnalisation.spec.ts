@@ -199,3 +199,21 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText('13 / 80 éléments')).toBeVisible();
 });
+
+// Seuls les gros meubles arrêtent : à l'accueil, une petite plante en pot (49, 43) se traverse, et la table basse (47-48, 43-44) qui la suit
+// arrête. On part à droite de la plante, on marche vers la gauche.
+test('la marche : une petite plante se traverse, un gros meuble arrête', async ({ browser }) => {
+  const a = await arrive(browser, 'Alma');
+  await a.page.evaluate(() => window.__office!.teleport(51 * 32 + 16, 43 * 32 + 16));
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(51 * 32 + 16);
+
+  await a.page.keyboard.down('ArrowLeft');
+  // La plante occupe les x de 1568 à 1600 : l'avatar la traverse, puis butte contre la table (bord à 1568, plus la demi-largeur du corps).
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeLessThan(1590);
+  await a.page.waitForTimeout(800);
+  await a.page.keyboard.up('ArrowLeft');
+  const stopped = (await selfAt(a.page)).x;
+  expect(stopped).toBeGreaterThanOrEqual(1568 + 9);
+  expect(stopped).toBeLessThan(1600);
+});
+

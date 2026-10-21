@@ -105,10 +105,17 @@ describe('checkDecor', () => {
   test('on ne mure pas sa porte, et on n\'enferme pas un coin de la pièce', () => {
     const doorRow = DESK_ROOM.height - 1;
     expect(checkDecor(decor([{ id: 'of-7-28', x: DESK_ROOM.doorX - 1, y: doorRow - 1 }]))).toMatchObject({ ok: false });
-    const wall = Array.from({ length: DESK_ROOM.width }, (_, x) => ({ id: 'of-6-10', x, y: 3 }));
+    // Un réfrigérateur (1 case au sol, 3 d'image) est un gros élément : il bloque, et une rangée en travers enferme le fond de la pièce.
+    const wall = Array.from({ length: DESK_ROOM.width }, (_, x) => ({ id: 'ki-9-23', x, y: 3 }));
     expect(checkDecor(decor(wall))).toEqual({ ok: false, error: 'unreachable' });
     // Un mur de plantes avec un passage laisse tout atteignable.
     expect(checkDecor(decor(wall.slice(1)))).toEqual({ ok: true });
+  });
+
+  test('un petit élément ne bloque pas : une rangée de plantes d\'une case, de bout en bout, laisse passer', () => {
+    const small = Array.from({ length: DESK_ROOM.width }, (_, x) => ({ id: 'of-6-12', x, y: 3 }));
+    expect(decorItem('of-6-12')!.solid).toBe(false);
+    expect(checkDecor(decor(small))).toEqual({ ok: true });
   });
 
   test('une chaise ne bloque pas le passage ; un tapis non plus', () => {

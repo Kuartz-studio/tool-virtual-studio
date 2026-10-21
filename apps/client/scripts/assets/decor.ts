@@ -14,12 +14,23 @@ export const ENTRIES: Entry[] = [...OFFICE_ENTRIES, ...INTERIOR_ENTRIES];
 type Rect = readonly [number, number, number, number];
 export type ResolvedEntry = Entry & { rect: Rect };
 
+// Un meuble arrête l'avatar s'il est gros, et se traverse s'il est petit : les petites plantes (même hautes), les petites tables, les
+// imprimantes de bureau ne gênent pas la marche (les sièges non plus, et les objets posés sur un meuble ne comptent pas). Gros, c'est :
+// - une plante qui prend au moins 2 cases au sol (un palmier, un ficus) ; une plante d'une seule case, même haute, se traverse ;
+// - pour tout autre meuble, 2 cases au sol au moins, ou 3 cases d'image (largeur × hauteur) : un bureau, une table, une bibliothèque, un
+//   frigo, une fontaine à eau.
+// Une entrée de la curation peut toujours dire `solid` elle-même, pour un meuble qui sort de la règle (la cheminée, la borne tactile).
+export const BIG_ITEM_TILES = 3;
+export const BIG_FOOTPRINT_CELLS = 2;
+
 export function defaultsOf(entry: ResolvedEntry): { kind: DecorKind; claim: number; solid: boolean } {
-  const h = entry.rect[3];
+  const [, , w, h] = entry.rect;
   const kind: DecorKind = entry.kind ?? (entry.cat === 'ecrans' || entry.cat === 'papeterie' ? 'onTop' : 'object');
-  const claim = entry.claim ?? (kind === 'wall' ? 0 : kind === 'floor' ? h : entry.cat === 'bureaux' ? h : 1);
-  const solid = entry.solid ?? (kind === 'object' && entry.cat !== 'sieges');
-  return { kind, claim: Math.min(claim, h), solid };
+  const claim = Math.min(entry.claim ?? (kind === 'wall' ? 0 : kind === 'floor' ? h : entry.cat === 'bureaux' ? h : 1), h);
+  const wide = w * claim >= BIG_FOOTPRINT_CELLS;
+  const big = entry.cat === 'plantes' ? wide : wide || w * h >= BIG_ITEM_TILES;
+  const solid = entry.solid ?? (kind === 'object' && entry.cat !== 'sieges' && big);
+  return { kind, claim, solid };
 }
 
 export function itemId(entry: ResolvedEntry): string {
