@@ -1,4 +1,5 @@
 import { expect, type APIRequestContext, type Locator, type Page } from '@playwright/test';
+import { TEST_AVATAR_KEY } from './pixels';
 
 export interface Account {
   email: string;
@@ -123,13 +124,26 @@ export async function selfAt(page: Page): Promise<{ id: string; x: number; y: nu
   return self;
 }
 
-// Un compte neuf (membre, ou admin), entré dans le bureau prêt. Renvoie le compte (pour se reconnecter).
+// Donne à la personne connectée ce personnage (PATCH /api/me), et attend que le jeu l'ait assemblé et le montre : les tests de pixels
+// reconnaissent ses couleurs.
+export async function chooseAvatar(page: Page, avatarKey: string): Promise<void> {
+  const res = await page.request.patch('/api/me', { data: { avatarKey } });
+  expect(res.status(), await res.text()).toBe(200);
+  await page.waitForFunction((key) => {
+    const avatar = window.__office?.selfAvatar();
+    return avatar?.wanted === key && avatar.shown === key;
+  }, avatarKey);
+}
+
+// Un compte neuf (membre, ou admin), entré dans le bureau prêt, avec le personnage des tests (TEST_AVATAR_KEY). Renvoie le compte (pour se
+// reconnecter).
 export async function joinOffice(page: Page, name: string, role: 'admin' | 'member' = 'member'): Promise<Account> {
   // L'adresse e-mail n'a pas d'accent : « Zoé » devient zoe.
   const slug = name.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
   const account = { email: uniqueEmail(slug), name, password: `motdepasse-de-${slug}` };
   await inviteAndJoin(page, account, role);
   await waitForOffice(page);
+  await chooseAvatar(page, TEST_AVATAR_KEY);
   return account;
 }
 

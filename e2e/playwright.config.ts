@@ -1,9 +1,13 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig, devices } from '@playwright/test';
 
-// Le serveur des tests de bout en bout : celui de production (client et serveur compilés), sur un port à lui.
+// Le serveur des tests de bout en bout : celui de production (client et serveur compilés), sur un port à lui, avec la petite carte de
+// développement (dev-office). Un second serveur, sur le même build, a la vraie carte (office) et sa propre base : ses six bureaux sont tous
+// libres, ce que les tests de personnalisation (personnalisation.spec.ts : le builder, la déco du bureau) demandent.
 const PORT = 3100;
 const BASE_URL = `http://localhost:${PORT}`;
+const OFFICE_PORT = 3101;
+const OFFICE_URL = `http://localhost:${OFFICE_PORT}`;
 
 // Les faux périphériques de Chromium : une caméra (une mire qui bouge) et un micro (un bip), accordés sans question. L'écran d'entrée
 // du bureau les montre, et les tests audio/vidéo (media.spec.ts) les publient. Le test du refus lance son propre navigateur.
@@ -30,31 +34,45 @@ export default defineConfig({
     baseURL: BASE_URL,
     trace: 'retain-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'], launchOptions: { args: FAKE_MEDIA_ARGS } } }],
-  webServer: {
-    // VITE_E2E=1 active dans le client ce qu'il réserve aux tests. NODE_ENV=production pour le build : Vite le lirait
-    // sinon dans l'env ci-dessous (test), et livrerait React en mode développement.
-    command: 'VITE_E2E=1 NODE_ENV=production pnpm build && node apps/server/dist/index.js',
-    cwd: fileURLToPath(new URL('..', import.meta.url)),
-    url: `${BASE_URL}/api/health`,
-    // Toujours un serveur neuf, compilé depuis le code du moment : un serveur oublié sur le port fait échouer le lancement
-    // au lieu de tester un ancien build.
-    reuseExistingServer: false,
-    timeout: 180_000,
-    stdout: 'ignore',
-    stderr: 'pipe',
-    env: {
-      E2E: '1',
-      NODE_ENV: 'test',
-      DATABASE_URL: 'memory://',
-      MAILER: 'memory',
-      AUTH_RATE_LIMIT: 'off',
-      BETTER_AUTH_SECRET: 'secret-des-tests-e2e-0123456789-abcdef',
-      PORT: String(PORT),
-      APP_URL: BASE_URL,
-      CLIENT_DIST_DIR: 'apps/client/dist',
-      MAPS_DIR: 'apps/client/dist/assets/maps',
-      ...LIVEKIT_ENV,
+  projects: [
+    { name: 'chromium', testIgnore: /personnalisation\.spec\.ts/, use: { ...devices['Desktop Chrome'], launchOptions: { args: FAKE_MEDIA_ARGS } } },
+    { name: 'office', testMatch: /personnalisation\.spec\.ts/, use: { ...devices['Desktop Chrome'], baseURL: OFFICE_URL, launchOptions: { args: FAKE_MEDIA_ARGS } } },
+  ],
+  webServer: [
+    {
+      // VITE_E2E=1 active dans le client ce qu'il réserve aux tests. NODE_ENV=production pour le build : Vite le lirait
+      // sinon dans l'env ci-dessous (test), et livrerait React en mode développement. Le build fini, le serveur de la vraie carte démarre en
+      // arrière-plan (même env, autre port, autre origine, autre carte), puis celui de la petite carte prend la place du shell.
+      command: `VITE_E2E=1 NODE_ENV=production pnpm build && (PORT=${OFFICE_PORT} APP_URL=${OFFICE_URL} MAP_KEY=office node apps/server/dist/index.js &) ; exec node apps/server/dist/index.js`,
+      cwd: fileURLToPath(new URL('..', import.meta.url)),
+      url: `${BASE_URL}/api/health`,
+      // Toujours un serveur neuf, compilé depuis le code du moment : un serveur oublié sur le port fait échouer le lancement
+      // au lieu de tester un ancien build.
+      reuseExistingServer: false,
+      timeout: 180_000,
+      stdout: 'ignore',
+      stderr: 'pipe',
+      env: {
+        E2E: '1',
+        NODE_ENV: 'test',
+        DATABASE_URL: 'memory://',
+        MAILER: 'memory',
+        AUTH_RATE_LIMIT: 'off',
+        BETTER_AUTH_SECRET: 'secret-des-tests-e2e-0123456789-abcdef',
+        PORT: String(PORT),
+        APP_URL: BASE_URL,
+        CLIENT_DIST_DIR: 'apps/client/dist',
+        MAPS_DIR: 'apps/client/dist/assets/maps',
+        ...LIVEKIT_ENV,
+      },
     },
-  },
+    {
+      // Le second serveur est lancé par la commande ci-dessus (il répond souvent déjà quand Playwright arrive ici : d'où
+      // reuseExistingServer) : cette entrée attend seulement qu'il réponde, avant de lancer les tests.
+      command: 'sleep 3600',
+      url: `${OFFICE_URL}/api/health`,
+      reuseExistingServer: true,
+      timeout: 180_000,
+    },
+  ],
 });

@@ -12,31 +12,19 @@ import {
   WALK_TIMEOUT,
   type Account,
 } from './helpers';
+import { AVATAR_COLORS, AVATAR_FRAME, MAP_COLORS, SHIRT, shirtAt, tilePixel, type Rgb } from './pixels';
+import { DEV_TILE } from '../packages/shared/src/index';
 
-type Rgb = readonly [number, number, number];
-
-// Les couleurs des tuiles de la carte de développement (apps/client/scripts/gen-dev-assets.ts), et celle du texte de l'étiquette
-// (map-layers.ts). Les pixels sont dessinés sans lissage : un pixel de l'écran a exactement la couleur d'un pixel de la tuile.
-const MAP_COLORS: Record<string, Rgb> = {
-  sol: [222, 216, 202],
-  mur: [74, 84, 110],
-  bureau: [170, 128, 84],
-  'sol de la salle de réunion': [172, 192, 218],
-  'sol d\'un espace de bureau': [208, 226, 202],
-  'texte de l\'étiquette': [59, 66, 86],
-};
+// Les couleurs des tuiles de la carte de développement et du personnage des tests : lues dans les images servies (pixels.ts). Les pixels sont
+// dessinés sans lissage : un pixel de l'écran a exactement la couleur d'un pixel de la tuile.
 // Le fond du jeu (config.ts), autour de la carte.
 const BACKGROUND: Rgb = [29, 32, 48];
 // La couleur du message d'échec du chargement (Preloader.ts), qui n'est pas celle de la barre de chargement, blanche.
 const ERROR_TEXT: Rgb = [255, 180, 180];
-// La chemise de l'avatar par défaut, dev-red (gen-dev-assets.ts) : le corps du personnage, hors bras et flancs, d'une seule couleur.
-const SHIRT: Rgb = [214, 64, 64];
-// Toutes les couleurs de ce personnage (chemise, manches, flancs, peau, cheveux, pantalon, chaussures, yeux, contour), qu'aucune
-// tuile de la carte n'a.
-const AVATAR_COLORS: readonly Rgb[] = [
-  [214, 64, 64], [182, 54, 54], [171, 51, 51], [242, 201, 160], [214, 164, 124], [74, 52, 40], [58, 66, 96], [44, 50, 74], [36, 36, 46],
-  [30, 30, 42], [24, 24, 34],
-];
+// Le centre de la chemise du personnage dans son image de 32 × 64 px (pieds au milieu du bas), par rapport au milieu de l'image que la
+// caméra suit.
+const SHIRT_DX = shirtAt.x - AVATAR_FRAME.width / 2;
+const SHIRT_DY = shirtAt.y - AVATAR_FRAME.height / 2;
 
 // La barre du bas, les panneaux et les vignettes (office/OfficeShell.tsx) sont posés sur la carte et cachent ce qui est dessous.
 const HIDE_OVERLAY = '.office-ui { visibility: hidden }';
@@ -224,10 +212,10 @@ test('carte introuvable : un message à la place de la carte', async ({ page }) 
   await expectLoadFailure(page, '**/assets/maps/dev-office.json', account);
 });
 
-test('planche d\'avatar introuvable : le même message à la place de la carte', async ({ page }) => {
-  // dev-blue n'est pas l'avatar de cette personne : le Preloader charge pourtant toutes les planches, pour les autres joueurs.
+test('atlas de la banque d\'éléments introuvable : le même message à la place de la carte', async ({ page }) => {
+  // Les meubles de la carte sortent de ces atlas : sans l'un d'eux, le bureau n'apparaîtrait qu'à moitié.
   const account = { email: uniqueEmail('axel'), name: 'Axel', password: 'motdepasse-d-axel' };
-  await expectLoadFailure(page, '**/assets/dev/avatars/dev-blue.png', account);
+  await expectLoadFailure(page, '**/assets/decor/ecrans.png', account);
 });
 
 // Après un déploiement, les fichiers compilés changent de nom, et le serveur n'a plus les anciens : un onglet ouvert avant ne trouve
@@ -282,12 +270,12 @@ function onScreen(target: number, mapLength: number, canvasLength: number, zoom:
   return canvasLength / 2 + zoom * (target - center);
 }
 
-// Où est le milieu de la chemise de l'avatar dont les pieds sont en `feet`. La caméra regarde le milieu de l'avatar (16 px au-dessus
-// des pieds), et la chemise est 3,5 px de carte plus bas.
+// Où est le milieu de la chemise de l'avatar dont les pieds sont en `feet`. La caméra regarde le milieu de l'avatar (32 px au-dessus
+// des pieds : son image fait 64 px de haut), et la chemise est SHIRT_DX, SHIRT_DY px de carte plus loin.
 function shirtOnScreen(feet: { x: number; y: number }, canvas: { width: number; height: number }, zoom: number): [number, number] {
   return [
-    onScreen(feet.x, MAP_SIZE.width, canvas.width, zoom),
-    onScreen(feet.y - 16, MAP_SIZE.height, canvas.height, zoom) + zoom * 3.5,
+    onScreen(feet.x, MAP_SIZE.width, canvas.width, zoom) + zoom * SHIRT_DX,
+    onScreen(feet.y - 32, MAP_SIZE.height, canvas.height, zoom) + zoom * SHIRT_DY,
   ];
 }
 
@@ -302,17 +290,19 @@ test('l\'avatar apparaît sur le point d\'apparition, pieds en (80, 240), avec s
   expect(await selfAt(page)).toEqual({ id: session.user.id, x: 80, y: 240 });
 
   const png = await screenshot(page, testInfo, 'avatar-apparition', HIDE_OVERLAY);
-  const shirt: [number, number] = [32 + 2 * 79 + 1, 38 + 2 * 227 + 1];   // un pixel de la chemise, un peu à gauche du milieu
+  // L'image du personnage (32 × 64 px) a ses pieds au bas, au milieu : son coin haut-gauche est en (80 − 16, 240 − 64).
+  const shirt: [number, number] = [32 + 2 * (64 + shirtAt.pixel.x) + 1, 38 + 2 * (176 + shirtAt.pixel.y) + 1];   // un pixel de la chemise
   const shadow: [number, number] = [32 + 2 * 80 + 1, 38 + 2 * 241 + 1];   // 1 px sous les pieds, au milieu de l'ombre
   const floorBesideShadow: [number, number] = [32 + 2 * 80 + 1, 38 + 2 * 244 + 1];   // 4 px sous les pieds, hors de l'ombre (6 px de haut)
   const { at } = await readPixels(page, png, {}, [shirt, shadow, floorBesideShadow]);
 
-  // Le personnage rouge de dev-red, face à nous.
+  // Le personnage des tests, face à nous.
   expect(at[0], 'chemise').toEqual(SHIRT);
-  // Le sol, assombri d'un quart par l'ombre noire à 25 % : 0,75 × (222, 216, 202) = (166,5, 162, 151,5). Le sol autour n'est pas touché.
-  expect(at[2], 'sol hors de l\'ombre').toEqual(MAP_COLORS.sol);
-  for (const [channel, expected] of [166.5, 162, 151.5].entries()) {
-    expect(Math.abs(at[1]![channel]! - expected), `ombre, canal ${channel} : ${at[1]}`).toBeLessThanOrEqual(2);
+  // Le sol (de la tuile (2, 7), aux pixels (16, 20) et (16, 17)), assombri d'un quart par l'ombre noire à 25 % sous les pieds. Le sol autour n'est
+  // pas touché.
+  expect(at[2], 'sol hors de l\'ombre').toEqual(tilePixel(DEV_TILE.floor, 16, 20));
+  for (const [channel, base] of tilePixel(DEV_TILE.floor, 16, 17).entries()) {
+    expect(Math.abs(at[1]![channel]! - 0.75 * base), `ombre, canal ${channel} : ${at[1]}`).toBeLessThanOrEqual(2);
   }
 });
 
@@ -475,11 +465,11 @@ test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, test
   // La caméra regarde le milieu de l'avatar sans quitter la carte : horizontalement, le centre de la vue ne peut pas aller plus à
   // gauche que x = 320 (la moitié de la vue) ni plus à droite que x = 448 (768 − 320). À l'apparition (x = 80), la caméra est donc
   // contre le bord gauche, et l'avatar à gauche du centre : 640 + 2 × (80 − 320) = 160. Verticalement, la vue (360) tient dans la
-  // carte (512) et l'avatar est au milieu de l'écran : le milieu de sa chemise (3,5 px sous le sien) est à 360 + 2 × 3,5 = 367.
+  // carte (512) et l'avatar est au milieu de l'écran : le milieu de sa chemise est à 360 + 2 × SHIRT_DY.
   const spawn = await findColor(page, await screenshot(page, testInfo, 'camera-apparition', HIDE_OVERLAY), SHIRT);
   expect(spawn.count).toBeGreaterThan(50);
   const [spawnX, spawnY] = shirtOnScreen(await selfAt(page), canvas, 2);
-  expect([spawnX, spawnY]).toEqual([160, 367]);
+  expect([spawnX, spawnY]).toEqual([160 + 2 * SHIRT_DX, 360 + 2 * SHIRT_DY]);
   expect((spawn.minX + spawn.maxX) / 2).toBeCloseTo(spawnX, -1);   // à 5 px près
   expect((spawn.minY + spawn.maxY) / 2).toBeCloseTo(spawnY, -1);
 
@@ -505,7 +495,7 @@ test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, test
   const pngRight = await screenshot(page, testInfo, 'camera-bord-droit', HIDE_OVERLAY);
   const right = await findColor(page, pngRight, SHIRT);
   const [rightX, rightY] = shirtOnScreen(rightAt, canvas, 2);
-  expect(rightX).toBeCloseTo(640 + 2 * (rightAt.x - 448), 5);
+  expect(rightX).toBeCloseTo(640 + 2 * (rightAt.x - 448) + 2 * SHIRT_DX, 5);
   expect((right.minX + right.maxX) / 2).toBeCloseTo(rightX, -1);
   expect((right.minY + right.maxY) / 2).toBeCloseTo(rightY, -1);
   const { at, counts } = await readPixels(page, pngRight, { fond: BACKGROUND }, [[1279, 360], [1279, 5], [1279, 714]]);
@@ -536,17 +526,17 @@ test('la caméra continue de suivre l\'avatar quand la fenêtre change de taille
   };
 
   // Plus grande, toujours au zoom ×2 (la vue : 700 × 400 px de carte) : l'avatar est au centre de l'écran, x = 700 tant que x est
-  // entre 350 et 418, et y = 400 + 2 × 3,5.
+  // entre 350 et 418, et y = 400 + 2 × SHIRT_DY.
   await page.setViewportSize({ width: 1400, height: 800 });
   const [, bigY] = await expectShirtAt({ width: 1400, height: 800 }, 2);
-  expect(bigY).toBe(407);
+  expect(bigY).toBe(400 + 2 * SHIRT_DY);
 
   // Plus petite que 1280 × 720 : zoom ×1, la vue (700 × 480 px de carte) est plus petite que la carte (768 × 512). Horizontalement,
   // l'avatar est toujours suivi. Verticalement, la caméra ne descend pas sous y = 240 (la moitié de la vue) : le milieu de l'avatar
-  // (y = 224) est 16 px au-dessus du centre de l'écran, et la chemise à 240 − 16 + 3,5 = 227,5.
+  // (y = 208) est 32 px au-dessus du centre de l'écran, et la chemise à 240 − 32 + SHIRT_DY.
   await page.setViewportSize({ width: 700, height: 480 });
   const [, smallY] = await expectShirtAt({ width: 700, height: 480 }, 1);
-  expect(smallY).toBe(227.5);
+  expect(smallY).toBe(208 + SHIRT_DY);
 
   // Et il ne s'est pas déplacé pendant ce temps.
   expect(await selfAt(page)).toEqual(resting);
@@ -575,7 +565,7 @@ test('les pixels restent nets pour un avatar arrêté à x entier, dans une fen�
 
   const png = await page.screenshot({ style: HIDE_OVERLAY });
   const shirt = await findColor(page, png, SHIRT);
-  const avatar = await colorChanges(page, png, [shirt.minX - 14, shirt.minY - 30, shirt.maxX + 14, shirt.maxY + 40], AVATAR_COLORS);
+  const avatar = await colorChanges(page, png, [shirt.minX - 40, shirt.minY - 90, shirt.maxX + 40, shirt.maxY + 70], AVATAR_COLORS);
   // Un coin de l'écran qui n'a que de la carte : ni l'avatar, ni l'étiquette.
   const map = await colorChanges(page, png, [1283 - 420, 40, 1283 - 20, 330], null);
 
@@ -601,7 +591,7 @@ test('les pixels restent nets quand la caméra suit l\'avatar, même dans une fe
     await page.waitForTimeout(23 + i * 7);
     const png = await page.screenshot({ style: HIDE_OVERLAY });
     const shirt = await findColor(page, png, SHIRT);
-    const { x, y } = await colorChanges(page, png, [shirt.minX - 14, shirt.minY - 30, shirt.maxX + 14, shirt.maxY + 40], AVATAR_COLORS);
+    const { x, y } = await colorChanges(page, png, [shirt.minX - 40, shirt.minY - 90, shirt.maxX + 40, shirt.maxY + 70], AVATAR_COLORS);
     expect(x[0] + x[1], 'le personnage a des changements de couleur').toBeGreaterThan(100);
     expect(Math.min(...x), `x pair/impair : ${x}`).toBe(0);
     expect(Math.min(...y), `y pair/impair : ${y}`).toBe(0);
@@ -621,11 +611,11 @@ test('la marche s\'anime sur place, et l\'avatar immobile ne bouge plus', async 
   await page.keyboard.down('ArrowUp');
   await expect.poll(async () => (await selfAt(page)).y, { intervals: [50], timeout: WALK_TIMEOUT }).toBe(203);
 
-  // L'avatar, ses pieds en (192, 444) à l'écran, et son ombre.
-  const clip = { x: 160, y: 380, width: 64, height: 72 };
-  // Des captures à intervalles inégaux : le cycle de marche dure 500 ms (4 images de 125 ms), et des captures à intervalles réguliers,
+  // L'avatar (64 px de haut, ses pieds en (192, 444) à l'écran), et son ombre.
+  const clip = { x: 160, y: 310, width: 64, height: 156 };
+  // Des captures à intervalles inégaux : le cycle de marche dure 600 ms (6 images de 100 ms), et des captures à intervalles réguliers,
   // d'une demi-période par exemple, tomberaient toujours sur la même image.
-  const gaps = [0, 37, 71, 113, 29, 97, 53, 131, 17, 89];
+  const gaps = [0, 37, 71, 113, 29, 97, 53, 131, 17, 89, 61, 43];
   const looks = async () => {
     const seen = new Set<string>();
     for (const gap of gaps) {
@@ -635,12 +625,16 @@ test('la marche s\'anime sur place, et l\'avatar immobile ne bouge plus', async 
     return seen;
   };
 
-  // Le cycle fait trois images différentes (immobile, pas 1, pas 2) ; on en voit au moins deux.
-  expect((await looks()).size).toBeGreaterThanOrEqual(2);
+  // Le cycle de marche fait six images différentes ; on en voit plusieurs.
+  const walking = await looks();
+  expect(walking.size).toBeGreaterThanOrEqual(3);
   expect((await selfAt(page)).y).toBe(203);
 
-  // Relâchée : plus une image ne change.
+  // Relâchée : l'avatar respire (son cycle d'immobile, plus lent), mais ne marche plus : aucune des images de la marche, et il n'a pas bougé.
   await page.keyboard.up('ArrowUp');
   await page.waitForTimeout(300);
-  expect((await looks()).size).toBe(1);
+  const resting = await looks();
+  expect(resting.size).toBeGreaterThanOrEqual(1);
+  expect([...resting].filter((look) => walking.has(look))).toEqual([]);
+  expect((await selfAt(page)).y).toBe(203);
 });

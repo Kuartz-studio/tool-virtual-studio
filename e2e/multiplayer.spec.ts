@@ -11,6 +11,7 @@ import {
   waitForOffice,
   WALK_TIMEOUT,
 } from './helpers';
+import { TEST_AVATAR_KEY } from './pixels';
 
 // Plusieurs personnes dans le bureau, chacune dans son navigateur : un contexte par personne (ses cookies, donc sa session).
 //
@@ -67,7 +68,7 @@ test('B voit A bouger', async ({ browser }) => {
   // Puis il le voit exactement là où A s'est arrêté, avec son avatar.
   const endA = await restingAt(a.page);
   expect(endA.x - startA.x).toBeGreaterThan(40);
-  await expect.poll(() => playerSeenBy(b.page, a.id)).toEqual({ x: endA.x, y: endA.y, avatarKey: 'dev-red' });
+  await expect.poll(() => playerSeenBy(b.page, a.id)).toEqual({ x: endA.x, y: endA.y, avatarKey: TEST_AVATAR_KEY });
   // Et A ne se voit pas en double.
   expect(await avatarsOf(a.page, a.id)).toBe(1);
 });
