@@ -22,7 +22,7 @@ const night = declarations(".office-ui[data-theme='night']");
 test('le jour : l\'encre, les surfaces, le trait et l\'accent', () => {
   expect(day.get('--text')).toBe('#15171c');
   expect(day.get('--text-soft')).toBe('#5d6270');
-  expect(day.get('--text-muted')).toBe('#8a8f9c');
+  expect(day.get('--text-muted')).toBe('#656a79');
   expect(day.get('--surface')).toBe('#ffffff');
   expect(day.get('--surface-soft')).toBe('#f1f2f5');
   expect(day.get('--border')).toBe('rgb(21 23 28 / 9%)');
@@ -33,7 +33,7 @@ test('le jour : l\'encre, les surfaces, le trait et l\'accent', () => {
 test('la nuit : les mêmes jetons, d\'autres valeurs, et l\'accent prend la couleur des lampes', () => {
   expect(night.get('--text')).toBe('#eef0f4');
   expect(night.get('--text-soft')).toBe('#a3aaba');
-  expect(night.get('--text-muted')).toBe('#737a8c');
+  expect(night.get('--text-muted')).toBe('#8a91a3');
   expect(night.get('--surface')).toBe('#171a22');
   expect(night.get('--surface-soft')).toBe('#232835');
   expect(night.get('--border')).toBe('rgb(255 255 255 / 9%)');

@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { joinOffice, officeBar, openChat, openPanel, playerSeenBy, say, selfAt } from './helpers';
+import { chooseStatus, joinOffice, officeBar, openChat, openPanel, playerSeenBy, say, selfAt } from './helpers';
 
 // Le son, avec les vrais fichiers décodés par Chromium (Playwright coupe son haut-parleur : on lit ce que le moteur dit, window.__audio,
 // apps/client/src/game/debug.ts). La musique d'ambiance par endroit est dans musique-lieux.spec.ts, sur la grande carte.
@@ -134,9 +134,7 @@ test('chez les autres : une arrivée sonne, un message sonne ; en « Ne pas dér
   await expect.poll(async () => (await requested(a.page)).slice(fromMessage)).toContain('message');
 
   // A passe en « Ne pas déranger » : un nouvel arrivant et un message ne la dérangent plus.
-  await officeBar(a.page).getByRole('button', { name: /^Statut/ }).click();
-  await a.page.getByRole('menuitemradio', { name: 'Ne pas déranger' }).click();
-  await expect(officeBar(a.page).getByRole('button', { name: 'Statut : Ne pas déranger' })).toBeVisible();
+  await chooseStatus(a.page, 'Ne pas déranger');
   const quietFrom = (await requested(a.page)).length;
   const c = await arrive(browser, 'Élise');
   await expect.poll(async () => playerSeenBy(a.page, c.id), { timeout: 20_000 }).not.toBeNull();

@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page, type TestInfo } from '@playwright/test';
-import { createInvitation, enterOffice, expectInOffice, messagesWith, officeBar, openChat, say, selfAt, uniqueEmail, waitForOffice, WALK_TIMEOUT } from './helpers';
+import { chooseStatus, createInvitation, enterOffice, expectInOffice, messagesWith, officeBar, openChat, say, selfAt, uniqueEmail, waitForOffice, WALK_TIMEOUT } from './helpers';
 
 // L'audio et la vidéo de proximité, de bout en bout, avec un vrai serveur LiveKit. En local : `livekit-server --dev`, puis
 //   E2E_LIVEKIT_URL=ws://localhost:7880 E2E_LIVEKIT_API_KEY=devkey E2E_LIVEKIT_API_SECRET=secret pnpm e2e e2e/media.spec.ts
@@ -85,12 +85,6 @@ async function videoReadyState(page: Page, id: string): Promise<number> {
 // La room LiveKit de la page (window.__office.media.room), null hors conversation.
 async function roomOf(page: Page): Promise<string | null> {
   return page.evaluate(() => window.__office?.media.room ?? null);
-}
-
-async function chooseStatus(page: Page, label: string): Promise<void> {
-  await officeBar(page).getByRole('button', { name: /^Statut/ }).click();
-  await page.getByRole('menuitemradio', { name: label }).click();
-  await expect(officeBar(page).getByRole('button', { name: `Statut : ${label}` })).toBeVisible();
 }
 
 // Les deux se voient : deux vignettes chacun, et la vidéo de l'autre qui joue.

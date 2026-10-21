@@ -40,9 +40,10 @@ function useBarSize(layer: RefObject<HTMLDivElement | null>): void {
 }
 
 interface OfficeShellProps {
-  // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`). Son rôle décide du panneau Admin (sa ligne du menu
-  // « Plus » et le panneau n'existent que pour un admin) ; son identifiant, de la ligne « (toi) » de ce panneau, qui n'a pas de bouton Retirer.
-  user: { id: string; name: string; role: Role };
+  // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`), et son e-mail en haut du menu « Moi ». Son rôle décide
+  // du panneau Admin (sa ligne du menu « Plus » et le panneau n'existent que pour un admin) ; son identifiant, de la ligne « (toi) » de ce
+  // panneau, qui n'a pas de bouton Retirer.
+  user: { id: string; name: string; email: string; role: Role };
   // La connexion au bureau, que la page ouvre (null avant).
   socket: OfficeSocket | null;
   // L'audio et la vidéo : le client, et son état (useMedia).
@@ -67,7 +68,8 @@ interface OfficeShellProps {
 // - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), et en haut au milieu les vignettes de la conversation (VideoStrip) ;
 // - sous elles, les messages passagers (Toasts) : un toc toc à la porte de son bureau, une porte fermée ;
 // - à droite, un seul panneau à la fois (Personnes, Chat, Son, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
-// - en bas, la barre (ControlBar) : des docks à icônes (ton statut, le micro et la caméra, le zoom, le chat et les personnes).
+// - en bas, la barre (ControlBar) : des docks à icônes (la puce « Moi » avec ton statut, le micro et la caméra, le zoom, le chat et les personnes).
+//   Une seule lumière pour tout le bureau : éteinte, la couche prend les couleurs de la nuit (`data-theme`, `data-lights`).
 // Rien de cela ne prend de place au jeu : les éléments sont posés sur lui, et ouvrir un panneau ne redimensionne pas le canevas (ni
 // ne change le zoom de la caméra).
 //
@@ -90,6 +92,9 @@ export function OfficeShell({
   // Le serveur a dit qui est là : avant, le panneau Personnes ne saurait pas qui est en ligne.
   const knowsWhoIsHere = useOfficeStore((state) => state.self !== null);
   const replaced = useOfficeStore((state) => state.replaced);
+  // La lumière du bureau (une pour tous, que le serveur annonce) : allumée, le jour ; éteinte, la nuit, dont les jetons de couleur sont ceux
+  // de `.office-ui[data-theme='night']` (styles.css). `data-lights` dit la même chose pour qui n'a pas besoin du mot « thème ».
+  const lightsOn = useOfficeStore((state) => state.lights.on);
   // Le son des autres baisse avec la distance dans un espace ouvert : ceux qu'on n'entend plus n'ont plus de vignette.
   const inaudible = useSpatialAudio(media.client, media.snapshot);
 
@@ -124,7 +129,7 @@ export function OfficeShell({
   // « Lien de mot de passe ». Inconnu tant qu'il n'est pas lu, ou s'il ne se lit pas : le panneau est celui des e-mails.
   const mail = useMailMode(isAdmin && panel === 'admin');
 
-  // Ses états d'activité, lus à chaque (re)connexion prête : ils servent au menu des statuts.
+  // Ses états d'activité, lus à chaque (re)connexion prête : ils servent au menu « Moi » (« Mode »).
   const ready = useOfficeStore((state) => state.ready);
   useEffect(() => {
     if (!ready) return;
@@ -164,7 +169,7 @@ export function OfficeShell({
     <main className="office">
       <h1 className="visually-hidden">{fr.common.appName}</h1>
       {children}
-      <div ref={layer} className="office-ui" inert={replaced}>
+      <div ref={layer} className="office-ui" data-theme={lightsOn ? 'day' : 'night'} data-lights={lightsOn ? 'on' : 'off'} inert={replaced}>
         <WhereChip />
         <div className="office-top">
           <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />
@@ -202,7 +207,7 @@ export function OfficeShell({
           </Activity>
         </div>
         <Toasts socket={socket} />
-        <ControlBar name={name} socket={socket} client={media.client} snapshot={media.snapshot} panels={panels} micCutBy={micCutBy} onSignOut={onSignOut} signingOut={signingOut} />
+        <ControlBar name={name} email={user.email} socket={socket} client={media.client} snapshot={media.snapshot} panels={panels} micCutBy={micCutBy} onSignOut={onSignOut} signingOut={signingOut} />
       </div>
       {replaced && <ReplacedScreen onUseHere={onUseHere} />}
     </main>

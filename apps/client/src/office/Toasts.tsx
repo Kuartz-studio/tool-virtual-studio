@@ -1,10 +1,12 @@
 import { useEffect, type ReactNode } from 'react';
 import { create } from 'zustand';
+import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
 import { sendDeskCommand } from '../net/desk-commands';
+import { listenOnBus } from '../net/office-connection';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
-import { DoorIcon } from './icons';
+import { DoorIcon, LightbulbIcon } from './icons';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 
 // Combien de temps un message passager reste affiché (celui d'une porte, d'un toc toc envoyé).
@@ -113,6 +115,30 @@ function useDeskToasts(socket: OfficeSocket | null): void {
   }, [notice]);
 }
 
+// La lumière du bureau qui change (`lights:changed` sur le bus : le magasin la dit déjà à jour) : un toast avec le portrait de qui a appuyé sur
+// l'interrupteur et l'ampoule, allumée ou barrée. « Fictif 2 a éteint la lumière » pour les autres, « Tu as éteint la lumière » pour celui qui
+// a appuyé. Un seul toast pour la lumière : un interrupteur actionné coup sur coup remplace le message au lieu de les empiler. Rien à
+// l'arrivée : l'état d'un `init` n'est pas un changement (la connexion n'émet pas `lights:changed` pour lui).
+function useLightsToasts(): void {
+  useEffect(
+    () =>
+      listenOnBus(EventBus, 'lights:changed', ({ on, by }) => {
+        // Le serveur dit toujours qui a appuyé ; sans auteur, il n'y aurait personne à nommer.
+        if (!by) return;
+        const { selfId, self, players } = useOfficeStore.getState();
+        const mine = by.id === selfId;
+        useToasts.getState().push({
+          key: 'lights',
+          icon: <LightbulbIcon off={!on} />,
+          avatarKey: (mine ? self : players[by.id])?.avatarKey ?? null,
+          name: by.name,
+          text: mine ? (on ? fr.lights.selfOn : fr.lights.selfOff) : t(on ? fr.lights.on : fr.lights.off, { name: by.name }),
+        });
+      }),
+    [],
+  );
+}
+
 // Un toast : le portrait de qui l'a fait, l'icône, le texte, et ses réponses. Il s'efface au bout de son temps (un toast qui en remplace un
 // autre, de même clé, repart de zéro).
 function Toast({ item }: { item: ToastItem }) {
@@ -145,6 +171,7 @@ function Toast({ item }: { item: ToastItem }) {
 export function Toasts({ socket }: { socket: OfficeSocket | null }) {
   const items = useToasts((state) => state.items);
   useDeskToasts(socket);
+  useLightsToasts();
   // Quitter le bureau (la déconnexion, une autre page) vide la file : rien ne reparaît à la prochaine arrivée.
   useEffect(() => () => useToasts.getState().clear(), []);
   if (items.length === 0) return null;

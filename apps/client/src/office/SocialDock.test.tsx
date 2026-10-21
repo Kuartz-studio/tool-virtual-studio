@@ -84,31 +84,6 @@ describe('le menu « Plus »', () => {
     expect(entryNames()).toEqual([fr.decor.toggle, fr.admin.toggle, fr.sim.toggle, fr.zoom.reset]);
   });
 
-  test('les lignes en plus (celles qu\'on lui donne) sont au bas, derrière un trait, et appellent leur action avec le bouton « Plus »', async () => {
-    const user = userEvent.setup();
-    const run = vi.fn();
-    const panel = vi.fn();
-    render(
-      <SocialDock
-        panels={fakePanels()}
-        extras={[
-          { key: 'a', label: 'Une', icon: null, panel: true, run: panel },
-          { key: 'b', label: 'Deux', icon: null, disabled: true, run },
-        ]}
-      />,
-    );
-    await user.click(more());
-    expect(entryNames()).toEqual([fr.decor.toggle, fr.zoom.reset, 'Une', 'Deux']);
-    expect(menu().querySelectorAll('[role="separator"]')).toHaveLength(1);
-    expect(entry('Deux').disabled).toBe(true);
-    // Les lignes inactives sont sautées au clavier.
-    await user.keyboard('{End}');
-    expect(document.activeElement).toBe(entry('Une'));
-    await user.click(entry('Une'));
-    expect(panel).toHaveBeenCalledExactlyOnceWith(more());
-    expect(run).not.toHaveBeenCalled();
-  });
-
   test('un choix de panneau le demande à la coque, depuis le bouton « Plus », et ferme le menu', async () => {
     const user = userEvent.setup();
     const { panels } = renderDock({ admin: true });

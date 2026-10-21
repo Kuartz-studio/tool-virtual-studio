@@ -61,7 +61,7 @@ function renderBar({ prefs = { mic: true, cam: true }, panels = fakePanels(), on
       () => client.getSnapshot(),
     );
     return (
-      <ControlBar name="Léa" socket={socket.asSocket()} client={client} snapshot={snapshot} panels={currentPanels} micCutBy={micCutBy} onSignOut={onSignOut} signingOut={signingOut} />
+      <ControlBar name="Léa" email="lea@exemple.fr" socket={socket.asSocket()} client={client} snapshot={snapshot} panels={currentPanels} micCutBy={micCutBy} onSignOut={onSignOut} signingOut={signingOut} />
     );
   }
   const view = render(<LiveBar currentPanels={panels} />);
@@ -168,20 +168,14 @@ describe('micro, caméra et partage d\'écran', () => {
     expect(button(fr.media.controls.mic).disabled).toBe(true);
     expect(screen.getByRole('button', { name: fr.media.controls.mic, description: t(fr.states.micCut, { label: 'En focus' }) })).toBeTruthy();
   });
-
-  test('les réactions : le bouton est en place, inactif (rien n\'existe encore derrière)', () => {
-    renderBar();
-    expect(button(fr.media.controls.reactions).disabled).toBe(true);
-    expect(screen.getByRole('button', { name: fr.media.controls.reactions, description: fr.media.controls.reactionsHint })).toBeTruthy();
-  });
 });
 
 describe('la barre', () => {
-  test('dans l\'ordre : le statut, micro, caméra, partage d\'écran, réactions, le zoom, puis Chat, Personnes et Plus ; le nom est à côté du statut', () => {
+  test('dans l\'ordre : la puce « Moi », micro, caméra, partage d\'écran, le zoom, puis Chat, Personnes et Plus ; le nom est dans la puce ; pas de réactions', () => {
     renderBar();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Réactions', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
-    expect(within(bar()).getByText('Léa').getAttribute('title')).toBe('Léa');
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(within(button(fr.me.chip)).getByText('Léa').getAttribute('title')).toBe('Léa');
   });
 
   test('chaque dock est un groupe : le micro et la caméra, le zoom', () => {
@@ -247,56 +241,49 @@ describe('la barre', () => {
     });
   });
 
-  test('Se déconnecter est au bas du menu « Plus », en attendant la puce « Moi » : il appelle onSignOut ; pendant la déconnexion, « Déconnexion… », inactif', async () => {
+  // Le menu « Moi » est testé en détail dans MeMenu.test.tsx : ici, qu'il est bien dans la barre, avec ses lignes, et que « Plus » ne les a plus.
+  test('Se déconnecter est dans le menu de la puce « Moi » : il appelle onSignOut ; pendant la déconnexion, « Déconnexion… », inactif', async () => {
     const user = userEvent.setup();
     const onSignOut = vi.fn();
     const { view } = renderBar({ onSignOut });
-    await user.click(button('Plus'));
+    await user.click(button(fr.me.chip));
     await user.click(screen.getByRole('menuitem', { name: fr.office.signOut }));
     expect(onSignOut).toHaveBeenCalledOnce();
     view.unmount();
     renderBar({ signingOut: true });
-    await user.click(button('Plus'));
+    await user.click(button(fr.me.chip));
     expect((screen.getByRole('menuitem', { name: fr.office.signingOut }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test('le menu « Plus » ouvre aussi Mon bureau, Personnage et Son, depuis son bouton (qui reprend le focus à leur fermeture)', async () => {
+  test('la puce « Moi » ouvre l\'apparence, Mon bureau, Son et musique et les modes, depuis son bouton ; le menu « Plus » n\'en a aucun', async () => {
     const user = userEvent.setup();
     const { panels } = renderBar();
     for (const [name, id] of [
-      [fr.desk.toggle, 'desk'],
       [fr.character.toggle, 'character'],
+      [fr.desk.toggle, 'desk'],
       [fr.sound.toggle, 'sound'],
+      [fr.me.modeManage, 'states'],
     ] as const) {
-      await user.click(button('Plus'));
+      await user.click(button(fr.me.chip));
       await user.click(screen.getByRole('menuitem', { name }));
-      expect(panels.show).toHaveBeenLastCalledWith(id, button('Plus'));
+      expect(panels.show).toHaveBeenLastCalledWith(id, button(fr.me.chip));
     }
-  });
-
-  test('Mon bureau et Personnage attendent le serveur ; le Son et la déconnexion, non', async () => {
-    const user = userEvent.setup();
-    renderBar({ panels: fakePanels({ ready: false }) });
     await user.click(button('Plus'));
-    expect((screen.getByRole('menuitem', { name: fr.desk.toggle }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('menuitem', { name: fr.character.toggle }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('menuitem', { name: fr.sound.toggle }) as HTMLButtonElement).disabled).toBe(false);
-    expect((screen.getByRole('menuitem', { name: fr.office.signOut }) as HTMLButtonElement).disabled).toBe(false);
+    const more = screen.getAllByRole('menuitem').map((line) => line.getAttribute('aria-label') ?? line.textContent);
+    expect(more).toEqual([fr.decor.toggle, fr.zoom.reset]);
   });
 
-  test('« Mes états d\'activité… » ouvre le panneau des états, depuis le bouton du statut', async () => {
-    const user = userEvent.setup();
-    const { panels } = renderBar();
-    await user.click(button('Statut : Disponible'));
-    await user.click(screen.getByRole('menuitem', { name: fr.office.statusMenu.manage }));
-    expect(panels.show).toHaveBeenCalledExactlyOnceWith('states', button('Statut : Disponible'));
-  });
-
-  test('le menu des statuts est dans la barre, et parle à la socket de la page', async () => {
+  test('le menu « Moi » est dans la barre, et parle à la socket de la page : un statut, puis un mode', async () => {
     const user = userEvent.setup();
     const { socket } = renderBar();
-    await user.click(button('Statut : Disponible'));
+    act(() => useOfficeStore.getState().setMyStates([{ id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false }]));
+    await user.click(button(fr.me.chip));
     await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
-    expect(socket.sentOf('status:set')).toEqual(['dnd']);
+    await user.click(button(fr.me.chip));
+    await user.click(screen.getByRole('menuitemradio', { name: 'En focus' }));
+    expect(socket.sent).toEqual([
+      ['status:set', 'dnd'],
+      ['state:set', 's1'],
+    ]);
   });
 });

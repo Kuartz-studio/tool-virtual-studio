@@ -2,10 +2,11 @@
    Jetons de design. Tout le reste de la feuille ne parle que par eux : changer une couleur, un rayon ou une ombre se fait ici.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 :root {
-  /* Texte : l'encre (titres, noms), le texte courant adouci, et le texte discret (heures, aides). */
+  /* Texte : l'encre (titres, noms), le texte courant adouci, et le texte discret (heures, aides), assez foncé le jour (clair la nuit) pour
+     faire 4,5 contre 1 au moins sur --surface et sur --surface-soft. */
   --text: #15171c;
   --text-soft: #5d6270;
-  --text-muted: #8a8f9c;
+  --text-muted: #656a79;
 
   /* Surfaces : la page, le blanc des cartes, un fond léger (champs, lignes survolées), un fond enfoncé (boutons pressés), les traits. */
   --background: #eef0f6;
@@ -90,7 +91,7 @@
 
   --text: #eef0f4;
   --text-soft: #a3aaba;
-  --text-muted: #737a8c;
+  --text-muted: #8a91a3;
 
   --surface: #171a22;
   --surface-soft: #232835;
@@ -1385,14 +1386,6 @@ svg.lucide.icon-s {
   transition: background-color var(--dur-theme) var(--ease-out), color var(--dur-theme) var(--ease-out), box-shadow var(--dur-theme) var(--ease-out);
 }
 
-.dock-rule {
-  flex: none;
-  width: 1px;
-  height: 24px;
-  margin: 0 4px;
-  background: var(--border);
-}
-
 /* Le lieu : son nom, et ceux qui y sont (trois portraits qui se recouvrent, puis « +N »). */
 .dock-where {
   position: absolute;
@@ -1458,8 +1451,7 @@ svg.lucide.icon-s {
 .dock-me {
   justify-self: start;
   min-height: var(--bar-height);
-  gap: 10px;
-  padding: 6px 8px 6px 18px;
+  padding: 0;
 }
 
 .dock-media {
@@ -1485,58 +1477,85 @@ svg.lucide.icon-s {
   height: 16px;
 }
 
-.office-user {
-  max-width: 14ch;
-  overflow: hidden;
-  font-size: var(--text-m);
-  font-weight: var(--weight-semibold);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+/* La puce « Moi » : le dock de gauche est un seul bouton, qui ouvre le menu du profil. Son portrait (avec la pastille du statut), le nom, et
+   dessous le mode en cours (sinon le statut), puis le chevron du menu, qui s'ouvre vers le haut. */
+.me-chip {
+  --dot-ring: var(--surface);
 
-/* Le statut : son point, son nom, et le chevron du menu qui s'ouvre vers le haut. */
-.status-menu {
-  position: relative;
-}
-
-.status-trigger {
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 10px;
-  font-size: var(--text-s);
-  font-weight: var(--weight-medium);
-  color: var(--text-soft);
+  gap: 10px;
+  min-height: var(--bar-height);
+  padding: 6px 12px 6px 6px;
+  color: var(--text);
+  text-align: left;
   background: transparent;
   border: 0;
-  border-radius: var(--radius-btn);
+  border-radius: var(--radius-dock);
   cursor: pointer;
   transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
-.status-trigger:hover:not(:disabled) {
+.me-chip:hover {
+  --dot-ring: var(--surface-soft);
+
   background: var(--surface-soft);
 }
 
-.status-trigger[aria-expanded='true'] {
+.me-chip[aria-expanded='true'] {
   color: var(--accent);
   background: var(--accent-soft);
 }
 
-.status-trigger:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
+.me-text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  max-width: 150px;
 }
 
-.status-caret {
-  display: inline-flex;
+.me-name {
+  overflow: hidden;
+  font-size: var(--text-m);
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Le mode (ou le statut) : de la couleur douce du texte, sur une ligne ; le point d'un mode est plus petit que celui d'un statut. */
+.me-mode {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  line-height: 1.3;
+  color: var(--text-soft);
+}
+
+.me-mode > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.me-mode .status-dot {
+  width: 9px;
+  height: 9px;
+  box-shadow: none;
+}
+
+.me-chip > svg.lucide {
+  width: 16px;
+  height: 16px;
+  margin-left: 2px;
   color: var(--text-muted);
 }
 
-.status-caret svg.lucide {
-  width: 16px;
-  height: 16px;
+.me-chip[aria-expanded='true'] > svg.lucide {
+  color: var(--accent);
 }
 
 /* Un portrait : la tête et les épaules du personnage (AvatarPortrait), ou les initiales avant qu'il soit prêt. Sa taille est celle de --s. */
@@ -1574,7 +1593,7 @@ svg.lucide.icon-s {
   height: max(8px, calc(var(--s) * 0.32));
   background: var(--ok);
   border-radius: 50%;
-  box-shadow: 0 0 0 2.5px var(--surface);
+  box-shadow: 0 0 0 2.5px var(--dot-ring, var(--surface));
 }
 
 .portrait-dot[data-status='busy'] {
@@ -1613,11 +1632,14 @@ svg.lucide.icon-s {
 
   .dock-me {
     grid-area: me;
-    padding: 6px 4px;
   }
 
-  .office-user,
-  .status-trigger > span:not(.status-caret):not(.status-dot) {
+  .me-chip {
+    gap: 4px;
+    padding: 6px 8px 6px 6px;
+  }
+
+  .me-text {
     display: none;
   }
 
@@ -1672,64 +1694,170 @@ svg.lucide.icon-s {
   box-shadow: none;
 }
 
-/* Le menu des statuts, qui s'ouvre vers le haut : une fenêtre comme celle de « Plus » (rayon, ombre, lignes). */
-.status-menu-list {
-  position: absolute;
-  left: -8px;
-  bottom: calc(100% + 14px);
-  z-index: 4;
-  min-width: max(100%, 232px);
-  display: grid;
-  gap: 2px;
-  padding: 8px;
-  background: var(--surface);
-  border-radius: var(--radius-pop);
-  box-shadow: var(--shadow-pop);
-  transform-origin: bottom left;
-  animation: pop-in var(--dur-pop) var(--ease-out);
+/* Le menu « Moi » (MeMenu), dans une fenêtre (Popover) de 316 px : en-tête (portrait, nom, e-mail, apparence), les quatre statuts en tuiles, les
+   modes en pastilles, puis les lignes (bureau, son, déconnexion), qui sont celles du menu « Plus » (.menu-item, .menu-rule). */
+.me-menu {
+  width: min(300px, calc(100vw - 48px));
 }
 
-.status-menu-item {
+.me-head {
   display: flex;
-  align-items: center;
   gap: 12px;
-  width: 100%;
-  min-height: 40px;
-  padding: 9px 10px;
-  font-size: var(--text-m);
-  font-weight: var(--weight-medium);
-  color: var(--text);
-  text-align: left;
+  align-items: center;
+  padding: 8px;
+}
+
+.me-id {
+  display: grid;
+  min-width: 0;
+}
+
+.me-id-name {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.me-id-mail {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* « Changer d'apparence » : un lien de l'accent, qui ouvre le panneau du personnage. */
+.me-look {
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  justify-self: start;
+  margin-top: 3px;
+  padding: 0;
+  font-size: 0.78rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  text-align: left;
   background: transparent;
-  border: none;
-  border-radius: 11px;
+  border: 0;
+  border-radius: 6px;
   cursor: pointer;
 }
 
-.status-menu-item:hover,
-.status-menu-item:focus-visible {
-  background: var(--surface-soft);
-  outline: none;
+.me-look svg.lucide {
+  width: 16px;
+  height: 16px;
 }
 
-.status-menu-item[aria-checked='true'] {
+.me-look:hover:not(:disabled) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.me-look:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* Le titre d'une section (« Statut », « Mode »), et à droite le nom de celui qui est choisi. */
+.me-label {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 10px 2px;
+  font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
-  background: var(--accent-soft);
+  color: var(--text-muted);
 }
 
-.status-menu-check {
-  margin-left: auto;
-  padding-left: 12px;
-  color: var(--accent);
+.me-label em {
+  font-style: normal;
+  color: var(--text);
 }
 
-/* « Mes états d'activité… » au bas du menu des statuts, séparé des états. */
-.status-menu-manage {
-  margin-top: 6px;
+.me-statuses {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 6px 8px 4px;
+}
+
+/* Un statut : une tuile avec son point (son nom est dans `aria-label`, et à droite du titre quand il est choisi). */
+.status-tile,
+.mode-chip {
   color: var(--text-soft);
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 11px 11px;
+  background: var(--surface-soft);
+  border: 0;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.status-tile {
+  display: grid;
+  place-items: center;
+  height: 38px;
+  padding: 0;
+  border-radius: 11px;
+}
+
+.status-tile .status-dot,
+.mode-chip .status-dot {
+  box-shadow: none;
+}
+
+.mode-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px 8px;
+}
+
+/* Un mode : une pastille avec sa couleur (son icône, quand il en a une) et son nom. « Aucun » n'a que son nom ; « + », que le signe. */
+.mode-chip {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  max-width: 100%;
+  padding: 6px 10px 6px 8px;
+  font-size: 0.78rem;
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  border-radius: var(--radius-pill);
+}
+
+.mode-chip > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mode-chip svg.lucide {
+  width: 15px;
+  height: 15px;
+}
+
+.mode-chip.is-add {
+  padding: 6px 9px;
+}
+
+.status-tile[aria-checked='false']:hover:not(:disabled),
+.mode-chip[aria-checked='false']:hover:not(:disabled),
+.mode-chip:not([aria-checked]):hover:not(:disabled) {
+  background: var(--surface-sunk);
+}
+
+.status-tile[aria-checked='true'],
+.mode-chip[aria-checked='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.status-tile:disabled,
+.mode-chip:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

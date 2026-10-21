@@ -74,7 +74,7 @@ function renderShell({
   if (init) act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
   const shell = () => (
     <OfficeShell
-      user={{ id: 'moi', name: 'Léa', role }}
+      user={{ id: 'moi', name: 'Léa', email: 'lea@exemple.fr', role }}
       socket={socket.asSocket()}
       media={{ client, snapshot: client.getSnapshot() }}
       onReconnect={onReconnect}
@@ -98,10 +98,16 @@ const bar = () => screen.getByRole('group', { name: fr.office.barLabel });
 const toggle = () => within(bar()).getByRole('button', { name: fr.office.people.toggle }) as HTMLButtonElement;
 const chatToggle = () => within(bar()).getByRole('button', { name: /^Chat/ }) as HTMLButtonElement;
 const moreButton = () => within(bar()).getByRole('button', { name: fr.office.more.toggle }) as HTMLButtonElement;
-// Ce que choisit une ligne du menu « Plus » : Mon bureau, Personnage, Son et Se déconnecter y sont, en attendant la puce « Moi ».
+const meChip = () => within(bar()).getByRole('button', { name: fr.me.chip }) as HTMLButtonElement;
 type User = ReturnType<typeof userEvent.setup>;
+// Ce que choisit une ligne du menu « Plus » : Décorer, Admin, le zoom de départ.
 async function chooseInMoreMenu(user: User, name: string) {
   await user.click(moreButton());
+  await user.click(screen.getByRole('menuitem', { name }));
+}
+// Ce que choisit une ligne du menu de la puce « Moi » : l'apparence, Mon bureau, Son et musique, Se déconnecter.
+async function chooseInMeMenu(user: User, name: string) {
+  await user.click(meChip());
   await user.click(screen.getByRole('menuitem', { name }));
 }
 const chatPanel = () => screen.getByRole('complementary', { name: fr.chat.title });
@@ -140,11 +146,42 @@ describe('la mise en page', () => {
     expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : le statut, micro, caméra, partage d\'écran et réactions, le zoom, puis Chat, Personnes et Plus ; le nom est à côté du statut', () => {
+  test('la barre du bas : la puce « Moi », micro, caméra et partage d\'écran, le zoom, puis Chat, Personnes et Plus ; le nom et le statut sont dans la puce', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Réactions', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
-    expect(within(bar()).getByText('Léa')).toBeTruthy();
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(within(meChip()).getByText('Léa')).toBeTruthy();
+    expect(within(meChip()).getByText(fr.status.available)).toBeTruthy();
+  });
+
+  // La lumière du bureau est une pour tous : éteinte, la couche d'interface prend les couleurs de la nuit (les jetons de
+  // `.office-ui[data-theme='night']`, styles.css), et `data-lights` le dit aussi.
+  test('la couche dit le jour (lumière allumée) ou la nuit (éteinte) : data-theme et data-lights, qui suivent la lumière du magasin', () => {
+    const { container } = renderShell();
+    const layer = container.querySelector('.office-ui')!;
+    expect([layer.getAttribute('data-theme'), layer.getAttribute('data-lights')]).toEqual(['day', 'on']);
+    act(() => useOfficeStore.getState().setLights({ on: false, by: { id: 'bob', name: 'Bob' }, at: 1 }));
+    expect([layer.getAttribute('data-theme'), layer.getAttribute('data-lights')]).toEqual(['night', 'off']);
+    act(() => useOfficeStore.getState().setLights({ on: true, by: { id: 'moi', name: 'Léa' }, at: 2 }));
+    expect([layer.getAttribute('data-theme'), layer.getAttribute('data-lights')]).toEqual(['day', 'on']);
+  });
+
+  test('arrivé quand la lumière est éteinte : la nuit dès le premier rendu de l\'init', () => {
+    const { container } = renderShell({ init: false });
+    expect(container.querySelector('.office-ui')?.getAttribute('data-theme')).toBe('day');
+    act(() =>
+      useOfficeStore.getState().applyInit({
+        self: player('moi', 'Léa'),
+        players: [],
+        mapKey: 'dev-office',
+        chatHistory: [],
+        desks: [],
+        closedDesks: [],
+        deskBans: [],
+        lights: { on: false, by: { id: 'bob', name: 'Bob' }, at: 1 },
+      }),
+    );
+    expect(container.querySelector('.office-ui')?.getAttribute('data-theme')).toBe('night');
   });
 
   test('en haut à gauche, le lieu où l\'on est (la carte n\'est pas là : rien) ; les messages passagers sont sous les vignettes', () => {
@@ -232,16 +269,16 @@ describe('la mise en page', () => {
 });
 
 describe('Se déconnecter', () => {
-  test('la ligne du menu « Plus » appelle onSignOut', async () => {
+  test('la ligne du menu « Moi » appelle onSignOut', async () => {
     const onSignOut = vi.fn();
     renderShell({ onSignOut });
-    await chooseInMoreMenu(userEvent.setup(), fr.office.signOut);
+    await chooseInMeMenu(userEvent.setup(), fr.office.signOut);
     expect(onSignOut).toHaveBeenCalledTimes(1);
   });
 
   test('pendant la déconnexion : « Déconnexion… », inactif', async () => {
     renderShell({ signingOut: true });
-    await userEvent.click(moreButton());
+    await userEvent.click(meChip());
     const item = screen.getByRole('menuitem', { name: fr.office.signingOut }) as HTMLButtonElement;
     expect(item.disabled).toBe(true);
   });
@@ -249,7 +286,7 @@ describe('Se déconnecter', () => {
   test('il marche avant l\'init (le serveur ne répond pas) : on doit pouvoir se déconnecter', async () => {
     const onSignOut = vi.fn();
     renderShell({ init: false, connecting: true, onSignOut });
-    await chooseInMoreMenu(userEvent.setup(), fr.office.signOut);
+    await chooseInMeMenu(userEvent.setup(), fr.office.signOut);
     expect(onSignOut).toHaveBeenCalledTimes(1);
   });
 });
@@ -258,7 +295,7 @@ describe('le statut', () => {
   test('« Ne pas déranger » part au serveur (status:set) par la socket de la page', async () => {
     const user = userEvent.setup();
     const { socket } = renderShell();
-    await user.click(within(bar()).getByRole('button', { name: /^Statut/ }));
+    await user.click(meChip());
     await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
     expect(socket.sentOf('status:set')).toEqual(['dnd']);
   });
@@ -347,48 +384,48 @@ describe('le panneau Son', () => {
     useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, status: 'locked', playing: null, place: 'lobby' });
   });
 
-  test('fermé au départ ; la ligne « Son » du menu « Plus » l\'ouvre, et le menu se referme', async () => {
+  test('fermé au départ ; la ligne « Son et musique » du menu « Moi » l\'ouvre, et le menu se referme', async () => {
     const user = userEvent.setup();
     renderShell();
     expect(screen.queryByRole('complementary')).toBeNull();
-    await user.click(moreButton());
+    await user.click(meChip());
     await user.click(soundEntry());
     expect(soundPanel().id).not.toBe('');
     expect(screen.queryByRole('menu')).toBeNull();
-    // Le bouton « Plus » n'est pas celui du panneau : il dit seulement que son menu est fermé.
-    expect(moreButton().getAttribute('aria-expanded')).toBe('false');
+    // La puce n'est pas celle du panneau : elle dit seulement que son menu est fermé.
+    expect(meChip().getAttribute('aria-expanded')).toBe('false');
   });
 
-  test('il s\'ouvre à droite, par-dessus le jeu ; le focus va au titre, Échap le ferme et rend le focus au bouton « Plus »', async () => {
+  test('il s\'ouvre à droite, par-dessus le jeu ; le focus va au titre, Échap le ferme et rend le focus à la puce « Moi »', async () => {
     const user = userEvent.setup();
     const { container } = renderShell();
-    await chooseInMoreMenu(user, fr.sound.toggle);
+    await chooseInMeMenu(user, fr.sound.toggle);
     expect(container.querySelector('.office-ui .office-side')?.contains(soundPanel())).toBe(true);
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.sound.title }));
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('complementary')).toBeNull();
-    expect(document.activeElement).toBe(moreButton());
+    expect(document.activeElement).toBe(meChip());
   });
 
-  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton « Plus »', async () => {
+  test('le bouton Fermer du panneau le ferme aussi, focus rendu à la puce « Moi »', async () => {
     const user = userEvent.setup();
     renderShell();
-    await chooseInMoreMenu(user, fr.sound.toggle);
+    await chooseInMeMenu(user, fr.sound.toggle);
     await user.click(screen.getByRole('button', { name: fr.sound.close }));
     expect(screen.queryByRole('complementary')).toBeNull();
-    expect(document.activeElement).toBe(moreButton());
+    expect(document.activeElement).toBe(meChip());
   });
 
   test('la ligne marche avant l\'init : le son ne dépend pas du serveur', async () => {
     renderShell({ init: false });
-    await userEvent.click(moreButton());
+    await userEvent.click(meChip());
     expect(soundEntry().disabled).toBe(false);
   });
 
   test('un seul panneau à la fois : Son, puis Personnes, puis Chat laissent le dernier seul', async () => {
     const user = userEvent.setup();
     renderShell();
-    await chooseInMoreMenu(user, fr.sound.toggle);
+    await chooseInMeMenu(user, fr.sound.toggle);
     await user.click(toggle());
     expect(screen.getAllByRole('complementary').map((panel) => panel.getAttribute('aria-labelledby') ?? panel.getAttribute('aria-label'))).toHaveLength(1);
     expect(screen.queryByRole('complementary', { name: fr.sound.title })).toBeNull();
@@ -674,7 +711,7 @@ describe('le panneau Admin', () => {
     renderShell({ role: 'admin' });
     await user.click(moreButton());
     const names = screen.getAllByRole('menuitem').map((item) => item.getAttribute('aria-label') ?? item.textContent);
-    expect(names).toEqual([fr.decor.toggle, fr.admin.toggle, fr.zoom.reset, fr.desk.toggle, fr.character.toggle, fr.sound.toggle, fr.office.signOut]);
+    expect(names).toEqual([fr.decor.toggle, fr.admin.toggle, fr.zoom.reset]);
   });
 
   test('fermé au départ, sans rien demander au serveur ; la ligne l\'ouvre (le panneau a son id), Fermer le ferme', async () => {
@@ -831,28 +868,26 @@ describe('les états d\'activité', () => {
   const focus = { id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false };
   const lunch = { id: 's2', label: 'À table', color: '#f59e0b', allowEntry: true, hear: false, heard: true };
   const micButton = () => within(bar()).getByRole('button', { name: fr.media.controls.mic }) as HTMLButtonElement;
-  const statusButton = () => within(bar()).getByRole('button', { name: /^Statut/ }) as HTMLButtonElement;
-
-  test('à l\'arrivée (connexion prête), ses états sont lus au serveur et rangés au magasin ; ils sont dans le menu du statut', async () => {
+  test('à l\'arrivée (connexion prête), ses états sont lus au serveur et rangés au magasin ; ils sont dans le menu « Moi », sous « Mode »', async () => {
     const user = userEvent.setup();
     vi.mocked(activityApi.listActivityStates).mockResolvedValueOnce([focus, lunch]);
     renderShell();
     await waitFor(() => expect(useOfficeStore.getState().myStates).toEqual([focus, lunch]));
-    await user.click(statusButton());
+    await user.click(meChip());
     expect(screen.getByRole('menuitemradio', { name: 'En focus' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: fr.office.statusMenu.manage })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: fr.me.modeManage })).toBeTruthy();
   });
 
-  test('« Mes états d\'activité… » ouvre le panneau ; Échap le ferme et le focus revient au bouton du statut', async () => {
+  test('« + » ouvre le panneau des états ; Échap le ferme et le focus revient à la puce « Moi »', async () => {
     const user = userEvent.setup();
     renderShell();
     expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
-    await user.click(statusButton());
-    await user.click(screen.getByRole('menuitem', { name: fr.office.statusMenu.manage }));
+    await user.click(meChip());
+    await user.click(screen.getByRole('menuitem', { name: fr.me.modeManage }));
     expect(screen.getByRole('complementary', { name: fr.states.title })).toBeTruthy();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
-    expect(document.activeElement).toBe(statusButton());
+    expect(document.activeElement).toBe(meChip());
   });
 
   test('lecture impossible : le menu n\'a que les statuts ordinaires, sans erreur', async () => {

@@ -1,14 +1,13 @@
 import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
-import { CameraIcon, MicIcon, ReactionsIcon, ScreenIcon } from './icons';
+import { CameraIcon, MicIcon, ScreenIcon } from './icons';
 import { IconButton } from './ui/IconButton';
 
-// Le dock du milieu : micro, caméra et partage d'écran, puis les réactions.
+// Le dock du milieu : micro, caméra et partage d'écran.
 // - Micro et caméra sont des boutons bascule (aria-pressed) : rouges quand ils sont coupés. Hors conversation, ils règlent l'état voulu pour la
 //   suivante (le serveur le montre aux autres) ; rien n'est demandé aux périphériques avant.
 // - Le partage d'écran ne se fait que dans une conversation. Le clic l'appelle tout de suite : le navigateur n'ouvre le choix de l'écran que
 //   pendant un geste de la personne.
-// - Les réactions ne sont pas encore là (ni dans le protocole ni dans le jeu) : le bouton est en place, inactif.
 // L'état affiché est celui du client (snapshot), qui décide : un micro refusé dans la room repasse à « coupé ». `micCutBy` : le nom de l'état
 // d'activité qui coupe le micro (on n'y est pas entendu) ; le bouton Micro est alors éteint et inactif, avec la raison.
 export function MediaDock({ client, snapshot, micCutBy = null }: { client: MediaClient; snapshot: MediaSnapshot; micCutBy?: string | null }) {
@@ -40,10 +39,6 @@ export function MediaDock({ client, snapshot, micCutBy = null }: { client: Media
         onClick={() => void client.setScreenShare(!screen)}
       >
         <ScreenIcon />
-      </IconButton>
-      <span className="dock-rule" aria-hidden="true" />
-      <IconButton label={fr.media.controls.reactions} hint={fr.media.controls.reactionsHint} disabled>
-        <ReactionsIcon />
       </IconButton>
     </div>
   );

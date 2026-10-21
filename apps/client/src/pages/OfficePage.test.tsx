@@ -101,12 +101,13 @@ async function enter() {
   await findOfficeFor('Léa');
 }
 
-// « Se déconnecter » et Admin sont des lignes du menu « Plus » de la barre.
-const moreButton = () => screen.getByRole('button', { name: fr.office.more.toggle });
-async function chooseInMoreMenu(user: ReturnType<typeof userEvent.setup>, name: string) {
-  await user.click(moreButton());
+// « Se déconnecter » est une ligne du menu de la puce « Moi », et Admin une ligne du menu « Plus », dans la barre.
+const meChip = () => screen.getByRole('button', { name: fr.me.chip });
+async function chooseInMeMenu(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(meChip());
   await user.click(screen.getByRole('menuitem', { name }));
 }
+const moreButton = () => screen.getByRole('button', { name: fr.office.more.toggle });
 
 // La page ouverte, et le bureau, après « Entrer ».
 async function openOffice(account?: FakeUser) {
@@ -182,7 +183,7 @@ test('pas de « Connexion perdue » quand un autre onglet a pris la place, ni pe
   fakeAuth.signOut.mockImplementationOnce(
     () => new Promise((resolve) => (finishSignOut = () => resolve({ data: { success: true }, error: null }))),
   );
-  await chooseInMoreMenu(userEvent.setup(), fr.office.signOut);
+  await chooseInMeMenu(userEvent.setup(), fr.office.signOut);
   expect(socket().active).toBe(false);
   expect(screen.queryByText(fr.office.reconnecting)).toBeNull();
   finishSignOut();
@@ -317,38 +318,42 @@ test('« Utiliser ici » : le serveur refuse (indisponible), la page réessaie s
   await waitFor(() => expect(router.state.location.pathname).toBe('/connexion'));
 });
 
-test('le menu des statuts envoie status:set par la connexion de la page, et le point suit la confirmation du serveur', async () => {
+test('le menu « Moi » envoie status:set par la connexion de la page, et la puce suit la confirmation du serveur', async () => {
   const user = userEvent.setup();
   await openOffice();
   act(() => {
     socket().serverAccepts();
     socket().receive('init', init());
   });
-  await user.click(await screen.findByRole('button', { name: 'Statut : Disponible' }));
+  await waitFor(() => expect(within(meChip()).getByText(fr.status.available)).toBeTruthy());
+  await user.click(meChip());
   await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
   expect(socket().sentOf('status:set')).toEqual(['dnd']);
   // Le serveur confirme à tout le monde, nous compris.
   act(() => socket().receive('status:changed', { id: 'u-lea', status: 'dnd' }));
-  expect(screen.getByRole('button', { name: 'Statut : Ne pas déranger' })).toBeTruthy();
+  expect(within(meChip()).getByText('Ne pas déranger')).toBeTruthy();
 });
 
-test('le statut ne se change pas avant que le serveur ait répondu, ni connexion coupée', async () => {
+test('le statut ne se change pas avant que le serveur ait répondu, ni connexion coupée (la puce, elle, s\'ouvre : on doit pouvoir se déconnecter)', async () => {
+  const user = userEvent.setup();
   await openOffice();
-  expect((screen.getByRole('button', { name: 'Statut' }) as HTMLButtonElement).disabled).toBe(true);
+  expect((meChip() as HTMLButtonElement).disabled).toBe(false);
+  await user.click(meChip());
+  const busy = () => screen.getByRole('menuitemradio', { name: 'Occupé' }) as HTMLButtonElement;
+  expect(busy().disabled).toBe(true);
   act(() => {
     socket().serverAccepts();
     socket().receive('init', init());
   });
-  const trigger = await screen.findByRole('button', { name: 'Statut : Disponible' });
-  expect((trigger as HTMLButtonElement).disabled).toBe(false);
+  expect(busy().disabled).toBe(false);
   act(() => socket().connectionDrops());
-  expect((trigger as HTMLButtonElement).disabled).toBe(true);
+  expect(busy().disabled).toBe(true);
 });
 
 test('on peut se déconnecter avant le premier init (le serveur ne répond pas)', async () => {
   const router = await openOffice();
   expect(screen.getByText('Connexion au bureau…')).toBeTruthy();
-  await chooseInMoreMenu(userEvent.setup(), 'Se déconnecter');
+  await chooseInMeMenu(userEvent.setup(), 'Se déconnecter');
   await waitFor(() => expect(router.state.location.pathname).toBe('/connexion'));
   expect(socket().active).toBe(false);
 });
@@ -365,7 +370,7 @@ test('se déconnecter ferme d\'abord la connexion au bureau, puis la session', a
     setFakeSession(null);
     return { data: { success: true }, error: null };
   });
-  await chooseInMoreMenu(userEvent.setup(), 'Se déconnecter');
+  await chooseInMeMenu(userEvent.setup(), 'Se déconnecter');
   await waitFor(() => expect(router.state.location.pathname).toBe('/connexion'));
   expect(officeOpenAtSignOut).toBe(false);
 });
@@ -373,7 +378,7 @@ test('se déconnecter ferme d\'abord la connexion au bureau, puis la session', a
 test('la déconnexion échoue : le message, et la connexion au bureau est rouverte', async () => {
   const router = await openOffice();
   fakeAuth.signOut.mockResolvedValueOnce({ data: null, error: { status: 500 } });
-  await chooseInMoreMenu(userEvent.setup(), 'Se déconnecter');
+  await chooseInMeMenu(userEvent.setup(), 'Se déconnecter');
   expect((await screen.findByRole('alert')).textContent).toBe('Une erreur est survenue. Réessaie dans un instant.');
   expect(router.state.location.pathname).toBe('/');
   expect(socket().connectCalls).toBe(2);
@@ -404,7 +409,7 @@ test('quitter le bureau : connexion fermée, écouteurs retirés, magasin vidé,
 
 // En développement, StrictMode monte la page, la démonte, puis la remonte : deux connexions sont créées l'une après l'autre. Seule la
 // dernière doit rester ouverte, et la barre doit parler à celle-là (la connexion de la page est un état, que le second montage remplace).
-test('StrictMode (développement) : la dernière connexion est la seule ouverte, et le menu des statuts lui parle', async () => {
+test('StrictMode (développement) : la dernière connexion est la seule ouverte, et le menu « Moi » lui parle', async () => {
   const user = userEvent.setup();
   setFakeSession(LEA);
   render(
@@ -427,7 +432,8 @@ test('StrictMode (développement) : la dernière connexion est la seule ouverte,
     second.serverAccepts();
     second.receive('init', init());
   });
-  await user.click(await screen.findByRole('button', { name: 'Statut : Disponible' }));
+  await waitFor(() => expect(within(meChip()).getByText(fr.status.available)).toBeTruthy());
+  await user.click(meChip());
   await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
   expect(second.sentOf('status:set')).toEqual(['dnd']);
   expect(first.sent).toEqual([]);

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { zoomPercent } from '../game/zoom';
 import { fr, t } from '../i18n/fr';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
@@ -11,7 +11,7 @@ import { Popover } from './ui/Popover';
 const BADGE_MAX = 99;
 
 // Une ligne du menu « Plus ». `run` reçoit le bouton « Plus » : c'est lui qui reprend le focus quand le panneau qu'elle ouvre se ferme.
-export interface MoreEntry {
+interface MoreEntry {
   key: string;
   label: string;
   icon: ReactNode;
@@ -26,11 +26,10 @@ export interface MoreEntry {
 }
 
 // Le dock de droite : le chat (avec la pastille de ses messages non lus), les personnes (avec le compte de celles en ligne), et le menu
-// « Plus » : la déco du bureau, l'Admin (pour un admin), le Bac à sable (du faux live), et la vue de départ du zoom. `extras` : d'autres
-// lignes au bas du menu, derrière un trait (Mon bureau, Personnage, Son et Se déconnecter, en attendant la puce « Moi » qui les prendra).
+// « Plus » : la déco du bureau, l'Admin (pour un admin), le Bac à sable (du faux live), et la vue de départ du zoom.
 // Le menu suit le motif « menu button » : il s'ouvre au-dessus du bouton, le focus va à la première ligne ; ↓ ↑ Début Fin passent de l'une à
 // l'autre, Entrée ou Espace choisit, Échap ferme et rend le focus au bouton.
-export function SocialDock({ panels, extras = [] }: { panels: PanelControls; extras?: MoreEntry[] }) {
+export function SocialDock({ panels }: { panels: PanelControls }) {
   const online = useOfficeStore((state) => (state.self === null ? 0 : 1) + Object.keys(state.players).length);
   const level = useOfficeStore((state) => state.zoomLevel);
   const resetZoom = useOfficeStore((state) => state.resetZoom);
@@ -53,7 +52,6 @@ export function SocialDock({ panels, extras = [] }: { panels: PanelControls; ext
     ...(panels.sim ? [{ key: 'sim', label: fr.sim.toggle, icon: <FlaskIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('sim', opener) }] : []),
     { key: 'zoom', label: fr.zoom.reset, name: fr.zoom.reset, hint: t(fr.zoom.level, { percent: zoomPercent(level) }), icon: <ZoomResetIcon />, run: () => resetZoom() },
   ];
-  const entries = [...own, ...extras];
 
   // Les lignes qu'on peut choisir : celles qui ne sont pas inactives.
   const enabled = () => items.current.filter((item): item is HTMLButtonElement => item !== null && !item.disabled);
@@ -140,26 +138,24 @@ export function SocialDock({ panels, extras = [] }: { panels: PanelControls; ext
       </IconButton>
       <Popover open={menuOpen} onClose={() => setMenuOpen(false)} anchorRef={more} placement="top-end" label={fr.office.more.menu} role="menu" id={menuId}>
         <div className="menu-list" onKeyDown={onMenuKeyDown}>
-          {entries.map((entry, index) => (
-            <Fragment key={entry.key}>
-              {index === own.length && <div className="menu-rule" role="separator" />}
-              <button
-                ref={(element) => {
-                  items.current[index] = element;
-                }}
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                className="menu-item"
-                aria-label={entry.name}
-                disabled={entry.disabled}
-                onClick={() => choose(entry)}
-              >
-                {entry.icon}
-                <span>{entry.label}</span>
-                {entry.hint && <span className="menu-hint">{entry.hint}</span>}
-              </button>
-            </Fragment>
+          {own.map((entry, index) => (
+            <button
+              key={entry.key}
+              ref={(element) => {
+                items.current[index] = element;
+              }}
+              type="button"
+              role="menuitem"
+              tabIndex={-1}
+              className="menu-item"
+              aria-label={entry.name}
+              disabled={entry.disabled}
+              onClick={() => choose(entry)}
+            >
+              {entry.icon}
+              <span>{entry.label}</span>
+              {entry.hint && <span className="menu-hint">{entry.hint}</span>}
+            </button>
           ))}
         </div>
       </Popover>

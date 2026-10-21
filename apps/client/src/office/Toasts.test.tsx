@@ -1,7 +1,10 @@
+import type { LightsState, PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
+import { emitOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
 import { DEFAULT_TOAST_TTL, DESK_NOTICE_MS, Toasts, useToasts } from './Toasts';
@@ -187,5 +190,101 @@ describe('le message passager', () => {
     expect(screen.queryByRole('status')).toBeNull();
     act(() => useOfficeStore.getState().setDeskNotice('Deux.'));
     expect(screen.getByRole('status').textContent).toBe('Deux.');
+  });
+});
+
+// La lumière du bureau : à chaque `lights:changed` du bus (le magasin est déjà à jour), un toast avec le portrait de qui a appuyé et l'ampoule.
+describe('la lumière', () => {
+  const player = (id: string, name: string): PublicPlayer => ({
+    id,
+    name,
+    avatarKey: null,
+    x: 80,
+    y: 240,
+    dir: 'down',
+    moving: false,
+    status: 'available',
+    media: { mic: false, cam: false, screen: false },
+  });
+  const arrive = (lights?: LightsState) =>
+    act(() =>
+      useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob Martin')], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [], lights }),
+    );
+  const changed = (on: boolean, by: string, name: string, at = 1) => act(() => void emitOnBus(EventBus, 'lights:changed', { on, by: { id: by, name }, at }));
+  const icon = () => screen.getByRole('status').querySelector('.toast-icon svg') as SVGElement;
+
+  test('un autre éteint : son nom, son portrait, et l\'ampoule barrée', () => {
+    arrive();
+    setup();
+    changed(false, 'bob', 'Bob Martin');
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain(t(fr.lights.off, { name: 'Bob Martin' }));
+    expect(status.querySelector('.portrait-initials')?.textContent).toBe('BM');
+    expect(icon().classList.contains('lucide-lightbulb-off')).toBe(true);
+  });
+
+  test('un autre rallume : « a rallumé la lumière », l\'ampoule', () => {
+    arrive();
+    setup();
+    changed(true, 'bob', 'Bob Martin');
+    expect(screen.getByRole('status').textContent).toContain(t(fr.lights.on, { name: 'Bob Martin' }));
+    expect(icon().classList.contains('lucide-lightbulb')).toBe(true);
+    expect(icon().classList.contains('lucide-lightbulb-off')).toBe(false);
+  });
+
+  test('celui qui a appuyé lit « Tu as éteint la lumière », puis « Tu as rallumé la lumière », avec son propre portrait', () => {
+    arrive();
+    setup();
+    changed(false, 'moi', 'Léa');
+    expect(screen.getByRole('status').textContent).toContain(fr.lights.selfOff);
+    expect(screen.getByRole('status').querySelector('.portrait-initials')?.textContent).toBe('L');
+    changed(true, 'moi', 'Léa', 2);
+    expect(screen.getByRole('status').textContent).toContain(fr.lights.selfOn);
+  });
+
+  test('un interrupteur actionné coup sur coup remplace le toast au lieu de les empiler, et il s\'efface au bout de son temps', () => {
+    vi.useFakeTimers();
+    arrive();
+    setup();
+    changed(false, 'bob', 'Bob Martin');
+    changed(true, 'moi', 'Léa', 2);
+    changed(false, 'bob', 'Bob Martin', 3);
+    expect(screen.getByRole('status').querySelectorAll('.toast')).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toContain(t(fr.lights.off, { name: 'Bob Martin' }));
+    act(() => {
+      vi.advanceTimersByTime(DEFAULT_TOAST_TTL);
+    });
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('aucun toast à l\'arrivée, même dans le noir : l\'état d\'un init n\'est pas un changement', () => {
+    setup();
+    arrive({ on: false, by: { id: 'bob', name: 'Bob Martin' }, at: 5 });
+    expect(screen.queryByRole('status')).toBeNull();
+    // Le magasin seul (sans événement du bus) n'en fait pas non plus.
+    act(() => useOfficeStore.getState().setLights({ on: true, by: { id: 'bob', name: 'Bob Martin' }, at: 6 }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('sans auteur (le serveur le dit toujours), rien à dire', () => {
+    arrive();
+    setup();
+    act(() => void emitOnBus(EventBus, 'lights:changed', { on: false, by: null, at: 1 }));
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('un auteur qui n\'est plus là (parti, ou inconnu) a quand même son message, avec ses initiales', () => {
+    arrive();
+    setup();
+    changed(false, 'parti', 'Zoé');
+    expect(screen.getByRole('status').textContent).toContain(t(fr.lights.off, { name: 'Zoé' }));
+    expect(screen.getByRole('status').querySelector('.portrait-initials')?.textContent).toBe('Z');
+  });
+
+  test('le composant démonté n\'écoute plus le bus', () => {
+    const { unmount } = render(<Toasts socket={null} />);
+    expect(EventBus.listenerCount('lights:changed')).toBe(1);
+    unmount();
+    expect(EventBus.listenerCount('lights:changed')).toBe(0);
   });
 });

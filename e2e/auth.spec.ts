@@ -1,13 +1,13 @@
 import { expect, test } from '@playwright/test';
-import { createInvitation, enterOffice, expectInOffice, inviteAndJoin, joinWithLink, lastMail, officeBar, signIn, signOut, submitJoinForm, uniqueEmail } from './helpers';
+import { createInvitation, enterOffice, expectInOffice, inviteAndJoin, joinWithLink, lastMail, meChip, signIn, signOut, submitJoinForm, uniqueEmail } from './helpers';
 
 test('invitation → compte → bureau → déconnexion → connexion', async ({ page }) => {
   const lea = { email: uniqueEmail('lea'), name: 'Léa', password: 'motdepasse-de-lea' };
   await inviteAndJoin(page, lea);
-  // Le bureau est à Léa : son nom est dans la barre du bas, et le serveur du bureau lui a dit son statut (la connexion temps réel est
-  // ouverte, sous sa session).
+  // Le bureau est à Léa : son nom est dans la puce « Moi » de la barre du bas, et le serveur du bureau lui a dit son statut (la connexion
+  // temps réel est ouverte, sous sa session).
   await expectInOffice(page, 'Léa');
-  await expect(officeBar(page).getByRole('button', { name: 'Statut : Disponible' })).toBeVisible();
+  await expect(meChip(page)).toContainText('Disponible');
   await expect(page).toHaveURL('/');
 
   await signOut(page);
@@ -22,7 +22,7 @@ test('invitation → compte → bureau → déconnexion → connexion', async ({
   await page.reload();
   await enterOffice(page);
   await expectInOffice(page, 'Léa');
-  await expect(officeBar(page).getByRole('button', { name: 'Statut : Disponible' })).toBeVisible();
+  await expect(meChip(page)).toContainText('Disponible');
 });
 
 test('mot de passe oublié de bout en bout', async ({ page }) => {

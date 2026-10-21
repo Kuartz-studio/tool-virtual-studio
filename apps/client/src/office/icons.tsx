@@ -24,7 +24,6 @@ import {
   ShieldCheck,
   Shirt,
   Slash,
-  SmilePlus,
   Sofa,
   Sparkles,
   Users,
@@ -51,10 +50,6 @@ export function CameraIcon({ off = false }: { off?: boolean }) {
 
 export function ScreenIcon() {
   return <MonitorUp />;
-}
-
-export function ReactionsIcon() {
-  return <SmilePlus />;
 }
 
 export function ChatIcon() {

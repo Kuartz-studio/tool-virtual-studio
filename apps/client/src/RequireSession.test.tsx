@@ -14,10 +14,10 @@ beforeEach(() => {
 
 const LEA = { id: 'u-lea', name: 'Léa', email: 'lea@x.fr' };
 
-// « Se déconnecter », Mon bureau et Admin sont des lignes du menu « Plus » de la barre.
-const moreButton = () => screen.getByRole('button', { name: fr.office.more.toggle });
-async function chooseInMoreMenu(user: ReturnType<typeof userEvent.setup>, name: string) {
-  await user.click(moreButton());
+// « Se déconnecter » est une ligne du menu de la puce « Moi », en bas à gauche de la barre.
+const meChip = () => screen.getByRole('button', { name: fr.me.chip });
+async function chooseInMeMenu(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(meChip());
   await user.click(screen.getByRole('menuitem', { name }));
 }
 
@@ -33,7 +33,7 @@ test('avec session : le bureau, avec le nom de Léa ; « Se déconnecter » ferm
   const router = renderRoute('/');
 
   expect(await enterOffice('Léa')).toBeTruthy();
-  await chooseInMoreMenu(user, fr.office.signOut);
+  await chooseInMeMenu(user, fr.office.signOut);
   expect(await screen.findByRole('heading', { name: fr.login.title })).toBeTruthy();
   expect(fakeAuth.signOut).toHaveBeenCalledOnce();
   expect(router.state.location.pathname).toBe('/connexion');
@@ -70,10 +70,10 @@ test.each([
   const router = renderRoute('/');
 
   await enterOffice('Léa');
-  await chooseInMoreMenu(user, fr.office.signOut);
+  await chooseInMeMenu(user, fr.office.signOut);
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', message);
   expect(router.state.location.pathname).toBe('/');
   // La ligne est de nouveau là, active : on peut réessayer.
-  await user.click(moreButton());
+  await user.click(meChip());
   expect(screen.getByRole('menuitem', { name: fr.office.signOut })).toHaveProperty('disabled', false);
 });

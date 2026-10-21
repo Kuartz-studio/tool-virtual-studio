@@ -90,6 +90,19 @@ export const fr = {
     away: 'Absent',
     dnd: 'Ne pas déranger',
   } satisfies Record<Status, string>,
+  // La puce « Moi », en bas à gauche, et son menu : ton portrait, ton nom, ton statut et ton mode, puis ce qui te concerne (l'apparence, le
+  // bureau, le son, la déconnexion : leurs lignes portent le nom de leur panneau, `character.toggle`, `desk.toggle`, `sound.toggle`).
+  me: {
+    chip: 'Mon profil',
+    menu: 'Menu de mon profil',
+    status: 'Statut',
+    // Ce qu'un lecteur d'écran annonce quand ton statut (ou ton mode) change.
+    statusChanged: 'Statut : {status}',
+    mode: 'Mode',
+    modeNone: 'Aucun',
+    // Le « + » après tes modes : le panneau où tu les crées et les modifies.
+    modeManage: 'Mes états d\'activité…',
+  },
   office: {
     signOut: 'Se déconnecter',
     signingOut: 'Déconnexion…',
@@ -100,14 +113,6 @@ export const fr = {
     useHere: 'Utiliser ici',
     // Le nom, pour les lecteurs d'écran, de la barre du bas : ton nom, ton statut, les commandes.
     barLabel: 'Barre du bureau',
-    statusMenu: {
-      label: 'Statut',
-      // Le nom du bouton, et ce qu'un lecteur d'écran annonce quand le statut change.
-      current: 'Statut : {status}',
-      menu: 'Choisir mon statut',
-      // Après les quatre statuts : ses propres états d'activité, puis de quoi les créer et les modifier.
-      manage: 'Mes états d\'activité…',
-    },
     people: {
       toggle: 'Personnes',
       title: 'Personnes',
@@ -141,7 +146,7 @@ export const fr = {
     toggle: 'Mes états',
     title: 'Mes états d\'activité',
     close: 'Fermer le panneau Mes états d\'activité',
-    intro: 'Crée tes états : un nom, la couleur de ton point, et ce que chacun change pour toi. Tu les choisis ensuite dans le menu du statut.',
+    intro: 'Crée tes états : un nom, la couleur de ton point, et ce que chacun change pour toi. Tu les choisis ensuite dans le menu de ton profil, sous « Mode ».',
     listTitle: 'Mes états',
     empty: 'Aucun état pour l\'instant. Crée le premier ci-dessous.',
     take: 'Prendre',
@@ -260,7 +265,8 @@ export const fr = {
   // Le son : la musique d'ambiance (celle de l'endroit où l'on est, ou celle qu'on choisit) et les effets sonores (clics, arrivées, messages,
   // toc toc…), que l'on coupe et règle chacun de son côté. La voix des autres n'en fait pas partie : elle suit le micro et la sortie du système.
   sound: {
-    toggle: 'Son',
+    // La ligne du menu « Moi » qui ouvre ce panneau (le panneau, lui, s'appelle `title`).
+    toggle: 'Son et musique',
     title: 'Son',
     close: 'Fermer le panneau Son',
     music: {
@@ -351,7 +357,8 @@ export const fr = {
   },
   // Le builder de personnage.
   character: {
-    toggle: 'Personnage',
+    // La ligne du menu « Moi » qui ouvre ce panneau.
+    toggle: 'Changer d\'apparence',
     title: 'Mon personnage',
     close: 'Fermer le panneau Mon personnage',
     preview: 'Aperçu de ton personnage',
@@ -550,8 +557,6 @@ export const fr = {
       screenHint: 'Partager une fenêtre ou ton écran avec la conversation',
       screenStopHint: 'Arrêter le partage',
       screenUnavailable: 'Le partage d\'écran se fait pendant une conversation.',
-      reactions: 'Réactions',
-      reactionsHint: 'Pas encore disponible.',
     },
     tiles: {
       label: 'Vidéos de la conversation',

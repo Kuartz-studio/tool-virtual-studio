@@ -1,7 +1,7 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { avatarsOf, enterOffice, joinOffice, officeBar, selfAt, waitForOffice, WALK_TIMEOUT } from './helpers';
+import { avatarsOf, chooseStatus, enterOffice, joinOffice, meChip, officeBar, selfAt, waitForOffice, WALK_TIMEOUT } from './helpers';
 
-// La présence dans l'interface : le menu des statuts, le panneau Personnes et l'écran « Ouvert dans un autre onglet ».
+// La présence dans l'interface : le menu « Moi » (le statut), le panneau Personnes et l'écran « Ouvert dans un autre onglet ».
 // Chaque personne a son navigateur (un contexte : ses cookies, donc sa session). Tous les tests partagent le serveur, et donc ses
 // membres : on ne regarde les autres que par leur identifiant (`data-user`).
 
@@ -44,13 +44,8 @@ async function openPeople(page: Page) {
   return panel;
 }
 
-// Choisit ce statut dans le menu de la barre.
-async function chooseStatus(page: Page, label: string): Promise<void> {
-  await officeBar(page).getByRole('button', { name: /^Statut/ }).click();
-  await page.getByRole('menuitemradio', { name: label }).click();
-}
-
-const statusButton = (page: Page, label: string) => officeBar(page).getByRole('button', { name: `Statut : ${label}` });
+// La puce « Moi » de cette page dit ce statut : le serveur l'a confirmé (elle ne montre que ce qu'il a dit), donc la connexion est prête.
+const expectStatus = (page: Page, label: string) => expect(meChip(page)).toContainText(label);
 
 test('A passe en Ne pas déranger → B voit le point rouge dans le panneau Personnes', async ({ browser }) => {
   test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
@@ -69,7 +64,7 @@ test('A passe en Ne pas déranger → B voit le point rouge dans le panneau Pers
   await expect(dotOfA).toHaveCSS('background-color', DOT_COLOR.dnd);
   await expect(dotOfA.locator('xpath=ancestor::li')).toContainText('Ne pas déranger');
   // A voit son nouveau statut quand le serveur l'a confirmé, et B n'a pas changé.
-  await expect(statusButton(a.page, 'Ne pas déranger')).toBeVisible();
+  await expectStatus(a.page, 'Ne pas déranger');
   await expect(online.locator(`[data-user="${b.id}"]`)).toHaveAttribute('data-status', 'available');
 
   // Les trois autres statuts ont leur couleur.
@@ -91,7 +86,7 @@ test('le statut survit à un rechargement de la page : A le retrouve, et B ne le
   await a.page.reload();
   await enterOffice(a.page);
   await waitForOffice(a.page);
-  await expect(statusButton(a.page, 'Absent')).toBeVisible();
+  await expectStatus(a.page, 'Absent');
   // Revenue dans le délai de grâce : B n'a rien vu, ni départ ni changement.
   await expect(panel.locator(`[data-user="${a.id}"]`)).toHaveAttribute('data-status', 'away');
   // Et le menu marche de nouveau.
@@ -128,7 +123,7 @@ test('deuxième onglet de A : sur l\'écran d\'entrée, il ne coupe pas le premi
   await expect(replaced.getByRole('button', { name: 'Utiliser ici' })).toBeFocused();
   await expect(first.locator('.office-ui')).toHaveAttribute('inert', '');
   await expect(second.getByRole('dialog')).toHaveCount(0);
-  await expect(statusButton(second, 'Disponible')).toBeEnabled();
+  await expectStatus(second, 'Disponible');
   // Pour B, rien n'a changé : A est toujours là, en un seul exemplaire.
   await expect(panelOfB.locator(`[data-user="${a.id}"]`)).toHaveAttribute('data-status', 'available');
   expect(await avatarsOf(b.page, a.id)).toBe(1);
@@ -138,7 +133,7 @@ test('deuxième onglet de A : sur l\'écran d\'entrée, il ne coupe pas le premi
   await expect(replaced).toBeHidden();
   await expect(second.getByRole('dialog', { name: 'Ouvert dans un autre onglet' })).toBeVisible();
   await expect(first.locator('.office-ui')).not.toHaveAttribute('inert', /.*/);
-  await expect(statusButton(first, 'Disponible')).toBeEnabled();
+  await expectStatus(first, 'Disponible');
   // Le premier onglet marche : son statut part au serveur, et B le voit.
   await chooseStatus(first, 'Occupé');
   await expect(panelOfB.locator(`[data-user="${a.id}"][data-status="busy"]`)).toBeVisible();
@@ -203,13 +198,13 @@ test('le panneau Personnes est posé sur le jeu, sans le déplacer, et se manie 
   expect(await canvas.boundingBox()).toEqual(before);
 });
 
-test('le clavier : le menu des statuts garde ses flèches ; fermé, l\'avatar marche de nouveau', async ({ browser }) => {
+test('le clavier : le menu « Moi » garde ses flèches ; fermé, l\'avatar marche de nouveau', async ({ browser }) => {
   const a = await arrive(browser, 'Anselme');
   const page = a.page;
   const start = await selfAt(page);
 
   // Menu ouvert, ↓ et ↑ passent d'un statut à l'autre : l'avatar reste où il est.
-  await officeBar(page).getByRole('button', { name: /^Statut/ }).focus();
+  await meChip(page).focus();
   await page.keyboard.press('Enter');
   await expect(page.getByRole('menuitemradio', { name: 'Disponible' })).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -219,10 +214,10 @@ test('le clavier : le menu des statuts garde ses flèches ; fermé, l\'avatar ma
   await page.keyboard.up('ArrowDown');
   expect(await selfAt(page)).toEqual(start);
 
-  // Échap : le menu se ferme, le focus est sur le bouton (un bouton ne prend pas les flèches), et l'avatar marche.
+  // Échap : le menu se ferme, le focus est sur la puce (un bouton ne prend pas les flèches), et l'avatar marche.
   await page.keyboard.press('Escape');
   await expect(page.getByRole('menu')).toBeHidden();
-  await expect(officeBar(page).getByRole('button', { name: /^Statut/ })).toBeFocused();
+  await expect(meChip(page)).toBeFocused();
   await page.keyboard.down('ArrowDown');
   await expect.poll(async () => (await selfAt(page)).y, { timeout: WALK_TIMEOUT }).toBeGreaterThan(start.y);
   await page.keyboard.up('ArrowDown');

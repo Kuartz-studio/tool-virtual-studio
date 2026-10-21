@@ -16,8 +16,8 @@ test('les textes attendus par les tests de bout en bout', () => {
   expect(fr.office.replaced).toBe('Ouvert dans un autre onglet');
   expect(fr.office.useHere).toBe('Utiliser ici');
   expect(fr.office.people.toggle).toBe('Personnes');
-  expect(fr.office.statusMenu.label).toBe('Statut');
-  expect(t(fr.office.statusMenu.current, { status: fr.status.dnd })).toBe('Statut : Ne pas déranger');
+  expect(fr.me.status).toBe('Statut');
+  expect(t(fr.me.statusChanged, { status: fr.status.dnd })).toBe('Statut : Ne pas déranger');
   expect(fr.office.people.you).toBe('(toi)');
   expect(fr.media.check.title).toBe('Prêt à entrer ?');
   expect(fr.media.check.enter).toBe('Entrer');
@@ -33,17 +33,35 @@ test('les noms des boutons de la barre du bas et de ses menus', () => {
   expect(fr.ui.close).toBe('Fermer');
   expect(fr.office.more.toggle).toBe('Plus');
   expect(fr.office.more.menu).toBe('Plus d\'options');
-  expect(fr.media.controls.reactions).toBe('Réactions');
   expect(fr.media.controls.screen).toBe('Partager l\'écran');
   expect(fr.zoom.in).toBe('Zoom avant');
   expect(fr.zoom.out).toBe('Zoom arrière');
   // Les noms qu'on garde : l'action ne change pas.
   expect(fr.chat.toggle).toBe('Chat');
   expect(fr.desk.toggle).toBe('Mon bureau');
-  expect(fr.sound.toggle).toBe('Son');
-  expect(fr.character.toggle).toBe('Personnage');
   expect(fr.decor.toggle).toBe('Décorer');
   expect(fr.zoom.reset).toBe('Rétablir le zoom (100 %)');
+  // Pas de bouton « Réactions » : rien n'existe derrière.
+  expect(fr.media.controls).not.toHaveProperty('reactions');
+});
+
+// La puce « Moi » et son menu : les noms que lisent les tests de bout en bout (e2e/helpers.ts) et ceux des lignes qui ouvrent un panneau.
+test('la puce « Moi » : son nom, celui de son menu, ses sections, et les lignes qui ouvrent un panneau', () => {
+  expect(fr.me.chip).toBe('Mon profil');
+  expect(fr.me.menu).toBe('Menu de mon profil');
+  expect(fr.me.status).toBe('Statut');
+  expect(fr.me.mode).toBe('Mode');
+  expect(fr.me.modeNone).toBe('Aucun');
+  expect(fr.me.modeManage).toBe('Mes états d\'activité…');
+  // Les lignes du menu portent le nom du panneau qu'elles ouvrent, ou celui de l'action : « Personnage » est devenu « Changer d'apparence »,
+  // et « Son », « Son et musique ».
+  expect(fr.character.toggle).toBe('Changer d\'apparence');
+  expect(fr.desk.toggle).toBe('Mon bureau');
+  expect(fr.sound.toggle).toBe('Son et musique');
+  expect(fr.office.signOut).toBe('Se déconnecter');
+  // Les panneaux gardent leur titre.
+  expect(fr.character.title).toBe('Mon personnage');
+  expect(fr.sound.title).toBe('Son');
 });
 
 test('le lieu : « Couloir » faute de zone, et combien sont ici', () => {
