@@ -6,7 +6,8 @@
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
-    "gen:dev-assets": "tsx scripts/gen-dev-assets.ts"
+    "gen:assets": "tsx scripts/assets/build-assets.ts",
+    "gen:map": "tsx scripts/assets/build-map.ts"
   },
   "dependencies": {
     "@bureau/shared": "workspace:*",
