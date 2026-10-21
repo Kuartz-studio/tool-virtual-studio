@@ -216,7 +216,7 @@ function Tile({
       <span className="tile-label" aria-hidden="true">
         {source === 'camera' && !participant.mic && (
           <span className="tile-muted">
-            <MicIcon off size={14} />
+            <MicIcon off />
           </span>
         )}
         <span className="tile-name">{source === 'screen' ? t(fr.media.tiles.screen, { name }) : name}</span>

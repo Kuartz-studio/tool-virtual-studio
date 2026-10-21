@@ -13,6 +13,10 @@ export const fr = {
       tooManyAttempts: 'Trop de tentatives. Patiente une minute, puis réessaie.',
     },
   },
+  // Les éléments de l'interface (office/ui) : les noms de leurs boutons sans texte, qui sont aussi leurs infobulles.
+  ui: {
+    close: 'Fermer',
+  },
   // Toute l'appli : une nouvelle version déployée pendant que l'onglet était ouvert, une page qui ne s'affiche pas.
   app: {
     newVersion: 'Nouvelle version disponible',
