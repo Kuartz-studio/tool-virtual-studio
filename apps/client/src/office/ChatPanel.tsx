@@ -5,6 +5,7 @@ import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { linkify } from './linkify';
+import { CloseIcon } from './icons';
 
 const CHANNELS: readonly ChatChannel[] = ['all', 'nearby'];
 
@@ -250,7 +251,7 @@ export function ChatPanel({ id, socket, room, onClose }: ChatPanelProps) {
       <header className="chat-panel-header">
         <h2 id={titleId}>{fr.chat.title}</h2>
         <button type="button" className="bar-button" aria-label={fr.chat.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       <div className="chat-tabs" role="tablist" aria-label={fr.chat.tabsLabel} onKeyDown={onTabKeyDown}>

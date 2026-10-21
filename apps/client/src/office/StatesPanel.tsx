@@ -7,6 +7,7 @@ import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { StatusDot } from './StatusDot';
+import { CloseIcon } from './icons';
 
 // Des couleurs toutes prêtes pour le point (la couleur libre reste possible : le sélecteur du navigateur).
 export const ACTIVITY_SWATCHES = ['#22c55e', '#f59e0b', '#ef4444', '#6d28d9', '#2f5fd0', '#0ea5e9', '#ec4899', '#9ca3af'] as const;
@@ -127,7 +128,7 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
           {fr.states.title}
         </h2>
         <button type="button" className="bar-button" aria-label={fr.states.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       <div className="people-lists desk-body">

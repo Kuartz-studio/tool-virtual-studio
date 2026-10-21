@@ -16,6 +16,7 @@ import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { AvatarPreview } from './AvatarPreview';
 import { PartThumb } from './sprites';
+import { CloseIcon } from './icons';
 
 // Le panneau Mon personnage : on choisit un personnage prêt à jouer, ou on assemble le sien pièce par pièce (peau, yeux, tenue, coiffure,
 // accessoire) avec un aperçu qui respire ou marche. « Enregistrer » envoie la clé du personnage au serveur, qui la diffuse : tout le bureau
@@ -155,7 +156,7 @@ export function CharacterBuilder({ id, onClose }: { id?: string; onClose(): void
           {fr.character.title}
         </h2>
         <button type="button" className="bar-button" aria-label={fr.character.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       <div className="people-lists character-body">

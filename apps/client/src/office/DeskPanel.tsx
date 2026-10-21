@@ -6,6 +6,7 @@ import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { deskErrorText, deskTitle, occupantsOf } from './desks';
+import { CloseIcon } from './icons';
 
 // Le panneau Mon bureau : chacun a son bureau, qu'il nomme, dont il ferme la porte et dont il exclut qui il veut.
 // - sans bureau : les places libres, à prendre ;
@@ -91,7 +92,7 @@ export function DeskPanel({ id, socket, onClose, onDecorate }: { id?: string; so
           {fr.desk.title}
         </h2>
         <button type="button" className="bar-button" aria-label={fr.desk.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       <div className="people-lists desk-body">

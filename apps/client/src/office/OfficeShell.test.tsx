@@ -2,6 +2,8 @@ import type { ChatMessage, MediaJoinPayload, PublicPlayer, Role } from '@bureau/
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { useAudioStore } from '../audio/audio-store';
+import { DEFAULT_AUDIO_PREFS } from '../audio/prefs';
 import { fr, t } from '../i18n/fr';
 import { FakeMediaClient } from '../media/fake-media-client';
 import * as activityApi from '../lib/activity-api';
@@ -131,11 +133,38 @@ describe('la mise en page', () => {
     expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Chat, Personnes, Personnage, Mon bureau et Se déconnecter', () => {
+  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, le Son, puis Chat, Personnes, Personnage, Mon bureau et Se déconnecter', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Son', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Se déconnecter']);
     expect(within(bar()).getByText('Léa')).toBeTruthy();
+  });
+
+  test('la barre dit sa hauteur à la couche (--bar-size) : les panneaux s\'arrêtent au-dessus d\'elle, même sur plusieurs lignes', () => {
+    let notify: () => void = () => {};
+    const observed: Element[] = [];
+    class FakeResizeObserver {
+      constructor(callback: () => void) {
+        notify = callback;
+      }
+      observe(element: Element) {
+        observed.push(element);
+      }
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
+    const { container } = renderShell();
+    const layer = container.querySelector<HTMLElement>('.office-ui')!;
+    const barElement = layer.querySelector<HTMLElement>('.office-bar')!;
+    expect(observed).toEqual([barElement]);
+
+    // Une fenêtre étroite : la barre passe sur deux lignes.
+    vi.spyOn(barElement, 'getBoundingClientRect').mockReturnValue({ height: 112 } as DOMRect);
+    notify();
+    expect(layer.style.getPropertyValue('--bar-size')).toBe('112px');
+    vi.spyOn(barElement, 'getBoundingClientRect').mockReturnValue({ height: 56 } as DOMRect);
+    notify();
+    expect(layer.style.getPropertyValue('--bar-size')).toBe('56px');
   });
 
   test('les commandes de la barre parlent au client média', async () => {
@@ -291,6 +320,66 @@ describe('le panneau Personnes', () => {
   test('il est inactif tant que le serveur n\'a pas dit qui est là (avant l\'init)', () => {
     renderShell({ init: false });
     expect(toggle().disabled).toBe(true);
+  });
+});
+
+describe('le panneau Son', () => {
+  const soundToggle = () => within(bar()).getByRole('button', { name: fr.sound.toggle }) as HTMLButtonElement;
+  const soundPanel = () => screen.getByRole('complementary', { name: fr.sound.title });
+
+  beforeEach(() => {
+    localStorage.clear();
+    useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, status: 'locked', playing: null, place: 'lobby' });
+  });
+
+  test('fermé au départ ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    expect(screen.queryByRole('complementary')).toBeNull();
+    expect(soundToggle().getAttribute('aria-expanded')).toBe('false');
+    expect(soundToggle().hasAttribute('aria-controls')).toBe(false);
+
+    await user.click(soundToggle());
+    const panel = soundPanel();
+    expect(soundToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(soundToggle().getAttribute('aria-controls')).toBe(panel.id);
+
+    await user.click(soundToggle());
+    expect(screen.queryByRole('complementary')).toBeNull();
+  });
+
+  test('il s\'ouvre à droite, par-dessus le jeu ; le focus va au titre, Échap le ferme et rend le focus au bouton', async () => {
+    const user = userEvent.setup();
+    const { container } = renderShell();
+    await user.click(soundToggle());
+    expect(container.querySelector('.office-ui .office-side')?.contains(soundPanel())).toBe(true);
+    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.sound.title }));
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary')).toBeNull();
+    expect(document.activeElement).toBe(soundToggle());
+  });
+
+  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(soundToggle());
+    await user.click(screen.getByRole('button', { name: fr.sound.close }));
+    expect(screen.queryByRole('complementary')).toBeNull();
+    expect(document.activeElement).toBe(soundToggle());
+  });
+
+  test('le bouton marche avant l\'init : le son ne dépend pas du serveur', () => {
+    renderShell({ init: false });
+    expect(soundToggle().disabled).toBe(false);
+  });
+
+  test('Son, Personnes et Chat peuvent être ouverts ensemble', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(soundToggle());
+    await user.click(toggle());
+    await user.click(chatToggle());
+    expect(screen.getAllByRole('complementary')).toHaveLength(3);
   });
 });
 
@@ -547,7 +636,7 @@ describe('le panneau Admin', () => {
   test('un admin a le bouton Admin dans la barre, entre Mon bureau et Se déconnecter', () => {
     renderShell({ role: 'admin' });
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Admin', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Son', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Admin', 'Se déconnecter']);
   });
 
   test('fermé au départ, sans rien demander au serveur ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {

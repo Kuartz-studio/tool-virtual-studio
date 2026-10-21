@@ -4,6 +4,7 @@ import { DevicePreview, type PreviewState } from '../media/device-preview';
 import type { MediaPrefs } from '../media/media-client';
 import { loadPrefs, savePrefs } from '../media/prefs';
 import { CameraIcon, MicIcon } from './icons';
+import { MusicToggle } from './MusicToggle';
 
 // Les pseudo-périphériques de Chrome (« Par défaut », « Communications ») : « Celui du système » les remplace.
 const PSEUDO_DEVICES = new Set(['default', 'communications']);
@@ -74,6 +75,7 @@ export function DeviceCheck({ onEnter }: { onEnter(prefs: MediaPrefs): void }) {
 
   return (
     <main className="device-check">
+      <MusicToggle />
       <div className="device-check-card">
         <p className="auth-brand">{fr.common.appName}</p>
         <h1>{fr.media.check.title}</h1>

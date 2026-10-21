@@ -16,7 +16,7 @@ import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { sameDecor } from './decor-draft';
-import { EraserIcon } from './icons';
+import { EraserIcon, CloseIcon } from './icons';
 import { deskErrorText } from './desks';
 import { ReplaceDialog } from './ReplaceDialog';
 import { DecorThumb, FloorSwatch, WallSwatch } from './sprites';
@@ -102,7 +102,7 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
           {fr.decor.title}
         </h2>
         <button type="button" className="bar-button" aria-label={fr.decor.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       {mine === undefined ? (

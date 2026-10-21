@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
+import { ChevronUpIcon } from './icons';
 import { StatusDot } from './StatusDot';
 
 // Le statut, choisi à la main (spec §10) : un bouton qui dit le statut en cours (celui que le serveur a confirmé, lu au magasin), et un
@@ -156,8 +157,8 @@ export function StatusMenu({ socket, onManage }: { socket: OfficeSocket | null; 
       >
         <StatusDot status={current} activity={activity} />
         <span>{label}</span>
-        <span className="bar-button-caret" aria-hidden="true">
-          ▴
+        <span className="bar-button-caret">
+          <ChevronUpIcon />
         </span>
       </button>
       <span className="visually-hidden" aria-live="polite" aria-atomic="true">

@@ -1,23 +1,59 @@
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Jetons de design. Tout le reste de la feuille ne parle que par eux : changer une couleur, un rayon ou une ombre se fait ici.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 :root {
-  --text: #1f2430;
-  --text-muted: #5b6475;
-  --background: #eef1f6;
+  /* Texte : l'encre (titres, noms), le texte courant adouci, et le texte discret (heures, aides), tous lisibles sur du blanc. */
+  --text: #1b2033;
+  --text-soft: #485068;
+  --text-muted: #646c82;
+
+  /* Surfaces : la page, le blanc des cartes, un fond léger (champs, lignes survolées), un fond enfoncé (survol des boutons), les traits. */
+  --background: #eef0f6;
   --surface: #ffffff;
-  --border: #c9cfda;
-  --accent: #2f5fd0;
-  --accent-hover: #244cad;
-  --error-text: #8a1c1c;
+  --surface-soft: #f5f6fa;
+  --surface-sunk: #eceef5;
+  --border: #dde1ea;
+  --border-strong: #c3c9d6;
+
+  /* L'accent : les actions, ce qui est choisi, le focus. */
+  --accent: #3b5bdb;
+  --accent-hover: #2f4ac0;
+  --accent-soft: #e9edff;
+  --accent-ink: #2a3fa8;
+
+  --error-text: #9b1c1c;
   --error-background: #fdecec;
+  --error-border: #f0c4c4;
   --success-text: #1d5b36;
   --success-background: #e6f5ec;
   --warning-text: #6b4100;
   --warning-background: #fff3dc;
   --speaking: #22c55e;
 
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 18px;
+  --radius-pill: 999px;
+
+  --shadow-s: 0 1px 2px rgb(27 32 51 / 10%);
+  --shadow-m: 0 1px 2px rgb(27 32 51 / 8%), 0 6px 18px rgb(27 32 51 / 14%);
+  --shadow-l: 0 1px 2px rgb(27 32 51 / 8%), 0 12px 32px rgb(27 32 51 / 24%);
+  /* Les surfaces posées sur le jeu ont un fin liseré : sur un sol clair, l'ombre seule ne les détache pas assez. */
+  --edge: 0 0 0 1px rgb(27 32 51 / 9%);
+  --ring: 0 0 0 3px rgb(59 91 219 / 30%);
+
+  --text-s: 0.8125rem;
+  --text-m: 0.9375rem;
+  --text-l: 1.0625rem;
+  --text-xl: 1.625rem;
+
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  font-size: 16px;
   line-height: 1.5;
   color: var(--text);
   background: var(--background);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 *,
@@ -30,90 +66,214 @@ body {
   margin: 0;
 }
 
-a {
-  color: var(--accent);
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
 }
 
-/* Pages de compte : une carte centrée. */
+a {
+  color: var(--accent);
+  text-underline-offset: 2px;
+}
+
+/* Le focus se voit partout, au clavier : le même trait. Les éléments qui ont mieux à dire le disent plus bas. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Qui préfère moins de mouvement n'en a presque pas : les transitions sont instantanées. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Visible des lecteurs d'écran seulement (le titre de la page du bureau, qui n'a pas de titre à l'écran, les noms des boutons réduits à
+   leur icône). */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Les pages de compte : connexion, invitation, mot de passe. Une carte centrée sur un fond doux, et l'interrupteur de la musique.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.auth,
+.device-check,
+.page-message {
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 0%, rgb(255 255 255 / 85%), transparent 70%),
+    linear-gradient(180deg, #eef0f6, #e1e6f3);
+}
+
 .auth {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 24px 16px;
+  padding: 72px 16px 32px;
+}
+
+.auth-card,
+.device-check-card {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 22px;
+  box-shadow: var(--edge), var(--shadow-m), 0 24px 60px rgb(27 32 51 / 10%);
 }
 
 .auth-card {
-  width: 100%;
-  max-width: 420px;
-  padding: 32px;
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 8%);
+  max-width: 440px;
+  padding: 36px 36px 32px;
 }
 
-.auth-card h1 {
-  margin: 0 0 16px;
-  font-size: 1.5rem;
+.auth-card h1,
+.device-check-card h1 {
+  margin: 0 0 20px;
+  font-size: var(--text-xl);
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
 }
 
+/* Le nom de l'appli, avec sa marque : un carré d'accent et ses quatre fenêtres. */
 .auth-brand {
-  margin: 0 0 4px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  font-size: var(--text-s);
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  color: var(--text-soft);
+}
+
+.auth-brand::before {
+  content: '';
+  width: 22px;
+  height: 22px;
+  flex: none;
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 22 22'%3E%3Crect width='22' height='22' rx='6' fill='%233b5bdb'/%3E%3Cg fill='%23fff'%3E%3Crect x='5' y='5' width='5' height='5' rx='1'/%3E%3Crect x='12' y='5' width='5' height='5' rx='1' opacity='.7'/%3E%3Crect x='5' y='12' width='5' height='5' rx='1' opacity='.7'/%3E%3Crect x='12' y='12' width='5' height='5' rx='1'/%3E%3C/g%3E%3C/svg%3E")
+    center / contain no-repeat;
 }
 
 .auth-links {
-  margin: 16px 0 0;
+  margin: 20px 0 0;
+  font-size: var(--text-m);
 }
 
+/* L'interrupteur de la musique des pages sans barre : en haut à droite. */
+.music-toggle {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 20;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  font-size: var(--text-m);
+  font-weight: 600;
+  color: var(--text);
+  background: rgb(255 255 255 / 92%);
+  border: 0;
+  border-radius: var(--radius-pill);
+  box-shadow: var(--edge), var(--shadow-m);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+}
+
+.music-toggle:hover {
+  background: var(--surface);
+}
+
+.music-toggle[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+/* Les champs : un libellé net, un champ à hauteur de doigt, un focus qui se voit. */
 .field {
   display: grid;
-  gap: 4px;
-  margin-bottom: 16px;
+  gap: 6px;
+  margin-bottom: 18px;
 }
 
 .field label {
-  font-weight: 600;
+  font-size: var(--text-m);
+  font-weight: 650;
 }
 
-.field input {
-  font: inherit;
-  padding: 10px 12px;
+.field input,
+.field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 14px;
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+  transition: border-color 0.12s, box-shadow 0.12s;
 }
 
-.field input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+.field input:hover:not(:disabled):not([readonly]),
+.field select:hover:not(:disabled) {
+  border-color: var(--text-muted);
+}
+
+.field input:focus-visible,
+.field select:focus-visible {
+  outline: none;
   border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
-.field input[readonly] {
+.field input[readonly],
+.field select:disabled {
   color: var(--text-muted);
-  background: var(--background);
+  background: var(--surface-soft);
 }
 
 .field-hint {
   margin: 0;
-  font-size: 0.875rem;
+  font-size: var(--text-s);
   color: var(--text-muted);
 }
 
+/* Le bouton d'action des pages de compte et de l'écran d'entrée. */
 .button {
-  font: inherit;
-  font-weight: 600;
-  padding: 10px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 20px;
+  font-size: var(--text-m);
+  font-weight: 650;
   color: #ffffff;
   background: var(--accent);
-  border: none;
-  border-radius: 8px;
+  border: 0;
+  border-radius: var(--radius-m);
+  box-shadow: 0 1px 2px rgb(27 32 51 / 24%), inset 0 1px 0 rgb(255 255 255 / 18%);
   cursor: pointer;
+  transition: background 0.12s, transform 0.06s;
 }
 
 .auth-card .button {
@@ -124,9 +284,13 @@ a {
   background: var(--accent-hover);
 }
 
+.button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
 .button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+  box-shadow: var(--ring), 0 1px 2px rgb(27 32 51 / 24%);
 }
 
 .button:disabled {
@@ -137,13 +301,15 @@ a {
 .alert,
 .notice {
   margin: 0 0 16px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 11px 14px;
+  font-size: var(--text-m);
+  border-radius: var(--radius-m);
 }
 
 .alert {
   color: var(--error-text);
   background: var(--error-background);
+  box-shadow: inset 0 0 0 1px var(--error-border);
 }
 
 .notice {
@@ -154,12 +320,14 @@ a {
 /* Chargement, serveur injoignable : un message seul au milieu de la page. */
 .page-message {
   min-height: 100vh;
+  min-height: 100dvh;
   display: grid;
   place-content: center;
   justify-items: center;
-  gap: 12px;
+  gap: 14px;
   padding: 24px 16px;
   text-align: center;
+  color: var(--text-soft);
 }
 
 .page-message p {
@@ -168,26 +336,27 @@ a {
 
 .page-message h1 {
   margin: 0;
-  font-size: 1.5rem;
+  font-size: var(--text-xl);
+  color: var(--text);
 }
 
 /* Une nouvelle version déployée pendant que l'onglet était ouvert : en haut, au milieu, par-dessus tout (le jeu, les panneaux, l'écran
    « Ouvert dans un autre onglet »). */
 .new-version {
   position: fixed;
-  top: 12px;
+  top: 14px;
   left: 50%;
   z-index: 100;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   width: max-content;
   max-width: calc(100% - 24px);
-  padding: 8px 8px 8px 16px;
+  padding: 8px 8px 8px 18px;
   color: var(--warning-text);
   background: var(--warning-background);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgb(0 0 0 / 20%);
+  border-radius: var(--radius-l);
+  box-shadow: var(--edge), var(--shadow-l);
   transform: translateX(-50%);
 }
 
@@ -195,8 +364,308 @@ a {
   margin: 0;
 }
 
-/* Le bureau : la carte (le canevas de Phaser) occupe toute la page. Le fond est celui du jeu (backgroundColor, game/config.ts), pour
-   qu'il n'y ait pas d'éclair clair pendant le chargement de Phaser. */
+/* « Ouvert dans un autre onglet » : un écran sur toute la page, sur le bureau grisé. */
+.replaced-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  background: rgb(27 32 51 / 82%);
+}
+
+.replaced-card {
+  max-width: 420px;
+  padding: 32px 36px;
+  text-align: center;
+  background: var(--surface);
+  border-radius: 22px;
+  box-shadow: var(--shadow-l);
+}
+
+.replaced-card h2 {
+  margin: 0 0 8px;
+  font-size: var(--text-xl);
+  letter-spacing: -0.02em;
+}
+
+.replaced-card p {
+  margin: 0 0 22px;
+  color: var(--text-soft);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   L'écran d'entrée : l'aperçu de sa caméra à gauche, les réglages et « Entrer » à droite.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.device-check {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 72px 16px 32px;
+}
+
+.device-check-card {
+  max-width: 540px;
+  padding: 32px 36px 36px;
+}
+
+.device-check-intro {
+  margin: -8px 0 20px;
+  color: var(--text-soft);
+}
+
+/* Sur un écran large, deux colonnes : tout tient dans la hauteur d'un portable, « Entrer » compris. */
+@media (min-width: 760px) {
+  .device-check-card {
+    max-width: 920px;
+  }
+
+  .device-check-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+    gap: 32px;
+    align-items: start;
+  }
+
+  .device-check-settings .device-toggles {
+    margin-top: 0;
+  }
+}
+
+.device-preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #1d2030;
+  border-radius: var(--radius-l);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+}
+
+.device-preview-video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.device-preview-mirrored {
+  transform: scaleX(-1);
+}
+
+.device-preview-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: #c9cfda;
+}
+
+/* Le niveau du micro : une barre qui suit le volume (son transform est posé à chaque image). */
+.device-meter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 0;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+
+.device-meter-bar {
+  flex: 1;
+  height: 8px;
+  overflow: hidden;
+  background: var(--surface-sunk);
+  border-radius: 4px;
+}
+
+.device-meter-level {
+  display: block;
+  height: 100%;
+  background: var(--speaking);
+  border-radius: 4px;
+  transform: scaleX(0);
+  transform-origin: left;
+}
+
+.device-check-hint {
+  margin: 12px 0 0;
+  font-size: var(--text-s);
+  color: var(--text-muted);
+}
+
+.device-toggles {
+  display: flex;
+  gap: 10px;
+  margin: 18px 0 8px;
+}
+
+.device-toggles .bar-button {
+  flex: 1;
+}
+
+.device-selects {
+  display: grid;
+  margin-top: 12px;
+}
+
+.device-check-message {
+  margin: 0 0 16px;
+  padding: 11px 14px;
+  color: var(--warning-text);
+  background: var(--warning-background);
+  border-radius: var(--radius-m);
+}
+
+.device-check-enter {
+  width: 100%;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Les boutons discrets de l'interface (barre, panneaux, formulaires) : un trait fin, un survol net, un état enfoncé en accent.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.bar-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  font-size: var(--text-s);
+  font-weight: 650;
+  line-height: 1.2;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+
+.bar-button:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--surface-sunk);
+}
+
+.bar-button[aria-expanded='true'],
+.bar-button[aria-pressed='true'] {
+  border-color: var(--accent);
+}
+
+.bar-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.bar-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* Un bouton rendu inactif pendant une demande, sans perdre le focus (aria-disabled, et non disabled). */
+.bar-button[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.bar-button-danger {
+  color: var(--error-text);
+  border-color: var(--error-text);
+}
+
+.bar-button-danger:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--error-background);
+}
+
+.bar-button-caret {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.icon {
+  flex: none;
+}
+
+.bar-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  font-size: 0.72rem;
+  font-weight: 750;
+  line-height: 1;
+  color: #ffffff;
+  background: var(--accent);
+  border-radius: 10px;
+}
+
+/* Un interrupteur : une case à cocher habillée, qui garde ses touches et son annonce. */
+.switch {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.switch input {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.switch-track {
+  position: relative;
+  width: 46px;
+  height: 28px;
+  background: var(--border-strong);
+  border-radius: var(--radius-pill);
+  transition: background 0.15s;
+}
+
+.switch-track::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 22px;
+  height: 22px;
+  background: #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgb(27 32 51 / 35%);
+  transition: transform 0.15s;
+}
+
+.switch input:checked + .switch-track {
+  background: var(--accent);
+}
+
+.switch input:checked + .switch-track::after {
+  transform: translateX(18px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.switch input:disabled {
+  cursor: not-allowed;
+}
+
+.switch input:disabled + .switch-track {
+  opacity: 0.5;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le bureau : la carte (le canevas de Phaser) occupe toute la page, et l'interface est posée par-dessus.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+/* Le fond est celui du jeu (backgroundColor, game/config.ts), pour qu'il n'y ait pas d'éclair clair pendant le chargement de Phaser. */
 .office {
   position: relative;
   height: 100vh;
@@ -211,26 +680,15 @@ a {
   inset: 0;
 }
 
-/* Visible des lecteurs d'écran seulement (le titre de la page du bureau, qui n'a pas de titre à l'écran). */
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-  border: 0;
-}
-
 /* Par-dessus la carte : les vignettes (en haut), les panneaux (à droite) et la barre (en bas). Tout est posé sur le jeu, rien ne lui
    prend de place : ouvrir un panneau ne redimensionne pas le canevas. La couche laisse passer la souris, sauf sur ses éléments.
-   --bar-gap et --bar-height : l'écart de la barre au bord de la page, et sa hauteur ; les panneaux et les messages s'arrêtent
-   au-dessus. */
+   --bar-gap et --bar-height : l'écart de la barre au bord de la page, et sa hauteur d'une ligne ; --bar-size est sa hauteur réelle, que
+   l'interface mesure (OfficeShell, useBarSize) : la barre passe sur plusieurs lignes quand la fenêtre est étroite, et les panneaux et les
+   messages s'arrêtent au-dessus d'elle, quelle que soit sa hauteur. */
 .office-ui {
-  --bar-gap: 12px;
-  --bar-height: 52px;
+  --bar-gap: 16px;
+  --bar-height: 56px;
+  --bar-size: var(--bar-height);
 
   position: absolute;
   inset: 0;
@@ -259,16 +717,16 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .video-tiles {
   max-width: 100%;
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
   margin: 0;
-  padding: 2px;
+  padding: 4px;
   overflow-x: auto;
   list-style: none;
 }
@@ -278,16 +736,17 @@ a {
   position: relative;
   display: block;
   flex: none;
-  width: 160px;
+  width: 176px;
   aspect-ratio: 16 / 9;
   padding: 0;
   overflow: hidden;
   color: #ffffff;
   background: #2b3047;
   border: none;
-  border-radius: 10px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 20%), 0 6px 16px rgb(0 0 0 / 28%);
+  border-radius: 14px;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 14%), 0 8px 22px rgb(0 0 0 / 34%);
   cursor: pointer;
+  transition: box-shadow 0.15s;
 }
 
 .tile:focus-visible {
@@ -297,7 +756,7 @@ a {
 
 /* Qui parle : un anneau de la couleur « Disponible », comme celui de son étiquette dans le jeu. */
 .tile[data-speaking] {
-  box-shadow: 0 0 0 3px var(--speaking), 0 6px 16px rgb(0 0 0 / 28%);
+  box-shadow: 0 0 0 3px var(--speaking), 0 8px 22px rgb(0 0 0 / 34%);
 }
 
 .tile-video {
@@ -324,10 +783,10 @@ a {
   left: 50%;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
-  font-size: 1rem;
-  font-weight: 600;
+  width: 48px;
+  height: 48px;
+  font-size: 1.05rem;
+  font-weight: 700;
   background: #4a5272;
   border-radius: 50%;
   transform: translate(-50%, -60%);
@@ -335,17 +794,17 @@ a {
 
 .tile-label {
   position: absolute;
-  left: 6px;
-  bottom: 6px;
-  max-width: calc(100% - 12px);
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 1px 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  background: rgb(0 0 0 / 55%);
-  border-radius: 6px;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: var(--text-s);
+  font-weight: 650;
+  background: rgb(15 18 30 / 62%);
+  border-radius: 8px;
 }
 
 .tile-name {
@@ -357,7 +816,7 @@ a {
 .tile-muted {
   display: flex;
   flex: none;
-  color: #ff8a8a;
+  color: #ff9a9a;
 }
 
 /* La vignette agrandie (un partage d'écran, ou celle qu'on a cliquée), sous la liste. */
@@ -369,22 +828,22 @@ a {
 /* Le bouton « Plein écran » : en haut à droite de l'écran partagé. */
 .video-stage-action {
   position: absolute;
-  top: 8px;
-  right: 8px;
+  top: 10px;
+  right: 10px;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 40px;
+  height: 40px;
   padding: 0;
   color: #ffffff;
-  background: rgb(0 0 0 / 55%);
+  background: rgb(15 18 30 / 62%);
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
 }
 
 .video-stage-action:hover {
-  background: rgb(0 0 0 / 75%);
+  background: rgb(15 18 30 / 82%);
 }
 
 .video-stage-action:focus-visible {
@@ -414,13 +873,13 @@ a {
 
 .video-stage .tile {
   width: 100%;
-  max-height: calc(100dvh - 2 * var(--bar-height) - 160px);
-  border-radius: 12px;
+  max-height: calc(100dvh - 2 * var(--bar-size) - 160px);
+  border-radius: var(--radius-l);
 }
 
 .video-stage .tile-initials {
-  width: 88px;
-  height: 88px;
+  width: 92px;
+  height: 92px;
   font-size: 2rem;
 }
 
@@ -430,19 +889,20 @@ a {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 8px 12px;
+  gap: 8px 14px;
   margin: 0;
-  padding: 8px 12px;
+  padding: 10px 14px;
   color: #ffffff;
   text-align: center;
-  background: rgb(29 32 48 / 90%);
-  border-radius: 10px;
-  box-shadow: 0 6px 16px rgb(0 0 0 / 28%);
+  background: rgb(27 32 51 / 92%);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-l);
 }
 
 .video-notice .bar-button {
   color: var(--text);
   background: var(--surface);
+  border-color: transparent;
 }
 
 /* La connexion au bureau, en attendant le premier état du serveur : au milieu de la page, sur le fond du jeu. */
@@ -450,18 +910,39 @@ a {
   position: absolute;
   top: 50%;
   left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin: 0;
-  transform: translate(-50%, -50%);
+  padding: 12px 20px;
   color: #ffffff;
-  text-align: center;
+  background: rgb(255 255 255 / 8%);
+  border-radius: var(--radius-pill);
+  transform: translate(-50%, -50%);
+}
+
+.office-connecting::before {
+  content: '';
+  width: 18px;
+  height: 18px;
+  border: 2px solid rgb(255 255 255 / 30%);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Ce qui n'a pas marché : au-dessus de la barre, au milieu. */
 .office-banners {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
-  width: min(480px, calc(100% - 2 * var(--bar-gap)));
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
+  width: min(520px, calc(100% - 2 * var(--bar-gap)));
   display: grid;
   gap: 8px;
   transform: translateX(-50%);
@@ -470,16 +951,19 @@ a {
 
 .office-banners .alert {
   margin: 0;
+  box-shadow: var(--shadow-m), inset 0 0 0 1px var(--error-border);
 }
 
 /* La connexion au bureau tombée, que Socket.io rétablit seul. */
 .office-reconnecting {
   margin: 0;
-  padding: 10px 12px;
+  padding: 11px 16px;
   color: var(--warning-text);
   text-align: center;
+  font-weight: 600;
   background: var(--warning-background);
-  border-radius: 8px;
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-m);
 }
 
 /* Les panneaux, à droite, de haut en bas de la page, au-dessus de la barre : Personnes en haut, Chat en bas, ensemble ou seuls. */
@@ -487,48 +971,68 @@ a {
   position: absolute;
   top: var(--bar-gap);
   right: var(--bar-gap);
-  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
-  width: min(320px, calc(100% - 2 * var(--bar-gap)));
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
+  width: min(364px, calc(100% - 2 * var(--bar-gap)));
   display: flex;
   flex-direction: column;
-  gap: var(--bar-gap);
+  gap: 12px;
 }
 
 .office-side > * {
   pointer-events: auto;
+  animation: panel-in 0.18s ease-out;
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
 /* Le zoom, en bas à gauche, juste au-dessus de la barre : plus près, la vue de départ avec son pourcentage, plus loin. */
 .zoom-controls {
   position: absolute;
   left: var(--bar-gap);
-  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  gap: 2px;
+  padding: 5px;
   background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+  border-radius: var(--radius-l);
+  box-shadow: var(--edge), var(--shadow-l);
   pointer-events: auto;
 }
 
 .zoom-controls .bar-button {
-  justify-content: center;
-  min-width: 3.2em;
+  min-width: 48px;
+  min-height: 38px;
+  padding: 0 8px;
+  font-size: 1.15rem;
+  font-weight: 600;
+  background: transparent;
+  border-color: transparent;
+  border-radius: 12px;
 }
 
 .zoom-controls .bar-button:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: default;
 }
 
-.zoom-level {
-  font-size: 0.78rem;
+.zoom-controls .zoom-level {
+  font-size: var(--text-s);
   font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text-soft);
 }
 
-/* La barre du bas : ton nom et ton statut à gauche, les commandes au milieu, Chat, Personnes et la déconnexion à droite. */
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   La barre du bas : en trois groupes. Ton nom et ton statut à gauche ; le micro, la caméra, l'écran et le son au milieu ; les panneaux et
+   la déconnexion à droite. Les boutons ont une icône et un nom. Quand la place manque, les moins courants ne gardent que l'icône, puis
+   tous (leur nom reste lu par les lecteurs d'écran, et s'affiche en infobulle).
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .office-bar {
   position: absolute;
   left: var(--bar-gap);
@@ -540,17 +1044,19 @@ a {
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
+  container: bar / inline-size;
 }
 
 .office-bar-start,
-.office-bar-end {
+.office-bar-end,
+.media-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
+  gap: 4px;
+  padding: 5px;
   background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+  border-radius: var(--radius-l);
+  box-shadow: var(--edge), var(--shadow-l);
   pointer-events: auto;
 }
 
@@ -559,7 +1065,7 @@ a {
   min-width: 0;
   display: flex;
   justify-content: center;
-  gap: 8px;
+  gap: 10px;
 }
 
 .office-bar-center > * {
@@ -568,82 +1074,138 @@ a {
 
 .office-user {
   max-width: 14ch;
-  padding-left: 4px;
+  padding: 0 4px 0 10px;
   overflow: hidden;
-  font-weight: 600;
+  font-size: var(--text-m);
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Les boutons de la barre et des panneaux : discrets, au contraire du bouton d'action des pages de compte (.button). */
-.bar-button {
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  color: var(--text);
+/* Dans la barre, les boutons n'ont pas de trait : le groupe est déjà une surface. */
+.office-bar .bar-button {
+  min-height: 42px;
+  padding: 0 14px;
+  font-size: var(--text-m);
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
+  border-color: transparent;
+  border-radius: 13px;
 }
 
-.bar-button:hover:not(:disabled),
-.bar-button[aria-expanded='true'] {
-  background: var(--background);
+.office-bar .bar-button:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--surface-sunk);
 }
 
-.bar-button[aria-expanded='true'] {
-  border-color: var(--accent);
+.office-bar .bar-button[aria-expanded='true'] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
 }
 
-.bar-button:focus-visible,
-.status-menu-item:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.bar-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.bar-button-caret {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-}
-
-/* Micro, caméra et partage d'écran, au milieu de la barre. */
-.media-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
-  pointer-events: auto;
-}
-
-.icon {
-  flex: none;
-}
-
-/* Micro ou caméra coupés : en rouge, qu'on le voie d'un coup d'œil. */
+/* Micro ou caméra coupés : en rouge, qu'on le voie d'un coup d'œil. Le partage d'écran en cours : en accent. */
 .media-button[aria-pressed='false']:not(.media-share) {
   color: var(--error-text);
   background: var(--error-background);
-  border-color: #efc2c2;
 }
 
-/* Le partage d'écran en cours. */
+.office-bar .media-button[aria-pressed='false']:not(.media-share):hover:not(:disabled) {
+  background: #fbdada;
+}
+
 .media-share[aria-pressed='true'] {
   color: #ffffff;
   background: var(--accent);
-  border-color: var(--accent);
+}
+
+.office-bar .media-share[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* « Se déconnecter » : à l'écart des panneaux, derrière un trait, et discret jusqu'au survol. */
+.office-bar .bar-button-quiet {
+  position: relative;
+  margin-left: 6px;
+  color: var(--text-muted);
+}
+
+.office-bar .bar-button-quiet::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 9px;
+  bottom: 9px;
+  width: 1px;
+  background: var(--border);
+}
+
+.office-bar .bar-button-quiet:hover:not(:disabled) {
+  color: var(--error-text);
+  background: var(--error-background);
+}
+
+/* Place comptée : les boutons moins courants (Personnage, Mon bureau, Admin, Bac à sable) et la déconnexion n'ont que leur icône. */
+.office-bar .bar-button-secondary .bar-label,
+.office-bar .bar-button-quiet .bar-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* Très large : tout est écrit. */
+@container bar (min-width: 1660px) {
+  .office-bar .bar-button-secondary .bar-label,
+  .office-bar .bar-button-quiet .bar-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+  }
+}
+
+/* Étroit : plus que des icônes. */
+@container bar (max-width: 1259px) {
+  .office-bar .bar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .office-bar .bar-button {
+    padding: 0 12px;
+  }
+}
+
+/* Plus étroit encore : le statut n'est plus que son point (son nom reste celui du bouton, pour les lecteurs d'écran), et le nom raccourcit. */
+@container bar (max-width: 899px) {
+  .status-menu > .bar-button > span:not(.bar-button-caret) {
+    display: none;
+  }
+
+  .office-user {
+    max-width: 9ch;
+  }
+}
+
+/* Sur un téléphone, la barre passe sur plusieurs lignes : le zoom monte en haut à gauche, hors de son chemin. */
+@media (max-width: 640px) {
+  .zoom-controls {
+    top: var(--bar-gap);
+    bottom: auto;
+    flex-direction: row;
+  }
+
+  .zoom-controls .bar-button {
+    min-width: 44px;
+  }
 }
 
 /* Le point d'un statut : de la couleur du statut (posée par StatusDot, qui la tient de STATUS_COLORS, comme l'étiquette de l'avatar).
@@ -651,13 +1213,15 @@ a {
 .status-dot {
   flex: none;
   box-sizing: border-box;
-  width: 10px;
-  height: 10px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 80%);
 }
 
 .status-dot:not([data-status]) {
   border: 2px solid var(--text-muted);
+  box-shadow: none;
 }
 
 /* Le menu des statuts, qui s'ouvre vers le haut. */
@@ -668,40 +1232,44 @@ a {
 .status-menu-list {
   position: absolute;
   left: 0;
-  bottom: calc(100% + 12px);
+  bottom: calc(100% + 14px);
   z-index: 2;
-  min-width: 100%;
+  min-width: max(100%, 220px);
   display: grid;
   gap: 2px;
-  padding: 4px;
+  padding: 6px;
   background: var(--surface);
-  border-radius: 10px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+  border-radius: 16px;
+  box-shadow: var(--edge), var(--shadow-l);
+  animation: panel-in 0.14s ease-out;
 }
 
 .status-menu-item {
-  font: inherit;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 8px 10px;
+  min-height: 42px;
+  padding: 0 12px;
+  font-size: var(--text-m);
   color: var(--text);
   text-align: left;
   white-space: nowrap;
   background: transparent;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
 }
 
 .status-menu-item:hover,
 .status-menu-item:focus-visible {
-  background: var(--background);
+  background: var(--surface-sunk);
+  outline: none;
 }
 
 .status-menu-item[aria-checked='true'] {
-  font-weight: 600;
+  font-weight: 650;
+  background: var(--accent-soft);
 }
 
 .status-menu-check {
@@ -710,34 +1278,49 @@ a {
   color: var(--accent);
 }
 
-/* Les panneaux de droite (Personnes, Admin, Chat) : l'en-tête, puis leur contenu, qui défile. */
+/* « Mes états d'activité… » au bas du menu des statuts, séparé des états. */
+.status-menu-manage {
+  margin-top: 4px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 10px 10px;
+  color: var(--text-soft);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Les panneaux de droite : Personnes, Chat, Admin, Son, Mon bureau, Personnage, états, déco, bac à sable. Tous ont la même coque (celle
+   de .people-panel : l'en-tête, puis un contenu qui défile), et le chat et l'admin la leur, à l'identique.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .people-panel,
 .admin-panel,
 .chat-panel {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   max-height: 100%;
   overflow: hidden;
   background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+  border-radius: 20px;
+  box-shadow: var(--edge), var(--shadow-l);
 }
 
 .people-panel-header,
 .admin-panel-header,
 .chat-panel-header {
+  flex: none;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 12px 12px 4px 16px;
+  padding: 16px 14px 10px 22px;
 }
 
 .people-panel-header h2,
 .admin-panel-header h2,
 .chat-panel-header h2 {
   margin: 0;
-  font-size: 1rem;
+  font-size: var(--text-l);
+  font-weight: 750;
+  letter-spacing: -0.01em;
 }
 
 /* Le titre reçoit le focus à l'ouverture, sans être un contrôle : pas de contour. */
@@ -746,18 +1329,40 @@ a {
   outline: none;
 }
 
+/* Le bouton de fermeture : une pastille ronde. */
+.people-panel-header .bar-button,
+.admin-panel-header .bar-button,
+.chat-panel-header .bar-button {
+  width: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-color: transparent;
+  border-radius: 50%;
+}
+
+.people-panel-header .bar-button:hover,
+.admin-panel-header .bar-button:hover,
+.chat-panel-header .bar-button:hover {
+  color: var(--text);
+}
+
+/* Le contenu d'un panneau : il défile sous l'en-tête. */
 .people-lists {
+  min-height: 0;
   overflow-y: auto;
-  padding: 0 16px 16px;
+  padding: 0 22px 22px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .people-group h3 {
-  margin: 12px 0 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  margin: 16px 0 6px;
+  font-size: var(--text-s);
+  font-weight: 700;
+  color: var(--text-soft);
 }
 
 .people-list {
@@ -768,25 +1373,29 @@ a {
 
 .person {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
   padding: 6px 0;
+  border-top: 1px solid var(--surface-sunk);
 }
 
-.person .status-dot {
-  align-self: center;
+.person:first-child {
+  border-top: none;
 }
 
 .person-name {
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
+  font-size: var(--text-m);
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .person-you {
   flex: none;
+  font-size: var(--text-s);
   color: var(--text-muted);
 }
 
@@ -794,18 +1403,18 @@ a {
   flex: none;
   margin-left: auto;
   padding-left: 8px;
-  font-size: 0.8rem;
+  font-size: var(--text-s);
   color: var(--text-muted);
   white-space: nowrap;
 }
 
 .people-loading {
-  margin: 12px 0 0;
+  margin: 14px 0 0;
   color: var(--text-muted);
 }
 
 .people-failed {
-  margin-top: 12px;
+  margin-top: 14px;
 }
 
 .people-failed .alert {
@@ -820,102 +1429,53 @@ a {
   max-height: 45%;
 }
 
-/* Le panneau Bac à sable du faux live (pnpm dev:sim) : il garde l'aspect du panneau Personnes, et ne prend que la place de son contenu. */
-.sim-panel {
+/* Les panneaux courts (Bac à sable, Son) ne prennent que la place de leur contenu, et rétrécissent (leur contenu défile) quand d'autres sont ouverts. */
+.sim-panel,
+.sound-panel {
   flex: 0 1 auto;
-  max-height: 55%;
 }
 
-.sim-intro,
-.sim-hint {
-  margin: 8px 0;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.sim-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0 4px;
-}
-
-.sim-bots {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sim-bot {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-
-.sim-bot select {
-  min-width: 0;
-  font: inherit;
-  padding: 4px 6px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-/* Le compteur d'un bouton de la barre (les messages non lus du chat). */
-.bar-badge {
-  display: inline-grid;
-  place-items: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  line-height: 1;
-  color: #ffffff;
-  background: var(--accent);
-  border-radius: 9px;
-}
-
-/* Le panneau Chat : en bas à droite, au-dessus de la barre (Personnes, s'il est ouvert, est au-dessus de lui), de 560 px au plus. Il
-   prend le reste de la hauteur, et la liste des messages défile. */
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le panneau Chat : en bas à droite, au-dessus de la barre, de 560 px au plus. Il prend le reste de la hauteur, et la liste des messages
+   défile. Les deux canaux sont un sélecteur à deux positions ; les messages sont des bulles, les siennes teintées.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .chat-panel {
-  flex: 0 1 560px;
-  min-height: 0;
+  flex: 0 1 580px;
   margin-top: auto;
 }
 
-/* Les onglets : Tout le monde, À proximité. */
 .chat-tabs {
+  flex: none;
   display: flex;
   gap: 4px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border);
+  margin: 0 16px 8px;
+  padding: 4px;
+  background: var(--surface-soft);
+  border-radius: 13px;
 }
 
 .chat-tab {
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 600;
-  margin-bottom: -1px;
-  padding: 8px 10px;
+  flex: 1;
+  min-height: 36px;
+  padding: 0 10px;
+  font-size: var(--text-m);
+  font-weight: 650;
   color: var(--text-muted);
   background: transparent;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-radius: 10px;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
 
-.chat-tab:hover:not(:disabled),
-.chat-tab[aria-selected='true'] {
+.chat-tab:hover:not(:disabled) {
   color: var(--text);
 }
 
 .chat-tab[aria-selected='true'] {
-  border-bottom-color: var(--accent);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: var(--shadow-s), 0 0 0 1px rgb(27 32 51 / 6%);
 }
 
 .chat-tab:disabled {
@@ -943,14 +1503,27 @@ a {
   min-height: 0;
   padding: 8px 16px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .chat-messages {
   display: grid;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.chat-message {
+  padding: 9px 13px 10px;
+  background: var(--surface-soft);
+  border-radius: 14px 14px 14px 5px;
+}
+
+.chat-message[data-own='true'] {
+  background: var(--accent-soft);
+  border-radius: 14px 14px 5px 14px;
 }
 
 .chat-message-head {
@@ -962,35 +1535,38 @@ a {
 .chat-author {
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
+  font-size: var(--text-s);
+  font-weight: 750;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .chat-message[data-own='true'] .chat-author {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .chat-you,
 .chat-time {
   flex: none;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 .chat-time {
   margin-left: auto;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Un message est du texte : un long mot ou une longue adresse passe à la ligne au lieu de déborder du panneau. */
 .chat-text {
   margin: 2px 0 0;
+  font-size: var(--text-m);
   overflow-wrap: anywhere;
 }
 
 .chat-empty {
-  margin: 8px 0;
+  margin: 12px 4px;
   color: var(--text-muted);
 }
 
@@ -998,18 +1574,18 @@ a {
   flex: none;
   display: grid;
   gap: 8px;
-  padding: 8px 12px 12px;
+  padding: 10px 14px 14px;
   border-top: 1px solid var(--border);
 }
 
 .chat-form .alert {
   margin: 0;
-  font-size: 0.9rem;
+  font-size: var(--text-s);
 }
 
 .chat-hint {
   margin: 0;
-  font-size: 0.85rem;
+  font-size: var(--text-s);
   color: var(--text-muted);
 }
 
@@ -1021,40 +1597,291 @@ a {
 .chat-compose input {
   flex: 1 1 auto;
   min-width: 0;
-  font: inherit;
-  padding: 8px 10px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: 13px;
+  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
 }
 
 .chat-compose input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  background: var(--surface);
   border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
-/* Le panneau Admin : Inviter, Invitations en attente, Membres, qui défilent ensemble sous l'en-tête. Entre Personnes et Chat. */
+.chat-compose .bar-button {
+  min-height: 42px;
+  padding: 0 16px;
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+  border-radius: 13px;
+}
+
+.chat-compose .bar-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le panneau Son : deux sections, la musique (avec le choix de l'ambiance) et les effets, chacune avec son interrupteur et son volume.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.sound-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sound-status {
+  margin: 0;
+  padding: 10px 14px;
+  font-size: var(--text-s);
+  color: var(--warning-text);
+  background: var(--warning-background);
+  border-radius: var(--radius-m);
+}
+
+.sound-section {
+  padding: 14px 16px 16px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-l);
+}
+
+.sound-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sound-row h3 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: var(--text-m);
+  font-weight: 750;
+}
+
+.sound-hint {
+  margin: 4px 0 10px;
+  font-size: var(--text-s);
+  color: var(--text-muted);
+}
+
+/* Le volume : un curseur dont la partie remplie suit la position (--volume, posée par le composant), et son pourcentage. */
+.volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.volume-slider {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.volume-slider:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.volume-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  background: linear-gradient(to right, var(--accent) var(--volume), var(--border-strong) var(--volume));
+  border-radius: 3px;
+}
+
+.volume-slider::-moz-range-track {
+  height: 6px;
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+
+.volume-slider::-moz-range-progress {
+  height: 6px;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  background: #ffffff;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgb(27 32 51 / 30%);
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  background: #ffffff;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgb(27 32 51 / 30%);
+}
+
+.volume-slider:focus-visible {
+  outline: none;
+}
+
+.volume-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: var(--ring);
+}
+
+.volume-slider:focus-visible::-moz-range-thumb {
+  box-shadow: var(--ring);
+}
+
+.volume-value {
+  flex: none;
+  min-width: 3.4ch;
+  font-size: var(--text-s);
+  font-weight: 700;
+  text-align: right;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le choix de l'ambiance : « Selon l'endroit », puis les six, chacune une ligne qui dit ce qu'elle évoque et où elle joue. */
+.sound-scenes {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.sound-scenes legend {
+  margin: 0 0 6px;
+  padding: 0;
+  font-size: var(--text-s);
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.sound-scenes:disabled {
+  opacity: 0.5;
+}
+
+.sound-scene {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-radius: var(--radius-m);
+  box-shadow: inset 0 0 0 1px var(--border);
+  cursor: pointer;
+  transition: box-shadow 0.12s, background 0.12s;
+}
+
+.sound-scenes:disabled .sound-scene {
+  cursor: not-allowed;
+}
+
+.sound-scene:hover {
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.sound-scene:has(input:checked) {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.sound-scene:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.sound-scene input {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+  accent-color: var(--accent);
+}
+
+.sound-scene-text {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.sound-scene-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-m);
+  font-weight: 700;
+}
+
+.sound-scene-now {
+  padding: 0 7px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.6;
+  color: var(--accent-ink);
+  background: #ffffff;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.sound-scene-mood {
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+
+.sound-scene-where {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.sound-test {
+  margin-top: 12px;
+}
+
+.sound-credits {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le panneau Admin : Inviter, Invitations en attente, Membres, qui défilent ensemble sous l'en-tête. Entre Personnes et Chat.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .admin-body {
   min-height: 0;
   overflow-y: auto;
-  padding: 0 16px 16px;
+  padding: 0 22px 22px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
 }
 
 .admin-section + .admin-section {
-  margin-top: 16px;
-  padding-top: 4px;
+  margin-top: 18px;
+  padding-top: 6px;
   border-top: 1px solid var(--border);
 }
 
 .admin-section h3 {
-  margin: 12px 0 8px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  margin: 14px 0 10px;
+  font-size: var(--text-s);
+  font-weight: 700;
+  color: var(--text-soft);
 }
 
 /* Les titres de section reçoivent le focus quand la ligne qu'on venait d'utiliser disparaît, sans être des contrôles : pas de contour. */
@@ -1068,7 +1895,8 @@ a {
 
 .admin-invite .field input,
 .admin-invite .field select {
-  padding: 8px 10px;
+  min-height: 40px;
+  padding: 8px 12px;
 }
 
 /* Le rôle, et le bouton qui envoie, sur une ligne. */
@@ -1085,14 +1913,15 @@ a {
 
 .admin-invite-row .button {
   flex: 1 1 auto;
-  padding: 9px 12px;
+  min-height: 40px;
+  padding: 0 14px;
 }
 
 /* Le retour d'un geste (« c'est fait », ou le refus) : plus serré que dans les pages de compte. */
 .admin-section .alert,
 .admin-section .notice {
   margin: 0 0 12px;
-  font-size: 0.9rem;
+  font-size: var(--text-s);
 }
 
 .admin-note {
@@ -1118,8 +1947,8 @@ a {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 0;
-  border-top: 1px solid var(--border);
+  padding: 10px 0;
+  border-top: 1px solid var(--surface-sunk);
 }
 
 .admin-row:first-child {
@@ -1137,7 +1966,7 @@ a {
    ligne suivante quand ils ne tiennent pas). */
 .admin-row-wrap {
   flex-wrap: wrap;
-  row-gap: 4px;
+  row-gap: 6px;
 }
 
 .admin-row-wrap .admin-row-name {
@@ -1159,21 +1988,23 @@ a {
 
 .admin-row .bar-button {
   flex: none;
-  padding: 4px 10px;
-  font-size: 0.8rem;
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: var(--text-s);
 }
 
 .admin-row-line {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-width: 0;
 }
 
 .admin-row-name {
   min-width: 0;
   overflow: hidden;
-  font-weight: 600;
+  font-size: var(--text-m);
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1185,7 +2016,7 @@ a {
 
 .admin-row-email {
   overflow: hidden;
-  font-size: 0.8rem;
+  font-size: var(--text-s);
   color: var(--text-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1195,7 +2026,7 @@ a {
    l'écraser. */
 .admin-row-stack {
   flex-wrap: wrap;
-  row-gap: 4px;
+  row-gap: 6px;
 }
 
 .admin-row-stack .admin-row-text {
@@ -1211,35 +2042,34 @@ a {
    marge. */
 .admin-link[data-open] {
   margin: 0 0 12px;
-  padding: 12px;
-  background: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  padding: 14px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .admin-link-intro {
   margin: 0 0 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: var(--text-s);
+  font-weight: 650;
 }
 
 .admin-link-field {
-  box-sizing: border-box;
   width: 100%;
-  font: inherit;
-  font-size: 0.8rem;
-  padding: 8px 10px;
+  min-height: 38px;
+  padding: 8px 12px;
+  font-size: var(--text-s);
   color: var(--text);
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
   text-overflow: ellipsis;
 }
 
 .admin-link-field:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
   border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .admin-link-actions {
@@ -1249,13 +2079,13 @@ a {
 }
 
 .admin-link-actions .bar-button {
-  padding: 4px 10px;
-  font-size: 0.8rem;
+  min-height: 32px;
+  padding: 0 12px;
 }
 
 .admin-link-copied {
   margin: 8px 0 0;
-  font-size: 0.85rem;
+  font-size: var(--text-s);
   color: var(--success-text);
 }
 
@@ -1266,50 +2096,33 @@ a {
 
 .admin-link-hint {
   margin: 8px 0 0;
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 
 /* Le rôle, et « expirée ». */
 .admin-badge {
   flex: none;
-  padding: 0 8px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1.6;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  padding: 0 9px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.7;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .admin-badge[data-role='admin'] {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  box-shadow: none;
 }
 
 .admin-badge[data-state='expired'] {
   color: var(--warning-text);
   background: var(--warning-background);
-  border-color: transparent;
-}
-
-/* Un bouton rendu inactif pendant une demande, sans perdre le focus (aria-disabled, et non disabled). */
-.bar-button[aria-disabled='true'] {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.bar-button[aria-disabled='true']:hover {
-  background: transparent;
-}
-
-.bar-button-danger {
-  color: var(--error-text);
-  border-color: var(--error-text);
-}
-
-.bar-button-danger:hover:not(:disabled):not([aria-disabled='true']) {
-  background: var(--error-background);
+  box-shadow: none;
 }
 
 /* La confirmation d'un retrait : une boîte au milieu de la page, sur un fond qui la couvre. Elle est posée en `fixed` : le panneau coupe
@@ -1322,15 +2135,15 @@ a {
   display: grid;
   place-items: center;
   padding: 24px 16px;
-  background: rgb(29 32 48 / 60%);
+  background: rgb(27 32 51 / 58%);
 }
 
 .admin-dialog {
-  width: min(400px, 100%);
-  padding: 24px;
+  width: min(420px, 100%);
+  padding: 26px;
   background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 24%);
+  border-radius: 20px;
+  box-shadow: var(--shadow-l);
 }
 
 /* La boîte reçoit le focus quand on clique dedans, hors de ses boutons : pas de contour. */
@@ -1340,12 +2153,13 @@ a {
 
 .admin-dialog h4 {
   margin: 0 0 8px;
-  font-size: 1.1rem;
+  font-size: var(--text-l);
+  font-weight: 750;
 }
 
 .admin-dialog p {
-  margin: 0 0 20px;
-  color: var(--text-muted);
+  margin: 0 0 22px;
+  color: var(--text-soft);
 }
 
 .admin-dialog-actions {
@@ -1354,191 +2168,61 @@ a {
   gap: 8px;
 }
 
-/* « Ouvert dans un autre onglet » : un écran sur toute la page, sur le bureau grisé. */
-.replaced-screen {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  display: grid;
-  place-items: center;
-  padding: 24px 16px;
-  background: rgb(29 32 48 / 85%);
+.admin-dialog-actions .bar-button {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: var(--text-m);
 }
 
-.replaced-card {
-  max-width: 420px;
-  padding: 28px 32px;
-  text-align: center;
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 24%);
-}
-
-.replaced-card h2 {
-  margin: 0 0 8px;
-  font-size: 1.25rem;
-}
-
-.replaced-card p {
-  margin: 0 0 20px;
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le bac à sable du faux live (pnpm dev:sim) : il garde l'aspect du panneau Personnes.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.sim-intro,
+.sim-hint {
+  margin: 8px 0;
+  font-size: var(--text-s);
   color: var(--text-muted);
 }
 
-/* L'écran d'entrée : une carte au milieu de la page, avec l'aperçu de sa caméra. */
-.device-check {
-  min-height: 100vh;
+.sim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 6px;
+}
+
+.sim-bots {
   display: grid;
-  place-items: center;
-  padding: 24px 16px;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
 }
 
-.device-check-card {
-  width: 100%;
-  max-width: 520px;
-  padding: 28px 32px 32px;
+.sim-bot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-bot select {
+  min-width: 0;
+  min-height: 36px;
+  padding: 0 8px;
   background: var(--surface);
-  border-radius: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 6%), 0 8px 24px rgb(0 0 0 / 8%);
-}
-
-.device-check-card h1 {
-  margin: 0 0 4px;
-  font-size: 1.5rem;
-}
-
-.device-check-intro {
-  margin: 0 0 16px;
-  color: var(--text-muted);
-}
-
-/* Sur un écran large, deux colonnes : tout tient dans la hauteur d'un portable, « Entrer » compris. */
-@media (min-width: 760px) {
-  .device-check-card {
-    max-width: 880px;
-  }
-
-  .device-check-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-    gap: 28px;
-    align-items: start;
-  }
-
-  .device-check-settings .device-toggles {
-    margin-top: 0;
-  }
-}
-
-.device-preview {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  overflow: hidden;
-  background: #1d2030;
+  border: 1px solid var(--border-strong);
   border-radius: 10px;
 }
 
-.device-preview-video {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.device-preview-mirrored {
-  transform: scaleX(-1);
-}
-
-.device-preview-placeholder {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  margin: 0;
-  color: #c9cfda;
-}
-
-/* Le niveau du micro : une barre qui suit le volume (son transform est posé à chaque image). */
-.device-meter {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 10px 0 0;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.device-meter-bar {
-  flex: 1;
-  height: 6px;
-  overflow: hidden;
-  background: var(--background);
-  border-radius: 3px;
-}
-
-.device-meter-level {
-  display: block;
-  height: 100%;
-  background: var(--speaking);
-  transform: scaleX(0);
-  transform-origin: left;
-}
-
-.device-check-hint {
-  margin: 10px 0 0;
-  font-size: 0.875rem;
-  color: var(--text-muted);
-}
-
-.device-toggles {
-  display: flex;
-  gap: 8px;
-  margin: 16px 0 4px;
-}
-
-.device-selects {
-  display: grid;
-  gap: 0 12px;
-  margin-top: 12px;
-}
-
-.field select {
-  width: 100%;
-  font: inherit;
-  padding: 8px 10px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
-
-.field select:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.field select:disabled {
-  color: var(--text-muted);
-  background: var(--background);
-}
-
-.device-check-message {
-  margin: 0 0 16px;
-  padding: 10px 12px;
-  color: var(--warning-text);
-  background: var(--warning-background);
-  border-radius: 8px;
-}
-
-.device-check-enter {
-  width: 100%;
-}
-
-/* Le panneau Mon bureau : il garde l'aspect du panneau Personnes ; ses blocs se suivent avec un espace régulier. */
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le panneau Mon bureau : il garde l'aspect du panneau Personnes ; ses blocs se suivent avec un espace régulier.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .desk-body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 14px;
+  gap: 18px;
 }
 
 .desk-body .bar-button {
@@ -1546,17 +2230,15 @@ a {
 }
 
 .desk-subtitle {
-  margin: 0 0 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-muted);
+  margin: 0 0 8px;
+  font-size: var(--text-s);
+  font-weight: 700;
+  color: var(--text-soft);
 }
 
 .desk-hint {
-  margin: 6px 0 0;
-  font-size: 0.8rem;
+  margin: 8px 0 0;
+  font-size: var(--text-s);
   color: var(--text-muted);
 }
 
@@ -1566,7 +2248,7 @@ a {
   list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
 .desk-row {
@@ -1578,9 +2260,10 @@ a {
 
 .desk-name label {
   display: block;
-  margin-bottom: 4px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  margin-bottom: 6px;
+  font-size: var(--text-s);
+  font-weight: 700;
+  color: var(--text-soft);
 }
 
 .desk-name-row {
@@ -1591,17 +2274,17 @@ a {
 .desk-name-row input {
   flex: 1;
   min-width: 0;
-  padding: 7px 10px;
-  font: inherit;
-  color: var(--text);
+  min-height: 40px;
+  padding: 0 12px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
 }
 
 .desk-name-row input:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .desk-lock[aria-pressed='true'] {
@@ -1610,12 +2293,16 @@ a {
   border-color: var(--accent);
 }
 
+.desk-lock[aria-pressed='true']:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
 /* Ce que les bureaux disent au-dessus de la barre : un message passager, et ceux qui toquent à la porte. */
 .desk-toasts {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
-  width: min(420px, calc(100% - 2 * var(--bar-gap)));
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
+  width: min(440px, calc(100% - 2 * var(--bar-gap)));
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1625,13 +2312,14 @@ a {
 
 .desk-toast {
   margin: 0;
-  padding: 8px 12px;
+  padding: 11px 16px;
   color: #ffffff;
   text-align: center;
-  background: rgb(31 36 48 / 92%);
-  border-radius: 10px;
-  box-shadow: 0 6px 16px rgb(0 0 0 / 28%);
+  background: rgb(27 32 51 / 94%);
+  border-radius: var(--radius-m);
+  box-shadow: var(--shadow-l);
   pointer-events: auto;
+  animation: panel-in 0.18s ease-out;
 }
 
 .desk-knock {
@@ -1645,27 +2333,34 @@ a {
 .desk-knock .bar-button {
   color: var(--text);
   background: var(--surface);
+  border-color: transparent;
 }
 
-/* Le panneau Mes états d'activité : la liste de ses états, puis le formulaire pour en créer ou en modifier un. */
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le panneau Mes états d'activité : la liste de ses états, puis le formulaire pour en créer ou en modifier un.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .state-row {
-  padding: 8px 10px;
-  background: var(--background);
-  border-radius: 10px;
+  padding: 10px 12px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
 }
 
 .state-row[data-current] {
-  outline: 2px solid var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
 }
 
 .state-row-head {
   display: flex;
   align-items: center;
   gap: 8px;
+  font-weight: 650;
 }
 
 .state-summary {
-  margin: 2px 0 6px;
+  margin: 2px 0 8px;
+  font-size: var(--text-s);
+  color: var(--text-soft);
 }
 
 .state-actions {
@@ -1675,22 +2370,23 @@ a {
 }
 
 .state-actions .bar-button {
-  padding: 4px 10px;
-  font-size: 0.8rem;
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: var(--text-s);
 }
 
 .state-form {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-top: 10px;
+  gap: 14px;
+  padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
 .state-field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
   margin: 0;
   padding: 0;
@@ -1700,22 +2396,23 @@ a {
 .state-field > label,
 .state-field > legend {
   padding: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: var(--text-s);
+  font-weight: 700;
+  color: var(--text-soft);
 }
 
 .state-field input[type='text'] {
-  padding: 7px 10px;
-  font: inherit;
-  color: var(--text);
+  min-height: 40px;
+  padding: 0 12px;
   background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
 }
 
 .state-field input[type='text']:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .state-swatches {
@@ -1726,8 +2423,8 @@ a {
 }
 
 .state-swatch {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border: 2px solid transparent;
   border-radius: 50%;
@@ -1746,12 +2443,12 @@ a {
 }
 
 .state-color-input {
-  width: 32px;
-  height: 28px;
+  width: 36px;
+  height: 30px;
   padding: 0;
   background: none;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
   cursor: pointer;
 }
 
@@ -1759,13 +2456,15 @@ a {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 0;
+  min-height: 34px;
+  padding: 2px 0;
+  font-size: var(--text-m);
   cursor: pointer;
 }
 
 .state-switch input {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   accent-color: var(--accent);
 }
 
@@ -1779,13 +2478,9 @@ a {
   background: var(--accent-hover);
 }
 
-/* « Mes états d'activité… » au bas du menu des statuts, séparé des états. */
-.status-menu-manage {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-}
-
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   La déco du bureau et le personnage : les images du pack dans l'interface, la banque d'éléments, les pièces du personnage.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 /* Les images du pack dans l'interface : un morceau d'atlas, sans flou. */
 .sprite-box {
   display: inline-flex;
@@ -1815,7 +2510,7 @@ a {
 
 /* La déco du bureau : l'éditeur occupe la colonne de droite, un peu plus large que les autres panneaux. */
 .office-side[data-decor-open='true'] {
-  width: min(380px, calc(100% - 2 * var(--bar-gap)));
+  width: min(400px, calc(100% - 2 * var(--bar-gap)));
 }
 
 .decor-panel {
@@ -1827,13 +2522,12 @@ a {
 .character-tabs {
   display: flex;
   gap: 6px;
-  padding: 4px 16px 8px;
+  padding: 4px 22px 10px;
 }
 
 .decor-tabs .bar-button,
 .character-tabs .bar-button {
   flex: 1;
-  justify-content: center;
 }
 
 .decor-panel .bar-button[aria-selected='true'],
@@ -1850,22 +2544,23 @@ a {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .decor-search input {
   width: 100%;
-  padding: 7px 10px;
-  font: inherit;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: 12px;
 }
 
 .decor-search input:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 1px;
+  outline: none;
+  background: var(--surface);
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 .decor-categories,
@@ -1877,24 +2572,26 @@ a {
 
 .decor-categories .bar-button,
 .part-tabs .bar-button {
-  padding: 4px 9px;
-  font-size: 0.8rem;
+  min-height: 32px;
+  padding: 0 11px;
+  font-size: var(--text-s);
 }
 
 .decor-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
+  gap: 8px;
 }
 
 .decor-item,
 .swatch,
 .part-choice {
-  padding: 3px;
-  background: var(--background);
+  padding: 4px;
+  background: var(--surface-soft);
   border: 2px solid transparent;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
 }
 
 .decor-item {
@@ -1906,14 +2603,14 @@ a {
 .decor-item:hover,
 .swatch:hover,
 .part-choice:hover {
-  border-color: var(--border);
+  border-color: var(--border-strong);
 }
 
 .decor-item[aria-pressed='true'],
 .swatch[aria-pressed='true'],
 .part-choice[aria-pressed='true'] {
   border-color: var(--accent);
-  background: #e4ebfb;
+  background: var(--accent-soft);
 }
 
 .decor-item:focus-visible,
@@ -1927,7 +2624,7 @@ a {
 .swatch-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .swatch {
@@ -1938,7 +2635,7 @@ a {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 16px 14px;
+  padding: 12px 22px 18px;
   border-top: 1px solid var(--border);
 }
 
@@ -1955,7 +2652,6 @@ a {
 
 .decor-footer-row .bar-button {
   flex: 1;
-  justify-content: center;
 }
 
 .decor-footer-row .desk-hint:only-child {
@@ -1968,15 +2664,14 @@ a {
 
 .decor-refused {
   margin: 0;
-  font-size: 0.8rem;
-  font-weight: 600;
+  font-size: var(--text-s);
+  font-weight: 650;
   color: var(--error-text);
 }
 
 .decor-link {
   padding: 0;
-  font: inherit;
-  font-weight: 600;
+  font-weight: 650;
   color: var(--accent);
   background: none;
   border: 0;
@@ -1996,17 +2691,17 @@ a {
 .character-body {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 .character-stage {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 16px;
-  padding: 10px;
-  background: linear-gradient(180deg, #dfe6f2, #f4f6fa);
-  border-radius: 10px;
+  gap: 18px;
+  padding: 14px;
+  background: linear-gradient(180deg, #dfe6f4, #f4f6fb);
+  border-radius: var(--radius-l);
 }
 
 .character-stage-actions {
@@ -2028,29 +2723,28 @@ a {
 .part-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
 }
 
 .part-choice {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 42px;
-  font: inherit;
-  font-size: 0.8rem;
-  font-weight: 600;
+  min-width: 44px;
+  font-size: var(--text-s);
+  font-weight: 650;
   color: var(--text);
 }
 
 .part-none {
-  min-height: 56px;
-  padding: 0 10px;
+  min-height: 58px;
+  padding: 0 12px;
 }
 
 .part-colors {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px dashed var(--border);
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border-strong);
 }
 
 .character-save {
@@ -2074,8 +2768,8 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin: 0 0 16px;
+  gap: 14px;
+  margin: 0 0 18px;
 }
 
 .replace-arrow {

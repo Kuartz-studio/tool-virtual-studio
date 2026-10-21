@@ -6,6 +6,7 @@ import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { sortPeople, type Person } from './people';
 import { StatusDot } from './StatusDot';
+import { CloseIcon } from './icons';
 
 // Un membre, tel que GET /api/members le dit (les membres actifs, sans adresse ni rôle).
 interface Member {
@@ -135,7 +136,7 @@ export function PeoplePanel({ id, onClose }: { id?: string; onClose(): void }) {
           {fr.office.people.title}
         </h2>
         <button type="button" className="bar-button" aria-label={fr.office.people.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       <div className="people-lists">

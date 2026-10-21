@@ -1,13 +1,18 @@
-import type { Ref } from 'react';
+import type { ReactNode, Ref } from 'react';
+import { useAudioStore } from '../audio/audio-store';
 import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
 import type { OfficeSocket } from '../net/socket';
-import { CameraIcon, MicIcon, ScreenIcon } from './icons';
+import { CameraIcon, LogOutIcon, MicIcon, ScreenIcon, VolumeIcon } from './icons';
 import { StatusMenu } from './StatusMenu';
 
 // Le bouton d'un panneau de droite (Chat, Personnes, et Admin pour un admin) : il dit si le panneau est ouvert, et le bascule.
 export interface PanelToggle {
   label: string;
+  // L'icône du bouton (décorative : le libellé dit tout), à gauche de son texte.
+  icon?: ReactNode;
+  // Un panneau qu'on ouvre moins souvent : quand la barre manque de place, son bouton n'a plus que son icône (le nom reste en infobulle).
+  secondary?: boolean;
   open: boolean;
   onToggle(): void;
   disabled?: boolean;
@@ -32,6 +37,8 @@ interface ControlBarProps {
   snapshot: MediaSnapshot;
   // Les panneaux, dans l'ordre de leurs boutons.
   panels: PanelToggle[];
+  // Le panneau Son, dont le bouton est à côté du micro et de la caméra.
+  sound?: PanelToggle;
   // « Mes états d'activité… », au bas du menu des statuts : ouvre le panneau où l'on crée ses états.
   onManageStates?(): void;
   // Le nom de l'état d'activité qui coupe le micro (on n'y est pas entendu) : le bouton Micro est alors éteint et inactif. null : aucun.
@@ -47,8 +54,10 @@ interface ControlBarProps {
 // - Le partage d'écran ne se fait que dans une conversation. Le clic l'appelle tout de suite : le navigateur n'ouvre le choix de
 //   l'écran que pendant un geste de la personne.
 // L'état affiché est celui du client (snapshot), qui décide : un micro refusé dans la room repasse à « coupé ».
-export function ControlBar({ name, socket, client, snapshot, panels, onManageStates, micCutBy = null, onSignOut, signingOut }: ControlBarProps) {
+export function ControlBar({ name, socket, client, snapshot, panels, sound, onManageStates, micCutBy = null, onSignOut, signingOut }: ControlBarProps) {
   const { mic, cam, screen } = snapshot.local;
+  // Le bouton Son montre un haut-parleur barré quand ni la musique ni les effets ne sonnent.
+  const silent = useAudioStore((state) => !state.prefs.musicOn && !state.prefs.sfxOn);
   // Les participants n'arrivent qu'une fois la room rejointe : avant (hors conversation, ou pendant la connexion), pas de partage.
   const inConversation = snapshot.participants.length > 0;
   const screenTitle = !inConversation ? fr.media.controls.screenUnavailable : screen ? fr.media.controls.screenStopHint : fr.media.controls.screenHint;
@@ -72,7 +81,7 @@ export function ControlBar({ name, socket, client, snapshot, panels, onManageSta
             onClick={() => void client.setMic(!mic)}
           >
             <MicIcon off={!mic} />
-            <span>{fr.media.controls.mic}</span>
+            <span className="bar-label">{fr.media.controls.mic}</span>
           </button>
           <button
             type="button"
@@ -82,7 +91,7 @@ export function ControlBar({ name, socket, client, snapshot, panels, onManageSta
             onClick={() => void client.setCam(!cam)}
           >
             <CameraIcon off={!cam} />
-            <span>{fr.media.controls.cam}</span>
+            <span className="bar-label">{fr.media.controls.cam}</span>
           </button>
           <button
             type="button"
@@ -93,9 +102,25 @@ export function ControlBar({ name, socket, client, snapshot, panels, onManageSta
             onClick={() => void client.setScreenShare(!screen)}
           >
             <ScreenIcon />
-            <span>{fr.media.controls.screen}</span>
+            <span className="bar-label">{fr.media.controls.screen}</span>
           </button>
         </div>
+        {sound && (
+          <div className="media-controls" role="group" aria-label={fr.sound.title}>
+            <button
+              ref={sound.buttonRef}
+              type="button"
+              className="bar-button media-button"
+              title={sound.label}
+              aria-expanded={sound.open}
+              aria-controls={sound.open ? sound.panelId : undefined}
+              onClick={sound.onToggle}
+            >
+              <VolumeIcon off={silent} />
+              <span className="bar-label">{sound.label}</span>
+            </button>
+          </div>
+        )}
       </div>
       <div className="office-bar-end">
         {panels.map((panel) => {
@@ -105,14 +130,16 @@ export function ControlBar({ name, socket, client, snapshot, panels, onManageSta
               key={panel.label}
               ref={panel.buttonRef}
               type="button"
-              className="bar-button"
+              className={panel.secondary ? 'bar-button bar-button-secondary' : 'bar-button'}
+              title={panel.label}
               aria-expanded={panel.open}
               aria-controls={panel.open ? panel.panelId : undefined}
               aria-label={badge ? `${panel.label}, ${badge.label}` : undefined}
               disabled={panel.disabled}
               onClick={panel.onToggle}
             >
-              {panel.label}
+              {panel.icon}
+              <span className="bar-label">{panel.label}</span>
               {/* Décoratif : le nom du bouton dit déjà le nombre. */}
               {badge && (
                 <span className="bar-badge" aria-hidden="true">
@@ -122,8 +149,9 @@ export function ControlBar({ name, socket, client, snapshot, panels, onManageSta
             </button>
           );
         })}
-        <button type="button" className="bar-button" onClick={onSignOut} disabled={signingOut}>
-          {signingOut ? fr.office.signingOut : fr.office.signOut}
+        <button type="button" className="bar-button bar-button-quiet" title={fr.office.signOut} onClick={onSignOut} disabled={signingOut}>
+          <LogOutIcon />
+          <span className="bar-label">{signingOut ? fr.office.signingOut : fr.office.signOut}</span>
         </button>
       </div>
     </div>

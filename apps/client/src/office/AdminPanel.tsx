@@ -4,6 +4,7 @@ import { fr, t } from '../i18n/fr';
 import { api, ApiError } from '../lib/api';
 import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
+import { CloseIcon } from './icons';
 
 // Un membre actif, tel que GET /api/admin/members le dit. Seules les routes /api/admin donnent l'adresse e-mail d'un membre : aucun
 // autre panneau ne la montre.
@@ -184,7 +185,7 @@ export function AdminPanel({ id, selfId, mail, onClose }: { id?: string; selfId:
           {fr.admin.title}
         </h2>
         <button type="button" className="bar-button" aria-label={fr.admin.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       <div className="admin-body">

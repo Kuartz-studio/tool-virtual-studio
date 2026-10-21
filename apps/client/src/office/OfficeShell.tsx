@@ -1,5 +1,5 @@
 import type { Role } from '@bureau/shared';
-import { Activity, useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Activity, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { fr, t } from '../i18n/fr';
 import { listActivityStates } from '../lib/activity-api';
 import { useMailMode } from '../lib/config';
@@ -14,13 +14,30 @@ import { ChatPanel } from './ChatPanel';
 import { CharacterBuilder } from './CharacterBuilder';
 import { DecorPanel } from './DecorPanel';
 import { ControlBar } from './ControlBar';
+import { ChatIcon, FlaskIcon, LaptopIcon, ShieldIcon, SmileIcon, UsersIcon } from './icons';
 import { DeskKnocks } from './DeskKnocks';
 import { DeskPanel } from './DeskPanel';
 import { PeoplePanel } from './PeoplePanel';
+import { SoundPanel } from './SoundPanel';
 import { StatesPanel } from './StatesPanel';
 import { ReplacedScreen } from './ReplacedScreen';
 import { VideoStrip } from './VideoStrip';
 import { ZoomControls } from './ZoomControls';
+
+// La hauteur réelle de la barre du bas, posée sur la couche d'interface (--bar-size) : les panneaux et les messages s'arrêtent au-dessus d'elle,
+// qu'elle tienne sur une ligne ou, dans une fenêtre étroite, sur plusieurs.
+function useBarSize(layer: RefObject<HTMLDivElement | null>): void {
+  useLayoutEffect(() => {
+    const element = layer.current;
+    const bar = element?.querySelector('.office-bar');
+    if (!element || !bar || typeof ResizeObserver === 'undefined') return;
+    const apply = () => element.style.setProperty('--bar-size', `${bar.getBoundingClientRect().height}px`);
+    apply();
+    const observer = new ResizeObserver(apply);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, [layer]);
+}
 
 interface OfficeShellProps {
   // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`). Son rôle décide du panneau Admin (bouton et
@@ -48,9 +65,9 @@ interface OfficeShellProps {
 
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
 // - en haut, les vignettes de la conversation (VideoStrip) ;
-// - à droite, les panneaux (Personnes, Admin pour un admin, Chat), qui peuvent être ouverts ensemble : de haut en bas, dans cet ordre ;
-// - en bas, la barre de commandes (ControlBar) : ton nom, ton statut, micro, caméra et partage d'écran, Chat, Personnes, Admin (pour un
-//   admin) et la déconnexion.
+// - à droite, les panneaux (Personnes, Son, Admin pour un admin, Chat), qui peuvent être ouverts ensemble : de haut en bas, dans cet ordre ;
+// - en bas, la barre de commandes (ControlBar) : ton nom, ton statut, micro, caméra et partage d'écran, Son, Chat, Personnes, Admin (pour
+//   un admin) et la déconnexion.
 // Rien de cela ne prend de place au jeu : les éléments sont posés sur lui, et ouvrir un panneau ne redimensionne pas le canevas (ni
 // ne change le zoom de la caméra).
 //
@@ -75,6 +92,9 @@ export function OfficeShell({
   const replaced = useOfficeStore((state) => state.replaced);
   // Le son des autres baisse avec la distance dans un espace ouvert : ceux qu'on n'entend plus n'ont plus de vignette.
   const inaudible = useSpatialAudio(media.client, media.snapshot);
+
+  const layer = useRef<HTMLDivElement>(null);
+  useBarSize(layer);
 
   const [peopleOpen, setPeopleOpen] = useState(false);
   const peopleToggle = useRef<HTMLButtonElement>(null);
@@ -180,6 +200,16 @@ export function OfficeShell({
     characterToggle.current?.focus();
   }
 
+  // Le panneau Son : la musique et les effets sonores (volume, coupure, ambiance).
+  const [soundOpen, setSoundOpen] = useState(false);
+  const soundToggle = useRef<HTMLButtonElement>(null);
+  const soundId = useId();
+
+  function closeSound() {
+    setSoundOpen(false);
+    soundToggle.current?.focus();
+  }
+
   // Le faux live (pnpm dev:sim) : le panneau Bac à sable, pour tout le monde. Absent d'un build normal.
   const [simOpen, setSimOpen] = useState(false);
   const simToggle = useRef<HTMLButtonElement>(null);
@@ -194,7 +224,7 @@ export function OfficeShell({
     <main className="office">
       <h1 className="visually-hidden">{fr.common.appName}</h1>
       {children}
-      <div className="office-ui" inert={replaced}>
+      <div ref={layer} className="office-ui" inert={replaced}>
         <div className="office-top">
           <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />
         </div>
@@ -226,6 +256,7 @@ export function OfficeShell({
           {deskOpen && <DeskPanel id={deskId} socket={socket} onClose={closeDesk} onDecorate={openDecor} />}
           {decorOpen && <DecorPanel id={decorId} socket={socket} onClose={closeDecor} />}
           {statesOpen && <StatesPanel id={statesId} socket={socket} onClose={closeStates} />}
+          {soundOpen && <SoundPanel id={soundId} onClose={closeSound} />}
           {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} mail={mail} onClose={closeAdmin} />}
           {__SIM__ && simOpen && <SimPanel id={simId} onClose={closeSim} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont
@@ -243,9 +274,17 @@ export function OfficeShell({
           snapshot={media.snapshot}
           onManageStates={() => setStatesOpen(true)}
           micCutBy={micCutBy}
+          sound={{
+            label: fr.sound.toggle,
+            open: soundOpen,
+            panelId: soundId,
+            buttonRef: soundToggle,
+            onToggle: () => (soundOpen ? closeSound() : setSoundOpen(true)),
+          }}
           panels={[
             {
               label: fr.chat.toggle,
+              icon: <ChatIcon />,
               open: chatOpen,
               disabled: !knowsWhoIsHere,
               panelId: chatId,
@@ -257,6 +296,7 @@ export function OfficeShell({
             },
             {
               label: fr.office.people.toggle,
+              icon: <UsersIcon />,
               open: peopleOpen,
               disabled: !knowsWhoIsHere,
               panelId: peopleId,
@@ -265,6 +305,8 @@ export function OfficeShell({
             },
             {
               label: fr.character.toggle,
+              icon: <SmileIcon />,
+              secondary: true,
               open: characterOpen,
               disabled: !knowsWhoIsHere,
               panelId: characterId,
@@ -273,6 +315,8 @@ export function OfficeShell({
             },
             {
               label: fr.desk.toggle,
+              icon: <LaptopIcon />,
+              secondary: true,
               open: deskOpen || decorOpen,
               disabled: !knowsWhoIsHere,
               panelId: decorOpen ? decorId : deskId,
@@ -283,6 +327,8 @@ export function OfficeShell({
               ? [
                   {
                     label: fr.admin.toggle,
+                    icon: <ShieldIcon />,
+                    secondary: true,
                     open: adminOpen,
                     panelId: adminId,
                     buttonRef: adminToggle,
@@ -294,6 +340,8 @@ export function OfficeShell({
               ? [
                   {
                     label: fr.sim.toggle,
+                    icon: <FlaskIcon />,
+                    secondary: true,
                     open: simOpen,
                     panelId: simId,
                     buttonRef: simToggle,

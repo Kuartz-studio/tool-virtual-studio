@@ -1,10 +1,12 @@
 import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 import { fr } from '../i18n/fr';
+import { MusicToggle } from '../office/MusicToggle';
 
 // La carte centrée des pages de compte (connexion, invitation, mot de passe).
 export function AuthLayout({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="auth">
+      <MusicToggle />
       <div className="auth-card">
         <p className="auth-brand">{fr.common.appName}</p>
         <h1>{title}</h1>

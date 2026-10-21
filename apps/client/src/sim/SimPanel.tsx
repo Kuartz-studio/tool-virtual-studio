@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type
 import { fr, t } from '../i18n/fr';
 import { Alert } from '../pages/AuthLayout';
 import { simApi, type SimState } from './sim-api';
+import { CloseIcon } from '../office/icons';
 
 // Le temps entre deux relectures de l'état : les personnes fictives peuvent venir d'un autre onglet.
 const REFRESH_MS = 3000;
@@ -71,7 +72,7 @@ export function SimPanel({ id, onClose }: { id?: string; onClose(): void }) {
           {fr.sim.title}
         </h2>
         <button type="button" className="bar-button" aria-label={fr.sim.close} onClick={onClose}>
-          <span aria-hidden="true">✕</span>
+          <CloseIcon />
         </button>
       </header>
       <div className="people-lists sim-body">
@@ -109,7 +110,7 @@ export function SimPanel({ id, onClose }: { id?: string; onClose(): void }) {
                 {bot.audio !== null && !state.audio.some((file) => file.file === bot.audio) && <option value={bot.audio}>{bot.audio}</option>}
               </select>
               <button type="button" className="bar-button" aria-label={t(fr.sim.remove, { name: bot.name })} onClick={() => void run(() => simApi.removeBot(bot.id))}>
-                <span aria-hidden="true">✕</span>
+                <CloseIcon />
               </button>
             </li>
           ))}
