@@ -36,6 +36,9 @@ export interface OfficeDebug {
   // La nuit en ce moment, de 0 (la lumière est allumée : la couche de nuit n'est pas à l'écran) à 1 (pleine nuit) ; entre les deux pendant le
   // fondu ou le clignotement.
   nightLevel(): number;
+  // L'avatar local marche-t-il tout seul (« Aller à mon bureau », voir auto-walk.ts) ? Faux dès qu'il est arrivé, qu'une touche de déplacement
+  // l'a interrompu, ou qu'il est bloqué.
+  autoWalking(): boolean;
 }
 
 // Ce que les tests de bout en bout lisent du son : window.__audio, dans le même build. Le son démarre avant le jeu (dès la page de connexion) :

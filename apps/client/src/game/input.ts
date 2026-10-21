@@ -22,11 +22,20 @@ export class DirectionInput {
   private held: string[] = [];
   // Maj est enfoncée : on court au lieu de marcher.
   private sprint = false;
+  private readonly pressListeners = new Set<() => void>();
 
   press(code: string): void {
     // Une touche maintenue enfoncée se répète : elle ne reprend pas la main sur une touche enfoncée après elle.
     if (!KEY_DIRECTIONS.has(code) || this.held.includes(code)) return;
     this.held.push(code);
+    for (const listener of this.pressListeners) listener();
+  }
+
+  // `listener` est appelé à chaque touche de déplacement qu'on vient d'enfoncer (pas à la répétition d'une touche maintenue), même si elle est
+  // relâchée aussitôt : `current()` ne verrait pas cette touche-là. Renvoie la fonction qui arrête d'écouter.
+  onPress(listener: () => void): () => void {
+    this.pressListeners.add(listener);
+    return () => void this.pressListeners.delete(listener);
   }
 
   release(code: string): void {

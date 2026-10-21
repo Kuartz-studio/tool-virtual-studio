@@ -1,5 +1,6 @@
 import {
   avatarBodyFits,
+  deskKey,
   isSimBot,
   parseOfficeMap,
   type ActivityState,
@@ -15,7 +16,8 @@ import { Scale, Scene, Scenes } from 'phaser';
 import { fr, t } from '../../i18n/fr';
 import { deskTitle } from '../../office/desks';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
-import { useOfficeStore } from '../../state/office-store';
+import { selectDeskOf, useOfficeStore } from '../../state/office-store';
+import { AutoWalk, cancelOnMoveKey, planDeskWalk } from '../auto-walk';
 import { avatarObjectName } from '../avatars';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { DecorEditorView } from '../decor-editor';
@@ -50,13 +52,17 @@ const clock = () => performance.now();
 // la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette. L'interrupteur de la lumière (une
 // plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
 // il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). Lumière éteinte, c'est la nuit (LightingLayer) :
-// l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne.
+// l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. « Aller à mon
+// bureau » (`local:walk-to-desk`) fait marcher l'avatar tout seul jusqu'à sa place (AutoWalk), comme le ferait le clavier ; une touche de
+// déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à l'interface s'il marche.
 export class Office extends Scene {
   private officeMap: OfficeMap;
   private tilemap: Phaser.Tilemaps.Tilemap;
   private debug: OfficeDebug;
   private player: LocalPlayer;
   private directions: DirectionInput;
+  // « Aller à mon bureau » : la marche automatique, qui prend la place du clavier tant qu'elle dure.
+  private autoWalk: AutoWalk;
   private moveSender: MoveSender;
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
@@ -96,6 +102,7 @@ export class Office extends Scene {
       editorRoom: () => (this.editingRoom ? { x: this.editingRoom.x, y: this.editingRoom.y } : null),
       zoom: () => this.cameras.main.zoom,
       nightLevel: () => this.lighting?.level ?? 0,
+      autoWalking: () => this.autoWalk?.walking ?? false,
     };
     exposeDebug(this.debug);
 
@@ -161,6 +168,9 @@ export class Office extends Scene {
 
     this.directions = new DirectionInput();
     const unbindKeyboard = bindKeyboard(this.directions);
+    // La marche automatique le dit à l'interface (`walk:state`) à chaque départ et à chaque arrêt ; une touche de déplacement l'interrompt.
+    this.autoWalk = new AutoWalk((walking) => emitOnBus(EventBus, 'walk:state', { walking }));
+    const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
 
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
     // pas prendre pour le zoom de la page), et les touches + - 0. Le niveau est au magasin ; layoutCamera le lit.
@@ -195,6 +205,8 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:activity', ({ id, activity }) => this.onActivity(id, activity)),
       listenOnBus(EventBus, 'net:profile', (p) => this.onProfile(p)),
       listenOnBus(EventBus, 'media:speaking', (ids) => this.rings.update(ids)),
+      listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
+      listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
         if (state.lights !== previous.lights) showLights();
@@ -212,6 +224,9 @@ export class Office extends Scene {
     const stop = () => {
       this.scale.off(Scale.Events.RESIZE, this.layoutCamera);
       this.events.off(Scenes.Events.POST_UPDATE, this.afterPhysics, this);
+      // Une marche en cours s'arrête, et l'interface le sait (le bus est encore branché).
+      this.autoWalk.cancel();
+      unbindWalkKeys();
       unbindKeyboard();
       unbindZoomKeys();
       canvas.removeEventListener('wheel', onWheel);
@@ -236,9 +251,14 @@ export class Office extends Scene {
 
   // À chaque image : la direction que demande le clavier devient la vitesse et l'animation de l'avatar, et les autres avatars
   // glissent vers leurs dernières positions reçues. L'état de l'avatar local part après la physique (afterPhysics).
+  //
+  // « Aller à mon bureau » prend la place du clavier tant que la marche dure : elle donne la direction, toujours à la vitesse de la marche (jamais
+  // en courant). L'avatar l'applique comme celle du clavier : murs, meubles, animations et positions envoyées sont les mêmes.
   update() {
     const now = clock();
-    this.player.step(this.directions.current(), this.directions.sprinting());
+    const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
+    if (autoDirection !== null) this.player.step(autoDirection);
+    else this.player.step(this.directions.current(), this.directions.sprinting());
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];
@@ -303,6 +323,16 @@ export class Office extends Scene {
     emitOnBus(EventBus, 'local:lights', { on: !useOfficeStore.getState().lights.on });
   }
 
+  // « Aller à mon bureau » (`local:walk-to-desk`) : l'avatar marche tout seul jusqu'à sa place, par le plus court chemin (auto-walk.ts). Mon bureau est
+  // celui que le magasin donne à mon identifiant. Sans bureau ou sans chemin, il ne bouge pas, et le jeu le dit (`walk:state` faux).
+  private walkToDesk(): void {
+    const { desks, selfId } = useOfficeStore.getState();
+    const desk = selectDeskOf({ desks }, selfId);
+    const room = desk ? this.officeMap.zones.find((zone) => zone.type === 'desk' && deskKey(zone) === desk.key) : undefined;
+    const feet = { x: this.player.x, y: this.player.y };
+    this.autoWalk.start(desk && room ? planDeskWalk(this.officeMap, room, desk.items, feet) : null, feet, clock());
+  }
+
   // L'avatar bute contre la porte fermée d'un bureau : on dit à qui il appartient, et comment toquer (ou qu'on n'y est plus le bienvenu).
   private deskBlocked(key: string): void {
     const desk = useOfficeStore.getState().desks.find((d) => d.key === key);
@@ -324,6 +354,8 @@ export class Office extends Scene {
   private onInit(p: InitPayload): void {
     if (p.mapKey !== this.mapKey) return;
     const now = clock();
+    // L'avatar est replacé là où le serveur le voit : le trajet qu'il suivait n'est plus le sien.
+    this.autoWalk.cancel();
     this.player.placeAt(p.self.x, p.self.y, p.self.dir);
     this.player.setAvatar(p.self.avatarKey);
     this.player.setDisplayedName(p.self.name);
@@ -353,6 +385,8 @@ export class Office extends Scene {
   // Le serveur a refusé un `move` : l'avatar retourne à la dernière position acceptée, et le serveur relit tout de suite notre état
   // (direction, marche) à cet endroit.
   private onCorrect(x: number, y: number): void {
+    // Le serveur n'est pas d'accord avec le trajet (une porte, un meuble qu'il connaît mieux que nous) : on s'arrête, au lieu de buter en boucle.
+    this.autoWalk.cancel();
     this.player.placeAt(x, y);
     this.moveSender.reset();
     this.sendLocalState(clock());
@@ -417,6 +451,7 @@ export class Office extends Scene {
   // suit, qu'il vérifiera depuis là). Des entiers, comme tout ce que reçoit le serveur.
   private teleport(x: number, y: number): void {
     const [tx, ty] = [Math.floor(x), Math.floor(y)];
+    this.autoWalk.cancel();
     this.player.placeAt(tx, ty);
     emitOnBus(EventBus, 'local:teleport', { x: tx, y: ty });
     this.moveSender.reset();
@@ -436,6 +471,8 @@ export class Office extends Scene {
       for (const remote of this.remotes.values()) remote.snapToLatest();
       return;
     }
+    // La marche automatique s'arrête aussi : l'avatar reste où il est, et ne repart pas seul au retour de la personne.
+    this.autoWalk.cancel();
     this.directions.clear();
     this.player.step(null);
     this.sendLocalState(clock());

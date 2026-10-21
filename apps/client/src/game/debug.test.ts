@@ -14,6 +14,7 @@ const debug = (): OfficeDebug => ({
   editorRoom: () => null,
   zoom: () => 2,
   nightLevel: () => 0,
+  autoWalking: () => false,
 });
 
 afterEach(() => {

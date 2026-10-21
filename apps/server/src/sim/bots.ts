@@ -5,12 +5,14 @@ import {
   OFFICE_ROOM,
   SIM_BOT_PREFIX,
   SIM_BOT_SPEED_PX_PER_S,
+  findPath,
   formatPremade,
   isSimBot,
   isWalkableTile,
   type Direction,
   type GroupingState,
   type OfficeMap,
+  type Point,
   type SimRoomMember,
   type SimRoomPayload,
 } from '@bureau/shared';
@@ -18,7 +20,6 @@ import type { Logger } from 'pino';
 import type { TypedServer, TypedSocket } from '../realtime/io';
 import type { World } from '../realtime/world';
 import { audioUrl, type AudioLibrary } from './audio-library';
-import { findPath, type Point } from './find-path';
 
 // La période des pas : plus courte que celle du world:tick (100 ms), pour que chaque tick ait une position fraîche.
 export const SIM_STEP_MS = 50;

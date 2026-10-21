@@ -1,4 +1,5 @@
-import { avatarBodyFits, isWalkableTile, type OfficeMap } from '@bureau/shared';
+import type { OfficeMap } from './parse-map';
+import { avatarBodyFits, isWalkableTile } from './queries';
 
 export interface Point {
   x: number;
@@ -25,6 +26,8 @@ const NEIGHBOURS: ReadonlyArray<{ dx: number; dy: number; cost: number }> = [
   { dx: -1, dy: 1, cost: DIAGONAL },
   { dx: 1, dy: 1, cost: DIAGONAL },
 ];
+// Les quatre premiers : les pas droits.
+const STRAIGHT_NEIGHBOURS = NEIGHBOURS.slice(0, 4);
 
 // Un tas binaire de [coût, case] : la plus petite distance en premier (la carte est petite, mais le tas ne coûte que ces lignes).
 class MinHeap {
@@ -68,6 +71,12 @@ class MinHeap {
   }
 }
 
+export interface FindPathOptions {
+  // Faux : les quatre directions seulement, pour qui ne marche qu'en ligne droite (l'avatar de la personne qui joue) : le plus court
+  // chemin est alors celui qui compte le moins de cases. Vrai par défaut.
+  diagonals?: boolean;
+}
+
 // Le chemin le plus court de `from` à `to` (des pixels, les pieds de l'avatar) sur les cases praticables : 8 directions, mais jamais
 // en diagonale entre deux cases bloquées ni le long d'un angle (les deux cases voisines de la diagonale doivent être libres), pour
 // que l'avatar, large de 20 px, ne frotte pas un mur.
@@ -75,8 +84,9 @@ class MinHeap {
 // `to` sur une case bloquante, ou qu'aucun chemin n'atteint : la case atteignable la plus proche de `to`. null seulement si `from` est
 // lui-même sur une case bloquante (ou hors carte). Le point d'arrêt est `to` tel quel quand sa case est libre et que le corps de
 // l'avatar y tient ; sinon le centre de la case.
-export function findPath(map: OfficeMap, from: Point, to: Point): FoundPath | null {
+export function findPath(map: OfficeMap, from: Point, to: Point, { diagonals = true }: FindPathOptions = {}): FoundPath | null {
   const { widthTiles: width, heightTiles: height, tileSize } = map;
+  const neighbours = diagonals ? NEIGHBOURS : STRAIGHT_NEIGHBOURS;
   const tileOf = (p: Point) => ({ tx: Math.floor(p.x / tileSize), ty: Math.floor(p.y / tileSize) });
   const centerOf = (index: number): Point => ({
     x: (index % width) * tileSize + tileSize / 2,
@@ -98,7 +108,7 @@ export function findPath(map: OfficeMap, from: Point, to: Point): FoundPath | nu
     if (c > cost[index]!) continue;
     const tx = index % width;
     const ty = Math.floor(index / width);
-    for (const { dx, dy, cost: step } of NEIGHBOURS) {
+    for (const { dx, dy, cost: step } of neighbours) {
       const nx = tx + dx;
       const ny = ty + dy;
       if (!isWalkableTile(map, nx, ny)) continue;

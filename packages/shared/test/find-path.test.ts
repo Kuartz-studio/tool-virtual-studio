@@ -1,6 +1,5 @@
-import { DEV_OFFICE, avatarBodyFits, buildTiledMap, isWalkablePoint, isWalkableTile, parseOfficeMap, type OfficeMap } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { findPath } from '../src/sim/find-path';
+import { DEV_OFFICE, avatarBodyFits, buildTiledMap, findPath, isWalkablePoint, isWalkableTile, parseOfficeMap, type OfficeMap, type Point } from '../src';
 
 // La carte de développement : 24 × 16 cases de 32 px. Les pièces du haut sont séparées de l'open space par le mur de la ligne 5, percé
 // de trois portes (colonnes 3, 10 et 18). Les bureaux (cases bloquantes) sont sur la ligne 9.
@@ -108,5 +107,31 @@ describe('findPath', () => {
     const found = findPath(map, center(0, 0), center(1, 1))!;
     expect(found.goal).toEqual(center(0, 0));
     expect(found.path).toEqual([center(0, 0)]);
+  });
+
+  // Les pas d'un chemin comptés en cases par les côtés : une diagonale en vaut deux.
+  const straightSteps = (from: Point, path: Point[]): number => {
+    const points = [from, ...path];
+    return points.slice(1).reduce((sum, p, i) => sum + (Math.abs(p.x - points[i]!.x) + Math.abs(p.y - points[i]!.y)) / 32, 0);
+  };
+
+  test('sans diagonales : des pas droits seulement, le plus court en cases', () => {
+    const map = grid(['....', '....', '....']);
+    const found = findPath(map, center(0, 0), center(3, 2), { diagonals: false })!;
+    // 3 pas vers l'est et 2 vers le sud : 5 cases, là où les diagonales en font 3.
+    expect(found.path).toHaveLength(5);
+    expect(findPath(map, center(0, 0), center(3, 2))!.path).toHaveLength(3);
+    expect(straightSteps(center(0, 0), found.path)).toBe(5);
+    expect(found.goal).toEqual(center(3, 2));
+  });
+
+  test('sans diagonales : le plus court à pas droits, que le plus court avec diagonales n\'est pas toujours', () => {
+    const map = grid(['##.....#.', '#........', '...#.....', '.#..#....', '.#..#..##', '#........', '.#....##.']);
+    const [from, to] = [center(8, 0), center(2, 4)];
+    // Les diagonales font un détour que les pas droits n'auraient pas pris : 12 cases par les côtés, contre 10 (6 vers l'ouest, 4 vers le sud).
+    expect(straightSteps(from, findPath(map, from, to)!.path)).toBe(12);
+    const found = findPath(map, from, to, { diagonals: false })!;
+    expect(found.path).toHaveLength(10);
+    expect(straightSteps(from, found.path)).toBe(10);
   });
 });

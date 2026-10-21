@@ -8,8 +8,9 @@ import { sendDeskCommand } from './desk-commands';
 import type { OfficeSocket } from './socket';
 
 // Les événements du bus (game/EventBus.ts) entre la connexion et le jeu. `net:*` va de la connexion au jeu ; `local:*`, du jeu à la
-// connexion, qui l'envoie au serveur ; `media:*`, de l'audio/vidéo (media/use-media.ts) au jeu ; `lights:changed`, de la connexion à
-// qui veut réagir à un changement de lumière (le jeu, le son, les messages passagers).
+// connexion, qui l'envoie au serveur (sauf `local:walk-*`, de l'interface au jeu) ; `media:*`, de l'audio/vidéo (media/use-media.ts) au jeu ;
+// `lights:changed`, de la connexion à qui veut réagir à un changement de lumière (le jeu, le son, les messages passagers) ; `walk:state`, du
+// jeu à l'interface.
 export interface OfficeBusEvents {
   'net:init': (p: InitPayload) => void;
   'net:tick': (p: WorldTick) => void;
@@ -30,6 +31,14 @@ export interface OfficeBusEvents {
   'local:lights': (p: { on: boolean }) => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
+  // L'interface demande au jeu de faire marcher l'avatar tout seul jusqu'à son bureau (« Aller à mon bureau », game/auto-walk.ts), ou
+  // d'arrêter cette marche. Rien ne part au serveur de ces deux-là : l'avatar marche comme au clavier, et ses positions partent par `local:move`.
+  'local:walk-to-desk': () => void;
+  'local:walk-cancel': () => void;
+  // Le jeu : l'avatar marche tout seul (`walking` vrai), ou ne marche plus (faux : arrivé, interrompu par une touche de déplacement ou par
+  // `local:walk-cancel`, bloqué, ou pas de chemin jusqu'au bureau). Dit à chaque départ et à chaque arrêt ; faux aussi en réponse à un
+  // `local:walk-to-desk` sans bureau ou sans chemin, où l'avatar ne bouge pas.
+  'walk:state': (p: { walking: boolean }) => void;
   // Qui parle dans la room audio/vidéo, soi-même compris (les identifiants des comptes), à chaque changement ; [] en la quittant. Le
   // jeu dessine l'anneau de parole sur leurs étiquettes (tâche 20).
   'media:speaking': (ids: string[]) => void;

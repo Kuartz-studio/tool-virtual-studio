@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { bindKeyboard, bindUseKey, bindZoomKeys, DirectionInput } from './input';
 
 describe('DirectionInput', () => {
@@ -89,6 +89,34 @@ describe('DirectionInput', () => {
     i.press('constructor'); i.press('toString'); i.press('__proto__');
     expect(i.current()).toBeNull();
   });
+
+  test('onPress : appelé à chaque touche de déplacement enfoncée, pas à sa répétition ni pour une autre touche', () => {
+    const i = new DirectionInput();
+    const pressed = vi.fn();
+    i.onPress(pressed);
+    i.press('ArrowRight');
+    i.press('ArrowRight');
+    i.press('KeyP');
+    expect(pressed).toHaveBeenCalledTimes(1);
+    i.press('KeyW');
+    expect(pressed).toHaveBeenCalledTimes(2);
+    // Relâchée puis enfoncée de nouveau : c'est une nouvelle touche.
+    i.release('KeyW');
+    i.press('KeyW');
+    expect(pressed).toHaveBeenCalledTimes(3);
+  });
+
+  test('onPress : plusieurs écouteurs, et chacun peut cesser d\'écouter', () => {
+    const i = new DirectionInput();
+    const [first, second] = [vi.fn(), vi.fn()];
+    const stopFirst = i.onPress(first);
+    i.onPress(second);
+    i.press('KeyA');
+    stopFirst();
+    i.press('KeyD');
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe('bindKeyboard', () => {
@@ -112,6 +140,18 @@ describe('bindKeyboard', () => {
   afterEach(() => {
     unbind();
     document.body.replaceChildren();
+  });
+
+  test('onPress : une touche de déplacement tapée dans la page, même relâchée aussitôt ; pas celle tapée dans un champ ni sous Ctrl', () => {
+    const pressed = vi.fn();
+    input.onPress(pressed);
+    fire(window, 'keydown', 'ArrowUp');
+    fire(window, 'keyup', 'ArrowUp');
+    expect(pressed).toHaveBeenCalledTimes(1);
+    fire(field('input', { type: 'text' }), 'keydown', 'ArrowUp');
+    fire(window, 'keydown', 'ArrowUp', { ctrlKey: true });
+    fire(window, 'keydown', 'KeyP');
+    expect(pressed).toHaveBeenCalledTimes(1);
   });
 
   test('appuyer sur une touche de déplacement, puis la relâcher', () => {
