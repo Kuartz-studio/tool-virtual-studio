@@ -12,6 +12,7 @@ import {
   busyZoneIds,
   parseOfficeMap,
   type ClientToServerEvents,
+  type GroupConfig,
   type OfficeMap,
   type Role,
   type ServerToClientEvents,
@@ -21,6 +22,10 @@ import type { Logger } from 'pino';
 import { Server, type Socket } from 'socket.io';
 import type { Auth } from '../auth/auth';
 import { createChatService } from '../chat/chat-service';
+import { createActivityController } from '../activity/activity-controller';
+import { createActivityService, type ActivityService } from '../activity/activity-service';
+import { createDeskController } from '../desks/desk-controller';
+import { DeskService } from '../desks/desk-service';
 import type { Db } from '../db/client';
 import type { Env } from '../env';
 import { createLogger, logServerError } from '../logger';
@@ -64,6 +69,8 @@ export interface RealtimeDeps {
   tickMs?: number;
   /** La période du calcul des groupes de conversation : GROUPS_TICK_MS par défaut. */
   groupsMs?: number;
+  /** Les distances des espaces ouverts pour les groupes de conversation : OPEN_SPACE_GROUPING par défaut. */
+  grouping?: GroupConfig;
   /** La période d'enregistrement des positions : POSITION_SAVE_INTERVAL_MS par défaut. */
   saveMs?: number;
   /**
@@ -81,6 +88,10 @@ export interface RealtimeDeps {
    * entrent dans le monde. Absent : rien de cela.
    */
   sim?: SimHost;
+  /** Les états d'activité des personnes. Par défaut, ceux de la base (createActivityService). */
+  activities?: ActivityService;
+  /** Les bureaux. Par défaut, ceux de la base (DeskService) pour cette carte ; les tests peuvent en passer un réglé à leur main. */
+  desks?: DeskService;
   /** L'intervalle des pings du serveur : PING_INTERVAL_MS par défaut. */
   pingIntervalMs?: number;
   /** Le délai de réponse à un ping, au-delà duquel la connexion est coupée : PING_TIMEOUT_MS par défaut. */
@@ -94,6 +105,8 @@ export interface Realtime {
   world: World;
   /** Les identifiants des sockets connectées de ce compte (au plus une : un nouvel onglet remplace l'ancien). */
   socketsOf(userId: string): string[];
+  /** Les bureaux : qui occupe quelle place, et qui peut y entrer. */
+  desks: DeskService;
   /** Les groupes de conversation et leurs rooms LiveKit : groupMembersOf sert au chat « À proximité ». */
   coordinator: MediaCoordinator;
   /**
@@ -163,7 +176,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   if (media === null) {
     logger.warn({ missing: LIVEKIT_VARIABLES.filter((name) => !d.env[name]) }, 'LiveKit non configuré : audio et vidéo désactivés');
   }
-  const coordinator = new MediaCoordinator(media, newBootId(), logger);
+  // Un état d'activité où l'on n'est pas entendu (heard faux) retire le micro du jeton : le serveur ne laisse rien publier.
+  const coordinator = new MediaCoordinator(media, newBootId(), logger, { canSpeak: (userId) => world.get(userId)?.activity?.heard !== false });
 
   // Pas de récupération de connexion (connectionStateRecovery) : Socket.io renverrait à une socket revenue les diffusions qu'elle a
   // manquées avant même de repasser les middlewares, si bien qu'un membre retiré pendant sa coupure en recevrait jusqu'à 10 s.
@@ -189,6 +203,27 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const chat = createChatService(d.db);
   const chatLimiter = createRateLimiter({ ...CHAT_RATE, now });
 
+  // La porte d'un bureau se ferme d'elle-même quand son propriétaire, présent, est dans un état d'activité qui ne laisse pas entrer.
+  const desks = d.desks ?? new DeskService(d.db, d.map, { ownerAllowsEntry: (ownerId) => world.get(ownerId)?.activity?.allowEntry !== false });
+  const deskController = createDeskController({
+    io,
+    world,
+    desks,
+    map: d.map,
+    connectedUsers: () => presence.connectedUsers(),
+    socketsOf: (userId) => enteredSockets(userId),
+    now,
+    logger,
+  });
+
+  const activityController = createActivityController({
+    io,
+    world,
+    activities: d.activities ?? createActivityService(d.db),
+    desks: deskController,
+    logger,
+  });
+
   const presence = createPresence({
     io,
     world,
@@ -199,6 +234,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     graceMs,
     logger,
     chat,
+    desks: deskController,
     onWelcome: resyncMedia,
   });
 
@@ -258,15 +294,24 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       chatLimiter,
       groupMembersOf: (userId) => coordinator.groupMembersOf(userId),
       socketsOf: enteredSockets,
+      desks: deskController,
+      activity: activityController,
     });
   });
-  const offMemberRemoved = d.events.on('member:removed', (userId) => presence.removeMember(userId));
+  // Un membre retiré : sa place est libre pour les autres.
+  const offMemberRemoved = d.events.on('member:removed', (userId) => {
+    presence.removeMember(userId);
+    void deskController.release(userId);
+  });
   // Un mot de passe réinitialisé : ses sessions sont fermées, ses connexions au bureau aussi (le compte, lui, reste actif).
   const offSessionsRevoked = d.events.on('sessions:revoked', (userId) => presence.disconnectUser(userId));
+  // Un de ses états d'activité est modifié ou supprimé (REST) : celui qu'elle porte suit.
+  const offActivityEdited = d.events.on('activity:edited', (change) => activityController.edited(change));
   // Un profil change (PATCH /api/me) : le monde le retient pour ceux qui arrivent ensuite, et tout le bureau l'apprend, même si la
   // personne n'est pas là (la liste des membres d'un autre onglet peut la suivre).
   const offProfileChanged = d.events.on('profile:changed', (profile) => {
     world.setProfile(profile.id, { name: profile.name, avatarKey: profile.avatarKey });
+    deskController.renameOwner(profile.id, profile.name);
     io.to(OFFICE_ROOM).emit('profile:changed', { id: profile.id, name: profile.name, avatarKey: profile.avatarKey });
   });
   const stopTicks = startWorldTicks(io, world, d.tickMs ?? WORLD_TICK_MS, now, logger);
@@ -277,6 +322,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     send: sendMedia,
     nameOf: (id) => world.get(id)?.name ?? id,
     groupsMs: d.groupsMs ?? GROUPS_TICK_MS,
+    grouping: d.grouping,
     onGroups: d.sim ? (state) => d.sim!.onGroups(state) : undefined,
     now,
     logger,
@@ -293,6 +339,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       offMemberRemoved();
       offSessionsRevoked();
       offProfileChanged();
+      offActivityEdited();
       clearInterval(saveTimer);
       d.sim?.stop();
       stopTicks();
@@ -314,6 +361,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     io,
     world,
     socketsOf: (userId) => presence.socketsOf(userId),
+    desks,
     coordinator,
     stop,
   };

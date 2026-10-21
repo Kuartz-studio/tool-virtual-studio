@@ -18,18 +18,21 @@ const LIVEKIT = {
 // Un faux backend qui enregistre ses appels. Ses jetons disent pour quelle room et pour qui ils ont été faits.
 function fakeBackend() {
   const minted: Array<{ room: string; identity: string; name: string }> = [];
+  // Le droit de parler de chaque jeton fabriqué, dans le même ordre que `minted`.
+  const canSpeak: boolean[] = [];
   const removed: Array<[room: string, identity: string]> = [];
   const backend: MediaBackend = {
     url: 'wss://faux.livekit.test',
     async mintToken(i) {
-      minted.push(i);
+      minted.push({ room: i.room, identity: i.identity, name: i.name });
+      canSpeak.push(i.canSpeak ?? true);
       return `jeton(${i.room},${i.identity})`;
     },
     async removeParticipant(room, identity) {
       removed.push([room, identity]);
     },
   };
-  return { backend, minted, removed };
+  return { backend, minted, canSpeak, removed };
 }
 
 // Ce que `send` a reçu, et ce que chacun a reçu dans l'ordre : « leave », ou « join <room> ».
@@ -391,5 +394,73 @@ describe('createLiveKitBackend', () => {
     expect(String(fetchSpy.mock.calls[0]![0])).toBe('https://bureau.livekit.cloud/twirp/livekit.RoomService/RemoveParticipant');
     expect(timeoutSpy).toHaveBeenCalledWith(3000);
     expect(fetchSpy.mock.calls[0]![1]!.signal).toBe(timeoutSpy.mock.results[0]!.value);
+  });
+});
+
+describe('le droit de parler (canSpeak)', () => {
+  test('le jeton le dit : fabriqué avec canSpeak, ou sans le droit de parler', async () => {
+    const { backend, canSpeak } = fakeBackend();
+    const media = new MediaCoordinator(backend, BOOT, undefined, { canSpeak: (id) => id !== 'b' });
+    const { send } = recorder();
+    await media.apply(grouping({}, ['a', 'b']), grouping({ g1: ['a', 'b'] }), send, nameOf);
+    expect(canSpeak.sort()).toEqual([false, true]);
+    await media.currentJoin('b');
+    expect(canSpeak.at(-1)).toBe(false);
+  });
+
+  test('le droit change dans la room : la personne la quitte et la rejoint avec un jeton neuf ; les autres ne bougent pas', async () => {
+    const { backend, canSpeak, removed } = fakeBackend();
+    let allowed = true;
+    const media = new MediaCoordinator(backend, BOOT, undefined, { canSpeak: (id) => id !== 'b' || allowed });
+    const { send, of } = recorder();
+    const together = grouping({ g1: ['a', 'b'] });
+    await media.apply(grouping({}, ['a', 'b']), together, send, nameOf);
+    expect(of('b')).toEqual(['join boot01-g1']);
+
+    // Rien ne change : rien n'est renvoyé.
+    await media.apply(together, together, send, nameOf);
+    expect(of('b')).toEqual(['join boot01-g1']);
+
+    // B n'est plus entendu : un jeton sans micro, dans la même room.
+    allowed = false;
+    await media.apply(together, together, send, nameOf);
+    expect(of('b')).toEqual(['join boot01-g1', 'leave', 'join boot01-g1']);
+    expect(of('a')).toEqual(['join boot01-g1']);
+    expect(canSpeak.at(-1)).toBe(false);
+    expect(removed).toEqual([['boot01-g1', 'b']]);
+
+    // Et une seule fois : le droit n'a plus changé depuis.
+    await media.apply(together, together, send, nameOf);
+    expect(of('b')).toHaveLength(3);
+
+    allowed = true;
+    await media.apply(together, together, send, nameOf);
+    expect(of('b')).toEqual(['join boot01-g1', 'leave', 'join boot01-g1', 'leave', 'join boot01-g1']);
+    expect(canSpeak.at(-1)).toBe(true);
+  });
+
+  test('hors groupe, le droit ne sert à rien : rien n\'est envoyé quand il change', async () => {
+    const { backend } = fakeBackend();
+    let allowed = true;
+    const media = new MediaCoordinator(backend, BOOT, undefined, { canSpeak: () => allowed });
+    const { send, sent } = recorder();
+    const alone = grouping({}, ['a']);
+    await media.apply(alone, alone, send, nameOf);
+    allowed = false;
+    await media.apply(alone, alone, send, nameOf);
+    expect(sent).toEqual([]);
+  });
+});
+
+describe('le jeton LiveKit sans droit de parler', () => {
+  test('il permet la caméra et le partage d\'écran, pas le micro ; avec le droit de parler : tout (aucune restriction de source)', async () => {
+    const backend = createLiveKitBackend(LIVEKIT)!;
+    const verifier = new TokenVerifier(LIVEKIT.LIVEKIT_API_KEY, LIVEKIT.LIVEKIT_API_SECRET);
+    const mute = await verifier.verify(await backend.mintToken({ room: 'r', identity: 'b', name: 'B', canSpeak: false }));
+    expect(mute.video?.canPublish).toBe(true);
+    expect(mute.video?.canPublishSources).toEqual(expect.arrayContaining(['camera', 'screen_share']));
+    expect(mute.video?.canPublishSources).not.toContain('microphone');
+    const free = await verifier.verify(await backend.mintToken({ room: 'r', identity: 'a', name: 'A' }));
+    expect(free.video?.canPublishSources ?? []).toEqual([]);
   });
 });

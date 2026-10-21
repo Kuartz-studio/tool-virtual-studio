@@ -152,6 +152,14 @@ export class MediaSession implements MediaClient {
     });
   }
 
+  warmUp(): void {
+    this.transport.warmUp?.();
+  }
+
+  setVolumes(volumes: Readonly<Record<string, number>>): void {
+    this.transport.setVolumes?.(volumes);
+  }
+
   attach(el: HTMLVideoElement, participantId: string, source: VideoSource): () => void {
     return this.transport.attach(el, participantId, source);
   }

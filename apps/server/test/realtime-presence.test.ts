@@ -141,10 +141,19 @@ describe('connexion', () => {
       moving: false,
       status: 'available',
       media: { mic: false, cam: false, screen: false },
+      activity: null,
     });
     expect(aInit.players).toEqual([]);
     expect(aInit.mapKey).toBe('dev-office');
     expect(aInit.chatHistory).toEqual([]);
+    // Les trois bureaux de la carte de développement (clés : les numéros de leurs zones) : le premier est à A, qui n'a pas à y accéder.
+    expect(aInit.desks).toEqual([
+      { key: '2', ownerId: aInit.self.id, ownerName: 'a', name: null, locked: false, closedByState: false },
+      { key: '3', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false },
+      { key: '4', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false },
+    ]);
+    expect(aInit.closedDesks).toEqual([]);
+    expect(aInit.deskBans).toEqual([]);
 
     const aEvents = record(a);
     const b = srv.connect(await srv.inviteAndLogin('b@x.fr'));
@@ -158,7 +167,11 @@ describe('connexion', () => {
     // connexion à la fin (la récupération de connexion de Socket.io est désactivée).
     await sleep(50);
     expect(bEvents.names()).toEqual(['init']);
-    expect(aEvents.received).toEqual([{ event: 'player:joined', args: [bInit.self] }]);
+    // A apprend aussi que B a pris la place suivante : avant son arrivée (le bureau d'abord).
+    expect(aEvents.received).toEqual([
+      { event: 'desk:changed', args: [{ key: '3', ownerId: bInit.self.id, ownerName: 'b', name: null, locked: false, closedByState: false }] },
+      { event: 'player:joined', args: [bInit.self] },
+    ]);
     expect(srv.realtime.socketsOf(aInit.self.id)).toEqual([a.id]);
   });
 

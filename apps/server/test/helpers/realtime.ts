@@ -1,6 +1,6 @@
 import { createServer, type Server as HttpServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import type { ClientToServerEvents, ServerToClientEvents } from '@bureau/shared';
+import { CLOSE_RANGE_GROUPING, type ClientToServerEvents, type ServerToClientEvents } from '@bureau/shared';
 import { io as ioClient, type ManagerOptions, type Socket, type SocketOptions } from 'socket.io-client';
 import { onTestFinished, vi } from 'vitest';
 import type { Env } from '../../src/env';
@@ -56,6 +56,9 @@ export async function startTestServer(o: TestServerOptions = {}) {
       env: t.env,
       graceMs: TEST_GRACE_MS,
       saveMs: TEST_SAVE_MS,
+      // Les scènes des tests tiennent dans la petite carte de développement : le cercle serré d'origine (3 cases, à l'arrêt) les y garde
+      // lisibles. La règle du bureau (OPEN_SPACE_GROUPING) est celle des tests qui la demandent (grouping).
+      grouping: CLOSE_RANGE_GROUPING,
       ...options,
     });
   }

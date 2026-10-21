@@ -1,4 +1,4 @@
-import type { Status } from '@bureau/shared';
+import type { ActivityState, Status } from '@bureau/shared';
 
 // La couleur de chaque statut (spec §10 : vert, orange, gris, rouge), à un seul endroit : le point de l'étiquette au-dessus d'un
 // avatar (NameTag, dessiné par Phaser, qui veut un nombre) et ceux du menu des statuts et du panneau Personnes (HTML, qui veut du
@@ -13,6 +13,16 @@ export const STATUS_COLORS: Record<Status, number> = {
 // Un nombre 0xrrggbb en CSS : « #rrggbb », avec ses six chiffres (un nombre sous 0x100000 en a moins sans les zéros de tête).
 export function cssColor(rgb: number): string {
   return `#${rgb.toString(16).padStart(6, '0')}`;
+}
+
+// La couleur d'un état d'activité (« #rrggbb », que le serveur a validée) en nombre 0xrrggbb.
+export function activityRgb(color: string): number {
+  return Number.parseInt(color.slice(1), 16);
+}
+
+// La couleur du point d'une personne : celle de son état d'activité s'il y en a un, sinon celle de son statut.
+export function indicatorRgb(status: Status, activity: Pick<ActivityState, 'color'> | null | undefined): number {
+  return activity ? activityRgb(activity.color) : STATUS_COLORS[status];
 }
 
 // La couleur d'un statut en CSS.

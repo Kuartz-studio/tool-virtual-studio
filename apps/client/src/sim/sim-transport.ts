@@ -19,6 +19,8 @@ export class SimTransport implements MediaTransport {
   private unsubscribe: Array<() => void> = [];
   // Un élément audio par personne, avec l'adresse qu'il joue (un autre fichier le remplace).
   private readonly players = new Map<string, { el: HTMLAudioElement; src: string }>();
+  // Le volume de chaque personne (absente : 1) : celui du jeu, qui baisse avec la distance.
+  private volumes: Readonly<Record<string, number>> = {};
 
   async connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void> {
     const token = decodeSimToken(p.token);
@@ -52,6 +54,11 @@ export class SimTransport implements MediaTransport {
 
   async setSource(source: LocalSource, on: boolean): Promise<void> {
     this.published[source] = on;
+  }
+
+  setVolumes(volumes: Readonly<Record<string, number>>): void {
+    this.volumes = volumes;
+    for (const [id, { el }] of this.players) el.volume = this.volumeOf(id);
   }
 
   async useDevices(devices: MediaDevices): Promise<void> {
@@ -125,6 +132,7 @@ export class SimTransport implements MediaTransport {
     el.preload = 'auto';
     el.hidden = true;
     el.dataset.simBot = id;
+    el.volume = this.volumeOf(id);
     // Qui joue, ou s'arrête, se voit tout de suite (l'anneau « parle »).
     const changed = () => this.events?.changed();
     el.addEventListener('playing', changed);
@@ -147,6 +155,11 @@ export class SimTransport implements MediaTransport {
     player.el.removeAttribute('src');
     player.el.load();
     player.el.remove();
+  }
+
+  private volumeOf(id: string): number {
+    const volume = this.volumes[id] ?? 1;
+    return Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1;
   }
 
   // La sortie audio choisie, quand le navigateur sait la changer.

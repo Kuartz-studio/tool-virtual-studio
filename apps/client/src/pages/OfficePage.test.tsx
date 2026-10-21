@@ -62,7 +62,7 @@ const player = (id: string, name: string): PublicPlayer => ({
   status: 'available',
   media: { mic: false, cam: false, screen: false },
 });
-const init = (mapKey = 'dev-office'): InitPayload => ({ self: player('u-lea', 'Léa'), players: [player('u-bob', 'Bob')], mapKey, chatHistory: [] });
+const init = (mapKey = 'dev-office'): InitPayload => ({ self: player('u-lea', 'Léa'), players: [player('u-bob', 'Bob')], mapKey, chatHistory: [], desks: [], closedDesks: [], deskBans: [] });
 const socket = (): FakeSocket => {
   const last = sockets.at(-1);
   if (!last) throw new Error('La page n\'a pas ouvert de connexion.');
@@ -383,8 +383,9 @@ test('quitter le bureau : connexion fermée, écouteurs retirés, magasin vidé,
   const [client] = mediaClients;
   await act(() => client!.idle());
   expect(useOfficeStore.getState().mapKey).toBe('dev-office');
+  // Celui de la connexion (qui envoie les pas au serveur), et celui du son (qui règle le volume d'après ma place) : en conversation.
   const listenersOnBus = EventBus.listenerCount('local:move');
-  expect(listenersOnBus).toBe(1);
+  expect(listenersOnBus).toBe(2);
   cleanup();
   expect(socket().active).toBe(false);
   expect(socket().listenerCount()).toBe(0);

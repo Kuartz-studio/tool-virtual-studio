@@ -1,6 +1,6 @@
-import type { Status } from '@bureau/shared';
+import type { ActivityState, Status } from '@bureau/shared';
 import type { GameObjects, Scene } from 'phaser';
-import { STATUS_COLORS } from '../../lib/status';
+import { indicatorRgb } from '../../lib/status';
 import { DEPTH } from '../map-layers';
 import { snapToPixels } from '../pixel-snap';
 
@@ -35,7 +35,7 @@ const BACKGROUND = { color: 0x1d2030, alpha: 0.75 };
 // L'espace entre le haut de l'image de l'avatar et le bas de l'étiquette.
 const GAP_ABOVE_HEAD = 1;
 
-// L'étiquette au-dessus de la tête d'un avatar : un point de statut (de la couleur du statut, STATUS_COLORS : celle du menu des
+// L'étiquette au-dessus de la tête d'un avatar : un point de statut (de la couleur de l'état d'activité, ou du statut, STATUS_COLORS : celle du menu des
 // statuts et du panneau Personnes aussi), entouré d'un anneau quand la personne parle, et son nom. Elle passe devant tout le reste
 // (DEPTH.nameTags). Elle n'importe de Phaser que des types : la scène lui donne de quoi dessiner.
 export class NameTag {
@@ -44,11 +44,15 @@ export class NameTag {
   private readonly label: GameObjects.Text;
   private readonly dot: GameObjects.Arc;
   private readonly ring: GameObjects.Arc;
+  private status: Status;
+  private activity: ActivityState | null = null;
 
-  constructor(scene: Scene, name: string, status: Status, zoom: number) {
+  constructor(scene: Scene, name: string, status: Status, zoom: number, activity: ActivityState | null = null) {
+    this.status = status;
+    this.activity = activity;
     this.background = snapToPixels(scene.add.rectangle(0, 0, 1, 1, BACKGROUND.color, BACKGROUND.alpha).setOrigin(0, 0));
     this.ring = snapToPixels(scene.add.circle(0, 0, RING_RADIUS).setStrokeStyle(1, RING_COLOR).setVisible(false));
-    this.dot = snapToPixels(scene.add.circle(0, 0, DOT_RADIUS, STATUS_COLORS[status]));
+    this.dot = snapToPixels(scene.add.circle(0, 0, DOT_RADIUS, indicatorRgb(status, activity)));
     this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TEXT_STYLE, resolution: zoom }).setOrigin(0, 0.5));
     this.container = scene.add.container(0, 0, [this.background, this.ring, this.dot, this.label]).setDepth(DEPTH.nameTags);
     this.layout();
@@ -62,7 +66,18 @@ export class NameTag {
   }
 
   setStatus(status: Status): void {
-    this.dot.setFillStyle(STATUS_COLORS[status]);
+    this.status = status;
+    this.paintDot();
+  }
+
+  // L'état d'activité de la personne : son point prend la couleur qu'elle a choisie ; null, celle de son statut.
+  setActivity(activity: ActivityState | null): void {
+    this.activity = activity;
+    this.paintDot();
+  }
+
+  private paintDot(): void {
+    this.dot.setFillStyle(indicatorRgb(this.status, this.activity));
   }
 
   setSpeaking(speaking: boolean): void {

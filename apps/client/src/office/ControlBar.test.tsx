@@ -28,7 +28,7 @@ const clients: FakeMediaClient[] = [];
 
 beforeEach(() => {
   useOfficeStore.getState().reset();
-  act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [] }));
+  act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
 });
 
 afterEach(async () => {

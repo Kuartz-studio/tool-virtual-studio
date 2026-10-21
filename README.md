@@ -35,7 +35,7 @@ On ouvre l'appli sur http://localhost:5173. Le navigateur ne voit que Vite : `AP
 - Le panneau **Bac à sable** (barre du bas) fait apparaître des personnes fictives, donne à chacune un fichier audio (mp3, wav, ogg, m4a…) et les retire.
 - Un fichier audio est joué **en boucle** chez celles et ceux qui sont dans la même room que la personne fictive. On dépose ses fichiers dans `sim-audio/` (à la racine, jamais versionné) ou on les importe depuis le panneau.
 - Pour la **déplacer**, on l'attrape à la souris et on la lâche : elle **marche** jusqu'à l'endroit lâché (un marqueur le montre), en contournant les murs et les meubles, à 110 px/s. Elle ne se téléporte pas.
-- Ces personnes sont de vrais joueurs du monde du serveur : le vrai calcul des groupes s'applique (zones de bureau et salle de réunion sans distance, cercle de 3 cases à l'arrêt, sortie à 4 cases, délai de 500 ms). Une zone voisine ne s'entend pas.
+- Ces personnes sont de vrais joueurs du monde du serveur : le vrai calcul des groupes s'applique (zones de bureau et salles sans distance, et 150 ms pour y entrer ; dans les espaces ouverts, on se relie à moins de 14 cases et le volume baisse avec la distance, voir « Le son selon la distance »). Une zone voisine ne s'entend pas. Le volume suit aussi : le faux transport baisse le son de chaque fichier selon la place de la personne.
 
 Côté code : `SIM=1` (serveur : `apps/server/src/sim/`, un faux backend média à la place de LiveKit, les routes `/api/sim`, les personnes fictives) et `VITE_SIM=1` (client : `apps/client/src/sim/`, un faux transport média qui joue les fichiers, et le panneau). Le serveur refuse `SIM=1` en production, et sans `VITE_SIM=1` le code du faux live n'entre pas dans le build du client. Voir `.env.example` pour `SIM_AUDIO_DIR`, `LISTEN_HOST` (adresse d'écoute) et les ports `PORT` / `API_PORT` que le client lit quand le serveur et lui sont lancés séparément (le workspace PM2).
 
@@ -95,13 +95,18 @@ Le bouton « Admin » de la barre du bas, que les admins seuls ont, ouvre le pan
 
 ## Cartes
 
-La carte du bureau est un fichier Tiled exporté en JSON (tilesets intégrés, calques en CSV) : `MAPS_DIR/<MAP_KEY>.json`. Le serveur la lit au démarrage : absente ou illisible, il refuse de démarrer, avec son chemin dans le message. Tant que la carte définitive n'est pas dessinée, `MAP_KEY` vaut `dev-office` : 24 × 16 cases, trois pièces dont une salle de réunion (zone privée), un open space avec trois bureaux (zones de bureau), une étiquette et le point d'apparition. Cette carte n'est pas dessinée dans Tiled : son plan est du code, `DEV_OFFICE` (`packages/shared/src/map/dev-office.ts`), un dessin en ASCII et des zones, que `buildTiledMap` convertit en JSON Tiled.
+La carte du bureau est un fichier Tiled exporté en JSON (tilesets intégrés, calques en CSV) : `MAPS_DIR/<MAP_KEY>.json`. Le serveur la lit au démarrage : absente ou illisible, il refuse de démarrer, avec son chemin dans le message. Deux cartes sont dans le dépôt ; aucune n'est dessinée dans Tiled, leur plan est du code (un dessin en ASCII et des zones, que `buildTiledMap` convertit en JSON Tiled) :
+
+- **`office`** (`OFFICE`, `packages/shared/src/map/office.ts`) : la carte du bureau, **73 × 39 cases**. Vingt bureaux individuels de 7 × 5 cases, murés, chacun avec sa porte de 2 cases : 8 en rangée A (au nord, portes au sud), 8 en rangée B (portes au nord, de l'autre côté de l'allée nord) et 4 en rangée C (au sud-ouest). Une colonne centrale relie tout de haut en bas. Au milieu, l'espace ouvert (détente, café, arcade), une salle de réunion de 13 × 7 cases, et à l'est la **grande salle de 23 × 13 cases**, où tout le monde s'entend. En bas à droite, l'accueil et le point d'apparition. Un bureau est deux zones qui portent la même clé (`A1`…`A8`, `B1`…`B8`, `C1`…`C4`, dans le champ « nom ») : `desk` pour la pièce, `door` pour la porte. Un test (`packages/shared/test/office.test.ts`) vérifie que tout est atteignable à pied, que chaque pièce est close sauf à sa porte, et que les clés sont uniques. Pour l'utiliser : `MAP_KEY=office`.
+- **`dev-office`** : 24 × 16 cases, trois pièces dont une salle de réunion (zone privée), un open space avec trois bureaux (sans portes), une étiquette et le point d'apparition (`DEV_OFFICE`, `packages/shared/src/map/dev-office.ts`). C'est la carte des tests, et la valeur par défaut de `MAP_KEY`.
+
+Passer en production sur la grande carte, c'est mettre `MAP_KEY=office` (voir la checklist) ; les positions enregistrées sur l'ancienne carte sont reprises si elles sont libres, sinon la personne apparaît à l'accueil.
 
 ```sh
 pnpm --filter @bureau/client gen:dev-assets
 ```
 
-écrit ce JSON (`apps/client/public/assets/maps/dev-office.json`), les 5 tuiles (`public/assets/dev/tiles.png`) et les 4 avatars de développement (`public/assets/dev/avatars/`). Le résultat est commité, et le script est déterministe : relancé sans rien changer, il ne modifie aucun fichier. Un test (`apps/client/scripts/gen-dev-assets.test.ts`) échoue quand les fichiers commités ne correspondent plus au plan ou au script : après une modification, relancer la commande et commiter le résultat.
+écrit ces JSON (`apps/client/public/assets/maps/dev-office.json` et `office.json`), les 5 tuiles (`public/assets/dev/tiles.png`) et les 4 avatars de développement (`public/assets/dev/avatars/`). Le résultat est commité, et le script est déterministe : relancé sans rien changer, il ne modifie aucun fichier. Un test (`apps/client/scripts/gen-dev-assets.test.ts`) échoue quand les fichiers commités ne correspondent plus au plan ou au script : après une modification, relancer la commande et commiter le résultat.
 
 Pour vérifier qu'une carte (la carte définitive, plus tard) est lisible par le serveur :
 
@@ -122,6 +127,36 @@ L'audio et la vidéo passent par LiveKit Cloud, avec une room par groupe de conv
 - **Valeurs rognées.** `LIVEKIT_URL`, `LIVEKIT_API_KEY` et `LIVEKIT_API_SECRET` sont rognées à la lecture (`apps/server/src/env.ts`) : un espace ou un retour à la ligne collé avec la valeur dans Railway ferait répondre 401 à LiveKit Cloud pour chaque jeton ; une valeur faite d'espaces seulement vaut une valeur absente.
 - **Client** (`apps/client/src/media/`). `useMedia(client, socket)` suit les consignes : `media:join` fait entrer dans la room (déjà dedans, rien : une socket revenue après une coupure ne coupe pas la conversation ; dans une autre, il la quitte d'abord), `media:leave` la fait quitter. Le client (`createMediaClient` : une `Room` LiveKit par room, avec `adaptiveStream` et `dynacast`, l'audio des autres dans des éléments `<audio>` cachés) ne demande rien aux périphériques avant le premier `media:join`, puis allume le micro et la caméra selon les préférences gardées dans le navigateur (`localStorage`, clé `bureau.media.v1` : périphériques choisis, micro et caméra allumés en entrant). `livekit-client` n'est téléchargé qu'à ce premier `media:join` (un fichier à part du build). Micro ou caméra refusés ou absents : il entre quand même, en réception seule (`permission_denied`), et l'accès n'est redemandé que si la personne les rallume. L'état local part au serveur (`media:state`) après chaque `init` et à chaque changement ; qui parle part au jeu par le bus (`media:speaking`), qui entoure le point de son étiquette. La logique est dans `MediaSession`, que les tests éprouvent sur un faux LiveKit (`FakeMediaClient`).
 - **Interface** (`apps/client/src/office/`). La page du bureau s'ouvre sur l'écran d'entrée (`DeviceCheck`) : l'aperçu de la caméra, le niveau du micro, le choix des périphériques, micro et caméra allumés ou non en entrant. La connexion au bureau est déjà ouverte derrière lui : la dernière consigne `media:*` reçue est retenue, et suivie après « Entrer ». Ce clic est aussi le geste qui permet au navigateur de jouer le son des autres (`startAudio`) ; s'il le bloque quand même (Safari, sans micro), « Activer le son » apparaît. Micro et caméra refusés : « Entrer quand même », en réception seule. Dans le bureau, les vignettes de la conversation sont en haut (`VideoStrip` : la sienne d'abord, un clic en agrandit une, un partage d'écran s'affiche en grand), et la barre du bas (`ControlBar`) a le micro, la caméra et le partage d'écran. Une connexion audio/vidéo en échec affiche « Reconnecter », qui rouvre la connexion au bureau : le serveur redit alors la consigne, avec un jeton neuf.
+
+### Le son selon la distance
+
+Dans les **espaces ouverts**, le son baisse avec la distance : à 100 % dans un rayon de **6 cases** autour de soi, puis de plus en plus faible, sans à-coup (une courbe douce aux deux bouts), jusqu'au silence à **14 cases** (`AUDIO_FULL_DISTANCE_PX` et `AUDIO_SILENT_DISTANCE_PX`, `packages/shared/src/constants.ts` ; la courbe est `audioGain`, `packages/shared/src/proximity/audio-gain.ts`). **Dans une zone** (un bureau, une salle, la grande salle), rien ne change : tout le monde s'entend à plein volume, quelle que soit la distance.
+
+- **Les groupes.** Dans un espace ouvert, on rejoint la room de ceux qu'on pourrait entendre : à moins de 14 cases (`JOIN_DISTANCE_PX`), qu'on marche ou non (leur voix n'est alors qu'un souffle), et on y reste jusqu'à 15 cases. Les liens se font de proche en proche. Les distances sont une configuration (`OPEN_SPACE_GROUPING`) ; l'ancien cercle serré (3 cases, à l'arrêt, 4 pour rester) reste disponible (`CLOSE_RANGE_GROUPING`), et les tests des groupes, dont les scènes tiennent dans la petite carte, l'utilisent.
+- **Le volume.** Le client règle le volume de chacun dix fois par seconde (`useSpatialAudio`, `apps/client/src/media/spatial-audio.ts`), d'après sa place (celle que le jeu envoie, `local:move`) et celles des autres (le magasin) : `RemoteParticipant.setVolume` avec LiveKit. Celui dont on n'entend plus rien n'a plus de vignette (et sa vidéo n'est plus reçue).
+- **Entrer dans une zone.** Rejoindre la room d'une zone n'attend plus que **150 ms** (`ZONE_JOIN_DEBOUNCE_MS`, de quoi ne pas former un groupe en effleurant son bord), contre 500 ms dans les espaces ouverts, et le serveur recalcule les groupes toutes les **100 ms** (250 avant). Le client télécharge `livekit-client` dès l'ouverture du bureau (`warmUp`), et non plus à la première conversation. Ces trois changements retirent environ 0,5 s à l'entrée dans une zone ; le reste est la connexion à LiveKit (signalisation, puis publication du micro), à mesurer en production : c'était la cause de la seconde ou deux que prenait la réunion à démarrer.
+
+## Bureaux
+
+Chaque personne a **son bureau** : une des places de la carte (`desk`), qu'elle nomme comme elle veut (40 caractères), dont elle ferme la porte et d'où elle exclut qui elle veut.
+
+- **Une place par personne.** À sa première arrivée, la première place libre est à elle (`autoAssign`). Le panneau **Mon bureau** (barre du bas) permet de **changer de place** (une place libre : le nom et le verrou suivent) ou de **rendre** son bureau ; sans bureau, il propose les places libres. « Aller à mon bureau » la pose dans sa pièce. Les places sont en base (`desk`, une ligne par bureau occupé) : elles survivent à un redémarrage. Un membre retiré rend la sienne.
+- **Le nom** est celui qu'on lui donne ; sans lui, « Bureau de <nom> ». Il s'écrit dans la pièce, avec un cadenas quand la porte est fermée ; une place libre dit « Libre ».
+- **Fermer la porte.** Le bouton « Fermer la porte » bloque l'**entrée** : le serveur refuse tout pas qui entre dans la pièce (`move:correct`, comme contre un mur), et le client pose un obstacle sur la porte pour que l'avatar ne rebondisse pas (`desk-layer.ts`). Qui est déjà dedans y reste. Le propriétaire entre toujours. Fermer de nouveau efface la liste des admis.
+- **Exclure.** Le panneau liste ceux qui sont dans la pièce, avec « Exclure » : la personne est posée devant la porte et n'y rentre plus, **même porte ouverte**, jusqu'à ce qu'on la « Réadmette ». Les exclus et les admis ne sont pas enregistrés : ils valent le temps du serveur.
+- **Toquer.** Cliquer (de près) sur une porte fermée envoie un « toc toc » : le propriétaire, s'il est là, voit « X toque à la porte de ton bureau » avec **Laisser entrer** (admis jusqu'à la prochaine fermeture) et **Ignorer**. Un seul toc toc par personne et par porte toutes les 5 s, et un exclu n'est pas entendu.
+- **Côté code.** `DeskService` (`apps/server/src/desks/desk-service.ts` : l'état et la base), `createDeskController` (`desk-controller.ts` : les commandes `desk:do`, la garde d'entrée et la diffusion), `desk:changed` (une place), `desk:access` (les portes fermées pour soi), `desk:bans` (ses exclus) et `desk:knock` ; côté client, `DeskPanel`, `DeskKnocks` et `DeskLayer`. Tests : `desks.test.ts`, `realtime-desks.test.ts`, `DeskPanel.test.tsx`, `DeskKnocks.test.tsx`, `desk-layer.test.ts`.
+
+## États d'activité
+
+Chacun peut créer ses propres états : **un nom** (24 caractères), **la couleur de son point**, et trois interrupteurs, ce que l'état change pour lui. Douze au plus par personne.
+
+- **Laisser entrer dans mon bureau** : éteint, la porte de son bureau est fermée comme verrouillée (sans toucher à son verrou).
+- **Entendre les autres** : éteint, il n'entend personne (le volume de chacun passe à 0).
+- **Être entendu** : éteint, son micro ne publie rien : le jeton LiveKit n'a pas le droit de publier le micro (`canPublishSources`, sans micro), et le bouton Micro est éteint tant que l'état dure. Le changement fait rejoindre la même room avec un jeton neuf (environ 1 s).
+- Sans entendre ni être entendu, la personne est **hors de toute conversation**, comme en Ne pas déranger.
+
+On les crée et on les modifie dans le panneau **Mes états d'activité** (menu du statut, « Mes états d'activité… »), et on les prend dans ce même menu, après les quatre statuts. Un état pris passe avant le statut : son nom et sa couleur sont ceux du bouton, de l'étiquette au-dessus de l'avatar et du panneau Personnes. Prendre un statut ordinaire le remplace. Les états sont en base (`activity_state`, API `/api/me/states`) ; l'état pris, lui, est en mémoire du serveur, comme le statut (la connexion le redit à un serveur redémarré).
 
 ## Chat
 
@@ -229,15 +264,19 @@ Production (variables du service Railway, voir « Première mise en ligne ») :
 
 - [ ] `MAILER=none` (le minimum : pas de service d'envoi), ou `MAILER=resend` avec `RESEND_API_KEY` et `MAIL_FROM` (un domaine d'envoi vérifié dans Resend).
 - [ ] `LIVEKIT_URL`, `LIVEKIT_API_KEY` et `LIVEKIT_API_SECRET` en place : le journal de démarrage ne contient pas « LiveKit non configuré : audio et vidéo désactivés ».
-- [ ] `MAP_KEY=office`, **seulement quand la carte définitive (`apps/client/public/assets/maps/office.json`, dessinée dans Tiled) est dans le dépôt** et que `pnpm --filter @bureau/server map:check ../client/public/assets/maps/office.json` sort avec le code 0. Commite et pousse `office.json` avant de mettre `MAP_KEY=office` : Railway construit l'image depuis le dépôt, et une carte absente empêche le serveur de démarrer. Tant que cette carte n'y est pas, `MAP_KEY` reste à `dev-office`.
+- [ ] `MAP_KEY=office` : la grande carte (`apps/client/public/assets/maps/office.json`, générée par `pnpm --filter @bureau/client gen:dev-assets` depuis `OFFICE`) est dans le dépôt, et `pnpm --filter @bureau/server map:check ../client/public/assets/maps/office.json` sort avec le code 0. Commite et pousse `office.json` avant de mettre `MAP_KEY=office` : Railway construit l'image depuis le dépôt, et une carte absente empêche le serveur de démarrer. Les migrations `0001_desks` et `0002_activity_states` passent au déploiement. Si une carte dessinée dans Tiled la remplace un jour, garder les noms des zones `desk` et `door` (la clé de chaque place).
 - [ ] Une invitation réelle marche : avec `none`, le lien copié depuis la boîte du panneau Admin ouvre « Rejoindre » et crée le compte ; avec `resend`, l'e-mail arrive dans la boîte de réception, pas dans les spams.
 - [ ] Avec `none` : « Mot de passe oublié ? » dit de demander à un admin, et « Lien de mot de passe » (Admin › Membres) donne un lien qui change bien le mot de passe de la personne.
 - [ ] La limitation des tentatives de connexion compte bien par adresse du visiteur, et non par celle du proxy de Railway (voir « Derrière le proxy de Railway ») : sur `https://<domaine>/connexion`, quatre connexions de suite (en moins de 10 s) avec un mauvais mot de passe, la quatrième répond « Trop de tentatives » (429). Puis, dans la console de la base (`railway connect`), `select key from rate_limit;` montre `<ton adresse IP publique>|/sign-in/email`, ni `no-trusted-ip|/sign-in/email` ni une adresse de Railway. Sinon, `X-Real-IP` n'arrive pas, ou pas seul : tout le monde partage alors les mêmes trois essais.
 
 Essais à plusieurs, en vrai : deux personnes, puis trois, sur Chrome, Firefox et Safari, dont une sur le partage de connexion d'un téléphone.
 
-- [ ] La conversation démarre en s'arrêtant à côté de quelqu'un.
-- [ ] Passer dans une allée ne connecte personne.
+- [ ] Marcher vers quelqu'un : sa voix monte peu à peu, à plein volume dans un rayon de 6 cases, et on ne l'entend plus au-delà de 14 cases.
+- [ ] Entrer dans une zone (un bureau, la grande salle) : la conversation démarre en moins d'une seconde (à mesurer en production).
+- [ ] La grande salle : tout le monde s'entend, d'un bout à l'autre.
+- [ ] Un bureau : nom, « Fermer la porte » (un autre avatar bute), « Exclure », « Toquer » puis « Laisser entrer ».
+- [ ] Un état d'activité sans être entendu : la personne n'est plus entendue, et son bouton Micro est éteint.
+- [ ] Le partage d'écran d'un autre : « Plein écran », puis Échap.
 - [ ] La salle de réunion est privée.
 - [ ] Le partage d'écran fonctionne.
 - [ ] Après un redéploiement, tout le monde revient seul.

@@ -36,7 +36,7 @@ beforeEach(() => {
 
 // Le serveur a envoyé l'état de départ : soi-même, et ceux qui sont là.
 function arrive(others: PublicPlayer[] = [], self: PublicPlayer = player('moi', 'Moi')): void {
-  act(() => useOfficeStore.getState().applyInit({ self, players: others, mapKey: 'dev-office', chatHistory: [] }));
+  act(() => useOfficeStore.getState().applyInit({ self, players: others, mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
 }
 
 function deferred<T>() {

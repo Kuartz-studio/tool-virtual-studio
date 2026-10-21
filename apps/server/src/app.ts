@@ -2,6 +2,8 @@ import type { PublicConfig } from '@bureau/shared';
 import { toNodeHandler } from 'better-auth/node';
 import express from 'express';
 import type { Logger } from 'pino';
+import { activityRoutes } from './activity/activity-routes';
+import { createActivityService, type ActivityService } from './activity/activity-service';
 import { adminRoutes } from './admin/admin-routes';
 import type { Auth } from './auth/auth';
 import { invitationRoutes } from './auth/invitation-routes';
@@ -29,6 +31,8 @@ export interface AppDeps {
   events: ServerEvents;
   /** Reçoit les échecs d'envoi d'e-mail des routes admin et les erreurs des requêtes. Par défaut, le journal de createLogger(env). */
   logger?: Logger;
+  /** Les états d'activité des personnes. Par défaut, ceux de la base. */
+  activities?: ActivityService;
   /** Le faux live (SIM=1) : ses routes sont sous /api/sim. Absent en production. */
   sim?: SimHost;
 }
@@ -60,6 +64,7 @@ export function createApp(deps: AppDeps): express.Express {
   if (deps.env.E2E === '1') app.use('/api/test', testRoutes(deps));
   if (deps.sim) app.use('/api/sim', simRoutes({ auth: deps.auth, sim: deps.sim }));
   app.use('/api', memberRoutes(deps));
+  app.use('/api', activityRoutes({ auth: deps.auth, events: deps.events, activities: deps.activities ?? createActivityService(deps.db) }));
   // Une adresse inconnue sous /api répond en JSON, avant le client : jamais sa page HTML.
   app.use('/api', notFound);
 

@@ -1,4 +1,5 @@
 import {
+  CLOSE_RANGE_GROUPING,
   DEV_OFFICE,
   EMPTY_GROUPING,
   GROUP_DEBOUNCE_MS,
@@ -340,7 +341,7 @@ describe('boucle des groupes', () => {
     const send = vi.fn();
     const nameOf = (id: string) => id;
     const start = (groupsMs = 250) => {
-      const loop = startGroupTicks({ world, map, coordinator, send, nameOf, groupsMs, now: () => clock.t, logger });
+      const loop = startGroupTicks({ world, map, coordinator, send, nameOf, groupsMs, grouping: CLOSE_RANGE_GROUPING, now: () => clock.t, logger });
       onTestFinished(loop.stop);
       return loop;
     };

@@ -1,4 +1,5 @@
 import {
+  CLOSE_RANGE_GROUPING,
   DEV_OFFICE,
   EMPTY_GROUPING,
   OFFICE_ROOM,
@@ -79,7 +80,7 @@ function setup() {
   // Les groupes recalculés à l'heure donnée, et annoncés comme le fait startGroupTicks.
   let grouping: GroupingState = EMPTY_GROUPING;
   function regroup() {
-    grouping = computeGroups(world.proximityPlayers(), map, grouping, clock.t);
+    grouping = computeGroups(world.proximityPlayers(), map, grouping, clock.t, CLOSE_RANGE_GROUPING);
     bots.onGroups(grouping);
     return grouping;
   }

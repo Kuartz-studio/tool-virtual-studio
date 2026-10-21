@@ -1,5 +1,5 @@
 import type { Role } from '@bureau/shared';
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { user } from './auth-schema';
 
 // Le schéma complet de la base : drizzle-kit en tire les migrations (drizzle/), createDb le donne à Drizzle.
@@ -31,4 +31,32 @@ export const chatMessage = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [index('chat_message_created_at_idx').on(table.createdAt)],
+);
+
+// Les bureaux occupés : une ligne par place prise. `key` est le nom de la zone desk de la carte (A1…), `ownerId` celui qui l'occupe (une
+// seule place par personne : unique), `name` le nom qu'il lui a donné (null : le nom par défaut) et `locked` si la porte est fermée.
+// Une place libre n'a pas de ligne. Qui est exclu ou admis n'est pas enregistré : cela vaut le temps du serveur.
+export const desk = pgTable('desk', {
+  key: text('key').primaryKey(),
+  ownerId: text('owner_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  name: text('name'),
+  locked: boolean('locked').notNull().default(false),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Les états d'activité qu'une personne crée (« En focus », « À table »…) : un nom, la couleur de son point, et trois interrupteurs (laisser
+// entrer dans son bureau, entendre, être entendue). Ils lui appartiennent, et partent avec son compte.
+export const activityState = pgTable(
+  'activity_state',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+    label: text('label').notNull(),
+    color: text('color').notNull(),   // « #rrggbb », en minuscules
+    allowEntry: boolean('allow_entry').notNull().default(true),
+    hear: boolean('hear').notNull().default(true),
+    heard: boolean('heard').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index('activity_state_user_id_idx').on(table.userId)],
 );

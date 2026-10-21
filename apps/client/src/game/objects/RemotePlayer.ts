@@ -1,4 +1,4 @@
-import { REMOTE_RENDER_DELAY_MS, type PublicPlayer, type Status } from '@bureau/shared';
+import { REMOTE_RENDER_DELAY_MS, type ActivityState, type PublicPlayer, type Status } from '@bureau/shared';
 import type { GameObjects, Input, Scene } from 'phaser';
 import { animKey, avatarObjectName, avatarSpec, type AvatarSpec } from '../avatars';
 import { snapToPixels } from '../pixel-snap';
@@ -33,7 +33,7 @@ export class RemotePlayer {
       .setOrigin(0.5, 1)
       .setName(avatarObjectName(p.id));
     this.shadow = addShadow(scene, p.x, p.y);
-    this.tag = new NameTag(scene, p.name, p.status, options.zoom);
+    this.tag = new NameTag(scene, p.name, p.status, options.zoom, p.activity ?? null);
     this.snapshots.push(now, this.drawn);
     this.render(now);
   }
@@ -49,6 +49,7 @@ export class RemotePlayer {
     this.snapshots.push(now, { x: p.x, y: p.y, dir: p.dir, moving: p.moving });
     this.setProfile(p.name, p.avatarKey);
     this.setStatus(p.status);
+    this.setActivity(p.activity ?? null);
     this.render(now);
   }
 
@@ -59,6 +60,10 @@ export class RemotePlayer {
 
   setStatus(status: Status): void {
     this.tag.setStatus(status);
+  }
+
+  setActivity(activity: ActivityState | null): void {
+    this.tag.setActivity(activity);
   }
 
   setProfile(name: string, avatarKey: string | null): void {

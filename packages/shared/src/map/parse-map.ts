@@ -1,7 +1,7 @@
 import { isWalkablePoint } from './queries';
 import type { TiledLayer, TiledMapJson, TiledObject, TiledObjectLayer, TiledTileLayer } from './tiled-types';
 
-export const ZONE_TYPES = ['spawn', 'private', 'desk', 'label'] as const;
+export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label'] as const;
 export type ZoneType = (typeof ZONE_TYPES)[number];
 
 // Un rectangle du calque `zones`, en pixels.
@@ -14,6 +14,12 @@ export interface Zone {
   y: number;
   width: number;
   height: number;
+}
+
+// La clé d'une place de bureau : le nom de sa zone `desk`, ou à défaut son numéro. C'est ce qui désigne la place dans la base de données
+// et dans les messages ; une zone `door` porte la clé de la place qu'elle ferme.
+export function deskKey(zone: Pick<Zone, 'name' | 'id'>): string {
+  return zone.name ?? zone.id;
 }
 
 // Ce que le serveur et le client savent de la carte : la taille, les cases bloquantes, les zones et le point d'apparition.
@@ -32,8 +38,8 @@ export interface OfficeMap {
 // - compressed_layer : un calque de tuiles n'est pas du CSV lisible (compressé, en base64, en morceaux dans une carte infinie,
 //   de la mauvaise taille…) ;
 // - missing_spawn : aucune zone `spawn` ;
-// - bad_zone : une zone inutilisable (type inconnu, pas un rectangle droit, taille nulle), deux apparitions, ou une apparition
-//   sur une case bloquante.
+// - bad_zone : une zone inutilisable (type inconnu, pas un rectangle droit, taille nulle), deux apparitions, une apparition
+//   sur une case bloquante, deux bureaux de même nom, ou une porte (zone `door`) qui ne ferme aucun bureau.
 export type MapErrorCode = 'missing_layer' | 'external_tileset' | 'compressed_layer' | 'missing_spawn' | 'bad_zone';
 
 // Le message est en français et dit quoi corriger dans Tiled : la commande map:check l'affiche tel quel.
@@ -66,6 +72,7 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
   const zones = (Array.isArray(zonesLayer.objects) ? zonesLayer.objects : []).map(readZone);
 
   const spawnZone = pickSpawnZone(zones);
+  checkDesks(zones);
   const map: OfficeMap = {
     widthTiles: json.width,
     heightTiles: json.height,
@@ -205,6 +212,27 @@ function readZone(obj: TiledObject): Zone {
   }
 
   return { id: String(obj.id), type, name, text: readText(propertyValue(obj, 'text')), x, y, width, height };
+}
+
+// Les clés des places sont uniques, et chaque porte (zone `door`, dont le nom est la clé d'une place) ferme un bureau qui existe.
+function checkDesks(zones: Zone[]): void {
+  const desks = zones.filter((zone) => zone.type === 'desk');
+  const keys = new Set<string>();
+  for (const desk of desks) {
+    const key = deskKey(desk);
+    if (keys.has(key)) {
+      throw new MapError('bad_zone', `Zone n° ${desk.id} : deux bureaux portent le nom « ${key} ». Le nom d'un bureau (zone desk) est sa clé : il doit être unique.`);
+    }
+    keys.add(key);
+  }
+  for (const door of zones.filter((zone) => zone.type === 'door')) {
+    if (door.name === null || !keys.has(door.name)) {
+      throw new MapError(
+        'bad_zone',
+        `Zone n° ${door.id} : cette porte (zone door) ne ferme aucun bureau. Son nom doit être celui d'une zone desk${door.name ? ` (« ${door.name} » n'existe pas)` : ''}.`,
+      );
+    }
+  }
 }
 
 function pickSpawnZone(zones: Zone[]): Zone {

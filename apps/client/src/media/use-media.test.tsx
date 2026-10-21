@@ -27,6 +27,9 @@ const INIT: InitPayload = {
   players: [],
   mapKey: 'dev-office',
   chatHistory: [],
+  desks: [],
+  closedDesks: [],
+  deskBans: [],
 };
 
 const cleanups: Array<() => void> = [];
@@ -68,6 +71,20 @@ function speakingOnBus(): string[][] {
   cleanups.push(() => EventBus.off('media:speaking', listener));
   return calls;
 }
+
+describe('le préchargement', () => {
+  test('le bureau ouvert, le client prépare sa première connexion (warmUp), une fois, sans rejoindre de room', async () => {
+    const socket = new FakeSocket();
+    socket.serverAccepts();
+    const client = new FakeMediaClient();
+    client.warmUp = vi.fn();
+    const hook = renderHook(() => useMedia(client, socket.asSocket()));
+    hook.rerender();
+    expect(client.warmUp).toHaveBeenCalledOnce();
+    await settle(client);
+    expect(client.journal).toEqual([]);
+  });
+});
 
 describe('les consignes du serveur', () => {
   test('media:join → client.join(payload)', async () => {

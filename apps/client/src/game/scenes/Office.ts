@@ -2,6 +2,7 @@ import {
   avatarBodyFits,
   isSimBot,
   parseOfficeMap,
+  type ActivityState,
   type InitPayload,
   type OfficeMap,
   type PublicPlayer,
@@ -10,11 +11,14 @@ import {
   type WorldTick,
 } from '@bureau/shared';
 import { Scale, Scene, Scenes } from 'phaser';
+import { fr, t } from '../../i18n/fr';
+import { deskTitle } from '../../office/desks';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { useOfficeStore } from '../../state/office-store';
 import { avatarObjectName } from '../avatars';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { EventBus } from '../EventBus';
+import { DeskLayer } from '../desk-layer';
 import { bindKeyboard, DirectionInput } from '../input';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { MoveSender } from '../move-sender';
@@ -46,6 +50,7 @@ export class Office extends Scene {
   private readonly remotes = new Map<string, RemotePlayer>();
   private othersVisible = true;
   private rings: SpeakingRings;
+  private deskLayer: DeskLayer;
   // Le faux live (VITE_SIM=1) : le glisser-déposer des personnes fictives. Absent d'un build normal.
   private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
@@ -73,6 +78,7 @@ export class Office extends Scene {
     this.tilemap = this.add.tilemap(this.mapKey);
     const { collisions } = buildMapLayers(this, this.tilemap);
     addZoneLabels(this, this.officeMap.zones);
+    useOfficeStore.getState().setOfficeMap(this.officeMap);
     // Le zoom d'abord : les étiquettes des avatars en dépendent.
     this.layoutCamera();
 
@@ -86,6 +92,15 @@ export class Office extends Scene {
     this.physics.add.collider(this.player, collisions);
     this.debug.self = { id: me.id, ...this.feet() };
     this.moveSender = new MoveSender();
+    // Les noms des bureaux et leurs portes : celles qui sont fermées pour soi sont des obstacles pour l'avatar local.
+    this.deskLayer = new DeskLayer(this, this.officeMap, {
+      feet: () => this.feet(),
+      onKnock: (key) => emitOnBus(EventBus, 'local:knock', { key }),
+      onBlocked: (key) => this.deskBlocked(key),
+    });
+    this.deskLayer.collideWith(this.player);
+    const showDesks = () => this.deskLayer.update(useOfficeStore.getState().desks, useOfficeStore.getState().closedDesks);
+    showDesks();
     this.rings = new SpeakingRings((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
 
     // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
@@ -110,8 +125,12 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:left', ({ id }) => this.removeRemote(id)),
       listenOnBus(EventBus, 'net:correct', ({ x, y }) => this.onCorrect(x, y)),
       listenOnBus(EventBus, 'net:status', ({ id, status }) => this.onStatus(id, status)),
+      listenOnBus(EventBus, 'net:activity', ({ id, activity }) => this.onActivity(id, activity)),
       listenOnBus(EventBus, 'net:profile', (p) => this.onProfile(p)),
       listenOnBus(EventBus, 'media:speaking', (ids) => this.rings.update(ids)),
+      useOfficeStore.subscribe((state, previous) => {
+        if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
+      }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
 
@@ -123,6 +142,8 @@ export class Office extends Scene {
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
+      this.deskLayer.destroy();
+      useOfficeStore.getState().setOfficeMap(null);
       this.debug.ready = false;
       this.debug.self = null;
     };
@@ -163,6 +184,15 @@ export class Office extends Scene {
     return { x, y };
   }
 
+  // L'avatar bute contre la porte fermée d'un bureau : on dit à qui il appartient, et comment toquer (ou qu'on n'y est plus le bienvenu).
+  private deskBlocked(key: string): void {
+    const desk = useOfficeStore.getState().desks.find((d) => d.key === key);
+    if (!desk) return;
+    const closedByOwner = desk.locked || desk.closedByState;
+    const name = deskTitle(desk);
+    useOfficeStore.getState().setDeskNotice(t(closedByOwner ? fr.desk.doorClosed : fr.desk.doorBanned, { name }));
+  }
+
   private sendLocalState(now: number): void {
     const move = this.moveSender.next(now, this.player.movePayload());
     if (move) emitOnBus(EventBus, 'local:move', move);
@@ -179,6 +209,7 @@ export class Office extends Scene {
     this.player.setAvatar(p.self.avatarKey);
     this.player.setDisplayedName(p.self.name);
     this.player.setStatus(p.self.status);
+    this.player.setActivity(p.self.activity ?? null);
     this.moveSender.reset();
 
     const present = new Set(p.players.map((player) => player.id));
@@ -211,6 +242,11 @@ export class Office extends Scene {
   private onStatus(id: string, status: Status): void {
     if (id === this.selfId) this.player.setStatus(status);
     else this.remotes.get(id)?.setStatus(status);
+  }
+
+  private onActivity(id: string, activity: ActivityState | null): void {
+    if (id === this.selfId) this.player.setActivity(activity);
+    else this.remotes.get(id)?.setActivity(activity);
   }
 
   private onProfile(p: { id: string; name: string; avatarKey: string | null }): void {

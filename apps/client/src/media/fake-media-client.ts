@@ -46,6 +46,9 @@ class FakeLiveKit implements MediaTransport {
   audioBlocked = false;
   audioStartRefused = false;
   audioStarts = 0;
+  // Le volume demandé de chaque personne (setVolumes), et le nombre d'appels.
+  volumes: Readonly<Record<string, number>> = {};
+  volumeCalls = 0;
   private room: string | null = null;
   private events: TransportEvents | null = null;
   private published = { mic: false, cam: false, screen: false };
@@ -99,6 +102,11 @@ class FakeLiveKit implements MediaTransport {
   async useDevices(devices: MediaDevices): Promise<void> {
     this.deviceLog.push(`devices:${JSON.stringify(devices)}`);
     this.devices = { ...devices };
+  }
+
+  setVolumes(volumes: Readonly<Record<string, number>>): void {
+    this.volumes = { ...volumes };
+    this.volumeCalls += 1;
   }
 
   // Comme LiveKit : hors room, rien ; refusé (hors d'un geste), il lève et le son reste bloqué.
@@ -292,5 +300,14 @@ export class FakeMediaClient extends MediaSession {
   // Les startAudio reçus dans une room.
   get audioStarts(): number {
     return this.livekit.audioStarts;
+  }
+
+  // Les derniers volumes demandés (setVolumes), et le nombre d'appels.
+  get volumes(): Readonly<Record<string, number>> {
+    return this.livekit.volumes;
+  }
+
+  get volumeCalls(): number {
+    return this.livekit.volumeCalls;
   }
 }

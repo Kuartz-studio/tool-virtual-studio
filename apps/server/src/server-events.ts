@@ -1,9 +1,13 @@
+import type { ActivityState } from '@bureau/shared';
+
 // Ce que les routes REST disent au temps réel (la tâche 13 s'y abonne) : un membre vient d'être retiré, un profil a changé, les
 // sessions d'un compte viennent d'être fermées (son mot de passe réinitialisé).
 export interface ServerEventMap {
   'member:removed': [userId: string];
   'profile:changed': [profile: { id: string; name: string; avatarKey: string | null }];
   'sessions:revoked': [userId: string];
+  // Un de ses états d'activité a été remplacé (`state`) ou supprimé (null) : si c'est celui qu'elle a pris, le bureau le voit changer.
+  'activity:edited': [change: { userId: string; id: string; state: ActivityState | null }];
 }
 
 export interface ServerEvents {
@@ -22,6 +26,7 @@ export function createServerEvents(o: { onError?: (err: unknown) => void } = {})
     'member:removed': new Set(),
     'profile:changed': new Set(),
     'sessions:revoked': new Set(),
+    'activity:edited': new Set(),
   };
 
   return {

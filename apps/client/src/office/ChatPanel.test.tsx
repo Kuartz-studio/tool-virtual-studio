@@ -46,7 +46,7 @@ afterEach(() => {
 
 // Le serveur a envoyé l'état de départ : on est Léa, avec Bob, et cet historique du chat.
 function arrive(history: ChatMessage[] = []): void {
-  act(() => store().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: history }));
+  act(() => store().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: history, desks: [], closedDesks: [], deskBans: [] }));
 }
 
 interface Options {

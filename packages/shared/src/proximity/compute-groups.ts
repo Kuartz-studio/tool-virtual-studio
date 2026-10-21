@@ -1,4 +1,11 @@
-import { GROUP_DEBOUNCE_MS, JOIN_DISTANCE_PX, LEAVE_DISTANCE_PX } from '../constants';
+import {
+  CLOSE_JOIN_DISTANCE_PX,
+  CLOSE_LEAVE_DISTANCE_PX,
+  GROUP_DEBOUNCE_MS,
+  JOIN_DISTANCE_PX,
+  LEAVE_DISTANCE_PX,
+  ZONE_JOIN_DEBOUNCE_MS,
+} from '../constants';
 import type { OfficeMap } from '../map/parse-map';
 import { zoneAt } from '../map/queries';
 import type { ProximityPlayer } from '../protocol';
@@ -39,15 +46,30 @@ interface Cluster {
   zoneId: string | null;
 }
 
-const JOIN_SQ = JOIN_DISTANCE_PX * JOIN_DISTANCE_PX;
-const LEAVE_SQ = LEAVE_DISTANCE_PX * LEAVE_DISTANCE_PX;
+// Les distances des espaces ouverts :
+// - joinPx : deux personnes à moins de joinPx l'une de l'autre sont reliées ;
+// - leavePx : déjà ensemble, elles le restent jusqu'à leavePx (au moins joinPx, pour ne pas se couper en boucle à la limite) ;
+// - requireStill : pour se relier, les deux doivent être à l'arrêt (passer à côté de quelqu'un en marchant ne connecte pas).
+export interface GroupConfig {
+  joinPx: number;
+  leavePx: number;
+  requireStill: boolean;
+}
+
+// Celle du bureau : on se relie à ceux qu'on pourrait entendre (le son baisse avec la distance, voir audioGain), qu'on marche ou non,
+// puisqu'à la limite leur voix est déjà inaudible.
+export const OPEN_SPACE_GROUPING: GroupConfig = { joinPx: JOIN_DISTANCE_PX, leavePx: LEAVE_DISTANCE_PX, requireStill: false };
+
+// Le cercle serré d'origine : 3 cases, à l'arrêt, et 4 cases pour rester.
+export const CLOSE_RANGE_GROUPING: GroupConfig = { joinPx: CLOSE_JOIN_DISTANCE_PX, leavePx: CLOSE_LEAVE_DISTANCE_PX, requireStill: true };
 
 // Les groupes de conversation, à partir de l'état de l'appel précédent (prev, jamais modifié) ; now est l'heure en ms. Appelé
 // 4 fois par seconde par le serveur. Le résultat est un état neuf, qui ne dépend que des arguments, pas de l'ordre de la liste :
-// - dans une zone isolante, tous les éligibles (pas en Ne pas déranger) forment un groupe, à partir de deux ;
-// - dans les espaces ouverts, on se relie à moins de 3 cases et à l'arrêt, on reste relié jusqu'à 4 cases, de proche en proche ;
-// - un changement ne s'applique qu'après 500 ms, sauf ces cas, immédiats :
-//   · passer en Ne pas déranger fait sortir de son groupe ;
+// - dans une zone isolante, tous les éligibles (ni en Ne pas déranger, ni hors conversation par leur état d'activité) forment un groupe, à partir de deux ;
+// - dans les espaces ouverts, on se relie à moins de config.joinPx (et à l'arrêt, si config.requireStill), on reste relié jusqu'à
+//   config.leavePx, de proche en proche ;
+// - un changement ne s'applique qu'après 500 ms (150 ms pour rejoindre le groupe d'une zone), sauf ces cas, immédiats :
+//   · passer en Ne pas déranger (ou hors conversation) fait sortir de son groupe ;
 //   · se trouver hors de la zone de son groupe quand c'est un groupe de zone fait sortir du groupe : qu'on vienne de quitter la zone,
 //     ou que, resté dehors, on voie son groupe d'espace ouvert devenir celui de la zone (sa plus grande partie y est entrée et la
 //     grappe de la zone a pris son id). On en sort même si l'on veut rejoindre une autre grappe, qu'on attend alors 500 ms ;
@@ -55,7 +77,15 @@ const LEAVE_SQ = LEAVE_DISTANCE_PX * LEAVE_DISTANCE_PX;
 // - personne hors d'une zone n'est jamais dans le groupe de cette zone ;
 // - quand des groupes fusionnent ou se séparent, chaque id va à la grappe qui compte le plus de ses membres (à égalité, à celle qui
 //   reste dans la zone du groupe, puis à la plus grande) : la plus grande partie garde sa room, les autres en changent.
-export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: GroupingState, now: number): GroupingState {
+export function computeGroups(
+  players: ProximityPlayer[],
+  map: OfficeMap,
+  prev: GroupingState,
+  now: number,
+  config: GroupConfig = OPEN_SPACE_GROUPING,
+): GroupingState {
+  const joinSq = config.joinPx * config.joinPx;
+  const leaveSq = config.leavePx * config.leavePx;
   // Les joueurs présents, dans l'ordre lexicographique de leur id, avec leur zone : zoneOf(p) = zoneAt(map, p.x, p.y)?.id ?? null.
   const present = [...new Map(players.map((p) => [p.id, p])).values()]
     .sort((a, b) => compare(a.id, b.id))
@@ -63,7 +93,7 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
   const current = (id: string): string | null => own(prev.assignment, id) ?? null;
 
   // 1. Les éligibles : tous, sauf les personnes en Ne pas déranger.
-  const eligible = present.filter(({ p }) => p.status !== 'dnd');
+  const eligible = present.filter(({ p }) => !isOut(p));
 
   // 2. Les grappes. Une par zone qui compte au moins 2 éligibles.
   const clusters: Cluster[] = [];
@@ -73,8 +103,8 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
   }
   for (const [zoneId, members] of byZone) if (members.length >= 2) clusters.push({ members, zoneId });
 
-  // Dans les espaces ouverts, une arête a–b si a et b sont déjà ensemble et à 4 cases au plus (d ≤ LEAVE), ou s'ils ne le sont pas,
-  // à moins de 3 cases (d < JOIN) et tous deux à l'arrêt. Chaque composante connexe d'au moins 2 personnes est une grappe.
+  // Dans les espaces ouverts, une arête a–b si a et b sont déjà ensemble et à leavePx au plus (d ≤ LEAVE), ou s'ils ne le sont pas,
+  // à moins de joinPx (d < JOIN) et, selon la config, tous deux à l'arrêt. Chaque composante connexe d'au moins 2 personnes est une grappe.
   const open = eligible.filter(({ zone }) => zone === null).map(({ p }) => p);
   const neighbours = open.map((): number[] => []);
   for (let i = 0; i < open.length; i++) {
@@ -84,7 +114,7 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
       const d2 = (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
       const group = current(a.id);
       const together = group !== null && group === current(b.id);
-      if (together ? d2 <= LEAVE_SQ : d2 < JOIN_SQ && !a.moving && !b.moving) {
+      if (together ? d2 <= leaveSq : d2 < joinSq && (!config.requireStill || (!a.moving && !b.moving))) {
         neighbours[i]!.push(j);
         neighbours[j]!.push(i);
       }
@@ -159,13 +189,15 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
   //    déranger, et se trouver hors de la zone de son groupe quand c'est un groupe de zone, quelle que soit la grappe voulue ; s'il en
   //    veut une, il l'attend à partir de maintenant. Tout autre changement attend que la même cible soit voulue depuis
   //    GROUP_DEBOUNCE_MS.
+  //    Le délai dépend de la cible : rejoindre le groupe d'une zone (un geste voulu) n'attend que ZONE_JOIN_DEBOUNCE_MS.
+  const delayFor = (target: string | null): number => (target !== null && claimed.get(target) != null ? ZONE_JOIN_DEBOUNCE_MS : GROUP_DEBOUNCE_MS);
   const assignment = new Map<string, string | null>();
   const pending = new Map<string, { target: string | null; since: number }>();
   for (const { p, zone } of present) {
     const actual = current(p.id);
     const target = wanted.get(p.id) ?? null;
     const actualZone = actual === null ? null : zoneOfGroup(actual);
-    const immediate = p.status === 'dnd' || (actualZone !== null && zone !== actualZone);
+    const immediate = isOut(p) || (actualZone !== null && zone !== actualZone);
     const waiting = own(prev.pending, p.id);
     const sameTarget = waiting !== undefined && waiting.target === target;
     if (target === actual) {
@@ -173,7 +205,7 @@ export function computeGroups(players: ProximityPlayer[], map: OfficeMap, prev: 
     } else if (immediate) {
       assignment.set(p.id, null);
       if (target !== null) pending.set(p.id, { target, since: now });
-    } else if (sameTarget && now - waiting.since >= GROUP_DEBOUNCE_MS) {
+    } else if (sameTarget && now - waiting.since >= delayFor(target)) {
       assignment.set(p.id, target);
     } else {
       assignment.set(p.id, actual);
@@ -211,6 +243,11 @@ export function busyZoneIds(s: GroupingState): Set<string> {
     if (group.zoneId !== null && group.members.length >= 2) busy.add(group.zoneId);
   }
   return busy;
+}
+
+// Hors de toute conversation : en Ne pas déranger, ou dans un état d'activité sans entendre ni être entendu.
+function isOut(p: ProximityPlayer): boolean {
+  return p.status === 'dnd' || p.excluded === true;
 }
 
 // L'ordre lexicographique (des unités UTF-16), le même sur toutes les machines, quelle que soit leur langue.

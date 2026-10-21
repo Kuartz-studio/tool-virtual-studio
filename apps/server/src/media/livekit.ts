@@ -1,12 +1,13 @@
 import { LIVEKIT_TOKEN_TTL_S } from '@bureau/shared';
-import { AccessToken, RoomServiceClient, ServerError } from 'livekit-server-sdk';
+import { AccessToken, RoomServiceClient, ServerError, TrackSource } from 'livekit-server-sdk';
 import type { Env } from '../env';
 
 // Ce que le serveur demande à l'audio/vidéo : l'adresse que les clients rejoignent, un jeton pour une room, et le retrait d'un
 // participant d'une room. LiveKit Cloud en production (createLiveKitBackend) ; un faux dans les tests.
 export interface MediaBackend {
   url: string;
-  mintToken(i: { room: string; identity: string; name: string }): Promise<string>;
+  // canSpeak faux : le jeton ne permet pas de publier le micro (la caméra et le partage d'écran restent permis). Absent : permis.
+  mintToken(i: { room: string; identity: string; name: string; canSpeak?: boolean }): Promise<string>;
   removeParticipant(room: string, identity: string): Promise<void>;
 }
 
@@ -50,9 +51,17 @@ export function createLiveKitBackend(env: LiveKitEnv): MediaBackend | null {
   const rooms = new RoomServiceClient(roomServiceUrl(url), apiKey, apiSecret, { requestTimeout: ROOM_SERVICE_TIMEOUT_S });
   return {
     url,
-    mintToken({ room, identity, name }) {
+    mintToken({ room, identity, name, canSpeak = true }) {
       const token = new AccessToken(apiKey, apiSecret, { identity, name, ttl: LIVEKIT_TOKEN_TTL_S });
-      token.addGrant({ roomJoin: true, room, canPublish: true, canSubscribe: true, canPublishData: false });
+      token.addGrant({
+        roomJoin: true,
+        room,
+        canPublish: true,
+        canSubscribe: true,
+        canPublishData: false,
+        // Sans droit de parler : tout ce qui se publie, sauf le micro.
+        ...(canSpeak ? {} : { canPublishSources: [TrackSource.CAMERA, TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO] }),
+      });
       return token.toJwt();
     },
     async removeParticipant(room, identity) {

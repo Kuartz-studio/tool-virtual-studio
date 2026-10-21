@@ -7,6 +7,11 @@ import type { MediaBackend } from './livekit';
 // Ce que le coordinateur demande d'envoyer à une personne (à chacune de ses sockets) : media:join, ou media:leave.
 export type MediaEvent = { type: 'join'; p: MediaJoinPayload } | { type: 'leave' };
 
+export interface MediaCoordinatorOptions {
+  /** Cette personne a-t-elle le droit de publier son micro ? Faux : son jeton ne le permet pas (état d'activité où l'on n'est pas entendu). */
+  canSpeak?: (userId: string) => boolean;
+}
+
 const BOOT_ID_ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 
 // L'identifiant de ce démarrage du serveur, préfixe des rooms : 6 caractères aléatoires. Les ids des groupes repartent de g1 à chaque
@@ -33,12 +38,19 @@ export class MediaCoordinator {
   private state: GroupingState = EMPTY_GROUPING;
   // Le nom affiché de chacun, pour ses jetons : celui que donne le dernier apply (le serveur donne toujours celui du monde).
   private nameOf: (id: string) => string = (id) => id;
+  // Le droit de parler de chacun dans la room où il est, tel que son dernier jeton le dit : s'il change, la personne rejoint la même room
+  // avec un jeton neuf.
+  private readonly spoke = new Map<string, boolean>();
+  private readonly canSpeak: (userId: string) => boolean;
 
   constructor(
     private readonly backend: MediaBackend | null,
     private readonly bootId: string,
     private readonly logger?: Logger,
-  ) {}
+    options: MediaCoordinatorOptions = {},
+  ) {
+    this.canSpeak = options.canSpeak ?? (() => true);
+  }
 
   roomFor(groupId: string): string {
     return `${this.bootId}-${groupId}`;
@@ -66,12 +78,15 @@ export class MediaCoordinator {
     for (const userId of new Set([...Object.keys(prev.assignment), ...Object.keys(next.assignment)])) {
       const before = groupOf(prev, userId);
       const after = groupOf(next, userId);
-      if (before === after) continue;
+      // Même room, mais son droit de parler a changé : elle la quitte et la rejoint avec le jeton qui correspond.
+      const rejoin = before !== null && before === after && this.spoke.has(userId) && this.spoke.get(userId) !== this.canSpeak(userId);
+      if (before === after && !rejoin) continue;
       if (before !== null) {
         send(userId, { type: 'leave' });
         this.remove(backend, this.roomFor(before), userId);
       }
-      if (after !== null) joins.push(this.join(backend, userId, this.roomFor(after), send));
+      if (after === null) this.spoke.delete(userId);
+      else joins.push(this.join(backend, userId, this.roomFor(after), send));
     }
     await Promise.all(joins);
   }
@@ -81,8 +96,11 @@ export class MediaCoordinator {
   async currentJoin(userId: string): Promise<MediaJoinPayload | null> {
     const room = this.roomOf(userId);
     if (room === null || !this.backend) return null;
-    const token = await this.backend.mintToken({ room, identity: userId, name: this.nameOf(userId) });
-    return this.roomOf(userId) === room ? { url: this.backend.url, room, token } : null;
+    const canSpeak = this.canSpeak(userId);
+    const token = await this.backend.mintToken({ room, identity: userId, name: this.nameOf(userId), canSpeak });
+    if (this.roomOf(userId) !== room) return null;
+    this.spoke.set(userId, canSpeak);
+    return { url: this.backend.url, room, token };
   }
 
   // Les membres de son groupe, elle comprise (dans l'ordre lexicographique) ; [] hors groupe.
@@ -99,10 +117,12 @@ export class MediaCoordinator {
 
   private async join(backend: MediaBackend, userId: string, room: string, send: (userId: string, e: MediaEvent) => void): Promise<void> {
     try {
-      const token = await backend.mintToken({ room, identity: userId, name: this.nameOf(userId) });
+      const canSpeak = this.canSpeak(userId);
+      const token = await backend.mintToken({ room, identity: userId, name: this.nameOf(userId), canSpeak });
       // Un apply plus récent l'a fait changer de room pendant ce temps : il a envoyé ce qu'il fallait. Jamais de jeton pour une room
       // qu'elle a quittée.
       if (this.roomOf(userId) !== room) return;
+      this.spoke.set(userId, canSpeak);
       send(userId, { type: 'join', p: { url: backend.url, room, token } });
     } catch (err) {
       this.report({ err, userId, room }, 'media:join impossible');

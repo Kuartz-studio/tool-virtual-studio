@@ -1083,7 +1083,7 @@ describe('retirer un membre', () => {
 
 describe('quelqu\'un que les listes ne connaissent pas arrive en ligne', () => {
   function arrive(): void {
-    act(() => store().applyInit({ self: player('ada', 'Ada'), players: [], mapKey: 'dev-office', chatHistory: [] }));
+    act(() => store().applyInit({ self: player('ada', 'Ada'), players: [], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
   }
 
   test('une invitation vient d\'être acceptée : les deux listes sont relues, une seule fois ; Nina quitte les invitations et entre dans les membres', async () => {

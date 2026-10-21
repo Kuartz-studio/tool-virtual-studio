@@ -85,6 +85,11 @@ export function useMedia(client: MediaClient, socket: OfficeSocket | null): Medi
     };
   }, [client]);
 
+  // Le bureau est ouvert : on charge livekit-client maintenant, pour que la première conversation ne l'attende pas.
+  useEffect(() => {
+    client.warmUp?.();
+  }, [client]);
+
   // Démonté, ou un autre client : celui-ci quitte sa room.
   useEffect(() => () => void client.leave(), [client]);
 

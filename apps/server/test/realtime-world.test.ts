@@ -387,7 +387,7 @@ describe('avant l\'entrée dans le monde', () => {
     });
     await sleep(WORLD_TICK_MS * 3);
     expect(aEvents.names()).toEqual(['init']);   // pas de move:correct
-    expect(bEvents.names()).toEqual(['player:joined']);   // ni statut, ni média, ni tick : seulement son arrivée
+    expect(bEvents.names()).toEqual(['desk:changed', 'player:joined']);   // ni statut, ni média, ni tick : seulement son arrivée, et le bureau qu'elle prend
   });
 });
 

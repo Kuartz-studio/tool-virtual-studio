@@ -1,22 +1,30 @@
 import { randomUUID } from 'node:crypto';
 import {
   EMPTY_GROUPING,
+  OPEN_SPACE_GROUPING,
   MEDIA_STATE_RATE,
   MOVE_RATE,
   OFFICE_ROOM,
+  DESK_RATE,
   STATUS_RATE,
+  activityIdSchema,
   chatSendSchema,
+  deskCommandSchema,
   computeGroups,
   mediaStateSchema,
   moveSchema,
   statusSchema,
   type ChatAck,
   type ChatMessage,
+  type DeskAck,
+  type GroupConfig,
   type GroupingState,
   type OfficeMap,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
+import type { ActivityController } from '../activity/activity-controller';
 import type { ChatService } from '../chat/chat-service';
+import type { DeskController } from '../desks/desk-controller';
 import type { Env } from '../env';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
@@ -38,6 +46,10 @@ export interface HandlerDeps {
   groupMembersOf: (userId: string) => string[];
   /** Les sockets de cette personne qui ont reçu leur init : les seules à qui l'on écrit, jamais avant. */
   socketsOf: (userId: string) => TypedSocket[];
+  /** Les bureaux : `desk:do` y passe. */
+  desks: Pick<DeskController, 'run'>;
+  /** Les états d'activité : `state:set` y passe, et un statut ordinaire en efface un. */
+  activity: Pick<ActivityController, 'choose' | 'clear'>;
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
@@ -56,6 +68,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   // chaque init et à chaque changement de micro, caméra ou partage.
   const statusLimiter = createRateLimiter({ ...STATUS_RATE, now: d.now });
   const mediaLimiter = createRateLimiter({ ...MEDIA_STATE_RATE, now: d.now });
+  const deskLimiter = createRateLimiter({ ...DESK_RATE, now: d.now });
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
   // flot de messages invalides ne coûte presque rien. Refusé par le monde (trop vite, case bloquante, hors carte), il renvoie à
@@ -78,6 +91,17 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     if (!status.success || !d.world.get(userId)) return;
     d.world.setStatus(userId, status.data);
     io.to(OFFICE_ROOM).emit('status:changed', { id: userId, status: status.data });
+    // Un statut ordinaire prend la place de l'état d'activité qu'on avait.
+    d.activity.clear(userId);
+  });
+
+  // Prendre un de ses états d'activité (ou null, pour revenir à un statut ordinaire) : à tout le bureau, émetteur compris. Même limite de
+  // débit que le statut. Un identifiant qui n'est pas l'un des siens est ignoré.
+  socket.on('state:set', (payload) => {
+    if (!statusLimiter.take(socket.id)) return;
+    const id = activityIdSchema.safeParse(payload);
+    if (!id.success || !d.world.get(userId)) return;
+    void d.activity.choose(userId, id.data);
   });
 
   // Micro, caméra et partage d'écran, pour l'affichage chez les autres : à tout le monde, émetteur compris. Le monde le garde,
@@ -142,6 +166,23 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     sendChat(payload, ack).catch((err: unknown) => logServerError(d.logger, { err, userId }, 'Message du chat impossible'));
   });
 
+  // Les commandes d'un bureau (prendre une place, la nommer, fermer la porte, exclure, toquer…), avec accusé de réception. Une socket
+  // qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée sans réponse, comme pour le chat. Puis, dans cet ordre :
+  // 1. au-delà de DESK_RATE par socket : `rate_limited` ; 2. commande invalide (deskCommandSchema) : `invalid` ; 3. la commande (DeskController).
+  socket.on('desk:do', (payload, ack) => {
+    const reply = (r: DeskAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!deskLimiter.take(socket.id)) return reply({ ok: false, error: 'rate_limited' });
+    const command = deskCommandSchema.safeParse(payload);
+    if (!command.success) return reply({ ok: false, error: 'invalid' });
+    d.desks.run(userId, command.data).then(reply, (err: unknown) => {
+      logServerError(d.logger, { err, userId }, 'Commande de bureau impossible');
+      reply({ ok: false, error: 'unavailable' });
+    });
+  });
+
   // Réservé aux tests de bout en bout : sans E2E=1 (que loadEnv refuse en production), l'événement n'existe pas. Le joueur est posé
   // là, à l'arrêt, si la case est praticable (World.teleport) ; les autres l'apprennent au prochain tick, comme pour un mouvement.
   if (d.env.E2E === '1') {
@@ -189,6 +230,8 @@ export interface GroupTicksDeps {
   /** Le nom affiché d'une personne, pour ses jetons. */
   nameOf: (id: string) => string;
   groupsMs: number;
+  /** Les distances des espaces ouverts : OPEN_SPACE_GROUPING par défaut (le son baisse avec la distance). */
+  grouping?: GroupConfig;
   /** Appelé avec les groupes à chaque calcul (le faux live, SIM=1, en dépend). Ne doit pas lever : une exception est journalisée. */
   onGroups?: (state: GroupingState) => void;
   /** L'horloge du monde (monotone), celle des délais de computeGroups : jamais Date.now, qui peut sauter. */
@@ -209,7 +252,7 @@ export function startGroupTicks(d: GroupTicksDeps): { stop(): void; state(): Gro
   let applying = false;
   const stop = every(d.groupsMs, d.logger, 'Calcul des groupes impossible', () => {
     if (applying) return;
-    const next = computeGroups(d.world.proximityPlayers(), d.map, state, d.now());
+    const next = computeGroups(d.world.proximityPlayers(), d.map, state, d.now(), d.grouping ?? OPEN_SPACE_GROUPING);
     const applied = d.coordinator.apply(state, next, d.send, d.nameOf);
     state = next;
     applying = true;

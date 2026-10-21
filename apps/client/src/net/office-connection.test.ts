@@ -1,5 +1,6 @@
 import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { fr, t } from '../i18n/fr';
 import { getSimRoom, resetSimRoom, subscribeSimConnectionLost } from '../sim/sim-room';
 import { createOfficeStore } from '../state/office-store';
 import { FakeBus, FakeSocket } from '../test/fake-socket';
@@ -19,7 +20,7 @@ const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => (
 });
 const SELF = player('moi');
 const A = player('a');
-const init = (players: PublicPlayer[] = [A]): InitPayload => ({ self: SELF, players, mapKey: 'dev-office', chatHistory: [] });
+const init = (players: PublicPlayer[] = [A]): InitPayload => ({ self: SELF, players, mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] });
 const move = { x: 81, y: 240, dir: 'right', moving: true } as const;
 
 let socket: FakeSocket;
@@ -223,6 +224,91 @@ describe('connectOffice', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.receive('init', initWith([msg('m1'), msg('m2')]));
       expect(ids(store.getState().chatAll)).toEqual(['m1', 'm2']);
+    });
+
+    test('activity:changed : au magasin (pour soi comme pour les autres), puis au jeu (net:activity) ; le choix de l\'onglet suit le sien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', init([A]));
+      const state = { id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false };
+
+      socket.receive('activity:changed', { id: 'a', activity: state });
+      expect(store.getState().players.a?.activity).toEqual(state);
+      expect(store.getState().chosenActivityId).toBeNull();   // celui d'un autre n'est pas le choix de cet onglet
+      expect(bus.emittedOf('net:activity')).toEqual([{ id: 'a', activity: state }]);
+
+      socket.receive('activity:changed', { id: 'moi', activity: state });
+      expect(store.getState().self?.activity).toEqual(state);
+      expect(store.getState().chosenActivityId).toBe('s1');
+      socket.receive('activity:changed', { id: 'moi', activity: null });
+      expect(store.getState().self?.activity).toBeNull();
+      expect(store.getState().chosenActivityId).toBeNull();
+    });
+
+    test('init : l\'état d\'activité que le serveur a gardé devient le choix de l\'onglet ; pris ici et oublié par un serveur redémarré, il est redit', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      const state = { id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false };
+      socket.receive('init', { ...init([A]), self: { ...SELF, activity: state } });
+      expect(store.getState().chosenActivityId).toBe('s1');
+      expect(socket.sentOf('state:set')).toEqual([]);
+
+      // Le serveur redémarre et a tout oublié : l'onglet redit son état.
+      socket.receive('init', init([A]));
+      expect(socket.sentOf('state:set')).toEqual(['s1']);
+      expect(socket.sentOf('status:set')).toEqual([]);
+    });
+
+    test('un état d\'activité pris : il passe avant le statut choisi, qui n\'est pas redit', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      store.getState().setChosenStatus('busy');
+      store.getState().setChosenActivity('s9');
+      socket.receive('init', init([A]));
+      expect(socket.sentOf('state:set')).toEqual(['s9']);
+      expect(socket.sentOf('status:set')).toEqual([]);
+    });
+
+    test('session:replaced : le choix d\'état de cet onglet est oublié aussi', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      store.getState().setChosenActivity('s1');
+      socket.receive('session:replaced');
+      expect(store.getState().chosenActivityId).toBeNull();
+    });
+
+    test('desk:changed, desk:access, desk:bans, desk:knock : au magasin, pas au jeu', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', { ...init([A]), desks: [{ key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false }] });
+      bus.emitted.length = 0;
+      socket.receive('desk:changed', { key: 'A1', ownerId: 'a', ownerName: 'A', name: 'Labo', locked: true, closedByState: false });
+      socket.receive('desk:access', { closed: ['A1'] });
+      socket.receive('desk:bans', [{ id: 'z', name: 'Zoé' }]);
+      socket.receive('desk:knock', { key: 'A1', userId: 'z', name: 'Zoé' });
+      expect(store.getState().desks[0]).toMatchObject({ key: 'A1', ownerId: 'a', name: 'Labo', locked: true });
+      expect(store.getState().closedDesks).toEqual(['A1']);
+      expect(store.getState().deskBans).toEqual([{ id: 'z', name: 'Zoé' }]);
+      expect(store.getState().deskKnocks).toEqual([{ key: 'A1', userId: 'z', name: 'Zoé' }]);
+      expect(bus.emitted).toEqual([]);
+    });
+
+    test('local:knock : part au serveur (knock), la réponse devient un message passager ; rien tant que la connexion n\'est pas prête', async () => {
+      connectOffice(socket.asSocket(), store, bus);
+      bus.emit('local:knock', { key: 'A1' });
+      expect(socket.sentOf('desk:do')).toEqual([]);
+
+      socket.serverAccepts();
+      socket.receive('init', { ...init([A]), desks: [{ key: 'A1', ownerId: 'a', ownerName: 'Ana', name: null, locked: true, closedByState: false }] });
+      bus.emit('local:knock', { key: 'A1' });
+      expect(socket.sentOf('desk:do')).toEqual([{ type: 'knock', key: 'A1' }]);
+      socket.serverAcks('desk:do', { ok: true });
+      await Promise.resolve();
+      expect(store.getState().deskNotice).toBe(t(fr.desk.knockSent, { name: 'Bureau de Ana' }));
+
+      bus.emit('local:knock', { key: 'A1' });
+      socket.serverAcks('desk:do', { ok: false, error: 'not_locked' });
+      await Promise.resolve();
+      expect(store.getState().deskNotice).toBe(fr.desk.errors.not_locked);
     });
 
     test('chat:message : au magasin, dans la liste de son canal ; pas au jeu', () => {

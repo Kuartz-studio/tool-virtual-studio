@@ -36,6 +36,11 @@ const lk = vi.hoisted(() => {
     isSpeaking = false;
     // Les publications, par source (Track.Source) : leur piste vidéo, une fois reçue.
     readonly publications = new Map<string, { source: string; videoTrack?: FakeTrack }>();
+    // Les volumes que la page a demandés à LiveKit pour cette personne : [source, volume].
+    readonly volumeCalls: Array<[string, number]> = [];
+    readonly setVolume = vi.fn((volume: number, source: string) => {
+      this.volumeCalls.push([source, volume]);
+    });
     constructor(
       readonly identity: string,
       readonly name: string | undefined,
@@ -184,6 +189,64 @@ const lastRoom = () => lk.FakeRoom.instances.at(-1)!;
 const audioElements = () => [...document.querySelectorAll('audio')];
 // Laisse le client avancer aussi loin qu'il peut (la fausse Room n'attend que des promesses, ou ce que retient le test).
 const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+describe('le volume des autres (setVolumes)', () => {
+  const transportOf = (): { media: MediaClient; transport: LiveKitTransport } => {
+    const transport = new LiveKitTransport();
+    const media = new MediaSession(transport, { mic: false, cam: false });
+    clients.push(media);
+    return { media, transport };
+  };
+
+  test('à ceux qui sont déjà là : leur voix et le son de leur partage d\'écran, une fois', async () => {
+    const { media, transport } = transportOf();
+    await media.join(payload('r1'));
+    const bob = lastRoom().arrive('bob', 'Bob');
+    bob.volumeCalls.length = 0;   // le plein volume du départ
+    transport.setVolumes({ bob: 0.4 });
+    expect(bob.volumeCalls).toEqual([[Track.Source.Microphone, 0.4], [Track.Source.ScreenShareAudio, 0.4]]);
+    transport.setVolumes({ bob: 0.4 });
+    expect(bob.volumeCalls).toHaveLength(2);
+    transport.setVolumes({ bob: 0.1 });
+    expect(bob.volumeCalls.at(-1)).toEqual([Track.Source.ScreenShareAudio, 0.1]);
+  });
+
+  test('à ceux qui arrivent ensuite, dès leur arrivée ; sans entrée, plein volume', async () => {
+    const { media, transport } = transportOf();
+    await media.join(payload('r1'));
+    transport.setVolumes({ zoe: 0 });
+    const zoe = lastRoom().arrive('zoe', 'Zoé');
+    const ana = lastRoom().arrive('ana', 'Ana');
+    expect(zoe.volumeCalls[0]).toEqual([Track.Source.Microphone, 0]);
+    expect(ana.volumeCalls[0]).toEqual([Track.Source.Microphone, 1]);
+  });
+
+  test('un volume hors de 0 à 1 est ramené dans ces bornes, un volume illisible vaut le plein volume', async () => {
+    const { media, transport } = transportOf();
+    await media.join(payload('r1'));
+    const bob = lastRoom().arrive('bob', 'Bob');
+    transport.setVolumes({ bob: 3 });
+    expect(bob.volumeCalls[0]![1]).toBe(1);
+    transport.setVolumes({ bob: -2 });
+    expect(bob.volumeCalls.at(-1)![1]).toBe(0);
+    transport.setVolumes({ bob: Number.NaN });
+    expect(bob.volumeCalls.at(-1)![1]).toBe(1);
+  });
+
+  test('ils valent aussi pour la room suivante : une personne qui y est déjà reçoit son volume', async () => {
+    const { media, transport } = transportOf();
+    await media.join(payload('r1'));
+    transport.setVolumes({ bob: 0.5 });
+    await media.join(payload('r2'));
+    const bob = lastRoom().arrive('bob', 'Bob');
+    expect(bob.volumeCalls[0]).toEqual([Track.Source.Microphone, 0.5]);
+  });
+
+  test('hors room : rien à régler, et rien ne plante', () => {
+    const { transport } = transportOf();
+    expect(() => transport.setVolumes({ bob: 0.5 })).not.toThrow();
+  });
+});
 
 describe('LiveKitTransport, sous MediaSession', () => {
   test('aucune Room ni aucun périphérique avant le premier join, même en changeant micro, caméra et préférences', async () => {

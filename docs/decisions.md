@@ -123,6 +123,34 @@ Pendant l'exécution du plan, certaines questions n'avaient pas de réponse dans
 | Les erreurs de base sont journalisées sans leurs valeurs (paramètres, et valeurs reprises dans le message) | Elles pouvaient contenir un jeton de session | Un diagnostic un peu moins précis dans les journaux |
 | Les 4 petits points laissés par la dernière relecture ne sont pas corrigés tout de suite (voir plus bas) | Pas de deuxième vague de corrections : ils sont rares ou optionnels | Voir chaque point ci-dessous |
 
+## Bureaux, grande carte, son selon la distance et états d'activité (octobre 2026)
+
+Ajoutés après la première version, d'après la demande « update ». Là aussi, une décision a été prise à chaque fois qu'elle ne disait rien.
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| La grande carte est du code (`OFFICE`), comme `DEV_OFFICE`, avec les mêmes 5 tuiles de développement | Cohérent avec la carte existante ; l'habillage définitif (assets, Tiled) reste à faire | Les meubles se ressemblent tous (une même tuile pour le canapé, la table et l'arcade) |
+| 73 × 39 cases, 20 bureaux de 7 × 5, une grande salle de 23 × 13, une salle de réunion de 13 × 7 | Une équipe d'une vingtaine de personnes ; chaque pièce assez grande pour y circuler | Plus ou moins de places : changer les constantes de `office.ts` |
+| `MAP_KEY` garde `dev-office` par défaut ; la bascule est `MAP_KEY=office` | Le README demandait déjà une bascule volontaire ; les tests et les e2e restent sur la petite carte | Oublier la variable laisse la petite carte (3 bureaux) |
+| Un bureau = deux zones de même nom (`desk` + `door`), la clé de la place | Le nom de la zone est stable quand la carte change ; la porte sert au client (obstacle visuel et physique) | Une zone renommée dans Tiled détache son bureau en base |
+| Le premier arrivé sans bureau reçoit la première place libre | « Chaque personne possède son propre bureau (attribué) » | Quelqu'un voudrait choisir : il change de place dans le panneau |
+| Fermer la porte bloque l'entrée seulement : qui est déjà dedans reste | Évite de téléporter quelqu'un sans le dire ; « Exclure » existe pour ça | Quelqu'un reste dans un bureau fermé jusqu'à ce qu'on l'exclue |
+| Les exclus et les admis ne sont pas enregistrés (valables le temps du serveur) | Moins de tables ; un redéploiement les efface, ce qui est une porte qui se rouvre | Un exclu revient après un déploiement : le réexclure |
+| « Toquer » est un clic sur la porte, de près (3 cases), une fois toutes les 5 s | Pas de touche de plus à retenir ; évite le harcèlement | Un clic maladroit hors de portée affiche « porte fermée » sans toquer |
+| Le son suit la distance par une courbe douce (100 % jusqu'à 6 cases, silence à 14) | « Une grande zone à 100 %, puis ça réduit petit à petit » ; valeurs de départ, à régler à l'usage | Le rayon est trop grand ou trop petit : `AUDIO_FULL_DISTANCE_PX` et `AUDIO_SILENT_DISTANCE_PX` |
+| Dans un espace ouvert, on rejoint la room à 14 cases, qu'on marche ou non | Le volume rend la voix inaudible à cette distance : plus besoin d'attendre l'arrêt | Plus de monde par room LiveKit (donc plus de minutes) dans l'espace ouvert |
+| Le volume est réglé par le client (`setVolume`), pas par le serveur | Le client connaît les positions à 10 Hz sans aller-retour | Un client modifié entend tout : le son d'un espace ouvert n'est pas un secret |
+| Entrer dans une zone attend 150 ms (500 ms ailleurs) ; calcul des groupes toutes les 100 ms | Le délai de 500 ms et le cycle de 250 ms faisaient une bonne part des 2 s ressenties | Quelqu'un qui frôle la zone peut y entrer une fraction de seconde |
+| `livekit-client` est téléchargé à l'ouverture du bureau | Le premier `media:join` l'attendait | Un peu plus de données au chargement du bureau |
+| Le reste des 2 s (connexion LiveKit puis micro, l'un après l'autre) n'est pas retouché | Demande de réécrire la file des opérations, très testée ; à mesurer en production d'abord | La première conversation d'une session reste plus lente que les suivantes |
+| Un état d'activité passe avant le statut ; en prendre un ordinaire l'efface | Un seul point, un seul nom | Quelqu'un voudrait cumuler : créer un état qui fait les deux |
+| « Être entendu » éteint se règle dans le jeton LiveKit (pas de micro) et rejoint la room avec un jeton neuf (environ 1 s) | Une garantie côté serveur, pas seulement un bouton | Une coupure d'environ 1 s à chaque changement de cet interrupteur |
+| « Entendre » éteint est réglé par le client (volumes à 0) | LiveKit ne sait pas couper l'audio sans couper la vidéo d'un même participant | Un client modifié entend quand même |
+| Sans entendre ni être entendu : hors de toute conversation, comme Ne pas déranger | Une conversation où personne ne parle ni n'écoute n'a pas de sens, et coûte des minutes | Rien |
+| Douze états au plus par personne, 24 caractères de nom, couleur `#rrggbb` | Bornes courantes | Un plafond trop bas : `ACTIVITY_MAX_PER_USER` |
+| L'état pris est en mémoire du serveur, pas en base | Comme le statut ; la connexion le redit après un redémarrage | Après un redémarrage, l'état revient si l'onglet est resté ouvert, sinon non |
+| Le plein écran d'un partage ne concerne que celui des autres | Le sien serait un miroir à l'infini | Quelqu'un voudrait le voir en grand : le bouton est absent pour lui |
+
 ## Points restants
 
 Ce sont des points connus, notés pour plus tard. Aucun ne bloque un premier usage par l'équipe.

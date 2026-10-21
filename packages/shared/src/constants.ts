@@ -24,10 +24,25 @@ export const REMOTE_RENDER_DELAY_MS = 150;
 // la personne s'est peut-être arrêtée. WorkAdventure extrapole de même, jusqu'à 100 ms.
 export const EXTRAPOLATION_MAX_MS = 60;
 export const TELEPORT_SNAP_PX = 3 * TILE_SIZE;
-export const GROUPS_TICK_MS = 250;
-export const JOIN_DISTANCE_PX = 3 * TILE_SIZE;   // « à moins de 3 cases » : d < JOIN
-export const LEAVE_DISTANCE_PX = 4 * TILE_SIZE;  // « au-delà de 4 cases » : on reste tant que d <= LEAVE
+export const GROUPS_TICK_MS = 100;
+// Le son des espaces ouverts s'éteint avec la distance : à 100 % dans un grand rayon autour de soi (AUDIO_FULL_DISTANCE_PX), puis de plus
+// en plus faible jusqu'au silence (AUDIO_SILENT_DISTANCE_PX). Dans une zone (un bureau, une salle), rien de tel : tout le monde s'entend
+// à plein volume, quelle que soit la distance.
+export const AUDIO_FULL_DISTANCE_PX = 6 * TILE_SIZE;
+export const AUDIO_SILENT_DISTANCE_PX = 14 * TILE_SIZE;
+// Dans un espace ouvert, on rejoint la room de ceux qu'on pourrait entendre : à moins de 14 cases (d < JOIN), au moment où leur voix n'est
+// encore qu'un souffle ; on y reste tant que d <= LEAVE, une case de plus, pour que la room ne se coupe pas et ne se rétablisse pas en boucle
+// à la limite.
+export const JOIN_DISTANCE_PX = AUDIO_SILENT_DISTANCE_PX;
+export const LEAVE_DISTANCE_PX = AUDIO_SILENT_DISTANCE_PX + TILE_SIZE;
+// L'ancienne règle, un cercle serré (« à moins de 3 cases », à l'arrêt ; on reste jusqu'à 4 cases) : CLOSE_RANGE_GROUPING, que les tests
+// du calcul des groupes gardent pour des scènes tenant dans la petite carte de développement.
+export const CLOSE_JOIN_DISTANCE_PX = 3 * TILE_SIZE;
+export const CLOSE_LEAVE_DISTANCE_PX = 4 * TILE_SIZE;
 export const GROUP_DEBOUNCE_MS = 500;
+// Entrer dans une zone isolante (bureau, salle de réunion) est un geste voulu : on rejoint le groupe de la zone après ce seul délai,
+// juste de quoi ne pas former un groupe en effleurant son bord. Le délai de GROUP_DEBOUNCE_MS reste celui des espaces ouverts.
+export const ZONE_JOIN_DEBOUNCE_MS = 150;
 export const DISCONNECT_GRACE_MS = 10_000;
 export const POSITION_SAVE_INTERVAL_MS = 60_000;
 export const CHAT_MAX_LENGTH = 500;
@@ -49,6 +64,14 @@ export interface PublicConfig {
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 128;
 export const DISPLAY_NAME_MAX_LENGTH = 40;
+// Les bureaux : la longueur du nom qu'une personne donne au sien, la limite de débit des commandes (`desk:do`) d'une socket, et le délai
+// minimal entre deux « toc toc » d'une même personne à la porte d'un même bureau.
+export const DESK_NAME_MAX_LENGTH = 40;
+// Les états d'activité qu'une personne crée (label, couleur, trois interrupteurs) : la longueur de leur nom et leur nombre au plus.
+export const ACTIVITY_LABEL_MAX_LENGTH = 24;
+export const ACTIVITY_MAX_PER_USER = 12;
+export const DESK_RATE = { max: 10, windowMs: 2_000 };
+export const DESK_KNOCK_COOLDOWN_MS = 5_000;
 export const SESSION_TTL_S = 30 * 24 * 3600;
 export const LIVEKIT_TOKEN_TTL_S = 600;
 export const OFFICE_ROOM = 'office';

@@ -72,6 +72,13 @@ export interface MediaClient {
   // (« Entrer », « Activer le son »). Elle part tout de suite, hors de la file des opérations, pour rester dans ce geste. Hors room :
   // rien. Refusée, audioBlocked le dit.
   startAudio(): Promise<void>;
+  // Le volume de chaque autre personne de la conversation, de 0 (on ne l'entend plus) à 1 (plein volume), par identifiant ; une personne
+  // sans entrée est à 1. Il vaut pour la room en cours et les suivantes, jusqu'au prochain appel : le jeu le recalcule en marchant (le son
+  // baisse avec la distance, spatial-audio.ts). Facultatif : sans effet pour un client qui ne règle pas le volume.
+  setVolumes?(volumes: Readonly<Record<string, number>>): void;
+  // Prépare une première connexion sans rien demander à personne : charge ce que le transport doit télécharger (livekit-client), pour
+  // que le premier join n'attende pas son téléchargement. Ni room, ni périphérique. Facultatif : sans effet pour un client qui n'a rien à charger.
+  warmUp?(): void;
   // Montre dans cet élément la caméra ou le partage d'écran de cette personne, et le suit (piste qui arrive, change ou part, room qui
   // change) jusqu'à l'appel de la fonction rendue.
   attach(el: HTMLVideoElement, participantId: string, source: VideoSource): () => void;
@@ -121,6 +128,10 @@ export interface MediaTransport {
   // Lance la lecture du son des autres dans la room (dans le geste de la personne) ; rejette si le navigateur la refuse. Hors room :
   // rien.
   startAudio(): Promise<void>;
+  // Charge à l'avance ce que la première connexion télécharge (MediaClient.warmUp). Un échec n'est pas une erreur : connect() réessaie.
+  warmUp?(): void;
+  // Règle le volume des autres (MediaClient.setVolumes) : il s'applique à ceux qui sont là, et à ceux qui arrivent ensuite.
+  setVolumes?(volumes: Readonly<Record<string, number>>): void;
   // Les participants de la room, soi-même d'abord ; [] hors connexion.
   participants(): MediaParticipant[];
   attach(el: HTMLVideoElement, participantId: string, source: VideoSource): () => void;

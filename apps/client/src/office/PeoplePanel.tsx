@@ -1,4 +1,4 @@
-import type { Status } from '@bureau/shared';
+import type { ActivityState, Status } from '@bureau/shared';
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { api } from '../lib/api';
@@ -91,13 +91,17 @@ export function PeoplePanel({ id, onClose }: { id?: string; onClose(): void }) {
     void reload();
   }, [members, present, reload]);
 
-  const { online, offline, statuses } = useMemo(() => {
+  const { online, offline, statuses, activities } = useMemo(() => {
     const people = new Map<string, Person>();
     for (const member of members ?? []) people.set(member.id, member);
     // Le nom en ligne est celui que le serveur vient de dire, pas celui de la liste chargée à l'ouverture.
     for (const p of present) people.set(p.id, p);
     const sorted = sortPeople([...people.values()], new Set(present.map((p) => p.id)));
-    return { ...sorted, statuses: new Map<string, Status>(present.map((p) => [p.id, p.status])) };
+    return {
+      ...sorted,
+      statuses: new Map<string, Status>(present.map((p) => [p.id, p.status])),
+      activities: new Map<string, ActivityState | null>(present.map((p) => [p.id, p.activity ?? null])),
+    };
   }, [members, present]);
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -109,15 +113,17 @@ export function PeoplePanel({ id, onClose }: { id?: string; onClose(): void }) {
 
   const row = (person: Person) => {
     const status = statuses.get(person.id) ?? null;
+    // L'état d'activité qu'elle a pris passe avant son statut : sa couleur et son nom.
+    const activity = activities.get(person.id) ?? null;
     return (
       <li key={person.id} className="person">
-        <StatusDot status={status} userId={person.id} />
+        <StatusDot status={status} userId={person.id} activity={activity} />
         {/* Un nom trop long est coupé (« … ») : l'infobulle le donne en entier. */}
         <span className="person-name" title={person.name}>
           {person.name}
         </span>
         {self?.id === person.id && <span className="person-you">{fr.office.people.you}</span>}
-        {status && <span className="person-status">{fr.status[status]}</span>}
+        {status && <span className="person-status">{activity ? activity.label : fr.status[status]}</span>}
       </li>
     );
   };

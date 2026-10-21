@@ -1,7 +1,7 @@
 import { STATUSES, type PublicPlayer, type Status } from '@bureau/shared';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { bindKeyboard, DirectionInput } from '../game/input';
 import { fr } from '../i18n/fr';
 import { statusCssColor } from '../lib/status';
@@ -27,7 +27,7 @@ beforeEach(() => {
 
 // Le serveur a envoyé l'état de départ (self avec ce statut).
 function arriveWith(status: Status): void {
-  act(() => useOfficeStore.getState().applyInit({ self: player('moi', status), players: [], mapKey: 'dev-office', chatHistory: [] }));
+  act(() => useOfficeStore.getState().applyInit({ self: player('moi', status), players: [], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
 }
 
 // Un menu des statuts avec une socket connectée, et le bureau prêt (l'init reçu : ready).
@@ -410,5 +410,112 @@ describe('quand on ne peut pas changer de statut', () => {
     act(() => useOfficeStore.getState().setReady(false));
     expect(screen.queryByRole('menu')).toBeNull();
     expect(socket.sent).toEqual([]);
+  });
+});
+
+
+describe('les états d\'activité', () => {
+  // #6d28d9, écrit en hexadécimal ou en rgb() selon le moteur.
+  const PURPLE = /^(#6d28d9|rgb\(109, 40, 217\))$/i;
+  const focus = { id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false };
+  const lunch = { id: 's2', label: 'À table', color: '#f59e0b', allowEntry: true, hear: false, heard: false };
+
+  function renderWithStates(activity: typeof focus | null = null, onManage?: () => void) {
+    const socket = new FakeSocket();
+    socket.serverAccepts();
+    act(() => {
+      useOfficeStore.getState().applyInit({
+        self: { ...player('moi'), activity },
+        players: [],
+        mapKey: 'dev-office',
+        chatHistory: [],
+        desks: [],
+        closedDesks: [],
+        deskBans: [],
+      });
+      useOfficeStore.getState().setMyStates([focus, lunch]);
+    });
+    render(<StatusMenu socket={socket.asSocket()} onManage={onManage} />);
+    return socket;
+  }
+  const stateItem = (label: string) => screen.getByRole('menuitemradio', { name: label });
+
+  test('sans état ni « gérer » : seulement les quatre statuts', async () => {
+    const user = userEvent.setup();
+    renderMenu();
+    await user.click(trigger());
+    expect(screen.getAllByRole('menuitemradio')).toHaveLength(4);
+    expect(screen.queryByRole('menuitem')).toBeNull();
+  });
+
+  test('ses états suivent les quatre statuts, chacun avec le point de sa couleur ; « Mes états d\'activité… » ferme la liste', async () => {
+    const user = userEvent.setup();
+    const onManage = vi.fn();
+    renderWithStates(null, onManage);
+    await user.click(trigger());
+    const names = [...screen.getByRole('menu').querySelectorAll('button')].map((entry) => entry.textContent);
+    expect(names).toEqual(['Disponible✓', 'Occupé', 'Absent', 'Ne pas déranger', 'En focus', 'À table', fr.office.statusMenu.manage]);
+    expect((stateItem('En focus').querySelector('.status-dot') as HTMLElement).style.backgroundColor).toMatch(PURPLE);
+    await user.click(screen.getByRole('menuitem', { name: fr.office.statusMenu.manage }));
+    expect(onManage).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  test('prendre un état : state:set, retenu comme choix de l\'onglet, le statut choisi oublié', async () => {
+    const user = userEvent.setup();
+    const socket = renderWithStates();
+    useOfficeStore.getState().setChosenStatus('busy');
+    await user.click(trigger());
+    await user.click(stateItem('À table'));
+    expect(socket.sentOf('state:set')).toEqual(['s2']);
+    expect(socket.sentOf('status:set')).toEqual([]);
+    expect(useOfficeStore.getState().chosenActivityId).toBe('s2');
+    expect(useOfficeStore.getState().chosenStatus).toBeNull();
+  });
+
+  test('l\'état en cours : son nom et sa couleur sur le bouton, coché dans la liste, jamais renvoyé ; aucun statut n\'est coché', async () => {
+    const user = userEvent.setup();
+    const socket = renderWithStates(focus);
+    expect(trigger().textContent).toContain('En focus');
+    expect(trigger().getAttribute('aria-label')).toBe('Statut : En focus');
+    expect((trigger().querySelector('.status-dot') as HTMLElement).style.backgroundColor).toMatch(PURPLE);
+    await user.click(trigger());
+    expect(stateItem('En focus').getAttribute('aria-checked')).toBe('true');
+    expect(item('available').getAttribute('aria-checked')).toBe('false');
+    await user.click(stateItem('En focus'));
+    expect(socket.sentOf('state:set')).toEqual([]);
+  });
+
+  test('un statut ordinaire pendant un état : envoyé même si c\'est le même statut (le serveur efface l\'état)', async () => {
+    const user = userEvent.setup();
+    const socket = renderWithStates(focus);
+    useOfficeStore.getState().setChosenActivity('s1');
+    await user.click(trigger());
+    await user.click(item('available'));
+    expect(socket.sentOf('status:set')).toEqual(['available']);
+    expect(useOfficeStore.getState().chosenActivityId).toBeNull();
+  });
+
+  test('le clavier traverse tout : ↓ de la dernière ligne revient à la première, Fin va à « gérer »', async () => {
+    const user = userEvent.setup();
+    renderWithStates(null, () => {});
+    await user.click(trigger());
+    await user.keyboard('{End}');
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: fr.office.statusMenu.manage }));
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(item('available'));
+  });
+
+  test('à l\'ouverture, le focus va à l\'état en cours', async () => {
+    const user = userEvent.setup();
+    renderWithStates(lunch);
+    await user.click(trigger());
+    expect(document.activeElement).toBe(stateItem('À table'));
+  });
+
+  test('le changement d\'état d\'activité est annoncé aux lecteurs d\'écran', () => {
+    renderWithStates(null);
+    act(() => useOfficeStore.getState().setActivity('moi', focus));
+    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe('Statut : En focus');
   });
 });

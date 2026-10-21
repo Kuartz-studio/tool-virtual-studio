@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr, t } from '../i18n/fr';
 import { FakeMediaClient } from '../media/fake-media-client';
+import * as activityApi from '../lib/activity-api';
 import { useOfficeStore } from '../state/office-store';
 import { fakeApi, json } from '../test/fake-api';
 import { FakeSocket } from '../test/fake-socket';
@@ -68,7 +69,7 @@ function renderShell({
   socket.serverAccepts();
   const client = new FakeMediaClient({ mic: true, cam: false }, { id: 'moi', name: 'Léa' });
   clients.push(client);
-  if (init) act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [] }));
+  if (init) act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
   const shell = () => (
     <OfficeShell
       user={{ id: 'moi', name: 'Léa', role }}
@@ -130,10 +131,10 @@ describe('la mise en page', () => {
     expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Chat, Personnes et Se déconnecter', () => {
+  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Chat, Personnes, Mon bureau et Se déconnecter', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Mon bureau', 'Se déconnecter']);
     expect(within(bar()).getByText('Léa')).toBeTruthy();
   });
 
@@ -165,7 +166,7 @@ describe('la mise en page', () => {
   test('le nom affiché est celui de la session avant l\'init, puis celui que le serveur donne (un changement de nom suit)', () => {
     renderShell({ init: false });
     expect(within(bar()).getByText('Léa')).toBeTruthy();
-    act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa Martin'), players: [], mapKey: 'dev-office', chatHistory: [] }));
+    act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa Martin'), players: [], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
     expect(within(bar()).getByText('Léa Martin')).toBeTruthy();
     act(() => useOfficeStore.getState().setProfile({ id: 'moi', name: 'Léa M.', avatarKey: null }));
     expect(within(bar()).getByText('Léa M.')).toBeTruthy();
@@ -373,7 +374,7 @@ describe('le panneau Chat', () => {
   test('il liste les messages, ceux de l\'historique et ceux qui arrivent, et envoie par la socket de la page', async () => {
     const user = userEvent.setup();
     const { socket } = renderShell();
-    act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [chatMessage('m1')] }));
+    act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob')], mapKey: 'dev-office', chatHistory: [chatMessage('m1')], desks: [], closedDesks: [], deskBans: [] }));
     await user.click(chatToggle());
     expect(within(screen.getByRole('log')).getAllByRole('listitem')).toHaveLength(1);
     act(() => useOfficeStore.getState().addChatMessage(chatMessage('m2')));
@@ -440,7 +441,7 @@ describe('le panneau Chat', () => {
     test('rien tant qu\'il n\'y a rien de nouveau ; l\'historique de l\'arrivée est lu', () => {
       renderShell({ init: false });
       act(() =>
-        useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [chatMessage('m1'), chatMessage('m2')] }),
+        useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [chatMessage('m1'), chatMessage('m2')], desks: [], closedDesks: [], deskBans: [] }),
       );
       expect(badge()).toBeNull();
       expect(chatToggle().getAttribute('aria-label')).toBeNull();
@@ -543,10 +544,10 @@ describe('le panneau Admin', () => {
     expect(adminCalls(api)).toEqual([]);
   });
 
-  test('un admin a le bouton Admin dans la barre, entre Personnes et Se déconnecter', () => {
+  test('un admin a le bouton Admin dans la barre, entre Mon bureau et Se déconnecter', () => {
     renderShell({ role: 'admin' });
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Admin', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Mon bureau', 'Admin', 'Se déconnecter']);
   });
 
   test('fermé au départ, sans rien demander au serveur ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {
@@ -716,6 +717,87 @@ describe('le panneau Admin', () => {
   });
 });
 
+describe('les états d\'activité', () => {
+  const focus = { id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false };
+  const lunch = { id: 's2', label: 'À table', color: '#f59e0b', allowEntry: true, hear: false, heard: true };
+  const micButton = () => within(bar()).getByRole('button', { name: fr.media.controls.mic }) as HTMLButtonElement;
+  const statusButton = () => within(bar()).getByRole('button', { name: /^Statut/ }) as HTMLButtonElement;
+
+  test('à l\'arrivée (connexion prête), ses états sont lus au serveur et rangés au magasin ; ils sont dans le menu du statut', async () => {
+    const user = userEvent.setup();
+    vi.mocked(activityApi.listActivityStates).mockResolvedValueOnce([focus, lunch]);
+    renderShell();
+    await waitFor(() => expect(useOfficeStore.getState().myStates).toEqual([focus, lunch]));
+    await user.click(statusButton());
+    expect(screen.getByRole('menuitemradio', { name: 'En focus' })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: fr.office.statusMenu.manage })).toBeTruthy();
+  });
+
+  test('« Mes états d\'activité… » ouvre le panneau ; Échap le ferme et le focus revient au bouton du statut', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
+    await user.click(statusButton());
+    await user.click(screen.getByRole('menuitem', { name: fr.office.statusMenu.manage }));
+    expect(screen.getByRole('complementary', { name: fr.states.title })).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
+    expect(document.activeElement).toBe(statusButton());
+  });
+
+  test('lecture impossible : le menu n\'a que les statuts ordinaires, sans erreur', async () => {
+    vi.mocked(activityApi.listActivityStates).mockRejectedValueOnce(new Error('réseau'));
+    renderShell();
+    await Promise.resolve();
+    expect(useOfficeStore.getState().myStates).toEqual([]);
+  });
+
+  test('un état où l\'on n\'est pas entendu coupe le micro et le bouton est inactif, avec la raison ; à la fin de l\'état, il se rallume à la main', async () => {
+    const user = userEvent.setup();
+    const { client, refresh } = renderShell();
+    await act(() => client.setMic(true));
+    refresh();
+    expect(micButton().disabled).toBe(false);
+    expect(client.getSnapshot().local.mic).toBe(true);
+
+    act(() => useOfficeStore.getState().setActivity('moi', focus));
+    refresh();
+    await act(() => client.idle());
+    refresh();
+    expect(client.getSnapshot().local.mic).toBe(false);
+    expect(micButton().disabled).toBe(true);
+    expect(micButton().title).toBe(t(fr.states.micCut, { label: 'En focus' }));
+
+    act(() => useOfficeStore.getState().setActivity('moi', null));
+    refresh();
+    expect(micButton().disabled).toBe(false);
+    expect(client.getSnapshot().local.mic).toBe(false);   // pas rallumé tout seul
+    await user.click(micButton());
+    expect(client.getSnapshot().local.mic).toBe(true);
+  });
+
+  test('un état où l\'on est entendu ne touche pas au micro', async () => {
+    const { client, refresh } = renderShell();
+    await act(() => client.setMic(true));
+    act(() => useOfficeStore.getState().setActivity('moi', lunch));
+    refresh();
+    expect(client.getSnapshot().local.mic).toBe(true);
+    expect(micButton().disabled).toBe(false);
+  });
+
+  test('le panneau Personnes : le nom et la couleur de l\'état d\'activité de chacun, à la place du statut', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    act(() => useOfficeStore.getState().setActivity('bob', focus));
+    await user.click(toggle());
+    const bob = document.querySelector('[data-user="bob"]') as HTMLElement;
+    expect(bob.getAttribute('data-activity')).toBe('s1');
+    expect(bob.style.backgroundColor).toMatch(/^(#6d28d9|rgb\(109, 40, 217\))$/i);
+    expect(within(bob.closest('li') as HTMLElement).getByText('En focus')).toBeTruthy();
+    expect(within(bob.closest('li') as HTMLElement).queryByText(fr.status.available)).toBeNull();
+  });
+});
+
 describe('ouvert dans un autre onglet', () => {
   test('l\'écran couvre le bureau, dont la couche est inerte ; « Utiliser ici » relance la connexion', async () => {
     const onUseHere = vi.fn();
@@ -734,7 +816,7 @@ describe('ouvert dans un autre onglet', () => {
     const { container } = renderShell();
     act(() => useOfficeStore.getState().setReplaced(true));
     expect(screen.getByRole('dialog')).toBeTruthy();
-    act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [] }));
+    act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(container.querySelector('.office-ui')?.hasAttribute('inert')).toBe(false);
   });

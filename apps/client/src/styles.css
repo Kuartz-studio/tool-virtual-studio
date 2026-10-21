@@ -362,7 +362,54 @@ a {
 
 /* La vignette agrandie (un partage d'écran, ou celle qu'on a cliquée), sous la liste. */
 .video-stage {
+  position: relative;
   width: min(960px, 100%);
+}
+
+/* Le bouton « Plein écran » : en haut à droite de l'écran partagé. */
+.video-stage-action {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  color: #ffffff;
+  background: rgb(0 0 0 / 55%);
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.video-stage-action:hover {
+  background: rgb(0 0 0 / 75%);
+}
+
+.video-stage-action:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* En plein écran : l'écran partagé seul, en entier (pas de recadrage), sur fond noir. */
+.video-stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  background: #000000;
+}
+
+.video-stage:fullscreen .tile {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.video-stage:fullscreen .tile-video {
+  background: #000000;
 }
 
 .video-stage .tile {
@@ -743,6 +790,51 @@ a {
   max-height: 45%;
 }
 
+/* Le panneau Bac à sable du faux live (pnpm dev:sim) : il garde l'aspect du panneau Personnes, et ne prend que la place de son contenu. */
+.sim-panel {
+  flex: 0 1 auto;
+  max-height: 55%;
+}
+
+.sim-intro,
+.sim-hint {
+  margin: 8px 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.sim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.sim-bots {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sim-bot {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.sim-bot select {
+  min-width: 0;
+  font: inherit;
+  padding: 4px 6px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
 /* Le compteur d'un bouton de la barre (les messages non lus du chat). */
 .bar-badge {
   display: inline-grid;
@@ -790,51 +882,6 @@ a {
 .chat-tab:hover:not(:disabled),
 .chat-tab[aria-selected='true'] {
   color: var(--text);
-/* Le panneau Bac à sable du faux live (pnpm dev:sim) : il garde l'aspect du panneau Personnes, et ne prend que la place de son contenu. */
-.sim-panel {
-  flex: 0 1 auto;
-  max-height: 55%;
-}
-
-.sim-intro,
-.sim-hint {
-  margin: 8px 0;
-  font-size: 0.8rem;
-  color: var(--text-muted);
-}
-
-.sim-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 8px 0 4px;
-}
-
-.sim-bots {
-  display: grid;
-  gap: 6px;
-  margin: 8px 0 0;
-  padding: 0;
-  list-style: none;
-}
-
-.sim-bot {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
-  align-items: center;
-  gap: 8px;
-}
-
-.sim-bot select {
-  min-width: 0;
-  font: inherit;
-  padding: 4px 6px;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
 }
 
 .chat-tab[aria-selected='true'] {
@@ -1454,4 +1501,257 @@ a {
 
 .device-check-enter {
   width: 100%;
+}
+
+/* Le panneau Mon bureau : il garde l'aspect du panneau Personnes ; ses blocs se suivent avec un espace régulier. */
+.desk-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.desk-body .bar-button {
+  justify-content: center;
+}
+
+.desk-subtitle {
+  margin: 0 0 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.desk-hint {
+  margin: 6px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.desk-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.desk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.desk-name label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.desk-name-row {
+  display: flex;
+  gap: 8px;
+}
+
+.desk-name-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.desk-name-row input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.desk-lock[aria-pressed='true'] {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* Ce que les bureaux disent au-dessus de la barre : un message passager, et ceux qui toquent à la porte. */
+.desk-toasts {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
+  width: min(420px, calc(100% - 2 * var(--bar-gap)));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.desk-toast {
+  margin: 0;
+  padding: 8px 12px;
+  color: #ffffff;
+  text-align: center;
+  background: rgb(31 36 48 / 92%);
+  border-radius: 10px;
+  box-shadow: 0 6px 16px rgb(0 0 0 / 28%);
+  pointer-events: auto;
+}
+
+.desk-knock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.desk-knock .bar-button {
+  color: var(--text);
+  background: var(--surface);
+}
+
+/* Le panneau Mes états d'activité : la liste de ses états, puis le formulaire pour en créer ou en modifier un. */
+.state-row {
+  padding: 8px 10px;
+  background: var(--background);
+  border-radius: 10px;
+}
+
+.state-row[data-current] {
+  outline: 2px solid var(--accent);
+}
+
+.state-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.state-summary {
+  margin: 2px 0 6px;
+}
+
+.state-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.state-actions .bar-button {
+  padding: 4px 10px;
+  font-size: 0.8rem;
+}
+
+.state-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.state-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.state-field > label,
+.state-field > legend {
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.state-field input[type='text'] {
+  padding: 7px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.state-field input[type='text']:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.state-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.state-swatch {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.state-swatch[aria-pressed='true'] {
+  border-color: var(--text);
+  box-shadow: 0 0 0 2px var(--surface) inset;
+}
+
+.state-swatch:focus-visible,
+.state-color-input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.state-color-input {
+  width: 32px;
+  height: 28px;
+  padding: 0;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.state-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  cursor: pointer;
+}
+
+.state-switch input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.state-submit {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.state-submit:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+/* « Mes états d'activité… » au bas du menu des statuts, séparé des états. */
+.status-menu-manage {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
 }

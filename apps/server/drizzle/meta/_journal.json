@@ -8,6 +8,20 @@
       "when": 1792408444940,
       "tag": "0000_init",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792560734813,
+      "tag": "0001_desks",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792562413414,
+      "tag": "0002_activity_states",
+      "breakpoints": true
     }
   ]
 }

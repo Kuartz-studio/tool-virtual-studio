@@ -2,19 +2,27 @@ import { describe, expect, test } from 'vitest';
 import {
   DEV_OFFICE,
   EMPTY_GROUPING,
-  GROUPS_TICK_MS,
   GROUP_DEBOUNCE_MS,
-  JOIN_DISTANCE_PX,
-  LEAVE_DISTANCE_PX,
+  ZONE_JOIN_DEBOUNCE_MS,
+  CLOSE_JOIN_DISTANCE_PX as JOIN_DISTANCE_PX,
+  CLOSE_LEAVE_DISTANCE_PX as LEAVE_DISTANCE_PX,
+  CLOSE_RANGE_GROUPING,
+  OPEN_SPACE_GROUPING,
   buildTiledMap,
   busyZoneIds,
-  computeGroups,
+  computeGroups as computeGroupsWith,
+  type GroupConfig,
   parseOfficeMap,
   zoneAt,
   type GroupingState,
   type ProximityPlayer,
   type Status,
 } from '../src';
+
+// Ces tests jouent le calcul avec le cercle serré d'origine (3 cases, à l'arrêt, 4 cases pour rester) : leurs scènes tiennent dans la petite
+// carte de développement. La règle du bureau (OPEN_SPACE_GROUPING) a ses propres tests, tout en bas.
+const computeGroups = (players: ProximityPlayer[], m: typeof map, prev: GroupingState, now: number, config: GroupConfig = CLOSE_RANGE_GROUPING) =>
+  computeGroupsWith(players, m, prev, now, config);
 
 // La carte de développement : 24 × 16 cases de 32 px. Ce qui sert ici :
 //  - la salle de réunion (zone private n° 1) : cases x 8 à 13, y 1 à 4 ; sa porte est en (10, 5) ;
@@ -35,13 +43,17 @@ const player = (id: string, pos: Pos, more: { moving?: boolean; status?: Status 
   status: more.status ?? 'available',
 });
 
+// Le pas des appels de ces tests, en ms : la période d'origine du calcul (le serveur le rappelle plus souvent, voir GROUPS_TICK_MS).
+const TICK_MS = 250;
+
 // Un appel du calcul, à l'heure t (en ms).
 const run = (players: ProximityPlayer[], s: GroupingState, t: number): GroupingState => computeGroups(players, map, s, t);
 
-// Les appels successifs avec les mêmes joueurs, toutes les 250 ms (GROUPS_TICK_MS) de `from` à `to` compris : un état par appel.
+// Les appels successifs avec les mêmes joueurs, toutes les 250 ms (TICK_MS, indépendant de la période du serveur) de `from` à `to`
+// compris : un état par appel.
 function steps(players: ProximityPlayer[], s: GroupingState, from: number, to: number): GroupingState[] {
   const states: GroupingState[] = [];
-  for (let t = from; t <= to; t += GROUPS_TICK_MS) {
+  for (let t = from; t <= to; t += TICK_MS) {
     s = run(players, s, t);
     states.push(s);
   }
@@ -341,10 +353,25 @@ test("un groupe réduit à une personne reste ouvert si quelqu'un est en route v
   expect(s.assignment).toEqual({ A: null, B: 'g1', C: 'g1' });
 });
 
-test("entrer dans la salle où un groupe parle : 500 ms d'attente, comme ailleurs", () => {
+test("entrer dans la salle où un groupe parle : l'attente est courte (ZONE_JOIN_DEBOUNCE_MS), celle des espaces ouverts reste de 500 ms", () => {
   const room = [player('A', at(9, 2)), player('B', at(12, 3))];
   const s = step(room, EMPTY_GROUPING, 0, 500);
-  expect(steps([...room, player('C', at(10, 4))], s, 750, 1250).map((st) => st.assignment.C)).toEqual([null, null, 'g1']);
+  // Arrivé à 750 ms, C attend ; au pas suivant (250 ms plus tard, plus que ZONE_JOIN_DEBOUNCE_MS), il est dans le groupe de la salle.
+  const states = steps([...room, player('C', at(10, 4))], s, 750, 1250);
+  expect(states.map((st) => st.assignment.C)).toEqual([null, 'g1', 'g1']);
+  expect(states[0]!.pending).toEqual({ C: { target: 'g1', since: 750 } });
+});
+
+test("rejoindre une zone attend moins de 500 ms, mais pas zéro : quelqu'un qui en effleure le bord et ressort n'y entre pas", () => {
+  expect(ZONE_JOIN_DEBOUNCE_MS).toBeGreaterThan(0);
+  expect(ZONE_JOIN_DEBOUNCE_MS).toBeLessThan(GROUP_DEBOUNCE_MS);
+  const room = [player('A', at(9, 2)), player('B', at(12, 3))];
+  const s = step(room, EMPTY_GROUPING, 0, 500);
+  // C entre à 750 ms et ressort à 800 ms, avant la fin de l'attente : il n'a jamais été dans le groupe.
+  let t = run([...room, player('C', at(10, 4))], s, 750);
+  t = computeGroups([...room, player('C', at(10, 6))], map, t, 800);
+  t = computeGroups([...room, player('C', at(10, 6))], map, t, 1000);
+  expect(t.assignment.C).toBeNull();
 });
 
 test('sortir de la salle à deux : coupés tout de suite, ensemble dans le couloir 500 ms plus tard, dans un nouveau groupe', () => {
@@ -448,7 +475,7 @@ function permutations<T>(items: readonly T[]): T[][] {
   return items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map((rest) => [item, ...rest]));
 }
 
-test("un membre du groupe du couloir entre dans la salle : ceux qui restent gardent l'id, lui rejoint la salle après 500 ms", () => {
+test("un membre du groupe du couloir entre dans la salle : ceux qui restent gardent l'id, lui rejoint la salle après ZONE_JOIN_DEBOUNCE_MS", () => {
   // g1 = {B, C, D} dans le couloir ; A est seul dans la salle.
   const A = player('A', at(12, 3));
   const C = player('C', at(12, 6));
@@ -456,11 +483,11 @@ test("un membre du groupe du couloir entre dans la salle : ceux qui restent gard
   const s = step([A, player('B', at(10, 6)), C, D], EMPTY_GROUPING, 0, 500);
   expect(s.assignment).toEqual({ A: null, B: 'g1', C: 'g1', D: 'g1' });
   // B entre dans la salle. {A, B} et {C, D} ont la même taille et A < C, mais g1 a deux voix chez {C, D}, une seule chez {A, B} :
-  // C et D, qui n'ont pas bougé, gardent g1 ; B attend 500 ms le groupe de la salle, g2.
+  // C et D, qui n'ont pas bougé, gardent g1 ; B attend ZONE_JOIN_DEBOUNCE_MS le groupe de la salle, g2.
   const states = steps([A, player('B', at(10, 4)), C, D], s, 750, 1250);
   expect(states.map((st) => st.assignment)).toEqual([
     { A: null, B: 'g1', C: 'g1', D: 'g1' },
-    { A: null, B: 'g1', C: 'g1', D: 'g1' },
+    { A: 'g2', B: 'g2', C: 'g1', D: 'g1' },
     { A: 'g2', B: 'g2', C: 'g1', D: 'g1' },
   ]);
   expect(states.at(-1)!.groups).toEqual({
@@ -477,7 +504,7 @@ test("même scène, quel que soit l'ordre des ids : les 24 façons de nommer les
     const roles = (st: GroupingState) => [st.assignment[inRoom], st.assignment[mover], st.assignment[stay1], st.assignment[stay2]];
     expect(states.map(roles), `${inRoom} dans la salle, ${mover} y entre, ${stay1} et ${stay2} restent`).toEqual([
       [null, 'g1', 'g1', 'g1'],
-      [null, 'g1', 'g1', 'g1'],
+      ['g2', 'g2', 'g1', 'g1'],
       ['g2', 'g2', 'g1', 'g1'],
     ]);
   }
@@ -496,9 +523,9 @@ test("une grappe plus grande ne prend pas l'id d'un groupe sur une seule voix ; 
   // gardent g1, et {A, B, E} reprend g2, la cible de A et E, dont l'attente continue.
   const states = steps([A, player('B', at(10, 4)), C, D, E], s, 1000, 1500);
   expect(states.map((st) => st.assignment)).toEqual([
-    { A: null, B: 'g1', C: 'g1', D: 'g1', E: null },
-    { A: 'g2', B: 'g1', C: 'g1', D: 'g1', E: 'g2' },   // 1250 : 500 ms après leur arrivée
-    { A: 'g2', B: 'g2', C: 'g1', D: 'g1', E: 'g2' },   // 1500 : 500 ms après l'entrée de B
+    { A: 'g2', B: 'g1', C: 'g1', D: 'g1', E: 'g2' },   // 1000 : A et E attendent g2 depuis 250 ms (plus que ZONE_JOIN_DEBOUNCE_MS)
+    { A: 'g2', B: 'g2', C: 'g1', D: 'g1', E: 'g2' },   // 1250 : B, entré à 1000 ms, y est aussi
+    { A: 'g2', B: 'g2', C: 'g1', D: 'g1', E: 'g2' },
   ]);
 });
 
@@ -538,8 +565,8 @@ test("une cible en attente se prend aussi aux voix : ceux qui l'attendent le plu
 
 test("à voix égales, la grappe qui garde la zone du groupe l'emporte : deux des quatre du couloir entrent dans la salle vide, les deux autres gardent g1 (24 façons de les nommer)", () => {
   // g1 = quatre personnes en ligne dans le couloir. Les deux de gauche entrent dans la salle vide ; les deux de droite, qui n'ont pas
-  // bougé, gardent g1 (2 voix contre 2, mais g1 reste un groupe d'espace ouvert chez elles) ; les deux de la salle forment g2 500 ms
-  // plus tard.
+  // bougé, gardent g1 (2 voix contre 2, mais g1 reste un groupe d'espace ouvert chez elles) ; les deux de la salle forment g2 dès
+  // ZONE_JOIN_DEBOUNCE_MS.
   const failures: string[] = [];
   for (const [in1, in2, stay1, stay2] of permutations(['A', 'B', 'C', 'D'])) {
     const stay = [player(stay1, at(13, 6)), player(stay2, at(15, 6))];
@@ -550,7 +577,7 @@ test("à voix égales, la grappe qui garde la zone du groupe l'emporte : deux de
     const expected = JSON.stringify([
       ['g1', 'g1', 'g1', 'g1'],   // 500 : g1 formé
       ['g1', 'g1', 'g1', 'g1'],   // 750 : les deux entrent dans la salle, et attendent g2
-      ['g1', 'g1', 'g1', 'g1'],
+      ['g2', 'g2', 'g1', 'g1'],   // 1000 : plus de ZONE_JOIN_DEBOUNCE_MS d'attente
       ['g2', 'g2', 'g1', 'g1'],   // 1250
       [null, ROOM],
     ]);
@@ -565,11 +592,11 @@ test("à voix égales, garder la zone du groupe passe avant la taille : la grapp
   const s = step([player('A', at(9, 6)), player('B', at(11, 6)), ...stay, X], EMPTY_GROUPING, 0, 500);
   expect(s.assignment).toEqual({ A: 'g1', B: 'g1', C: 'g1', D: 'g1', X: null });
   // A et B entrent dans la salle : {A, B, X} (3) et {C, D} (2) ont deux voix chacune pour g1 ; {C, D} garde la zone de g1 (un espace
-  // ouvert) et l'emporte malgré sa taille. A, B et X forment g2 500 ms plus tard.
+  // ouvert) et l'emporte malgré sa taille. A, B et X forment g2 dès ZONE_JOIN_DEBOUNCE_MS.
   const states = steps([player('A', at(9, 4)), player('B', at(11, 4)), ...stay, X], s, 750, 1250);
   expect(states.map((st) => st.assignment)).toEqual([
     { A: 'g1', B: 'g1', C: 'g1', D: 'g1', X: null },
-    { A: 'g1', B: 'g1', C: 'g1', D: 'g1', X: null },
+    { A: 'g2', B: 'g2', C: 'g1', D: 'g1', X: 'g2' },
     { A: 'g2', B: 'g2', C: 'g1', D: 'g1', X: 'g2' },
   ]);
 });
@@ -749,10 +776,12 @@ function violations(s: GroupingState, prev: GroupingState, players: ProximityPla
     const g = s.assignment[p.id] ?? null;
     const before = prev.assignment[p.id] ?? null;
     const waited = prev.pending[p.id];
-    const matured = waited !== undefined && waited.target === g && now - waited.since >= GROUP_DEBOUNCE_MS;
+    // L'attente d'un groupe de zone est courte (ZONE_JOIN_DEBOUNCE_MS), celle des autres changements de GROUP_DEBOUNCE_MS.
+    const needed = g !== null && s.groups[g]?.zoneId != null ? ZONE_JOIN_DEBOUNCE_MS : GROUP_DEBOUNCE_MS;
+    const matured = waited !== undefined && waited.target === g && now - waited.since >= needed;
     if (p.status === 'dnd' && (g !== null || p.id in s.pending)) out.push(`${p.id} est en Ne pas déranger mais affecté ou en attente`);
-    // Entrer dans un groupe, ou en changer, attend toujours 500 ms.
-    if (g !== null && g !== before && !matured) out.push(`${p.id} entre dans ${g} sans avoir attendu 500 ms`);
+    // Entrer dans un groupe, ou en changer, attend toujours : 500 ms, ou ZONE_JOIN_DEBOUNCE_MS pour le groupe d'une zone.
+    if (g !== null && g !== before && !matured) out.push(`${p.id} entre dans ${g} sans avoir attendu ${needed} ms`);
     // Personne n'entre dans un groupe depuis une autre zone : un nouveau membre est dans la zone du groupe (null : espace ouvert).
     if (g !== null && g !== before && zoneOf(p) !== s.groups[g]?.zoneId) {
       out.push(`${p.id} entre dans ${g} (zone ${s.groups[g]?.zoneId}) depuis la zone ${zoneOf(p)}`);

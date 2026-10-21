@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useRef, useState, type Ref } from 'react';
 import { mediaDebug } from '../game/debug';
 import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaParticipant, MediaSnapshot, VideoSource } from '../media/media-client';
-import { MicIcon } from './icons';
+import { FullscreenIcon, MicIcon } from './icons';
 
 interface VideoStripProps {
   // L'état de l'audio et de la vidéo (useMedia), et le client qui montre les vidéos.
   snapshot: MediaSnapshot;
   client: MediaClient;
+  // Les personnes qu'on n'entend plus du tout (trop loin dans un espace ouvert, spatial-audio.ts) : leurs vignettes ne sont pas montrées.
+  hidden?: ReadonlySet<string>;
   // « Reconnecter », après un échec de la connexion audio et vidéo : relance la connexion au bureau, et le serveur redit la consigne.
   onReconnect?: () => void;
 }
@@ -23,10 +25,13 @@ interface TileSpec {
 // le partage d'écran de quelqu'un en plus, juste après sa caméra. Une vignette agrandie passe au-dessous de la liste, en grand :
 // - un partage d'écran d'un autre s'affiche en grand de lui-même (le sien, non : il se verrait lui-même à l'infini) ;
 // - un clic sur une vignette l'agrandit, à la place de ce qui l'était ; un clic sur la vignette agrandie la remet dans la liste.
+// Le partage d'écran d'un autre, agrandi, a un bouton « Plein écran » : l'écran seul occupe alors tout l'écran de la personne, jusqu'à
+// Échap ou au bouton « Quitter le plein écran ».
 // Hors conversation, rien. Au-dessus des vignettes, ce qui ne marche pas : la connexion audio et vidéo (« Reconnecter »), le son
 // bloqué par le navigateur (« Activer le son »), le micro ou la caméra refusés.
-export function VideoStrip({ snapshot, client, onReconnect }: VideoStripProps) {
-  const { participants, error, audioBlocked, room } = snapshot;
+export function VideoStrip({ snapshot, client, hidden, onReconnect }: VideoStripProps) {
+  const { error, audioBlocked, room } = snapshot;
+  const participants = hidden && hidden.size > 0 ? snapshot.participants.filter((p) => p.isLocal || !hidden.has(p.id)) : snapshot.participants;
   // La vignette que la personne a agrandie, et le partage d'écran (agrandi de lui-même) qu'elle a réduit.
   const [chosen, setChosen] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
@@ -88,6 +93,26 @@ export function VideoStrip({ snapshot, client, onReconnect }: VideoStripProps) {
     />
   );
   const small = tiles.filter((tile) => tile.key !== large?.key);
+
+  // Le plein écran : celui de la scène (la vignette agrandie et son bouton). Seul le partage d'écran d'un autre le propose.
+  const stage = useRef<HTMLDivElement>(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  const canFullscreen = large !== null && large.source === 'screen' && !large.participant.isLocal && fullscreenAvailable();
+  useEffect(() => {
+    const sync = () => setFullscreen(stage.current !== null && document.fullscreenElement === stage.current);
+    document.addEventListener('fullscreenchange', sync);
+    sync();
+    return () => document.removeEventListener('fullscreenchange', sync);
+  }, [large !== null]);
+  // Plus de partage à montrer (il s'arrête, ou on agrandit une autre vignette) : on sort du plein écran, sans quoi une caméra
+  // resterait seule à l'écran.
+  useEffect(() => {
+    if (!canFullscreen && stage.current !== null && document.fullscreenElement === stage.current) void document.exitFullscreen().catch(() => {});
+  }, [canFullscreen]);
+  function toggleFullscreen() {
+    if (document.fullscreenElement === stage.current) void document.exitFullscreen().catch(() => {});
+    else void stage.current?.requestFullscreen().catch(() => {});
+  }
   const notices = [
     error === 'connection_failed' && (
       <div key="connection" className="video-notice" role="alert">
@@ -126,7 +151,23 @@ export function VideoStrip({ snapshot, client, onReconnect }: VideoStripProps) {
           ))}
         </ul>
       )}
-      {large && <div className="video-stage">{renderTile(large)}</div>}
+      {large && (
+        <div className="video-stage" ref={stage}>
+          {renderTile(large)}
+          {canFullscreen && (
+            <button
+              type="button"
+              className="video-stage-action"
+              aria-pressed={fullscreen}
+              aria-label={fullscreen ? fr.media.tiles.exitFullscreen : fr.media.tiles.fullscreen}
+              title={fullscreen ? fr.media.tiles.exitFullscreen : fr.media.tiles.fullscreen}
+              onClick={toggleFullscreen}
+            >
+              <FullscreenIcon exit={fullscreen} />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -196,6 +237,11 @@ function TileVideo({ client, participantId, source, mirrored }: { client: MediaC
     return client.attach(element, participantId, source);
   }, [client, participantId, source]);
   return <video ref={video} className={mirrored ? 'tile-video tile-video-mirrored' : 'tile-video'} autoPlay muted playsInline />;
+}
+
+// Le navigateur permet-il le plein écran d'un élément ? (Absent de jsdom, et de Safari sur iPhone.)
+function fullscreenAvailable(): boolean {
+  return document.fullscreenEnabled === true && typeof Element.prototype.requestFullscreen === 'function';
 }
 
 // Les initiales d'un nom : la première lettre de ses deux premiers mots.

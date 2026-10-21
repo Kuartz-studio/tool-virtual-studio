@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { DEV_AVATAR_KEYS, DEV_OFFICE, TILE_SIZE, buildTiledMap, parseOfficeMap, type TiledMapJson } from '@bureau/shared';
+import { DEV_AVATAR_KEYS, DEV_OFFICE, OFFICE, TILE_SIZE, buildTiledMap, parseOfficeMap, type TiledMapJson } from '@bureau/shared';
 import { PNG } from 'pngjs';
 import { describe, expect, test } from 'vitest';
 import { ASSETS_DIR, DEV_TILESET, devAssetFiles, renderAvatarSheet, renderTiles } from './gen-dev-assets';
@@ -49,6 +49,21 @@ describe('dev-office.json', () => {
     expect(existsSync(file), `${file} introuvable`).toBe(true);
     const png = PNG.sync.read(readFileSync(file));
     expect([png.width, png.height]).toEqual([imagewidth, imageheight]);
+  });
+});
+
+describe('office.json', () => {
+  const readOffice = (): TiledMapJson => JSON.parse(readAsset('maps/office.json').toString('utf8')) as TiledMapJson;
+
+  test('le fichier commité est ce que produit buildTiledMap(OFFICE)', () => {
+    expect(readOffice(), REGENERATE).toEqual(buildTiledMap({ ...OFFICE, tileset: DEV_TILESET }));
+  });
+
+  test('le serveur la lit : 20 bureaux et leurs 20 portes, apparition dans l\'accueil', () => {
+    const map = parseOfficeMap(readOffice());
+    expect(map.zones.filter((zone) => zone.type === 'desk')).toHaveLength(20);
+    expect(map.zones.filter((zone) => zone.type === 'door')).toHaveLength(20);
+    expect(map.spawn).toEqual({ x: 48 * 32 + 16, y: 36 * 32 + 16 });
   });
 });
 
@@ -121,6 +136,7 @@ test('le script écrit exactement les fichiers attendus', () => {
     'dev/avatars/dev-green.png',
     'dev/avatars/dev-yellow.png',
     'maps/dev-office.json',
+    'maps/office.json',
   ]);
   for (const { path } of devAssetFiles()) expect(existsSync(resolve(ASSETS_DIR, path)), path).toBe(true);
 });

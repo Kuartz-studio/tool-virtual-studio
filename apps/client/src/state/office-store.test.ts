@@ -1,6 +1,6 @@
 import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer } from '@bureau/shared';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { createOfficeStore, selectChatUnread, useOfficeStore } from './office-store';
+import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
 
 const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => ({
   id,
@@ -15,7 +15,7 @@ const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => (
   ...over,
 });
 
-const init = (self: PublicPlayer, players: PublicPlayer[], mapKey = 'dev-office'): InitPayload => ({ self, players, mapKey, chatHistory: [] });
+const init = (self: PublicPlayer, players: PublicPlayer[], mapKey = 'dev-office'): InitPayload => ({ self, players, mapKey, chatHistory: [], desks: [], closedDesks: [], deskBans: [] });
 
 const SELF = player('moi');
 const A = player('a');
@@ -243,7 +243,7 @@ const msg = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
   sentAt: '2026-10-20T10:00:00.000Z',
   ...over,
 });
-const initWith = (chatHistory: ChatMessage[], players: PublicPlayer[] = [A]): InitPayload => ({ self: SELF, players, mapKey: 'dev-office', chatHistory });
+const initWith = (chatHistory: ChatMessage[], players: PublicPlayer[] = [A]): InitPayload => ({ self: SELF, players, mapKey: 'dev-office', chatHistory, desks: [], closedDesks: [], deskBans: [] });
 const ids = (list: ChatMessage[]) => list.map((m) => m.id);
 const many = (count: number, prefix = 'm', over: Partial<ChatMessage> = {}) => Array.from({ length: count }, (_, i) => msg(`${prefix}${i + 1}`, over));
 
@@ -384,5 +384,64 @@ describe('chat', () => {
       expect(store.getState().chatAll.some((m) => m.id === 'm1')).toBe(false);
       expect(selectChatUnread(store.getState())).toBe(200);
     });
+  });
+});
+
+
+describe('les bureaux', () => {
+  const free = (key: string) => ({ key, ownerId: null, ownerName: null, name: null, locked: false, closedByState: false });
+  const initWithDesks = (desks: ReturnType<typeof free>[], closedDesks: string[] = [], deskBans: Array<{ id: string; name: string }> = []): InitPayload => ({
+    ...init(SELF, []),
+    desks,
+    closedDesks,
+    deskBans,
+  });
+
+  test('l\'init donne les places, les portes fermées pour soi et les exclus ; un init de retour les remplace et efface les toc toc', () => {
+    const store = createOfficeStore();
+    store.getState().applyInit(initWithDesks([free('A1'), free('A2')], ['A2'], [{ id: 'bob', name: 'Bob' }]));
+    expect(store.getState().desks.map((d) => d.key)).toEqual(['A1', 'A2']);
+    expect(store.getState().closedDesks).toEqual(['A2']);
+    expect(store.getState().deskBans).toEqual([{ id: 'bob', name: 'Bob' }]);
+
+    store.getState().addDeskKnock({ key: 'A1', userId: 'zoe', name: 'Zoé' });
+    store.getState().applyInit(initWithDesks([free('B1')]));
+    expect(store.getState().desks.map((d) => d.key)).toEqual(['B1']);
+    expect(store.getState().closedDesks).toEqual([]);
+    expect(store.getState().deskKnocks).toEqual([]);
+  });
+
+  test('setDesk remplace la place de même clé, sans changer l\'ordre ; une place inconnue s\'ajoute', () => {
+    const store = createOfficeStore();
+    store.getState().applyInit(initWithDesks([free('A1'), free('A2'), free('A3')]));
+    store.getState().setDesk({ ...free('A2'), ownerId: 'bob', ownerName: 'Bob', locked: true });
+    expect(store.getState().desks.map((d) => [d.key, d.ownerId, d.locked])).toEqual([['A1', null, false], ['A2', 'bob', true], ['A3', null, false]]);
+    store.getState().setDesk(free('Z9'));
+    expect(store.getState().desks.map((d) => d.key)).toEqual(['A1', 'A2', 'A3', 'Z9']);
+  });
+
+  test('selectDeskOf : la place d\'une personne, ou rien', () => {
+    const desks = [free('A1'), { ...free('A2'), ownerId: 'bob' }];
+    expect(selectDeskOf({ desks }, 'bob')?.key).toBe('A2');
+    expect(selectDeskOf({ desks }, 'zoe')).toBeUndefined();
+    expect(selectDeskOf({ desks }, null)).toBeUndefined();
+  });
+
+  test('toc toc : un par personne (le dernier remplace l\'ancien), ignorable', () => {
+    const store = createOfficeStore();
+    store.getState().addDeskKnock({ key: 'A1', userId: 'bob', name: 'Bob' });
+    store.getState().addDeskKnock({ key: 'A1', userId: 'zoe', name: 'Zoé' });
+    store.getState().addDeskKnock({ key: 'A1', userId: 'bob', name: 'Bob' });
+    expect(store.getState().deskKnocks.map((k) => k.userId)).toEqual(['zoe', 'bob']);
+    store.getState().dismissDeskKnock('zoe');
+    expect(store.getState().deskKnocks.map((k) => k.userId)).toEqual(['bob']);
+  });
+
+  test('reset efface tout cela', () => {
+    const store = createOfficeStore();
+    store.getState().applyInit(initWithDesks([free('A1')], ['A1']));
+    store.getState().setDeskNotice('x');
+    store.getState().reset();
+    expect(store.getState()).toMatchObject({ desks: [], closedDesks: [], deskBans: [], deskKnocks: [], deskNotice: null, officeMap: null });
   });
 });

@@ -1,7 +1,10 @@
-import type { InitPayload, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { ActivityState, InitPayload, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
+import { fr, t } from '../i18n/fr';
+import { deskErrorText, deskTitle } from '../office/desks';
 import { setSimRoom, simConnectionLost } from '../sim/sim-room';
+import { sendDeskCommand } from './desk-commands';
 import type { OfficeSocket } from './socket';
 
 // Les événements du bus (game/EventBus.ts) entre la connexion et le jeu. `net:*` va de la connexion au jeu ; `local:*`, du jeu à la
@@ -13,8 +16,11 @@ export interface OfficeBusEvents {
   'net:left': (p: { id: string }) => void;
   'net:correct': (p: { x: number; y: number }) => void;
   'net:status': (p: { id: string; status: Status }) => void;
+  'net:activity': (p: { id: string; activity: ActivityState | null }) => void;
   'net:profile': (p: { id: string; name: string; avatarKey: string | null }) => void;
   'local:move': (p: MovePayload) => void;
+  // Le jeu : la personne a cliqué sur la porte fermée de ce bureau, près de elle. La connexion toque pour elle (`desk:do`, knock).
+  'local:knock': (p: { key: string }) => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
   // Qui parle dans la room audio/vidéo, soi-même compris (les identifiants des comptes), à chaque changement ; [] en la quittant. Le
@@ -70,11 +76,20 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     // est redit tout de suite : les groupes attendent 500 ms avant de prendre quelqu'un, il arrive avant.
     init: (p) => {
       state().applyInit(p);
-      // Un statut autre que « Disponible » que cet onglet n'a pas choisi (rechargement, « Utiliser ici ») : le serveur l'a gardé, donc c'est
-      // celui de la personne. Seul le menu fixe un statut côté serveur, et « Disponible » est le statut par défaut.
-      if (state().chosenStatus === null && p.self.status !== 'available') state().setChosenStatus(p.self.status);
-      const { chosenStatus } = state();
-      if (chosenStatus !== null && chosenStatus !== p.self.status) socket.emit('status:set', chosenStatus);
+      // Un état d'activité que cet onglet n'a pas pris (rechargement, « Utiliser ici ») : le serveur l'a gardé, donc c'est celui de la
+      // personne. Pris dans cet onglet, il est redit à un serveur redémarré qui l'a oublié ; il passe avant le statut, que le serveur
+      // efface quand une personne en prend un ordinaire.
+      if (state().chosenActivityId === null && p.self.activity) state().setChosenActivity(p.self.activity.id);
+      const { chosenActivityId } = state();
+      if (chosenActivityId !== null) {
+        if (p.self.activity?.id !== chosenActivityId) socket.emit('state:set', chosenActivityId);
+      } else {
+        // Un statut autre que « Disponible » que cet onglet n'a pas choisi (rechargement, « Utiliser ici ») : le serveur l'a gardé, donc c'est
+        // celui de la personne. Seul le menu fixe un statut côté serveur, et « Disponible » est le statut par défaut.
+        if (state().chosenStatus === null && p.self.status !== 'available') state().setChosenStatus(p.self.status);
+        const { chosenStatus } = state();
+        if (chosenStatus !== null && chosenStatus !== p.self.status) socket.emit('status:set', chosenStatus);
+      }
       emitOnBus(bus, 'net:init', p);
     },
     // Les positions vont aussi au magasin, hors de son état réactif : un jeu qui démarre plus tard (encore en chargement, ou recréé
@@ -96,6 +111,12 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setStatus(p.id, p.status);
       emitOnBus(bus, 'net:status', p);
     },
+    'activity:changed': (p) => {
+      state().setActivity(p.id, p.activity);
+      // Le sien, d'où qu'il vienne (un autre onglet, un état supprimé, un statut ordinaire pris) : le choix de cet onglet le suit.
+      if (p.id === state().selfId) state().setChosenActivity(p.activity?.id ?? null);
+      emitOnBus(bus, 'net:activity', p);
+    },
     'media:changed': (p) => state().setMedia(p.id, p.media),
     'profile:changed': (p) => {
       state().setProfile(p);
@@ -109,10 +130,16 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setReplaced(true);
       state().setMediaInstruction({ type: 'leave' });
       state().setChosenStatus(null);
+      state().setChosenActivity(null);
     },
     'media:join': (p) => state().setMediaInstruction({ type: 'join', p }),
     'media:leave': () => state().setMediaInstruction({ type: 'leave' }),
     'chat:message': (m) => state().addChatMessage(m),
+    // Les bureaux : une place qui change, les portes fermées pour soi, ceux qu'on a exclus, quelqu'un qui toque à sa porte.
+    'desk:changed': (desk) => state().setDesk(desk),
+    'desk:access': (p) => state().setClosedDesks(p.closed),
+    'desk:bans': (bans) => state().setDeskBans(bans),
+    'desk:knock': (knock) => state().addDeskKnock(knock),
     // Le faux live (SIM=1 côté serveur) : qui est dans la room, et leur son. Le serveur n'en envoie jamais autrement.
     'sim:room': (p) => setSimRoom(p),
   };
@@ -134,6 +161,14 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:teleport', (p) => {
       if (state().ready) socket.emit('debug:teleport', p);
+    }),
+    listenOnBus(bus, 'local:knock', ({ key }) => {
+      if (!state().ready) return;
+      const desk = state().desks.find((d) => d.key === key);
+      const name = desk ? deskTitle(desk) : key;
+      void sendDeskCommand(socket, { type: 'knock', key }).then((ack) => {
+        state().setDeskNotice(ack.ok ? t(fr.desk.knockSent, { name }) : deskErrorText(ack));
+      });
     }),
   ];
 

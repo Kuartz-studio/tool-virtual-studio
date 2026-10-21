@@ -7,5 +7,7 @@ export * from './map/parse-map';
 export * from './map/queries';
 export * from './map/build-tiled';
 export * from './map/dev-office';
+export * from './map/office';
 export * from './movement/validate-move';
+export * from './proximity/audio-gain';
 export * from './proximity/compute-groups';

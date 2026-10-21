@@ -303,6 +303,8 @@ Si l'équipe préfère des îlots où les voisins s'entendent en permanence, com
 
 Les distances et les délais sont des valeurs de départ, à régler à l'usage. Le calcul est une fonction pure dans le paquet partagé, testée unitairement.
 
+**Mise à jour (octobre 2026).** Les espaces ouverts ne forment plus un cercle serré : le son baisse avec la distance (100 % jusqu'à 6 cases, silence à 14), et on rejoint la room de ceux qu'on pourrait entendre, à moins de 14 cases, qu'on marche ou non ; on y reste jusqu'à 15 cases. Entrer dans une zone n'attend plus que 150 ms. Le détail et les valeurs sont dans le README (« Le son selon la distance »). Les distances d'origine (3 et 4 cases, à l'arrêt) restent une configuration (`CLOSE_RANGE_GROUPING`).
+
 ### 8.2 LiveKit [mon choix]
 
 - **Une room LiveKit par groupe.** Quand un groupe se forme ou change, le serveur envoie `media:join` à chaque membre, avec un jeton valable **uniquement pour cette room**. À la sortie, il envoie `media:leave`.

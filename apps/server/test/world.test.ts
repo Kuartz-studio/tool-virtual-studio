@@ -78,6 +78,7 @@ describe('join, leave, get, list', () => {
       moving: false,
       status: 'busy',
       media: { mic: false, cam: false, screen: false },
+      activity: null,
     });
   });
 
@@ -444,10 +445,63 @@ describe('proximityPlayers', () => {
     world.setStatus('a', 'dnd');
     world.setMedia('a', { mic: true, cam: true, screen: false });
     expect(world.proximityPlayers()).toEqual([
-      { id: 'a', x: 120, y: 240, moving: true, status: 'dnd' },
-      { id: 'b', x: 400, y: 400, moving: false, status: 'busy' },
+      { id: 'a', x: 120, y: 240, moving: true, status: 'dnd', excluded: false },
+      { id: 'b', x: 400, y: 400, moving: false, status: 'busy', excluded: false },
     ]);
+    // Un état d'activité sans entendre ni être entendu met hors de la conversation ; l'un des deux suffit à y rester.
+    const state = { id: 's', label: 'À table', color: '#f59e0b', allowEntry: true, hear: false, heard: false };
+    world.setActivity('b', state);
+    expect(world.proximityPlayers().find((p) => p.id === 'b')?.excluded).toBe(true);
+    world.setActivity('b', { ...state, hear: true });
+    expect(world.proximityPlayers().find((p) => p.id === 'b')?.excluded).toBe(false);
     world.leave('a');
     expect(world.proximityPlayers().map((p) => p.id)).toEqual(['b']);
+  });
+});
+
+describe('état d\'activité', () => {
+  const state = { id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false };
+
+  test('setActivity : le joueur le porte (une copie), il le retrouve en revenant, et null l\'efface', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setActivity('a', state);
+    expect(world.get('a')?.activity).toEqual(state);
+    // Une copie : modifier l'objet donné, ou lu, ne change pas le monde.
+    state.label = 'modifié ?';
+    expect(world.get('a')?.activity?.label).toBe('En focus');
+    state.label = 'En focus';
+    world.get('a')!.activity!.label = 'autre';
+    expect(world.get('a')?.activity?.label).toBe('En focus');
+
+    world.leave('a');
+    expect(world.rememberedActivity('a')).toEqual(state);
+    expect(join('a').activity).toEqual(state);
+    world.setActivity('a', null);
+    expect(world.get('a')?.activity).toBeNull();
+    expect(world.rememberedActivity('a')).toBeNull();
+  });
+
+  test('un identifiant absent du monde : ignoré', () => {
+    const { world } = setup();
+    world.setActivity('inconnu', state);
+    expect(world.rememberedActivity('inconnu')).toBeNull();
+  });
+
+  test('editActivity : remplace l\'état porté (ou retenu) s\'il est le même, l\'efface s\'il est supprimé, sinon ne change rien', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setActivity('a', state);
+    expect(world.editActivity('a', 'autre-id', { ...state, id: 'autre-id' })).toBeUndefined();
+    expect(world.get('a')?.activity).toEqual(state);
+
+    expect(world.editActivity('a', 's1', { ...state, label: 'Concentré' })).toEqual({ activity: { ...state, label: 'Concentré' } });
+    expect(world.get('a')?.activity?.label).toBe('Concentré');
+
+    // Parti : l'état retenu suit aussi.
+    world.leave('a');
+    expect(world.editActivity('a', 's1', null)).toEqual({ activity: null });
+    expect(world.rememberedActivity('a')).toBeNull();
+    expect(world.editActivity('a', 's1', null)).toBeUndefined();
   });
 });

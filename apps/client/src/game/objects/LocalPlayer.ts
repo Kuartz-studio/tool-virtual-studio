@@ -1,4 +1,4 @@
-import { MAX_SPEED_PX_PER_S, type Direction, type MovePayload, type PublicPlayer, type Status } from '@bureau/shared';
+import { MAX_SPEED_PX_PER_S, type ActivityState, type Direction, type MovePayload, type PublicPlayer, type Status } from '@bureau/shared';
 import { GameObjects, Physics, Scenes, type Scene } from 'phaser';
 import { animKey, avatarObjectName, avatarSpec, feetBody, type AvatarSpec } from '../avatars';
 import { feetPayload } from '../move-sender';
@@ -33,7 +33,7 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
   private moving = false;
 
   // `p` : soi-même, tel que le serveur l'a placé (init) ; `zoom` : celui de la caméra, pour l'étiquette.
-  constructor(scene: Scene, p: Pick<PublicPlayer, 'id' | 'x' | 'y' | 'dir' | 'avatarKey' | 'name' | 'status'>, zoom: number) {
+  constructor(scene: Scene, p: Pick<PublicPlayer, 'id' | 'x' | 'y' | 'dir' | 'avatarKey' | 'name' | 'status' | 'activity'>, zoom: number) {
     const spec = avatarSpec(p.avatarKey);
     super(scene, p.x, p.y, spec.key, spec.idle[p.dir][0]);
     this.spec = spec;
@@ -48,7 +48,7 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
     this.arcadeBody().setCollideWorldBounds(true);
 
     this.shadow = addShadow(scene, p.x, p.y);
-    this.tag = new NameTag(scene, p.name, p.status, zoom);
+    this.tag = new NameTag(scene, p.name, p.status, zoom, p.activity ?? null);
     this.play(animKey(spec.key, 'idle', this.facing));
     this.followFeet();
 
@@ -108,6 +108,10 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
 
   setStatus(status: Status): void {
     this.tag.setStatus(status);
+  }
+
+  setActivity(activity: ActivityState | null): void {
+    this.tag.setActivity(activity);
   }
 
   setSpeaking(speaking: boolean): void {

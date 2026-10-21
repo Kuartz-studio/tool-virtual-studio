@@ -1,5 +1,5 @@
 import type { Ref } from 'react';
-import { fr } from '../i18n/fr';
+import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
 import type { OfficeSocket } from '../net/socket';
 import { CameraIcon, MicIcon, ScreenIcon } from './icons';
@@ -32,6 +32,10 @@ interface ControlBarProps {
   snapshot: MediaSnapshot;
   // Les panneaux, dans l'ordre de leurs boutons.
   panels: PanelToggle[];
+  // « Mes états d'activité… », au bas du menu des statuts : ouvre le panneau où l'on crée ses états.
+  onManageStates?(): void;
+  // Le nom de l'état d'activité qui coupe le micro (on n'y est pas entendu) : le bouton Micro est alors éteint et inactif. null : aucun.
+  micCutBy?: string | null;
   onSignOut(): void;
   signingOut: boolean;
 }
@@ -43,7 +47,7 @@ interface ControlBarProps {
 // - Le partage d'écran ne se fait que dans une conversation. Le clic l'appelle tout de suite : le navigateur n'ouvre le choix de
 //   l'écran que pendant un geste de la personne.
 // L'état affiché est celui du client (snapshot), qui décide : un micro refusé dans la room repasse à « coupé ».
-export function ControlBar({ name, socket, client, snapshot, panels, onSignOut, signingOut }: ControlBarProps) {
+export function ControlBar({ name, socket, client, snapshot, panels, onManageStates, micCutBy = null, onSignOut, signingOut }: ControlBarProps) {
   const { mic, cam, screen } = snapshot.local;
   // Les participants n'arrivent qu'une fois la room rejointe : avant (hors conversation, ou pendant la connexion), pas de partage.
   const inConversation = snapshot.participants.length > 0;
@@ -55,7 +59,7 @@ export function ControlBar({ name, socket, client, snapshot, panels, onSignOut, 
         <span className="office-user" title={name}>
           {name}
         </span>
-        <StatusMenu socket={socket} />
+        <StatusMenu socket={socket} onManage={onManageStates} />
       </div>
       <div className="office-bar-center">
         <div className="media-controls" role="group" aria-label={fr.media.controls.label}>
@@ -63,7 +67,8 @@ export function ControlBar({ name, socket, client, snapshot, panels, onSignOut, 
             type="button"
             className="bar-button media-button"
             aria-pressed={mic}
-            title={mic ? fr.media.controls.micOnHint : fr.media.controls.micOffHint}
+            title={micCutBy !== null ? t(fr.states.micCut, { label: micCutBy }) : mic ? fr.media.controls.micOnHint : fr.media.controls.micOffHint}
+            disabled={micCutBy !== null}
             onClick={() => void client.setMic(!mic)}
           >
             <MicIcon off={!mic} />

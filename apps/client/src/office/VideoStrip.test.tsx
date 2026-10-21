@@ -275,3 +275,92 @@ describe('quand ça ne marche pas', () => {
     expect(screen.getByRole('status').textContent).toBe(fr.media.devicesRefused);
   });
 });
+
+// Le plein écran d'un élément, que jsdom n'a pas : requestFullscreen pose fullscreenElement et le dit (fullscreenchange), comme un
+// navigateur ; exitFullscreen le retire.
+function fakeFullscreen(enabled = true) {
+  let current: Element | null = null;
+  const change = () => document.dispatchEvent(new Event('fullscreenchange'));
+  const request = vi.fn(async function (this: Element) {
+    current = this;
+    change();
+  });
+  const exit = vi.fn(async () => {
+    current = null;
+    change();
+  });
+  Object.defineProperty(document, 'fullscreenEnabled', { configurable: true, value: enabled });
+  // Comme un navigateur : un élément retiré de la page n'est plus en plein écran.
+  Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => (current?.isConnected ? current : null) });
+  Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exit });
+  Object.defineProperty(Element.prototype, 'requestFullscreen', { configurable: true, writable: true, value: request });
+  return { request, exit, current: () => current };
+}
+
+function removeFakeFullscreen() {
+  for (const key of ['fullscreenEnabled', 'fullscreenElement', 'exitFullscreen']) delete (document as unknown as Record<string, unknown>)[key];
+  delete (Element.prototype as unknown as Record<string, unknown>).requestFullscreen;
+}
+
+describe('le plein écran du partage d\'écran d\'un autre', () => {
+  afterEach(removeFakeFullscreen);
+
+  test('un partage d\'écran d\'un autre, en grand : un bouton « Plein écran » met la scène (écran + bouton) en plein écran, et en fait sortir', async () => {
+    const user = userEvent.setup();
+    const fullscreen = fakeFullscreen();
+    const { client } = await inRoom();
+    act(() => client.addRemote({ id: 'bob', name: 'Bob', cam: true, screen: true }));
+
+    const enter = screen.getByRole('button', { name: fr.media.tiles.fullscreen });
+    expect(enter.getAttribute('aria-pressed')).toBe('false');
+    await user.click(enter);
+    expect(fullscreen.request).toHaveBeenCalledOnce();
+    expect(fullscreen.current()).toBe(stage());
+
+    const exit = screen.getByRole('button', { name: fr.media.tiles.exitFullscreen });
+    expect(exit.getAttribute('aria-pressed')).toBe('true');
+    await user.click(exit);
+    expect(fullscreen.exit).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: fr.media.tiles.fullscreen })).toBeTruthy();
+  });
+
+  test('Échap (le navigateur quitte le plein écran de lui-même) : le bouton le sait', async () => {
+    const user = userEvent.setup();
+    const fullscreen = fakeFullscreen();
+    const { client } = await inRoom();
+    act(() => client.addRemote({ id: 'bob', name: 'Bob', screen: true }));
+    await user.click(screen.getByRole('button', { name: fr.media.tiles.fullscreen }));
+    expect(screen.getByRole('button', { name: fr.media.tiles.exitFullscreen })).toBeTruthy();
+    await act(() => fullscreen.exit());
+    expect(screen.getByRole('button', { name: fr.media.tiles.fullscreen })).toBeTruthy();
+  });
+
+  test('le partage s\'arrête en plein écran : on en sort', async () => {
+    const user = userEvent.setup();
+    fakeFullscreen();
+    const { client } = await inRoom();
+    act(() => client.addRemote({ id: 'bob', name: 'Bob', screen: true }));
+    await user.click(screen.getByRole('button', { name: fr.media.tiles.fullscreen }));
+    expect(document.fullscreenElement).toBe(stage());
+    act(() => client.updateRemote('bob', { screen: false }));
+    expect(document.fullscreenElement).toBeNull();
+    expect(screen.queryByRole('button', { name: fr.media.tiles.fullscreen })).toBeNull();
+  });
+
+  test('ni pour son propre partage, ni pour une caméra agrandie, ni quand le navigateur ne sait pas', async () => {
+    const user = userEvent.setup();
+    fakeFullscreen();
+    const { client } = await inRoom();
+    await act(() => client.setScreenShare(true));
+    expect(screen.queryByRole('button', { name: fr.media.tiles.fullscreen })).toBeNull();
+    await act(() => client.setScreenShare(false));
+    act(() => client.addRemote({ id: 'bob', name: 'Bob', cam: true }));
+    await user.click(tile('Vidéo de Bob'));
+    expect(stage()).not.toBeNull();
+    expect(screen.queryByRole('button', { name: fr.media.tiles.fullscreen })).toBeNull();
+
+    removeFakeFullscreen();
+    act(() => client.updateRemote('bob', { screen: true }));
+    expect(screen.queryByRole('button', { name: fr.media.tiles.fullscreen })).toBeNull();
+  });
+});

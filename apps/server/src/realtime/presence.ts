@@ -7,6 +7,7 @@ import { user } from '../db/schema';
 import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from './io';
 import { loadPosition, savePositions } from './positions';
+import type { DeskController } from '../desks/desk-controller';
 import { chooseSpawn } from './spawn';
 import type { World } from './world';
 
@@ -22,6 +23,8 @@ export interface PresenceDeps {
   logger: Logger;
   /** Le chat « Tout le monde » : ses derniers messages sont l'historique de chaque init. */
   chat: Pick<ChatService, 'recent'>;
+  /** Les bureaux : une place pour qui arrive, et ce que dit chaque init à leur sujet. */
+  desks: Pick<DeskController, 'assign' | 'initFor' | 'canStandAt'>;
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -88,6 +91,7 @@ export function createPresence(d: PresenceDeps) {
       players: d.world.list().filter((p) => p.id !== userId),
       mapKey: d.mapKey,
       chatHistory,
+      ...d.desks.initFor(socket),
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
     d.onWelcome?.(socket);
@@ -113,7 +117,10 @@ export function createPresence(d: PresenceDeps) {
       }
       const arrival = !d.world.get(userId);
       if (arrival) {
-        const spot = chooseSpawn(d.map, saved, d.busyZones());
+        // Un bureau d'abord, s'il lui en faut un : son avatar peut apparaître dedans, et les autres le voient dans l'init.
+        await d.desks.assign(userId, name);
+        if (halted || !socket.connected) return;
+        const spot = chooseSpawn(d.map, saved, d.busyZones(), (x, y) => d.desks.canStandAt(userId, x, y));
         const dir = saved && spot.x === saved.x && spot.y === saved.y ? saved.dir : DEFAULT_DIR;
         d.world.join({ id: userId, name, avatarKey, x: spot.x, y: spot.y, dir, status: d.world.rememberedStatus(userId) });
       }
@@ -237,6 +244,10 @@ export function createPresence(d: PresenceDeps) {
     disconnectUser,
     socketsOf(userId: string): string[] {
       return [...(socketsByUser.get(userId) ?? [])].map((socket) => socket.id);
+    },
+    // Les personnes qui ont au moins une socket.
+    connectedUsers(): string[] {
+      return [...socketsByUser.keys()];
     },
     saveAll,
     // La sauvegarde périodique : sautée tant que la précédente n'est pas finie (base lente).

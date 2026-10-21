@@ -1,4 +1,17 @@
-import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type MediaJoinPayload, type MediaState, type PublicPlayer, type Status } from '@bureau/shared';
+import {
+  CHAT_HISTORY_LIMIT,
+  type ActivityState,
+  type ChatMessage,
+  type DeskBan,
+  type DeskInfo,
+  type DeskKnock,
+  type InitPayload,
+  type MediaJoinPayload,
+  type MediaState,
+  type OfficeMap,
+  type PublicPlayer,
+  type Status,
+} from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
@@ -48,14 +61,47 @@ export interface OfficeState {
   // ne garde les statuts qu'en mémoire : redémarré (un déploiement), son `init` dit « Disponible », et la connexion lui redit ce choix
   // (office-connection.ts). Un `init` ne le change donc pas. Il ne survit pas au rechargement de la page.
   chosenStatus: Status | null;
+  // Les états d'activité que la personne a créés (GET /api/me/states, lus à son arrivée, puis tenus à jour par ce qu'elle en fait).
+  myStates: ActivityState[];
+  // L'état d'activité que la personne a pris dans le menu (identifiant), dans cet onglet ; null si elle n'en a pas pris. Comme chosenStatus :
+  // le serveur ne le garde qu'en mémoire, la connexion le lui redit après un redémarrage.
+  chosenActivityId: string | null;
+  // Les places de bureau, dans l'ordre de la carte (celui de l'`init`), tenues à jour par `desk:changed`.
+  desks: DeskInfo[];
+  // Les places dont la porte est fermée pour soi (verrou, état d'activité de son propriétaire, ou exclusion) : l'avatar n'y entre pas.
+  closedDesks: string[];
+  // Ceux que soi-même a exclus de son bureau.
+  deskBans: DeskBan[];
+  // Ceux qui toquent à la porte de son bureau, dans l'ordre d'arrivée, une fois chacun (une personne qui retoque remplace l'ancien toc).
+  deskKnocks: DeskKnock[];
+  // Un message passager sur les bureaux (porte fermée, toc toc envoyé), qui s'efface de lui-même ; null sans message.
+  deskNotice: string | null;
+  // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
+  // null avant le jeu, et en dehors de lui.
+  officeMap: OfficeMap | null;
   // La dernière position connue de chaque autre joueur présent (init, arrivée, ticks). Un Map modifié sur place, sans prévenir les
   // abonnés : un `init` et reset() le remplacent, un départ en retire le joueur ; rien n'y reste de ceux qui sont partis.
   positions: Map<string, PlayerPosition>;
+  // Une place a changé (`desk:changed`) : remplace celle de même clé.
+  setDesk(desk: DeskInfo): void;
+  setClosedDesks(keys: string[]): void;
+  setDeskBans(bans: DeskBan[]): void;
+  addDeskKnock(knock: DeskKnock): void;
+  dismissDeskKnock(userId: string): void;
+  setOfficeMap(map: OfficeMap | null): void;
+  setDeskNotice(text: string | null): void;
   // Tout l'état d'une (re)connexion : remplace tous les joueurs (ceux qui sont partis pendant la coupure disparaissent).
   applyInit(p: InitPayload): void;
   upsertPlayer(p: PublicPlayer): void;
   removePlayer(id: string): void;
   setStatus(id: string, s: Status): void;
+  // L'état d'activité d'un joueur (`activity:changed`) ; null : plus aucun.
+  setActivity(id: string, activity: ActivityState | null): void;
+  setMyStates(states: ActivityState[]): void;
+  // Un de ses états créé ou remplacé (même identifiant : il prend sa place dans la liste) ; ou supprimé.
+  upsertMyState(state: ActivityState): void;
+  removeMyState(id: string): void;
+  setChosenActivity(id: string | null): void;
   setMedia(id: string, m: MediaState): void;
   setProfile(p: { id: string; name: string; avatarKey: string | null }): void;
   setReplaced(v: boolean): void;
@@ -88,6 +134,14 @@ type Data = Pick<
   | 'self'
   | 'mapKey'
   | 'chosenStatus'
+  | 'myStates'
+  | 'chosenActivityId'
+  | 'desks'
+  | 'closedDesks'
+  | 'deskBans'
+  | 'deskKnocks'
+  | 'deskNotice'
+  | 'officeMap'
   | 'positions'
 >;
 
@@ -103,6 +157,14 @@ const initialData = (): Data => ({
   self: null,
   mapKey: null,
   chosenStatus: null,
+  myStates: [],
+  chosenActivityId: null,
+  desks: [],
+  closedDesks: [],
+  deskBans: [],
+  deskKnocks: [],
+  deskNotice: null,
+  officeMap: null,
   positions: new Map(),
 });
 
@@ -135,6 +197,11 @@ export function selectChatUnread(state: Pick<OfficeState, 'chatAll' | 'chatReadI
   return unread;
 }
 
+// La place de la personne `userId`, ou undefined si elle n'en a pas.
+export function selectDeskOf(state: Pick<OfficeState, 'desks'>, userId: string | null): DeskInfo | undefined {
+  return userId === null ? undefined : state.desks.find((desk) => desk.ownerId === userId);
+}
+
 // Un magasin neuf (les tests en créent un chacun) ; l'appli utilise useOfficeStore.
 export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
   return create<OfficeState>()((set, get) => {
@@ -165,6 +232,11 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           // en était, si bien que ce qui est arrivé pendant la coupure est non lu. « À proximité » reste : le serveur ne le redit pas.
           chatAll: history,
           chatReadId: state.selfId === null ? (history.at(-1)?.id ?? null) : state.chatReadId,
+          desks: p.desks,
+          closedDesks: p.closedDesks,
+          deskBans: p.deskBans,
+          // Les toc toc d'avant la coupure sont périmés : la personne n'est peut-être plus là pour les entendre.
+          deskKnocks: [],
         }));
       },
 
@@ -190,6 +262,29 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           if (Object.hasOwn(players, m.id)) positions.set(m.id, positionOf(m));
         }
       },
+
+      setDesk: (desk) =>
+        set((state) => {
+          const index = state.desks.findIndex((d) => d.key === desk.key);
+          if (index === -1) return { desks: [...state.desks, desk] };
+          const desks = [...state.desks];
+          desks[index] = desk;
+          return { desks };
+        }),
+      setClosedDesks: (closedDesks) => set({ closedDesks }),
+      setDeskBans: (deskBans) => set({ deskBans }),
+      addDeskKnock: (knock) =>
+        set((state) => ({ deskKnocks: [...state.deskKnocks.filter((k) => k.userId !== knock.userId), knock] })),
+      dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
+      setOfficeMap: (officeMap) => set({ officeMap }),
+      setDeskNotice: (deskNotice) => set({ deskNotice }),
+
+      setActivity: (id, activity) => updatePlayer(id, (p) => ({ ...p, activity })),
+      setMyStates: (myStates) => set({ myStates }),
+      upsertMyState: (state) =>
+        set((s) => (s.myStates.some((m) => m.id === state.id) ? { myStates: s.myStates.map((m) => (m.id === state.id ? state : m)) } : { myStates: [...s.myStates, state] })),
+      removeMyState: (id) => set((s) => ({ myStates: s.myStates.filter((m) => m.id !== id) })),
+      setChosenActivity: (chosenActivityId) => set({ chosenActivityId }),
 
       setStatus: (id, status) => updatePlayer(id, (p) => ({ ...p, status })),
       setMedia: (id, m) => updatePlayer(id, (p) => ({ ...p, media: { mic: m.mic, cam: m.cam, screen: m.screen } })),

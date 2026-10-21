@@ -11,8 +11,9 @@ import type {
 } from './media-client';
 import { MediaSession } from './media-session';
 
-// Le client média de l'appli : la logique de MediaSession, sur LiveKit. livekit-client (plus de 100 ko) n'est téléchargé qu'au premier
-// join, c'est-à-dire à la première conversation : le bureau s'ouvre sans lui, et une personne qui reste seule ne le charge jamais.
+// Le client média de l'appli : la logique de MediaSession, sur LiveKit. livekit-client (plus de 100 ko) n'est téléchargé qu'une fois le
+// bureau ouvert (warmUp, appelé par useMedia) et au plus tard au premier join : le bureau s'affiche sans l'attendre, et la première
+// conversation ne l'attend plus.
 //
 // Avec VITE_SIM=1 (`pnpm dev:sim`), le faux live : la même logique, sur un faux transport qui joue en boucle le fichier audio des
 // personnes fictives de la room (sim/sim-transport.ts). Sans lui, ce code n'entre pas dans le build.
@@ -40,6 +41,8 @@ export class LazyTransport implements MediaTransport {
   // Change à chaque disconnect : une connexion qui attendait le chargement est alors annulée.
   private generation = 0;
   private readonly pending = new Set<PendingAttachment>();
+  // Les volumes demandés, pour le transport quand il arrive.
+  private volumes: Readonly<Record<string, number>> = {};
 
   constructor(private readonly load: () => Promise<MediaTransport>) {}
 
@@ -68,6 +71,19 @@ export class LazyTransport implements MediaTransport {
     await this.loaded?.startAudio();
   }
 
+  // Télécharge le transport dès l'entrée au bureau plutôt qu'à la première conversation : c'est ce téléchargement, avant la connexion,
+  // qui retardait la première conversation d'une session.
+  warmUp(): void {
+    this.ensureLoaded().catch(() => {
+      // Réessayé au premier join, qui échoue alors comme une connexion impossible.
+    });
+  }
+
+  setVolumes(volumes: Readonly<Record<string, number>>): void {
+    this.volumes = volumes;
+    this.loaded?.setVolumes?.(volumes);
+  }
+
   participants(): MediaParticipant[] {
     return this.loaded?.participants() ?? [];
   }
@@ -88,6 +104,7 @@ export class LazyTransport implements MediaTransport {
     this.loading ??= this.load().then(
       (transport) => {
         this.loaded = transport;
+        transport.setVolumes?.(this.volumes);
         for (const entry of this.pending) entry.detach = transport.attach(entry.el, entry.participantId, entry.source);
         this.pending.clear();
         return transport;

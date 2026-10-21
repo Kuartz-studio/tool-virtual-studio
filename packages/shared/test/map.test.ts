@@ -192,7 +192,8 @@ describe('lecture des zones', () => {
     expect(map.zones.find((z) => z.type === 'label')).toMatchObject({ name: null, text: 'DEV TEAM', x: 288, y: 256, width: 192, height: 32 });
     expect(map.zones.find((z) => z.type === 'private')).toMatchObject({ name: 'Salle de réunion', text: null });
     expect(map.zones.find((z) => z.type === 'spawn')).toMatchObject({ name: null, text: null, x: 64, y: 224, width: 32, height: 32 });
-    expect(new Set(map.zones.map((z) => z.type))).toEqual(new Set(ZONE_TYPES));
+    // La carte de développement n'a pas de porte (zone door) : les bureaux de la grande carte en ont (office.test.ts).
+    expect(new Set(map.zones.map((z) => z.type))).toEqual(new Set(ZONE_TYPES.filter((type) => type !== 'door')));
   });
 
   test('nom et texte : espaces de bord retirés, vides → null, propriété qui n\'est pas du texte ignorée', () => {

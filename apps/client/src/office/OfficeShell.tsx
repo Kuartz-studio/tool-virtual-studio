@@ -1,8 +1,10 @@
 import type { Role } from '@bureau/shared';
-import { Activity, useId, useRef, useState, type ReactNode } from 'react';
+import { Activity, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { fr, t } from '../i18n/fr';
+import { listActivityStates } from '../lib/activity-api';
 import { useMailMode } from '../lib/config';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
+import { useSpatialAudio } from '../media/spatial-audio';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { SimPanel } from '../sim/SimPanel';
@@ -10,7 +12,10 @@ import { selectChatUnread, useOfficeStore } from '../state/office-store';
 import { AdminPanel } from './AdminPanel';
 import { ChatPanel } from './ChatPanel';
 import { ControlBar } from './ControlBar';
+import { DeskKnocks } from './DeskKnocks';
+import { DeskPanel } from './DeskPanel';
 import { PeoplePanel } from './PeoplePanel';
+import { StatesPanel } from './StatesPanel';
 import { ReplacedScreen } from './ReplacedScreen';
 import { VideoStrip } from './VideoStrip';
 
@@ -65,6 +70,8 @@ export function OfficeShell({
   // Le serveur a dit qui est là : avant, le panneau Personnes ne saurait pas qui est en ligne.
   const knowsWhoIsHere = useOfficeStore((state) => state.self !== null);
   const replaced = useOfficeStore((state) => state.replaced);
+  // Le son des autres baisse avec la distance dans un espace ouvert : ceux qu'on n'entend plus n'ont plus de vignette.
+  const inaudible = useSpatialAudio(media.client, media.snapshot);
 
   const [peopleOpen, setPeopleOpen] = useState(false);
   const peopleToggle = useRef<HTMLButtonElement>(null);
@@ -101,6 +108,51 @@ export function OfficeShell({
     adminToggle.current?.focus();
   }
 
+  // Le panneau Mes états d'activité : on y crée ses propres états (nom, couleur, entrée au bureau, entendre, être entendu).
+  const [statesOpen, setStatesOpen] = useState(false);
+  const statesId = useId();
+
+  function closeStates() {
+    setStatesOpen(false);
+    // Le focus revient au bouton du statut, d'où le panneau s'est ouvert.
+    document.querySelector<HTMLButtonElement>('.status-menu > button')?.focus();
+  }
+
+  // Ses états d'activité, lus à chaque (re)connexion prête : ils servent au menu des statuts.
+  const ready = useOfficeStore((state) => state.ready);
+  useEffect(() => {
+    if (!ready) return;
+    let current = true;
+    listActivityStates().then(
+      (states) => current && useOfficeStore.getState().setMyStates(states),
+      () => {
+        // Illisibles : le menu n'a que les statuts ordinaires, et le panneau le dit à l'ouverture.
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [ready]);
+
+  // Un état d'activité où l'on n'est pas entendu coupe le micro : le serveur ne laisse rien publier (jeton sans micro), et le bouton ne
+  // le rallume pas tant que l'état dure.
+  const activity = useOfficeStore((state) => state.self?.activity ?? null);
+  const micCutBy = activity !== null && !activity.heard ? activity.label : null;
+  const micOn = media.snapshot.local.mic;
+  useEffect(() => {
+    if (micCutBy !== null && micOn) void media.client.setMic(false);
+  }, [micCutBy, micOn, media.client]);
+
+  // Le panneau Mon bureau : nom, porte, exclusions, changement de place.
+  const [deskOpen, setDeskOpen] = useState(false);
+  const deskToggle = useRef<HTMLButtonElement>(null);
+  const deskId = useId();
+
+  function closeDesk() {
+    setDeskOpen(false);
+    deskToggle.current?.focus();
+  }
+
   // Le faux live (pnpm dev:sim) : le panneau Bac à sable, pour tout le monde. Absent d'un build normal.
   const [simOpen, setSimOpen] = useState(false);
   const simToggle = useRef<HTMLButtonElement>(null);
@@ -117,7 +169,7 @@ export function OfficeShell({
       {children}
       <div className="office-ui" inert={replaced}>
         <div className="office-top">
-          <VideoStrip snapshot={media.snapshot} client={media.client} onReconnect={onReconnect} />
+          <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />
         </div>
         {connecting && (
           <p className="office-connecting" role="status">
@@ -138,6 +190,8 @@ export function OfficeShell({
         )}
         <div className="office-side" data-chat-open={chatOpen ? 'true' : undefined} data-admin-open={isAdmin && adminOpen ? 'true' : undefined}>
           {peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}
+          {deskOpen && <DeskPanel id={deskId} socket={socket} onClose={closeDesk} />}
+          {statesOpen && <StatesPanel id={statesId} socket={socket} onClose={closeStates} />}
           {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} mail={mail} onClose={closeAdmin} />}
           {__SIM__ && simOpen && <SimPanel id={simId} onClose={closeSim} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont
@@ -146,11 +200,14 @@ export function OfficeShell({
             <ChatPanel id={chatId} socket={socket} room={media.snapshot.room} onClose={closeChat} />
           </Activity>
         </div>
+        <DeskKnocks socket={socket} />
         <ControlBar
           name={name}
           socket={socket}
           client={media.client}
           snapshot={media.snapshot}
+          onManageStates={() => setStatesOpen(true)}
+          micCutBy={micCutBy}
           panels={[
             {
               label: fr.chat.toggle,
@@ -170,6 +227,14 @@ export function OfficeShell({
               panelId: peopleId,
               buttonRef: peopleToggle,
               onToggle: () => (peopleOpen ? closePeople() : setPeopleOpen(true)),
+            },
+            {
+              label: fr.desk.toggle,
+              open: deskOpen,
+              disabled: !knowsWhoIsHere,
+              panelId: deskId,
+              buttonRef: deskToggle,
+              onToggle: () => (deskOpen ? closeDesk() : setDeskOpen(true)),
             },
             ...(isAdmin
               ? [

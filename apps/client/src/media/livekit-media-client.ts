@@ -59,6 +59,10 @@ export class LiveKitTransport implements MediaTransport {
   private readonly unlisten: Array<() => void> = [];
   private readonly audio = new Map<RemoteTrack, HTMLMediaElement>();
   private readonly attachments = new Set<Attachment>();
+  // Le volume de chaque personne (absente : 1), et ce que LiveKit en a déjà reçu : il ne change que quand le volume change. Valent pour
+  // les rooms suivantes aussi.
+  private volumes: Readonly<Record<string, number>> = {};
+  private readonly appliedVolumes = new Map<string, number>();
 
   async connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void> {
     const room = new Room(roomOptions(devices));
@@ -73,6 +77,12 @@ export class LiveKitTransport implements MediaTransport {
       throw err;
     }
     this.reattach();
+  }
+
+  // Le volume des autres : tout de suite pour ceux qui sont là, dès leur arrivée pour les autres.
+  setVolumes(volumes: Readonly<Record<string, number>>): void {
+    this.volumes = volumes;
+    this.applyVolumes();
   }
 
   async disconnect(): Promise<void> {
@@ -148,6 +158,7 @@ export class LiveKitTransport implements MediaTransport {
     };
     const changed = () => {
       this.reattach();
+      this.applyVolumes();
       events.changed();
     };
     on(RoomEvent.TrackSubscribed, (track) => {
@@ -200,6 +211,19 @@ export class LiveKitTransport implements MediaTransport {
     track?.attach(attachment.el);
   }
 
+  // Le volume voulu pour chaque autre personne de la room, si LiveKit ne l'a pas déjà : sa voix et le son de son partage d'écran.
+  private applyVolumes(): void {
+    const room = this.room;
+    if (!room) return;
+    for (const participant of room.remoteParticipants.values()) {
+      const wanted = clampVolume(this.volumes[participant.identity] ?? 1);
+      if (this.appliedVolumes.get(participant.identity) === wanted) continue;
+      this.appliedVolumes.set(participant.identity, wanted);
+      participant.setVolume(wanted, Track.Source.Microphone);
+      participant.setVolume(wanted, Track.Source.ScreenShareAudio);
+    }
+  }
+
   private reattach(): void {
     for (const attachment of this.attachments) this.follow(attachment);
   }
@@ -214,8 +238,14 @@ export class LiveKitTransport implements MediaTransport {
       attachment.track = undefined;
     }
     this.room = null;
+    this.appliedVolumes.clear();
     this.markReleased();
   }
+}
+
+// Un volume entre 0 et 1 ; ce qui n'est pas un nombre vaut le plein volume.
+function clampVolume(volume: number): number {
+  return Number.isFinite(volume) ? Math.min(1, Math.max(0, volume)) : 1;
 }
 
 function roomOptions(devices: MediaDevices): RoomOptions {

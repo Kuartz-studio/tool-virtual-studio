@@ -33,6 +33,7 @@ const events: TransportEvents = { changed: () => {}, disconnected: () => {}, scr
 
 // Un transport qui note ce qu'on lui demande.
 class RecordingTransport implements MediaTransport {
+  setVolumes?: (volumes: Readonly<Record<string, number>>) => void;
   readonly log: string[] = [];
   readonly attached: Array<{ el: HTMLVideoElement; participantId: string; source: VideoSource }> = [];
   async connect(p: MediaJoinPayload, _devices: MediaDevices, _events: TransportEvents): Promise<void> {
@@ -133,6 +134,48 @@ describe('LazyTransport', () => {
     await expect(connected).rejects.toThrow();
     await second;
     expect(transport.log).toEqual(['connect:r2']);
+  });
+
+  test('warmUp charge le transport tout de suite, une seule fois, sans se connecter : la première connexion ne l\'attend plus', async () => {
+    const { transport, load, finish } = deferredLoad();
+    const lazy = new LazyTransport(load);
+    lazy.warmUp();
+    lazy.warmUp();
+    expect(load).toHaveBeenCalledOnce();
+    finish();
+    await Promise.resolve();
+    expect(transport.log).toEqual([]);
+    await lazy.connect(payload('r1'), {}, events);
+    expect(load).toHaveBeenCalledOnce();
+    expect(transport.log).toEqual(['connect:r1']);
+  });
+
+  test('warmUp qui échoue (réseau coupé) ne lève rien, et la première connexion réessaie le chargement', async () => {
+    const transport = new RecordingTransport();
+    const load = vi.fn<() => Promise<MediaTransport>>().mockRejectedValueOnce(new Error('chunk introuvable')).mockResolvedValue(transport);
+    const lazy = new LazyTransport(load);
+    lazy.warmUp();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await lazy.connect(payload('r1'), {}, events);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(transport.log).toEqual(['connect:r1']);
+  });
+
+  test('setVolumes : retenu avant le chargement et passé au transport dès qu\'il est chargé, puis passé tel quel', async () => {
+    const { transport, load, finish } = deferredLoad();
+    const volumes: Array<Record<string, number>> = [];
+    transport.setVolumes = (v) => {
+      volumes.push({ ...v });
+    };
+    const lazy = new LazyTransport(load);
+    lazy.setVolumes({ bob: 0.3 });   // rien de chargé : retenu
+    expect(volumes).toEqual([]);
+    const connected = lazy.connect(payload('r1'), {}, events);
+    finish();
+    await connected;
+    expect(volumes).toEqual([{ bob: 0.3 }]);
+    lazy.setVolumes({ bob: 0.6 });
+    expect(volumes).toEqual([{ bob: 0.3 }, { bob: 0.6 }]);
   });
 
   test('le chargement échoue (réseau coupé, nouvelle version déployée) : la connexion échoue, et la suivante réessaie', async () => {

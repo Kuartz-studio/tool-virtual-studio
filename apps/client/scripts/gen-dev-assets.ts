@@ -6,7 +6,7 @@
 // Une planche d'avatar a 3 colonnes (immobile, pas 1, pas 2) et 4 lignes (bas, gauche, droite, haut).
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
-import { DEV_AVATAR_KEYS, DEV_OFFICE, DEV_TILE, TILE_SIZE, buildTiledMap } from '@bureau/shared';
+import { DEV_AVATAR_KEYS, DEV_OFFICE, DEV_TILE, OFFICE, TILE_SIZE, buildTiledMap, type ZoneInput } from '@bureau/shared';
 import { PNG } from 'pngjs';
 
 export const ASSETS_DIR = resolve(import.meta.dirname, '../public/assets');
@@ -251,10 +251,10 @@ export function renderAvatarSheet(key: AvatarKey): PNG {
 
 // ---- Carte ------------------------------------------------------------------------------------------------------------------
 
-// Le JSON de dev-office : celui de buildTiledMap, sauf qu'un calque de tuiles tient sur une ligne par rangée de cases (au lieu
+// Le JSON d'une carte : celui de buildTiledMap, sauf qu'un calque de tuiles tient sur une ligne par rangée de cases (au lieu
 // d'un nombre par ligne), pour qu'on le lise et que ses diffs restent courts.
-export function renderDevOfficeJson(): string {
-  const map = buildTiledMap({ ...DEV_OFFICE, tileset: DEV_TILESET });
+function renderMapJson(plan: { ascii: string[]; zones: ZoneInput[] }): string {
+  const map = buildTiledMap({ ...plan, tileset: DEV_TILESET });
   const text = JSON.stringify(map, null, 2).replace(/"data": \[([^\]]*)\]/g, (_match, body: string) => {
     const numbers = body.split(',').map((n) => n.trim());
     const rows: string[] = [];
@@ -264,6 +264,16 @@ export function renderDevOfficeJson(): string {
   return `${text}\n`;
 }
 
+// dev-office : la petite carte des tests et du développement.
+export function renderDevOfficeJson(): string {
+  return renderMapJson(DEV_OFFICE);
+}
+
+// office : la carte du bureau (OFFICE, packages/shared/src/map/office.ts), celle que le serveur charge par défaut.
+export function renderOfficeJson(): string {
+  return renderMapJson(OFFICE);
+}
+
 // ---- Écriture ---------------------------------------------------------------------------------------------------------------
 
 export function devAssetFiles(): Array<{ path: string; content: Buffer | string }> {
@@ -271,6 +281,7 @@ export function devAssetFiles(): Array<{ path: string; content: Buffer | string 
     { path: 'dev/tiles.png', content: PNG.sync.write(renderTiles()) },
     ...DEV_AVATAR_KEYS.map((key) => ({ path: `dev/avatars/${key}.png`, content: PNG.sync.write(renderAvatarSheet(key)) })),
     { path: 'maps/dev-office.json', content: renderDevOfficeJson() },
+    { path: 'maps/office.json', content: renderOfficeJson() },
   ];
 }
 
