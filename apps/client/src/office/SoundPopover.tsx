@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type CSSProperties, type RefObject } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { audioEngine } from '../audio/audio';
 import { useAudioStore } from '../audio/audio-store';
 import { SCENE_IDS, type SceneId } from '../audio/catalog';
@@ -56,6 +56,14 @@ function Cover({ scene }: { scene: SceneId }) {
   return <canvas ref={canvas} className="juke-cover" width={COVER_WIDTH} height={COVER_HEIGHT} data-cover={scene} aria-hidden="true" />;
 }
 
+const ARROWS: ReadonlySet<string> = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
+// Les flèches sont à ce qu'elles règlent (une carte, un volume) : elles ne vont pas jusqu'à l'avatar, dont le clavier (game/input.ts) ne les ignore que
+// dans un champ où l'on écrit, et non sur un bouton radio ou un curseur.
+function keepArrows(event: KeyboardEvent<HTMLElement>): void {
+  if (ARROWS.has(event.key)) event.stopPropagation();
+}
+
 export interface SoundPopoverProps {
   open: boolean;
   onClose(): void;
@@ -72,7 +80,8 @@ export interface SoundPopoverProps {
 //   (`aria-description`), avec « En cours » pour celle qu'on entend. Musique coupée, la grille reste utilisable, en retrait : le choix est gardé
 //   pour quand elle reviendra.
 // - En bas, les effets : interrupteur, volume, un exemple à écouter pour le régler ; puis les crédits.
-// Le focus va à l'interrupteur de la musique à l'ouverture ; Échap ferme et le rend au bouton du dock.
+// Le focus va à l'interrupteur de la musique à l'ouverture ; Échap ferme et le rend au bouton du dock. Les flèches règlent les cartes et les volumes,
+// sans faire marcher l'avatar.
 export function SoundPopover({ open, onClose, anchorRef, id }: SoundPopoverProps) {
   const prefs = useAudioStore((state) => state.prefs);
   const playing = useAudioStore((state) => state.playing);
@@ -118,7 +127,7 @@ export function SoundPopover({ open, onClose, anchorRef, id }: SoundPopoverProps
 
   return (
     <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top" label={fr.sound.toggle} role="dialog" id={id}>
-      <div className="juke">
+      <div className="juke" onKeyDown={keepArrows}>
         {status !== 'running' && (
           <p className="juke-status" role="status">
             {fr.sound.status[status]}

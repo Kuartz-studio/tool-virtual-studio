@@ -6,6 +6,7 @@ import { audioEngine } from '../audio/audio';
 import { useAudioStore } from '../audio/audio-store';
 import { SCENE_IDS } from '../audio/catalog';
 import { DEFAULT_AUDIO_PREFS } from '../audio/prefs';
+import { bindKeyboard, DirectionInput } from '../game/input';
 import { fr, t } from '../i18n/fr';
 import { COVERS } from './ambiance-covers';
 import { SoundPopover } from './SoundPopover';
@@ -185,6 +186,42 @@ describe('les ambiances', () => {
     useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS, musicOn: false }, playing: null });
     render(<Harness />);
     expect(jukebox().querySelector('.juke-eq')).toBeNull();
+  });
+});
+
+// Les flèches sont aussi celles de l'avatar (game/input.ts), qui ne les ignore que dans un champ où l'on écrit : un bouton radio ou un curseur de
+// volume, qui les prennent pour eux, ne le sont pas. Dans le juke-box, elles ne vont pas jusqu'à lui.
+describe('le clavier', () => {
+  test('les flèches dans le juke-box (cartes, curseurs, interrupteurs) ne font pas marcher l\'avatar ; hors de lui, si', async () => {
+    const user = userEvent.setup();
+    const directions = new DirectionInput();
+    const unbind = bindKeyboard(directions);
+    try {
+      render(<Harness />);
+      // Une carte : → passe à la suivante du groupe, et choisit l'ambiance.
+      scene('focus').focus();
+      await user.keyboard('{ArrowRight>}');
+      expect(directions.current()).toBeNull();
+      await user.keyboard('{/ArrowRight}');
+      expect(scene('sunny').checked).toBe(true);
+      // Un curseur : ← le baisserait (le navigateur le fait ; la page de test, non), et l'avatar ne bouge pas.
+      musicVolume().focus();
+      await user.keyboard('{ArrowLeft>}');
+      expect(directions.current()).toBeNull();
+      await user.keyboard('{/ArrowLeft}');
+      // L'interrupteur : ↓ ne fait rien de lui, ni de l'avatar.
+      musicSwitch().focus();
+      await user.keyboard('{ArrowDown>}');
+      expect(directions.current()).toBeNull();
+      await user.keyboard('{/ArrowDown}');
+
+      // Le même geste hors du juke-box (sur le bouton qui l'ouvre) fait marcher l'avatar : le test éprouve bien ce qu'il dit.
+      screen.getByRole('button', { name: 'Ancre' }).focus();
+      await user.keyboard('{ArrowRight>}');
+      expect(directions.current()).toBe('right');
+    } finally {
+      unbind();
+    }
   });
 });
 
