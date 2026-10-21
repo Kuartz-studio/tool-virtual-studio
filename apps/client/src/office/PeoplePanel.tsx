@@ -10,7 +10,7 @@ import { sortPeople, type Person } from './people';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
 import { Segmented, type SegmentedOption } from './ui/Segmented';
-import { usePlace, usePlaces } from './use-here';
+import { usePlaces } from './use-here';
 
 // Un membre, tel que GET /api/members le dit (les membres actifs, sans adresse ni rôle).
 interface Member {
@@ -75,7 +75,7 @@ interface Row extends Person {
 type View = 'here' | 'all';
 
 // Le panneau Personnes (spec §10), dans la coque des panneaux (Drawer) : un sélecteur à deux positions, « Ici » (ceux qui sont dans le même lieu que
-// soi, soi compris : placeAt, la même règle que la puce du lieu) et « Tout le bureau » (tous ceux qui sont en ligne, puis les hors ligne, repliés sous
+// soi, soi compris : `place`, le lieu que la coque suit et donne aussi à la puce du lieu ; celui de chacun des autres est celui de placeAt) et « Tout le bureau » (tous ceux qui sont en ligne, puis les hors ligne, repliés sous
 // leur compte). Chaque ligne : le portrait de 38 px avec la pastille de son statut, le nom (et « toi » pour soi), et dessous ce qu'elle fait : son
 // mode (l'icône et le nom de l'état d'activité), sinon « Parle avec toi » si elle est dans notre conversation (`talkingWith` : ses identifiants), sinon
 // son lieu. Le statut est dit aux lecteurs d'écran, la pastille ne leur dit rien.
@@ -86,11 +86,10 @@ type View = 'here' | 'all';
 // sinon absente des hors ligne quand elle repart.
 //
 // Le focus va au titre à l'ouverture (le lecteur d'écran l'annonce, et Tab entre dans le panneau) ; Échap ferme.
-export function PeoplePanel({ id, onClose, talkingWith = NOBODY }: { id?: string; onClose(): void; talkingWith?: readonly string[] }) {
+export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?: string; place: string | null; onClose(): void; talkingWith?: readonly string[] }) {
   const self = useOfficeStore((state) => state.self);
   const players = useOfficeStore((state) => state.players);
   const { members, failed, reload } = useMembers();
-  const place = usePlace();
   const places = usePlaces();
   const [view, setView] = useState<View>('here');
   const [offlineOpen, setOfflineOpen] = useState(false);

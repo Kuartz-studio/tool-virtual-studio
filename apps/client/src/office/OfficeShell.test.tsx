@@ -1,12 +1,14 @@
-import type { ChatMessage, MediaJoinPayload, PublicPlayer, Role } from '@bureau/shared';
+import type { ChatMessage, MediaJoinPayload, OfficeMap, PublicPlayer, Role, Zone } from '@bureau/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { useAudioStore } from '../audio/audio-store';
 import { DEFAULT_AUDIO_PREFS } from '../audio/prefs';
+import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
 import { FakeMediaClient } from '../media/fake-media-client';
 import * as activityApi from '../lib/activity-api';
+import { emitOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
 import { fakeApi, json } from '../test/fake-api';
 import { FakeSocket } from '../test/fake-socket';
@@ -370,6 +372,32 @@ describe('le panneau Personnes', () => {
     expect(await screen.findByRole('region', { name: 'En ligne (2)' })).toBeTruthy();
     // Les hors ligne sont ceux que l'appel a apportés : ici, personne de plus que ceux qui sont là.
     expect(screen.queryByRole('region', { name: /^Hors ligne/ })).toBeNull();
+  });
+
+  // Le panneau n'existe qu'ouvert : le lieu où l'on est, il ne peut le suivre qu'à partir de l'ouverture. C'est la coque, toujours là, qui le suit (comme
+  // la puce du lieu) et le lui donne : marché avant d'ouvrir le panneau, « Ici » est bien là où l'on est.
+  test('« Ici » est le lieu où l\'on est à l\'ouverture, même après y avoir marché avant : la coque l\'a suivi, et le donne à la puce comme au panneau', async () => {
+    const zone = (id: string, type: Zone['type'], x: number, y: number, width: number, height: number, extra: Partial<Zone> = {}): Zone => ({ id, type, name: null, text: null, x, y, width, height, ...extra });
+    const map = {
+      widthTiles: 30,
+      heightTiles: 30,
+      tileSize: 32,
+      blocked: new Uint8Array(900),
+      spawn: { x: 48, y: 48 },
+      switches: [],
+      zones: [zone('1', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' })],
+    } as unknown as OfficeMap;
+    const user = userEvent.setup();
+    renderShell();
+    act(() => useOfficeStore.getState().setOfficeMap(map));
+    // Bob est dans la salle de réunion ; on y marche (les pieds que le jeu envoie), puis on ouvre le panneau.
+    useOfficeStore.getState().positions.set('bob', { x: 720, y: 120, dir: 'down', moving: false });
+    act(() => void emitOnBus(EventBus, 'local:move', { x: 700, y: 100, dir: 'up', moving: true }));
+    expect(screen.getByRole('group', { name: fr.office.where.label }).textContent).toContain('Salle de réunion');
+    await user.click(toggle());
+    expect(await screen.findByRole('region', { name: /^Ici \(2\)/ })).toBeTruthy();
+    expect(document.querySelector('[data-user="moi"] .person-sub')?.textContent).toBe('Salle de réunion');
+    expect(document.querySelector('[data-user="bob"] .person-sub')?.textContent).toBe('Salle de réunion');
   });
 
   test('sa ligne dit qu\'on parle avec ceux de la conversation (les participants de la room, sans soi)', async () => {

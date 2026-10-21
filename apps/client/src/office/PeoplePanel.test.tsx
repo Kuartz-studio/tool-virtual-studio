@@ -3,9 +3,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
-import { emitOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
 import { fakeApi, json } from '../test/fake-api';
 import { PeoplePanel } from './PeoplePanel';
@@ -44,10 +42,13 @@ const map = {
   switches: [],
   zones: [zone('1', 'label', 0, 320, 320, 64, { text: 'ACCUEIL' }), zone('2', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' })],
 } as unknown as OfficeMap;
-// Où poser quelqu'un : à l'accueil, dans la salle de réunion, dans le couloir.
+// Où poser quelqu'un : à l'accueil, dans la salle de réunion, dans le couloir ; et le nom de chacun de ces lieux (placeAt), que la coque donne au panneau
+// pour celui où l'on est.
 const LOBBY = { x: 100, y: 340 };
 const MEETING = { x: 700, y: 100 };
 const HALL = { x: 500, y: 100 };
+const AT_LOBBY = 'Accueil';
+const AT_MEETING = 'Salle de réunion';
 
 beforeEach(() => {
   useOfficeStore.getState().reset();
@@ -84,9 +85,9 @@ const row = (id: string): HTMLElement => document.querySelector(`[data-user="${i
 const sub = (id: string) => row(id).querySelector('.person-sub');
 
 // Le panneau sur « Tout le bureau » : tout le monde, et les hors ligne. Renvoie `user`, pour déplier ce groupe.
-async function renderAll(props: { talkingWith?: string[]; onClose?: () => void } = {}) {
+async function renderAll(props: { place?: string | null; talkingWith?: string[]; onClose?: () => void } = {}) {
   const user = userEvent.setup();
-  render(<PeoplePanel onClose={() => {}} {...props} />);
+  render(<PeoplePanel place={null} onClose={() => {}} {...props} />);
   await user.click(tab(/^Tout le bureau/));
   return user;
 }
@@ -103,7 +104,7 @@ describe('le sélecteur', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob', 'available', LOBBY), player('zoe', 'Zoé', 'available', MEETING)], player('moi', 'Moi', 'available', LOBBY));
     withMap();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
     const tabs = within(screen.getByRole('tablist', { name: fr.office.people.tabsLabel })).getAllByRole('tab');
     expect(tabs.map((entry) => entry.textContent)).toEqual(['Ici 2', 'Tout le bureau 3']);
     expect(tabs.map((entry) => entry.getAttribute('aria-selected'))).toEqual(['true', 'false']);
@@ -116,7 +117,7 @@ describe('le sélecteur', () => {
     const user = userEvent.setup();
     arrive([player('bob', 'Bob', 'available', LOBBY), player('zoe', 'Zoé', 'available', MEETING)], player('moi', 'Moi', 'available', LOBBY));
     withMap();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
     await user.click(tab(/^Tout le bureau/));
     expect(tab(/^Tout le bureau/).getAttribute('aria-selected')).toBe('true');
@@ -125,18 +126,18 @@ describe('le sélecteur', () => {
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
   });
 
-  test('« Ici », c\'est le même lieu que moi : ma position change, la liste suit', () => {
+  test('« Ici », c\'est le même lieu que moi : mon lieu change (la coque le suit), la liste suit', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob', 'available', LOBBY), player('zoe', 'Zoé', 'available', MEETING)], player('moi', 'Moi', 'available', LOBBY));
     withMap();
-    render(<PeoplePanel onClose={() => {}} />);
+    const { rerender } = render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
-    // Je marche jusqu'à la salle de réunion (les pieds que le jeu envoie) : Zoé est là, pas Bob.
-    act(() => void emitOnBus(EventBus, 'local:move', { ...MEETING, dir: 'up', moving: true }));
+    // Je marche jusqu'à la salle de réunion : Zoé est là, pas Bob.
+    rerender(<PeoplePanel place={AT_MEETING} onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Zoé']);
     expect(tab(/^Ici/).textContent).toBe('Ici 2');
     // Puis au couloir : personne d'autre.
-    act(() => void emitOnBus(EventBus, 'local:move', { ...HALL, dir: 'left', moving: true }));
+    rerender(<PeoplePanel place={fr.office.where.hallway} onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi']);
     expect(screen.getByText(fr.office.people.nobodyHere)).toBeTruthy();
     expect(tab(/^Ici/).textContent).toBe('Ici 1');
@@ -147,7 +148,7 @@ describe('le sélecteur', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob', 'available', MEETING)], player('moi', 'Moi', 'available', LOBBY));
     withMap();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi']);
     // Bob vient à l'accueil : le magasin a sa nouvelle position, sans que rien ne soit publié.
     useOfficeStore.getState().positions.set('bob', { ...LOBBY, dir: 'down', moving: false });
@@ -161,7 +162,7 @@ describe('le sélecteur', () => {
   test('sans carte (le jeu n\'est pas encore là), « Ici » n\'a que soi', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob')]);
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={null} onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi']);
   });
 
@@ -169,7 +170,7 @@ describe('le sélecteur', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     const user = userEvent.setup();
     arrive();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={null} onClose={() => {}} />);
     tab(/^Ici/).focus();
     await user.keyboard('{ArrowRight}');
     expect(document.activeElement).toBe(tab(/^Tout le bureau/));
@@ -196,7 +197,7 @@ describe('« Ici » sur la grande carte', () => {
       [player('bob', 'Bob', 'available', spot(PLAZA.x + 1, PLAZA.y + 1)), player('zoe', 'Zoé', 'available', spot(30, 12))],
       player('moi', 'Moi', 'available', spot(PLAZA.x + PLAZA.w - 2, PLAZA.y + PLAZA.h - 2)),
     );
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place="Café" onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
     expect(tab(/^Ici/).textContent).toBe('Ici 2');
     expect(sub('moi')?.textContent).toBe('Café');
@@ -209,7 +210,7 @@ describe('« Ici » sur la grande carte', () => {
       [player('bob', 'Bob', 'available', spot(54, 41)), player('zoe', 'Zoé', 'available', spot(30, 12))],
       player('moi', 'Moi', 'available', spot(PLAZA.x + 5, PLAZA.y + 5)),
     );
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place="Café" onClose={() => {}} />);
     await userEvent.click(tab(/^Tout le bureau/));
     expect(sub('moi')?.textContent).toBe('Café');
     expect(sub('bob')?.textContent).toBe('Accueil');
@@ -222,7 +223,7 @@ describe('une ligne', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob', 'busy', LOBBY)], player('moi', 'Moi', 'away', LOBBY));
     withMap();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
     for (const [id, status] of [['moi', 'away'], ['bob', 'busy']] as const) {
       const portrait = row(id).querySelector<HTMLElement>('.portrait')!;
       expect(portrait.style.getPropertyValue('--s')).toBe('38px');
@@ -260,7 +261,7 @@ describe('une ligne', () => {
   test('on se reconnaît : « toi »', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob')]);
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={null} onClose={() => {}} />);
     expect(row('moi').querySelector('.person-you')?.textContent).toBe('toi');
     expect(fr.office.people.you).toBe('toi');
     expect(row('moi').querySelector('.person-you')).not.toBeNull();
@@ -286,7 +287,7 @@ describe('une ligne', () => {
       fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
       arrive([player('bob', 'Bob', 'available', { ...LOBBY, activity: focus }), player('zoe', 'Zoé', 'available', { ...LOBBY, activity: dotOnly })], player('moi', 'Moi', 'available', LOBBY));
       withMap();
-      render(<PeoplePanel onClose={() => {}} />);
+      render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
       expect(sub('bob')?.textContent).toBe('Concentration');
       expect(sub('bob')?.querySelector('svg.lucide-headphones')).not.toBeNull();
       expect(sub('zoe')?.textContent).toBe('À table');
@@ -298,7 +299,7 @@ describe('une ligne', () => {
       fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
       arrive([player('bob', 'Bob', 'available', LOBBY), player('zoe', 'Zoé', 'available', LOBBY)], player('moi', 'Moi', 'available', LOBBY));
       withMap();
-      render(<PeoplePanel talkingWith={['bob']} onClose={() => {}} />);
+      render(<PeoplePanel place={AT_LOBBY} talkingWith={['bob']} onClose={() => {}} />);
       expect(sub('bob')?.textContent).toBe(fr.office.people.talking);
       expect(sub('bob')?.querySelector('svg.lucide')).not.toBeNull();
       expect(fr.office.people.talking).toBe('Parle avec toi');
@@ -310,16 +311,17 @@ describe('une ligne', () => {
       fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
       arrive([player('bob', 'Bob', 'available', { ...LOBBY, activity: focus })], player('moi', 'Moi', 'available', LOBBY));
       withMap();
-      render(<PeoplePanel talkingWith={['bob']} onClose={() => {}} />);
+      render(<PeoplePanel place={AT_LOBBY} talkingWith={['bob']} onClose={() => {}} />);
       expect(sub('bob')?.textContent).toBe('Concentration');
     });
 
     test('sinon le lieu : celui de la carte, pour chacun, soi compris ; sans carte, rien', async () => {
       fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
       arrive([player('bob', 'Bob', 'available', LOBBY), player('zoe', 'Zoé', 'available', MEETING), player('alice', 'Alice', 'available', HALL)], player('moi', 'Moi', 'available', LOBBY));
-      render(<PeoplePanel onClose={() => {}} />);
+      render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
       const user = userEvent.setup();
       await user.click(tab(/^Tout le bureau/));
+      // Sans carte, les autres n'ont pas de lieu.
       expect(sub('bob')?.textContent ?? '').toBe('');
       withMap();
       expect(sub('moi')?.textContent).toBe('Accueil');
@@ -332,7 +334,7 @@ describe('une ligne', () => {
       fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
       arrive([], player('moi', 'Moi', 'available', { ...LOBBY, activity: focus }));
       withMap();
-      render(<PeoplePanel onClose={() => {}} />);
+      render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
       expect(sub('moi')?.textContent).toBe('Concentration');
     });
   });
@@ -371,7 +373,7 @@ describe('la liste', () => {
   test('« Ici » n\'a pas de hors ligne : personne n\'est nulle part', async () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob')]);
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={null} onClose={() => {}} />);
     await waitFor(() => expect(screen.queryByText(fr.common.loading)).toBeNull());
     expect(screen.queryByRole('region', { name: /^Hors ligne/ })).toBeNull();
   });
@@ -491,7 +493,7 @@ describe('chargement et échec', () => {
     fakeApi({ 'GET /api/members': () => deferred<Response>().promise });
     arrive([player('bob', 'Bob', 'available', LOBBY)], player('moi', 'Moi', 'available', LOBBY));
     withMap();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
     expect(screen.queryByText(fr.common.loading)).toBeNull();
   });
@@ -576,7 +578,7 @@ describe('un membre que la liste ne connaît pas', () => {
     const user = userEvent.setup();
     render(
       <StrictMode>
-        <PeoplePanel onClose={() => {}} />
+        <PeoplePanel place={null} onClose={() => {}} />
       </StrictMode>,
     );
     await user.click(tab(/^Tout le bureau/));
@@ -594,7 +596,7 @@ describe('le panneau', () => {
   test('c\'est une région « Personnes », avec son titre', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={null} onClose={() => {}} />);
     expect(screen.getByRole('complementary', { name: fr.office.people.title })).toBeTruthy();
     expect(screen.getByRole('heading', { level: 2, name: fr.office.people.title })).toBeTruthy();
   });
@@ -602,7 +604,7 @@ describe('le panneau', () => {
   test('à l\'ouverture, le focus va au titre : un lecteur d\'écran l\'annonce, et Tab entre dans le panneau', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive();
-    render(<PeoplePanel onClose={() => {}} />);
+    render(<PeoplePanel place={null} onClose={() => {}} />);
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.office.people.title }));
   });
 
@@ -611,7 +613,7 @@ describe('le panneau', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     arrive();
-    render(<PeoplePanel onClose={onClose} />);
+    render(<PeoplePanel place={null} onClose={onClose} />);
 
     await user.click(screen.getByRole('button', { name: fr.ui.close }));
     expect(onClose).toHaveBeenCalledTimes(1);

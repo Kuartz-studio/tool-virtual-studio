@@ -20,6 +20,7 @@ import { PeoplePanel } from './PeoplePanel';
 import { StatesPanel } from './StatesPanel';
 import { ReplacedScreen } from './ReplacedScreen';
 import { Toasts } from './Toasts';
+import { usePlace } from './use-here';
 import { VideoStrip } from './VideoStrip';
 import { WhereChip } from './WhereChip';
 
@@ -158,6 +159,10 @@ export function OfficeShell({
   const participants = media.snapshot.participants;
   const talkingWith = useMemo(() => participants.filter((participant) => !participant.isLocal).map((participant) => participant.id), [participants]);
 
+  // Le lieu où l'on est (placeAt, d'après les pieds de l'avatar). C'est la coque, toujours là, qui le suit : le panneau Personnes, qui n'existe
+  // qu'ouvert, ne saurait où l'on a marché avant son ouverture. La puce du lieu et le filtre « Ici » le prennent d'elle : un seul lieu pour les deux.
+  const place = usePlace();
+
   const panels: PanelControls = {
     open: panel,
     toggle: (id, from) => (panel === id ? close() : show(id, from)),
@@ -174,7 +179,7 @@ export function OfficeShell({
       <h1 className="visually-hidden">{fr.common.appName}</h1>
       {children}
       <div ref={layer} className="office-ui" data-theme={lightsOn ? 'day' : 'night'} data-lights={lightsOn ? 'on' : 'off'} inert={replaced}>
-        <WhereChip />
+        <WhereChip place={place} />
         <div className="office-top">
           <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />
         </div>
@@ -196,7 +201,7 @@ export function OfficeShell({
           </div>
         )}
         <div className="office-side" data-panel={panel ?? undefined}>
-          {panel === 'people' && <PeoplePanel id={idOf('people')} talkingWith={talkingWith} onClose={close} />}
+          {panel === 'people' && <PeoplePanel id={idOf('people')} place={place} talkingWith={talkingWith} onClose={close} />}
           {panel === 'character' && <CharacterBuilder id={idOf('character')} onClose={close} />}
           {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
           {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}

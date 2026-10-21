@@ -1668,8 +1668,31 @@ svg.lucide.icon-s {
   background: var(--dnd);
 }
 
-/* Moins de 720 px : des icônes seulement. La barre passe sur deux lignes (ton statut et les panneaux au-dessus, le micro et la caméra en
-   bas, sous le pouce), le lieu ne garde que son nom, les vignettes descendent sous lui, et le panneau devient une feuille en bas. */
+/* Moins de 760 px : la barre passe sur deux lignes, ton statut et les panneaux au-dessus, et en bas, sous le pouce, le micro, la caméra, le partage,
+   la musique et le bureau. Sur une seule ligne, il ne leur reste pas la place : la puce « Moi » perdrait son nom. */
+@media (max-width: 759px) {
+  .office-bar {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'me . end'
+      'media media media';
+  }
+
+  .dock-me {
+    grid-area: me;
+  }
+
+  .dock-media {
+    grid-area: media;
+  }
+
+  .office-bar-end {
+    grid-area: end;
+  }
+}
+
+/* Moins de 720 px : des icônes seulement. Le lieu ne garde que son nom, les vignettes descendent sous lui, et le panneau devient une feuille en
+   bas. */
 @media (max-width: 719px) {
   .office-ui {
     --where-room: 0px;
@@ -1683,17 +1706,6 @@ svg.lucide.icon-s {
     top: calc(var(--bar-gap) + 56px);
   }
 
-  .office-bar {
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas:
-      'me . end'
-      'media media media';
-  }
-
-  .dock-me {
-    grid-area: me;
-  }
-
   .me-chip {
     gap: 4px;
     padding: 6px 8px 6px 6px;
@@ -1701,14 +1713,6 @@ svg.lucide.icon-s {
 
   .me-text {
     display: none;
-  }
-
-  .dock-media {
-    grid-area: media;
-  }
-
-  .office-bar-end {
-    grid-area: end;
   }
 
   .office-side,

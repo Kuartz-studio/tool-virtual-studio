@@ -1,15 +1,14 @@
 import { fr, t } from '../i18n/fr';
 import { PlaceIcon } from './icons';
-import { usePeopleHere, usePlace } from './use-here';
+import { usePeopleHere } from './use-here';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 
 // Combien de portraits la puce montre : au-delà, « +N ».
 const PORTRAITS = 3;
 
-// La puce en haut à gauche : le nom du lieu où l'on est, et jusqu'à trois portraits de ceux qui y sont, puis « +N ». Sans carte (le jeu n'est
-// pas encore là), rien.
-export function WhereChip() {
-  const place = usePlace();
+// La puce en haut à gauche : le nom du lieu où l'on est (`place`, que la coque suit : OfficeShell), et jusqu'à trois portraits de ceux qui y sont,
+// puis « +N ». Sans carte (le jeu n'est pas encore là : `place` est nul), rien.
+export function WhereChip({ place }: { place: string | null }) {
   const here = usePeopleHere(place);
   if (place === null) return null;
   const extra = here.length - PORTRAITS;

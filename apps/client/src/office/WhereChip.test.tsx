@@ -1,9 +1,7 @@
-import { buildOfficeTiledMap, parseOfficeMap, PLAZA, type OfficeMap, type PublicPlayer, type Zone } from '@bureau/shared';
+import type { OfficeMap, PublicPlayer, Zone } from '@bureau/shared';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
-import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
-import { emitOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
 import { WhereChip } from './WhereChip';
 
@@ -44,31 +42,20 @@ afterEach(() => {
 
 const chip = () => screen.getByRole('group', { name: fr.office.where.label });
 
-test('sans carte (le jeu n\'est pas là), rien', () => {
+test('sans lieu (le jeu n\'est pas encore là), rien', () => {
   init(player('moi', 'Léa', 100, 330), []);
-  render(<WhereChip />);
+  render(<WhereChip place={null} />);
   expect(screen.queryByRole('group', { name: fr.office.where.label })).toBeNull();
 });
 
-test('le nom du lieu où l\'on arrive, puis celui où l\'on marche (les pieds que le jeu envoie)', () => {
+test('le nom du lieu où l\'on est, tel que la coque le donne ; il suit ce qu\'elle donne', () => {
   init(player('moi', 'Léa', 100, 340), []);
-  act(() => useOfficeStore.getState().setOfficeMap(map));
-  render(<WhereChip />);
+  const { rerender } = render(<WhereChip place="Accueil" />);
   expect(chip().textContent).toContain('Accueil');
-
-  act(() => void emitOnBus(EventBus, 'local:move', { x: 700, y: 100, dir: 'up', moving: true }));
+  rerender(<WhereChip place="Salle de réunion" />);
   expect(chip().textContent).toContain('Salle de réunion');
-  act(() => void emitOnBus(EventBus, 'local:move', { x: 500, y: 100, dir: 'left', moving: true }));
+  rerender(<WhereChip place={fr.office.where.hallway} />);
   expect(chip().textContent).toContain(fr.office.where.hallway);
-});
-
-test('il ne garde plus l\'oreille au jeu une fois démonté', () => {
-  init(player('moi', 'Léa', 100, 340), []);
-  act(() => useOfficeStore.getState().setOfficeMap(map));
-  const { unmount } = render(<WhereChip />);
-  const before = EventBus.listenerCount('local:move');
-  unmount();
-  expect(EventBus.listenerCount('local:move')).toBe(before - 1);
 });
 
 test('les autres qui sont ici : jusqu\'à trois portraits, puis « +N » ; ceux d\'ailleurs ne comptent pas', () => {
@@ -81,7 +68,7 @@ test('les autres qui sont ici : jusqu\'à trois portraits, puis « +N » ; ceux 
     player('f', 'Fred', 700, 100),
   ]);
   act(() => useOfficeStore.getState().setOfficeMap(map));
-  render(<WhereChip />);
+  render(<WhereChip place="Accueil" />);
   expect(chip().querySelectorAll('.portrait')).toHaveLength(3);
   expect([...chip().querySelectorAll('.portrait-initials')].map((initials) => initials.textContent)).toEqual(['A', 'B', 'C']);
   expect(chip().querySelector('.where-more')?.textContent).toBe('+2');
@@ -92,21 +79,30 @@ test('les autres qui sont ici : jusqu\'à trois portraits, puis « +N » ; ceux 
 test('une seule personne ici, sans « +N » ; personne : rien après le nom', () => {
   init(player('moi', 'Léa', 100, 340), [player('a', 'Ana', 120, 340)]);
   act(() => useOfficeStore.getState().setOfficeMap(map));
-  const { unmount } = render(<WhereChip />);
+  const { unmount } = render(<WhereChip place="Accueil" />);
   expect(chip().querySelector('.where-more')).toBeNull();
   expect(chip().querySelector('.visually-hidden')?.textContent).toBe(fr.office.where.onePerson);
   unmount();
 
   init(player('moi', 'Léa', 100, 340), [player('b', 'Bob', 700, 100)]);
-  render(<WhereChip />);
+  render(<WhereChip place="Accueil" />);
   expect(chip().querySelector('.where-stack')).toBeNull();
+});
+
+test('ceux qui sont ici sont ceux du lieu qu\'on lui donne : il change, ils changent', () => {
+  init(player('moi', 'Léa', 100, 340), [player('a', 'Ana', 120, 340), player('f', 'Fred', 700, 100)]);
+  act(() => useOfficeStore.getState().setOfficeMap(map));
+  const { rerender } = render(<WhereChip place="Accueil" />);
+  expect([...chip().querySelectorAll('.portrait-initials')].map((initials) => initials.textContent)).toEqual(['A']);
+  rerender(<WhereChip place="Salle de réunion" />);
+  expect([...chip().querySelectorAll('.portrait-initials')].map((initials) => initials.textContent)).toEqual(['F']);
 });
 
 test('les positions des autres, que le magasin tient sans prévenir, sont relues deux fois par seconde', () => {
   vi.useFakeTimers();
   init(player('moi', 'Léa', 100, 340), [player('a', 'Ana', 700, 100)]);
   act(() => useOfficeStore.getState().setOfficeMap(map));
-  render(<WhereChip />);
+  render(<WhereChip place="Accueil" />);
   expect(chip().querySelector('.where-stack')).toBeNull();
 
   // Ana vient à l'accueil : le magasin a sa nouvelle position, sans que rien ne soit publié.
@@ -121,20 +117,4 @@ test('les positions des autres, que le magasin tient sans prévenir, sont relues
     vi.advanceTimersByTime(500);
   });
   expect(chip().querySelector('.where-stack')).toBeNull();
-});
-
-test('sur la grande carte, la puce nomme les grandes pièces : le café, l\'accueil, la piscine ; plus « Couloir » partout', () => {
-  const office = parseOfficeMap(buildOfficeTiledMap());
-  act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa', office.spawn.x, office.spawn.y), players: [], mapKey: 'office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
-  act(() => useOfficeStore.getState().setOfficeMap(office));
-  render(<WhereChip />);
-  // On apparaît à l'accueil.
-  expect(chip().textContent).toContain('Accueil');
-  const go = (tx: number, ty: number) => act(() => void emitOnBus(EventBus, 'local:move', { x: tx * 32 + 16, y: ty * 32 + 16, dir: 'up', moving: true }));
-  go(PLAZA.x + 15, PLAZA.y + 6);
-  expect(chip().textContent).toContain('Café');
-  go(5, 38);
-  expect(chip().textContent).toContain('Piscine');
-  go(30, 12);
-  expect(chip().textContent).toContain(fr.office.where.hallway);
 });
