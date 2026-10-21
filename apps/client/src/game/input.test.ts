@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { bindKeyboard, DirectionInput } from './input';
+import { bindKeyboard, bindZoomKeys, DirectionInput } from './input';
 
 describe('DirectionInput', () => {
   test('la dernière touche enfoncée gagne', () => {
@@ -314,5 +314,63 @@ describe('bindKeyboard', () => {
     expect(input.current()).toBe('right');
     window.dispatchEvent(new Event('blur'));
     expect(input.current()).toBe('right');
+  });
+});
+
+describe('bindZoomKeys', () => {
+  let steps: Array<1 | -1 | 0>;
+  let unbind: () => void;
+  const press = (key: string, init: KeyboardEventInit = {}, target: EventTarget = window) =>
+    target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init }));
+
+  beforeEach(() => {
+    steps = [];
+    unbind = bindZoomKeys((step) => steps.push(step));
+  });
+  afterEach(() => {
+    unbind();
+    document.body.replaceChildren();
+  });
+
+  test('+ et = rapprochent, - éloigne, 0 rétablit : le caractère compte, pas la position (AZERTY comme QWERTY)', () => {
+    press('+', { code: 'Equal', shiftKey: true });
+    press('=', { code: 'Equal' });
+    press('-', { code: 'Digit6' });
+    press('-', { code: 'Minus' });
+    press('0', { code: 'Digit0' });
+    expect(steps).toEqual([1, 1, -1, -1, 0]);
+  });
+
+  test('un « 6 » d\'un QWERTY n\'éloigne pas, une autre touche ne fait rien', () => {
+    press('6', { code: 'Digit6' });
+    press('a', { code: 'KeyA' });
+    expect(steps).toEqual([]);
+  });
+
+  test('Ctrl, ⌘ et Alt sont au zoom du navigateur : rien', () => {
+    press('+', { ctrlKey: true });
+    press('-', { metaKey: true });
+    press('0', { altKey: true });
+    expect(steps).toEqual([]);
+  });
+
+  test('la répétition d\'une touche maintenue ne fait qu\'un cran', () => {
+    press('+');
+    press('+', { repeat: true });
+    expect(steps).toEqual([1]);
+  });
+
+  test('dans un champ de saisie, on écrit : rien', () => {
+    const field = document.body.appendChild(document.createElement('input'));
+    field.focus();
+    press('+', {}, field);
+    press('-', {}, field);
+    expect(steps).toEqual([]);
+  });
+
+  test('le débranchement retire l\'écouteur', () => {
+    unbind();
+    press('+');
+    expect(steps).toEqual([]);
   });
 });

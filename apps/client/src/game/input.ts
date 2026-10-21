@@ -65,7 +65,7 @@ export class DirectionInput {
 const EDITABLE = '[contenteditable]:not([contenteditable="false"])';
 const NON_TEXT_INPUT_TYPES: ReadonlySet<string> = new Set(['button', 'checkbox', 'color', 'file', 'hidden', 'image', 'radio', 'range', 'reset', 'submit']);
 
-function isTypingField(target: EventTarget | null): boolean {
+export function isTypingField(target: EventTarget | null): boolean {
   if (!(target instanceof Element)) return false;
   // Une case à cocher dans un texte modifiable : on est dans le texte.
   if (target.closest(EDITABLE)) return true;
@@ -116,4 +116,18 @@ export function bindKeyboard(input: DirectionInput): () => void {
     window.removeEventListener('keyup', onKeyUp);
     window.removeEventListener('blur', onBlur);
   };
+}
+
+// Les touches du zoom : + ou = (plus près), - (plus loin), 0 (la vue de départ). On lit le caractère (`event.key`), pas la position : le
+// « - » d'un clavier AZERTY n'est pas à la place de celui d'un QWERTY. Ctrl, Alt et ⌘ sont aux raccourcis du navigateur (son propre zoom
+// de page) ; dans un champ de saisie, ce sont des lettres. `onZoom` reçoit +1, −1 ou 0 (rétablir). Renvoie la fonction qui débranche.
+export function bindZoomKeys(onZoom: (step: 1 | -1 | 0) => void): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (isTypingField(event.target) || isTypingField(document.activeElement)) return;
+    const step = event.key === '+' || event.key === '=' ? 1 : event.key === '-' ? -1 : event.key === '0' ? 0 : null;
+    if (step !== null) onZoom(step);
+  };
+  window.addEventListener('keydown', onKeyDown);
+  return () => window.removeEventListener('keydown', onKeyDown);
 }

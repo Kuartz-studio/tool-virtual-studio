@@ -31,6 +31,8 @@ export interface OfficeDebug {
   // La pièce que l'éditeur de déco montre (le coin haut-gauche, en pixels de la carte), ou null quand il est fermé ou que la caméra n'y est
   // pas encore arrivée.
   editorRoom(): { x: number; y: number } | null;
+  // Le zoom de la caméra en ce moment (celui de la vue de départ, multiplié par le niveau choisi).
+  zoom(): number;
 }
 
 declare global {

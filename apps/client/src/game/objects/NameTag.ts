@@ -53,7 +53,7 @@ export class NameTag {
     this.background = snapToPixels(scene.add.rectangle(0, 0, 1, 1, BACKGROUND.color, BACKGROUND.alpha).setOrigin(0, 0));
     this.ring = snapToPixels(scene.add.circle(0, 0, RING_RADIUS).setStrokeStyle(1, RING_COLOR).setVisible(false));
     this.dot = snapToPixels(scene.add.circle(0, 0, DOT_RADIUS, indicatorRgb(status, activity)));
-    this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TEXT_STYLE, resolution: zoom }).setOrigin(0, 0.5));
+    this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TEXT_STYLE, resolution: Math.max(1, zoom) }).setOrigin(0, 0.5));
     this.container = scene.add.container(0, 0, [this.background, this.ring, this.dot, this.label]).setDepth(DEPTH.nameTags);
     this.layout();
   }
@@ -86,8 +86,10 @@ export class NameTag {
 
   // Le zoom de la caméra a changé : le texte est redessiné à la nouvelle taille.
   setZoom(zoom: number): void {
-    if (this.label.style.resolution === zoom) return;
-    this.label.setResolution(zoom);
+    // Jamais en dessous de 1 : de loin, le texte est dessiné à sa taille puis réduit, pas pixellisé d'avance.
+    const resolution = Math.max(1, zoom);
+    if (this.label.style.resolution === resolution) return;
+    this.label.setResolution(resolution);
     this.layout();
   }
 

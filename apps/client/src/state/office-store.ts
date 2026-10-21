@@ -15,6 +15,7 @@ import {
   type Status,
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
+import { clampZoomLevel, DEFAULT_ZOOM_LEVEL, stepZoomLevel } from '../game/zoom';
 import { anchorFor, removeAt, tryPlace } from '../office/decor-draft';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
@@ -95,6 +96,9 @@ export interface OfficeState {
   officeMap: OfficeMap | null;
   // L'éditeur de la déco de son bureau ; null quand il est fermé.
   decorEditor: DecorEditor | null;
+  // Le zoom de la caméra : le niveau choisi (zoom.ts, ZOOM_FACTORS), celui de la vue de départ au début. Le jeu le lit, les boutons de
+  // zoom, la molette et le clavier l'écrivent.
+  zoomLevel: number;
   // La dernière position connue de chaque autre joueur présent (init, arrivée, ticks). Un Map modifié sur place, sans prévenir les
   // abonnés : un `init` et reset() le remplacent, un départ en retire le joueur ; rien n'y reste de ceux qui sont partis.
   positions: Map<string, PlayerPosition>;
@@ -106,6 +110,10 @@ export interface OfficeState {
   dismissDeskKnock(userId: string): void;
   setOfficeMap(map: OfficeMap | null): void;
   setDeskNotice(text: string | null): void;
+  // Le zoom : un niveau donné (ramené aux bornes), un cran plus près ou plus loin, la vue de départ.
+  setZoomLevel(level: number): void;
+  stepZoom(step: 1 | -1): void;
+  resetZoom(): void;
   // L'éditeur de déco : ouvert sur ce bureau (le sien), fermé ; le thème ; l'élément en main ; poser l'élément en main sur cette case de la pièce
   // (refusé si la pièce cesse d'être valable : `error` dit pourquoi) ; reprendre en main, ou jeter, l'élément n° i ; remplacer tout le brouillon.
   openDecorEditor(desk: DeskInfo): void;
@@ -171,6 +179,7 @@ type Data = Pick<
   | 'deskNotice'
   | 'officeMap'
   | 'decorEditor'
+  | 'zoomLevel'
   | 'positions'
 >;
 
@@ -195,6 +204,7 @@ const initialData = (): Data => ({
   deskNotice: null,
   officeMap: null,
   decorEditor: null,
+  zoomLevel: DEFAULT_ZOOM_LEVEL,
   positions: new Map(),
 });
 
@@ -308,6 +318,9 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
       setOfficeMap: (officeMap) => set({ officeMap }),
       setDeskNotice: (deskNotice) => set({ deskNotice }),
+      setZoomLevel: (level) => set({ zoomLevel: clampZoomLevel(level) }),
+      stepZoom: (step) => set((state) => ({ zoomLevel: stepZoomLevel(state.zoomLevel, step) })),
+      resetZoom: () => set({ zoomLevel: DEFAULT_ZOOM_LEVEL }),
 
       openDecorEditor: (desk) => {
         const saved: DeskDecor = { floor: desk.floor, wall: desk.wall, items: desk.items };

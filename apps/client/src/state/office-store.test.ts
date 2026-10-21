@@ -1,5 +1,6 @@
 import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer } from '@bureau/shared';
 import { beforeEach, describe, expect, test } from 'vitest';
+import { DEFAULT_ZOOM_LEVEL, MAX_ZOOM_LEVEL } from '../game/zoom';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
 
 // Le réglage de la pièce d'un bureau qui n'a rien de particulier.
@@ -446,5 +447,32 @@ describe('les bureaux', () => {
     store.getState().setDeskNotice('x');
     store.getState().reset();
     expect(store.getState()).toMatchObject({ desks: [], closedDesks: [], deskBans: [], deskKnocks: [], deskNotice: null, officeMap: null });
+  });
+});
+
+describe('zoom', () => {
+  beforeEach(() => {
+    useOfficeStore.getState().reset();
+  });
+
+  test('au départ, la vue de départ ; un cran plus près ou plus loin, arrêté aux bornes', () => {
+    const store = () => useOfficeStore.getState();
+    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
+    store().stepZoom(1);
+    store().stepZoom(1);
+    expect(store().zoomLevel).toBe(MAX_ZOOM_LEVEL);
+    for (let i = 0; i < 10; i++) store().stepZoom(-1);
+    expect(store().zoomLevel).toBe(0);
+  });
+
+  test('setZoomLevel ramène un niveau hors bornes aux bornes ; resetZoom et reset() rétablissent la vue de départ', () => {
+    const store = () => useOfficeStore.getState();
+    store().setZoomLevel(99);
+    expect(store().zoomLevel).toBe(MAX_ZOOM_LEVEL);
+    store().resetZoom();
+    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
+    store().setZoomLevel(0);
+    store().reset();
+    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
   });
 });

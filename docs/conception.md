@@ -41,6 +41,7 @@ Un bureau virtuel pour ton équipe, dans l'esprit de Gather **[ton choix]** :
 - **Déplacement :**
   - au clavier (flèches, ZQSD ou WASD), dans 4 directions ; Maj enfoncée, on court (trois fois la vitesse de marche, sans effet visuel : LimeZu ne fournit pas de sprite d'effet de vitesse) ;
   - bloqué par les murs et les meubles ;
+  - le zoom de la vue (molette, pincement du pavé tactile, boutons + / − en bas à gauche, ou touches + - 0) va de ×2 plus près à ×4 plus loin que la vue de départ, par crans qui gardent les tuiles nettes ;
   - l'avatar passe devant ou derrière les meubles.
 - **Multijoueur :** chacun voit les autres bouger de façon fluide, avec leur nom et leur statut.
 - **Audio/vidéo de proximité dès la V1** **[ton choix]** :

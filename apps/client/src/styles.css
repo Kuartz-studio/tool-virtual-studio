@@ -498,6 +498,36 @@ a {
   pointer-events: auto;
 }
 
+/* Le zoom, en bas à gauche, juste au-dessus de la barre : plus près, la vue de départ avec son pourcentage, plus loin. */
+.zoom-controls {
+  position: absolute;
+  left: var(--bar-gap);
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-height));
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%), 0 8px 24px rgb(0 0 0 / 24%);
+  pointer-events: auto;
+}
+
+.zoom-controls .bar-button {
+  justify-content: center;
+  min-width: 3.2em;
+}
+
+.zoom-controls .bar-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.zoom-level {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
 /* La barre du bas : ton nom et ton statut à gauche, les commandes au milieu, Chat, Personnes et la déconnexion à droite. */
 .office-bar {
   position: absolute;

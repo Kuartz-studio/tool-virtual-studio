@@ -20,6 +20,7 @@ import { PeoplePanel } from './PeoplePanel';
 import { StatesPanel } from './StatesPanel';
 import { ReplacedScreen } from './ReplacedScreen';
 import { VideoStrip } from './VideoStrip';
+import { ZoomControls } from './ZoomControls';
 
 interface OfficeShellProps {
   // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`). Son rôle décide du panneau Admin (bouton et
@@ -234,6 +235,7 @@ export function OfficeShell({
           </Activity>
         </div>
         <DeskKnocks socket={socket} />
+        <ZoomControls />
         <ControlBar
           name={name}
           socket={socket}

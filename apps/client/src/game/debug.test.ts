@@ -12,6 +12,7 @@ const debug = (): OfficeDebug => ({
   selfAvatar: () => null,
   toScreen: (x, y) => ({ x, y }),
   editorRoom: () => null,
+  zoom: () => 2,
 });
 
 afterEach(() => {

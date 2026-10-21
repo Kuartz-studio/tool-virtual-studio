@@ -221,6 +221,14 @@ export const fr = {
       generic: 'Cette action a échoué. Réessaie.',
     },
   },
+  // Les boutons de zoom du jeu, en bas à gauche : jusqu'à ×2 plus près, ×4 plus loin que la vue de départ.
+  zoom: {
+    group: 'Zoom',
+    in: 'Zoom avant',
+    out: 'Zoom arrière',
+    reset: 'Rétablir le zoom (100 %)',
+    level: '{percent} %',
+  },
   // Le faux live (`pnpm dev:sim`) : le panneau « Bac à sable », réservé aux essais en local.
   // La déco du bureau : l'éditeur (panneau à droite, la pièce dans le jeu) et la banque d'éléments.
   decor: {

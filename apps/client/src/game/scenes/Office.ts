@@ -22,13 +22,13 @@ import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
-import { bindKeyboard, DirectionInput } from '../input';
+import { bindKeyboard, bindZoomKeys, DirectionInput } from '../input';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { MoveSender } from '../move-sender';
 import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingRings } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
-import { cameraBounds, chooseZoom } from '../zoom';
+import { cameraBounds, cameraZoom, WheelZoom } from '../zoom';
 import { SimDrag } from '../../sim/sim-drag';
 
 // La largeur du panneau de déco (à droite de l'écran), en pixels de l'écran : la pièce se centre dans le reste.
@@ -85,6 +85,7 @@ export class Office extends Scene {
         return { x: (x - worldView.x) * zoom, y: (y - worldView.y) * zoom };
       },
       editorRoom: () => (this.editingRoom ? { x: this.editingRoom.x, y: this.editingRoom.y } : null),
+      zoom: () => this.cameras.main.zoom,
     };
     exposeDebug(this.debug);
 
@@ -135,6 +136,22 @@ export class Office extends Scene {
     this.directions = new DirectionInput();
     const unbindKeyboard = bindKeyboard(this.directions);
 
+    // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
+    // pas prendre pour le zoom de la page), et les touches + - 0. Le niveau est au magasin ; layoutCamera le lit.
+    const wheelZoom = new WheelZoom();
+    const onWheel = (event: WheelEvent) => {
+      event.preventDefault();
+      const step = wheelZoom.feed(event.deltaY, event.deltaMode, event.ctrlKey, event.timeStamp);
+      if (step !== 0) useOfficeStore.getState().stepZoom(step);
+    };
+    const canvas = this.game.canvas;
+    canvas.addEventListener('wheel', onWheel, { passive: false });
+    const unbindZoomKeys = bindZoomKeys((step) => {
+      const store = useOfficeStore.getState();
+      if (step === 0) store.resetZoom();
+      else store.stepZoom(step);
+    });
+
     // La caméra suit l'avatar, dans les bornes de la carte. Le décalage met le milieu de l'avatar au centre de l'écran, et non ses
     // pieds (que suit la caméra : l'origine du sprite est aux pieds). `true` : startFollow règle camera.roundPixels, et le remettrait
     // à false (c'est son défaut) malgré roundPixels de config.ts ; à lui seul, il n'arrondit pas le défilement (voir pixel-snap.ts).
@@ -155,6 +172,7 @@ export class Office extends Scene {
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
         if (state.decorEditor !== previous.decorEditor) this.decorEditor.sync(state.decorEditor);
+        if (state.zoomLevel !== previous.zoomLevel) this.layoutCamera();
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -164,6 +182,8 @@ export class Office extends Scene {
       this.scale.off(Scale.Events.RESIZE, this.layoutCamera);
       this.events.off(Scenes.Events.POST_UPDATE, this.afterPhysics, this);
       unbindKeyboard();
+      unbindZoomKeys();
+      canvas.removeEventListener('wheel', onWheel);
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
@@ -217,8 +237,12 @@ export class Office extends Scene {
     this.editingRoom = room;
     const camera = this.cameras.main;
     camera.stopFollow();
-    const panelShift = EDITOR_PANEL_WIDTH_PX / 2 / camera.zoom;
-    camera.pan(room.x + room.width / 2 + panelShift, room.y + room.height / 2, 450, 'Sine.easeInOut', true);
+    camera.pan(...this.roomFocus(room, camera.zoom), 450, 'Sine.easeInOut', true);
+  }
+
+  // Le point de la carte où la caméra se centre pour montrer cette pièce dans la partie libre de l'écran, à ce zoom.
+  private roomFocus(room: Zone, zoom: number): [x: number, y: number] {
+    return [room.x + room.width / 2 + EDITOR_PANEL_WIDTH_PX / 2 / zoom, room.y + room.height / 2];
   }
 
   // Il se ferme : la caméra revient à l'avatar.
@@ -366,16 +390,18 @@ export class Office extends Scene {
     this.sendLocalState(clock());
   };
 
-  // Le zoom et les bornes de la caméra dépendent de la taille du canevas : on les refait à chaque redimensionnement. Où elle regarde,
-  // en revanche, n'est pas à régler ici : elle suit l'avatar, et continue après le redimensionnement. Les étiquettes des avatars
-  // suivent le zoom.
+  // Le zoom et les bornes de la caméra dépendent de la taille du canevas et du niveau de zoom choisi : on les refait à chaque
+  // redimensionnement et à chaque cran de zoom. Où elle regarde, en revanche, n'est pas à régler ici : elle suit l'avatar, et continue
+  // après le redimensionnement (sauf devant la pièce que l'éditeur montre : on la recentre, le panneau n'occupant pas la même part de
+  // l'écran à un autre zoom). Les étiquettes des avatars suivent le zoom.
   private layoutCamera = (): void => {
     const { width, height } = this.scale.gameSize;
-    const zoom = chooseZoom(width, height);
+    const zoom = cameraZoom(width, height, useOfficeStore.getState().zoomLevel);
     const bounds = cameraBounds({ width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels }, { width, height }, zoom);
     const camera = this.cameras.main;
     camera.setZoom(zoom);
     camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
+    if (this.editingRoom) camera.centerOn(...this.roomFocus(this.editingRoom, zoom));
     // À la création, layoutCamera passe avant les avatars.
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);

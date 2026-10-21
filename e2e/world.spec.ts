@@ -359,6 +359,56 @@ test('courir : avec Maj enfoncée, l\'avatar va trois fois plus vite, et le serv
   expect(stopped.x).toBeGreaterThanOrEqual(x2);
 });
 
+test('zoom : la molette, les boutons et les touches, jusqu\'à ×2 plus près et ×4 plus loin que la vue de départ', async ({ page }) => {
+  await joinOfficeAlone(page, 'Rosa');
+  const zoom = () => page.evaluate(() => window.__office!.zoom());
+  const start = await zoom();
+  const [width, height] = [page.viewportSize()!.width, page.viewportSize()!.height];
+  await page.mouse.move(width / 2, height / 2);
+  const wheel = async (deltaY: number) => {
+    await page.mouse.wheel(0, deltaY);
+    // Au-delà de l'attente entre deux crans de molette.
+    await page.waitForTimeout(300);
+  };
+
+  // La molette vers le haut rapproche, au plus ×2 ; encore un cran, et rien ne change.
+  await wheel(-100);
+  await expect.poll(zoom).toBe(start * 2);
+  await wheel(-100);
+  expect(await zoom()).toBe(start * 2);
+
+  // Vers le bas : la vue de départ, puis ×1/2, ×1/4 au plus loin, et pas au-delà.
+  await wheel(100);
+  await expect.poll(zoom).toBe(start);
+  await wheel(100);
+  await expect.poll(zoom).toBe(start / 2);
+  await wheel(100);
+  await expect.poll(zoom).toBe(start / 4);
+  await wheel(100);
+  expect(await zoom()).toBe(start / 4);
+
+  // Les boutons : 25 % montré, + remonte, le pourcentage rétablit la vue de départ.
+  await expect(page.getByRole('button', { name: 'Rétablir le zoom (100 %)' })).toHaveText('25 %');
+  await page.getByRole('button', { name: 'Zoom avant' }).click();
+  await expect.poll(zoom).toBe(start / 2);
+  await page.getByRole('button', { name: 'Rétablir le zoom (100 %)' }).click();
+  await expect.poll(zoom).toBe(start);
+
+  // Le clavier : + rapproche, 0 rétablit, - éloigne.
+  await page.keyboard.press('+');
+  await expect.poll(zoom).toBe(start * 2);
+  await page.keyboard.press('0');
+  await expect.poll(zoom).toBe(start);
+  await page.keyboard.press('-');
+  await expect.poll(zoom).toBe(start / 2);
+
+  // L'avatar suit toujours la caméra : on marche, il avance (la page n'est pas figée par le zoom).
+  const x0 = (await selfAt(page)).x;
+  await page.keyboard.down('ArrowRight');
+  await expect.poll(async () => (await selfAt(page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(x0);
+  await page.keyboard.up('ArrowRight');
+});
+
 test('un mur arrête : depuis l\'apparition, ArrowUp enfoncée 2 s', async ({ page }) => {
   await joinOfficeAlone(page, 'Mia');
   const start = await selfAt(page);
