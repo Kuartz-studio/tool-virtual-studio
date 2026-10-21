@@ -343,7 +343,7 @@ describe('modifier et supprimer', () => {
 test('Échap et ✕ ferment', async () => {
   const user = userEvent.setup();
   const { closed } = setup([]);
-  await user.click(screen.getByRole('button', { name: fr.states.close }));
+  await user.click(screen.getByRole('button', { name: fr.ui.close }));
   await user.keyboard('{Escape}');
   expect(closed()).toBeGreaterThanOrEqual(1);
 });

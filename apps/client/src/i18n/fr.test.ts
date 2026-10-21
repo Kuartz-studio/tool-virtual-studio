@@ -18,7 +18,7 @@ test('les textes attendus par les tests de bout en bout', () => {
   expect(fr.office.people.toggle).toBe('Personnes');
   expect(fr.me.status).toBe('Statut');
   expect(t(fr.me.statusChanged, { status: fr.status.dnd })).toBe('Statut : Ne pas déranger');
-  expect(fr.office.people.you).toBe('(toi)');
+  expect(fr.office.people.you).toBe('toi');
   expect(fr.media.check.title).toBe('Prêt à entrer ?');
   expect(fr.media.check.enter).toBe('Entrer');
   expect(fr.media.check.enterAnyway).toBe('Entrer quand même');

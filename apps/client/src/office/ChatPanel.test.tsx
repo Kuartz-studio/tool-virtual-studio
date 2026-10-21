@@ -68,7 +68,7 @@ function renderChat({ room = null, history = [], init = true, onClose = () => {}
 }
 
 const tab = (name: string) => screen.getByRole('tab', { name }) as HTMLButtonElement;
-const input = () => screen.getByRole('textbox') as HTMLInputElement;
+const input = () => screen.getByRole('textbox') as HTMLTextAreaElement;
 const sendButton = () => screen.getByRole('button', { name: fr.chat.send }) as HTMLButtonElement;
 const log = () => screen.getByRole('log');
 const texts = () => within(log()).queryAllByRole('listitem').map((item) => item.querySelector('.chat-text')?.textContent);
@@ -238,6 +238,88 @@ describe('les onglets', () => {
   });
 });
 
+describe('les groupes', () => {
+  // Une minute après « maintenant moins une heure » : les messages de ces tests se suivent à la minute.
+  const minute = (n: number) => new Date(NOW.getTime() - 3_600_000 + n * 60_000).toISOString();
+  const items = () => within(log()).getAllByRole('listitem');
+
+  test('les messages d\'un même auteur, à moins de 3 minutes l\'un de l\'autre, sont un groupe : portrait, nom et heure à sa tête seulement', () => {
+    renderChat({
+      history: [
+        message('a1', { text: 'Salut', sentAt: minute(0) }),
+        message('a2', { text: 'Tu es là ?', sentAt: minute(1) }),
+        message('a3', { text: 'Dis-moi', sentAt: minute(3) }),
+      ],
+    });
+    const [head, second, third] = items();
+    expect(texts()).toEqual(['Salut', 'Tu es là ?', 'Dis-moi']);
+    expect(head!.getAttribute('data-first')).toBe('true');
+    expect(head!.querySelector('.chat-author')?.textContent).toBe('Bob');
+    expect(head!.querySelector('time')).not.toBeNull();
+    expect(head!.querySelector('.portrait')).not.toBeNull();
+    for (const next of [second!, third!]) {
+      expect(next.hasAttribute('data-first')).toBe(false);
+      expect(next.querySelector('.chat-author')).toBeNull();
+      expect(next.querySelector('time')).toBeNull();
+      expect(next.querySelector('.portrait')).toBeNull();
+    }
+  });
+
+  test('un autre auteur, ou plus de 3 minutes de silence, ouvre un nouveau groupe', () => {
+    renderChat({
+      history: [
+        message('a1', { sentAt: minute(0) }),
+        message('a2', { userId: 'moi', name: 'Léa', sentAt: minute(1) }),
+        message('a3', { sentAt: minute(2) }),
+        message('a4', { sentAt: minute(2.5) }),
+        message('a5', { sentAt: minute(6) }),
+      ],
+    });
+    expect(items().map((item) => item.hasAttribute('data-first'))).toEqual([true, true, true, false, true]);
+    expect(items().map((item) => item.querySelector('.chat-author')?.textContent ?? null)).toEqual(['Bob', 'Léa', 'Bob', null, 'Bob']);
+  });
+
+  test('le groupe se prolonge à l\'arrivée d\'un message du même auteur, sans refaire sa tête', () => {
+    renderChat({ history: [message('a1', { sentAt: minute(0) })] });
+    act(() => store().addChatMessage(message('a2', { text: 'Et puis', sentAt: minute(1) })));
+    expect(items().map((item) => item.hasAttribute('data-first'))).toEqual([true, false]);
+    expect(within(log()).getAllByText('Bob', { selector: '.chat-author' })).toHaveLength(1);
+  });
+
+  test('un message sans nom ni portrait à l\'écran garde son auteur pour un lecteur d\'écran', () => {
+    renderChat({ history: [message('a1', { sentAt: minute(0) }), message('a2', { sentAt: minute(1) })] });
+    const second = items()[1]!;
+    expect(second.querySelector('.visually-hidden')?.textContent).toBe('Bob');
+    // La tête du groupe n'a pas besoin de ce doublon : son nom est écrit.
+    expect(items()[0]!.querySelector('.visually-hidden')).toBeNull();
+  });
+
+  test('le portrait de tête est de 28 px, celui du personnage de l\'auteur (le sien, ou celui d\'une personne en ligne), sinon ses initiales', () => {
+    act(() =>
+      store().applyInit({
+        self: { ...player('moi', 'Léa'), avatarKey: 'dev-blue' },
+        players: [{ ...player('bob', 'Bob'), avatarKey: 'dev-red' }],
+        mapKey: 'dev-office',
+        chatHistory: [message('a1', { sentAt: minute(0) }), message('a2', { userId: 'moi', name: 'Léa', sentAt: minute(1) }), message('a3', { userId: 'parti', name: 'Zoé', sentAt: minute(2) })],
+        desks: [],
+        closedDesks: [],
+        deskBans: [],
+      }),
+    );
+    render(<ChatPanel socket={null} room={null} onClose={() => {}} />);
+    const portraits = [...log().querySelectorAll<HTMLElement>('.portrait')];
+    expect(portraits).toHaveLength(3);
+    expect(portraits.map((portrait) => portrait.style.getPropertyValue('--s'))).toEqual(['28px', '28px', '28px']);
+    // Celle qui est partie n'a plus de personnage connu : ses initiales.
+    expect(portraits[2]!.querySelector('.portrait-initials')?.textContent).toBe('Z');
+  });
+
+  test('un message sur plusieurs lignes garde ses retours à la ligne', () => {
+    renderChat({ history: [message('a1', { text: 'une ligne\nune autre' })] });
+    expect(log().querySelector('.chat-text')?.textContent).toBe('une ligne\nune autre');
+  });
+});
+
 describe('les messages', () => {
   test('une liste, dans l\'ordre ; chaque message a son auteur, son heure et son texte', () => {
     renderChat({
@@ -354,6 +436,49 @@ describe('écrire', () => {
     expect(screen.queryByRole('alert')).toBeNull();
     // Le focus est resté dans le champ : on enchaîne.
     expect(document.activeElement).toBe(input());
+  });
+
+  test('Maj+Entrée va à la ligne, sans envoyer ; Entrée envoie ensuite le tout, retours compris', async () => {
+    const user = userEvent.setup();
+    const { socket } = renderChat();
+    await user.type(input(), 'Une ligne{Shift>}{Enter}{/Shift}une autre');
+    expect(input().value).toBe('Une ligne\nune autre');
+    expect(socket.sentOf('chat:send')).toEqual([]);
+    await user.keyboard('{Enter}');
+    expect(socket.sentOf('chat:send')).toEqual([{ channel: 'all', text: 'Une ligne\nune autre' }]);
+    // Entrée n'a pas ajouté de retour à la ligne au texte qui part.
+    expect(input().value).toBe('Une ligne\nune autre');
+    reply(socket, { ok: true });
+    expect(input().value).toBe('');
+  });
+
+  test('Entrée dans un champ vide n\'ajoute pas de ligne vide', async () => {
+    const user = userEvent.setup();
+    renderChat();
+    await user.type(input(), '{Enter}{Enter}');
+    expect(input().value).toBe('');
+  });
+
+  test('Entrée pendant une composition (touche morte, méthode de saisie) la valide : il n\'envoie rien', async () => {
+    const user = userEvent.setup();
+    const { socket } = renderChat();
+    await user.type(input(), 'Salut');
+    fireEvent.keyDown(input(), { key: 'Enter', isComposing: true });
+    expect(socket.sentOf('chat:send')).toEqual([]);
+    fireEvent.keyDown(input(), { key: 'Enter' });
+    expect(socket.sentOf('chat:send')).toEqual([{ channel: 'all', text: 'Salut' }]);
+  });
+
+  test('le champ est une zone de texte d\'une ligne qui grandit, et Envoyer un bouton à icône qui envoie le formulaire', () => {
+    renderChat();
+    expect(input().tagName).toBe('TEXTAREA');
+    expect(input().getAttribute('rows')).toBe('1');
+    expect(input().placeholder).toBe(fr.chat.placeholder);
+    expect(sendButton().type).toBe('submit');
+    expect(sendButton().querySelector('svg.lucide')).not.toBeNull();
+    // Une icône seule : son nom est aussi son infobulle (IconButton).
+    expect(sendButton().querySelector('.icon-tip')?.textContent).toBe(fr.chat.send);
+    expect(sendButton().form).toBe(input().form);
   });
 
   test('le bouton Envoyer envoie aussi, et rend le focus au champ (pour enchaîner)', async () => {
@@ -731,7 +856,7 @@ describe('le clavier', () => {
     const user = userEvent.setup();
     const onClose = vi.fn();
     renderChat({ onClose });
-    await user.click(screen.getByRole('button', { name: fr.chat.close }));
+    await user.click(screen.getByRole('button', { name: fr.ui.close }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

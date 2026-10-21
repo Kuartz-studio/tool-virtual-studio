@@ -8,12 +8,13 @@ import { avatarsOf, chooseStatus, enterOffice, joinOffice, meChip, officeBar, op
 // Le délai de grâce du serveur (DISCONNECT_GRACE_MS) : une connexion perdue depuis moins longtemps n'est pas un départ.
 const GRACE_MS = 10_000;
 
-// Les couleurs des points (apps/client/src/lib/status.ts : vert, orange, gris, rouge), telles que le navigateur les calcule.
+// Les couleurs de la pastille d'un portrait (les jetons --ok, --busy, --away et --dnd de styles.css : vert, orange, gris, rouge), telles que le
+// navigateur les calcule.
 const DOT_COLOR = {
-  available: 'rgb(34, 197, 94)',
-  busy: 'rgb(245, 158, 11)',
-  away: 'rgb(156, 163, 175)',
-  dnd: 'rgb(239, 68, 68)',
+  available: 'rgb(47, 179, 91)',
+  busy: 'rgb(245, 165, 36)',
+  away: 'rgb(161, 166, 179)',
+  dnd: 'rgb(229, 72, 77)',
 };
 
 interface Person {
@@ -36,11 +37,13 @@ async function arrive(browser: Browser, name: string): Promise<Person> {
   return { context, page, id: (await selfAt(page)).id };
 }
 
-// Ouvre le panneau Personnes de cette page, et le renvoie.
+// Ouvre le panneau Personnes de cette page, sur « Tout le bureau » (« Ici » ne montre que ceux du même lieu : ici, ceux-là aussi, mais le test
+// ne s'y fie pas), et le renvoie.
 async function openPeople(page: Page) {
   await officeBar(page).getByRole('button', { name: 'Personnes' }).click();
   const panel = page.getByRole('complementary', { name: 'Personnes' });
   await expect(panel).toBeVisible();
+  await panel.getByRole('tab', { name: /^Tout le bureau/ }).click();
   return panel;
 }
 
@@ -53,16 +56,18 @@ test('A passe en Ne pas déranger → B voit le point rouge dans le panneau Pers
   const b = await arrive(browser, 'Bastien');
   const panel = await openPeople(b.page);
 
-  // A est là, disponible : un point vert, dans « En ligne ».
+  // A est là, disponible : une pastille verte sur son portrait, dans « En ligne ».
   const online = panel.getByRole('region', { name: /^En ligne/ });
-  const dotOfA = online.locator(`[data-user="${a.id}"]`);
-  await expect(dotOfA).toHaveAttribute('data-status', 'available');
+  const rowOfA = online.locator(`[data-user="${a.id}"]`);
+  const dotOfA = rowOfA.locator('.portrait-dot');
+  await expect(rowOfA).toHaveAttribute('data-status', 'available');
   await expect(dotOfA).toHaveCSS('background-color', DOT_COLOR.available);
 
   await chooseStatus(a.page, 'Ne pas déranger');
   await expect(panel.locator(`[data-user="${a.id}"][data-status="dnd"]`)).toBeVisible();
   await expect(dotOfA).toHaveCSS('background-color', DOT_COLOR.dnd);
-  await expect(dotOfA.locator('xpath=ancestor::li')).toContainText('Ne pas déranger');
+  // Le statut est écrit aussi, pour un lecteur d'écran.
+  await expect(rowOfA).toContainText('Ne pas déranger');
   // A voit son nouveau statut quand le serveur l'a confirmé, et B n'a pas changé.
   await expectStatus(a.page, 'Ne pas déranger');
   await expect(online.locator(`[data-user="${b.id}"]`)).toHaveAttribute('data-status', 'available');
@@ -154,11 +159,18 @@ test('A ferme son onglet → B le voit passer en « Hors ligne » après le dél
   // Le délai de grâce : A est encore là pour les autres.
   await b.page.waitForTimeout(GRACE_MS / 2);
   await expect(online.locator(`[data-user="${a.id}"]`)).toBeVisible();
-  // Puis il part : hors ligne, sans point de couleur (on ne connaît plus son statut), sous le même nom.
-  const dotOfA = offline.locator(`[data-user="${a.id}"]`);
-  await expect(dotOfA).toBeVisible({ timeout: GRACE_MS + 10_000 });
-  await expect(dotOfA).not.toHaveAttribute('data-status', /.*/);
-  await expect(dotOfA.locator('xpath=ancestor::li')).toHaveText('Alma');
+  // Puis il part : hors ligne, sous le même nom. Le groupe est replié, avec son compte : on le déplie.
+  const fold = offline.getByRole('button', { name: /^Hors ligne \(\d+\)$/ });
+  await expect(fold).toBeVisible({ timeout: GRACE_MS + 10_000 });
+  await expect(fold).toHaveAttribute('aria-expanded', 'false');
+  await fold.click();
+  await expect(fold).toHaveAttribute('aria-expanded', 'true');
+  const rowOfA = offline.locator(`[data-user="${a.id}"]`);
+  await expect(rowOfA).toBeVisible({ timeout: GRACE_MS + 10_000 });
+  // On ne connaît plus son statut : ni pastille de couleur, ni statut écrit, que son nom.
+  await expect(rowOfA).not.toHaveAttribute('data-status', /.*/);
+  await expect(rowOfA.locator('.portrait-dot')).toHaveCount(0);
+  await expect(rowOfA.locator('.person-text')).toHaveText('Alma');
   await expect(online.locator(`[data-user="${a.id}"]`)).toHaveCount(0);
 
   // Il revient (un nouvel onglet, la session est celle du contexte) : en ligne de nouveau.

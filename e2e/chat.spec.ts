@@ -90,6 +90,49 @@ test('A écrit à tout le monde → B le voit ; B recharge → toujours là', as
   await expect(messageAfterReload.getByRole('link', { name: link })).toHaveAttribute('href', link);
 });
 
+test('les messages d\'une même personne se suivent en un groupe ; Maj+Entrée va à la ligne ; le champ reste collé en bas, entier, même dans une fenêtre basse', async ({ browser }) => {
+  test.slow();
+  const { page } = await arrive(browser, 'Gaëlle', { viewport: { width: 1280, height: 480 } });
+  const panel = await openChat(page);
+  const box = panel.getByRole('textbox');
+  const tag = `groupe-${Date.now()}`;
+
+  // Deux messages de suite : la tête du groupe (nom, heure) n'est qu'au premier ; le second est lu avec le nom de son auteur, sans l'écrire.
+  await say(panel, `${tag} un`);
+  await expect(box).toHaveValue('');
+  await say(panel, `${tag} deux`);
+  await expect(box).toHaveValue('');
+  await expect(messagesWith(panel, tag)).toHaveCount(2, PROPAGATION);
+  await expect(panel.getByRole('log').locator('.chat-author').filter({ hasText: 'Gaëlle' })).toHaveCount(1);
+  await expect(messagesWith(panel, `${tag} un`).locator('.portrait')).toHaveCount(1);
+  await expect(messagesWith(panel, `${tag} deux`).locator('.portrait')).toHaveCount(0);
+
+  // Maj+Entrée va à la ligne (rien ne part) ; Entrée envoie le tout, retour compris.
+  await box.fill('première ligne');
+  await box.press('Shift+Enter');
+  await box.pressSequentially('seconde ligne');
+  await expect(box).toHaveValue('première ligne\nseconde ligne');
+  await expect(messagesWith(panel, 'seconde ligne')).toHaveCount(0);
+  await box.press('Enter');
+  await expect(box).toHaveValue('');
+  const multiline = messagesWith(panel, 'seconde ligne');
+  await expect(multiline).toHaveCount(1, PROPAGATION);
+  await expect(multiline.locator('.chat-text')).toHaveText('première ligne\nseconde ligne');
+
+  // Le champ est collé au bas du panneau et se voit en entier (la fenêtre ne fait que 480 px de haut) ; il grandit avec ses lignes sans sortir.
+  for (let line = 0; line < 8; line++) {
+    await box.press('Shift+Enter');
+    await box.pressSequentially(`ligne ${line}`);
+  }
+  await expect(box).toBeInViewport({ ratio: 1 });
+  await expect(panel.getByRole('button', { name: 'Envoyer' })).toBeInViewport({ ratio: 1 });
+  const form = (await panel.locator('.chat-form').boundingBox())!;
+  const drawer = (await panel.boundingBox())!;
+  expect(Math.abs(form.y + form.height - (drawer.y + drawer.height))).toBeLessThanOrEqual(1);
+  // La liste, elle, prend ce qui reste, et défile.
+  expect((await panel.getByRole('log').boundingBox())!.height).toBeGreaterThan(40);
+});
+
 test('taper « zqsd » dans le chat ne déplace pas l\'avatar', async ({ browser }) => {
   test.slow();   // les touches sont tenues 300 ms chacune, et la page met du temps à se charger sur une machine chargée
   const { page } = await arrive(browser, 'Zélie');
@@ -123,10 +166,10 @@ test('taper « zqsd » dans le chat ne déplace pas l\'avatar', async ({ browser
 // le champ), et renvoie combien de messages sont partis.
 async function sayQuickly(page: Page, texts: string[]): Promise<number> {
   return page.evaluate(async (messages) => {
-    const input = document.querySelector<HTMLInputElement>('.chat-compose input')!;
+    const input = document.querySelector<HTMLTextAreaElement>('.chat-compose textarea')!;
     const form = input.form!;
     // React suit la valeur du champ : on la pose par le setter du navigateur, puis on lui dit qu'elle a changé.
-    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!;
+    const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!;
     let sent = 0;
     for (const text of messages) {
       setValue.call(input, text);

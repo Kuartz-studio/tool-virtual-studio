@@ -1,4 +1,6 @@
 import {
+  AudioLines,
+  ChevronRight,
   ChevronUp,
   DoorClosed,
   DoorOpen,
@@ -83,6 +85,16 @@ export function ZoomResetIcon() {
 // L'épingle : un lieu.
 export function PlaceIcon() {
   return <MapPin />;
+}
+
+// Un chevron vers la droite : un groupe replié (il pivote quand on le déplie).
+export function ChevronRightIcon() {
+  return <ChevronRight />;
+}
+
+// Une onde sonore : quelqu'un parle avec toi.
+export function AudioLinesIcon() {
+  return <AudioLines />;
 }
 
 // Un chevron vers le haut : les menus du bas s'ouvrent vers le haut.

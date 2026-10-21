@@ -1,12 +1,16 @@
 import type { ActivityState, Status } from '@bureau/shared';
-import { useCallback, useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { fr, t } from '../i18n/fr';
 import { api } from '../lib/api';
 import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
+import { ActivityMark } from './ActivityMark';
+import { AudioLinesIcon, ChevronRightIcon, PlaceIcon } from './icons';
 import { sortPeople, type Person } from './people';
-import { StatusDot } from './StatusDot';
-import { CloseIcon } from './icons';
+import { AvatarPortrait } from './ui/AvatarPortrait';
+import { Drawer } from './ui/Drawer';
+import { Segmented, type SegmentedOption } from './ui/Segmented';
+import { usePlace, usePlaces } from './use-here';
 
 // Un membre, tel que GET /api/members le dit (les membres actifs, sans adresse ni rôle).
 interface Member {
@@ -57,7 +61,24 @@ function useMembers(): Members {
   return { ...state, reload };
 }
 
-// Le panneau Personnes (spec §10) : les membres en ligne, puis ceux hors ligne, chacun avec son point de statut et son statut écrit.
+// Ceux qu'on ne connaît que par leur identifiant : personne n'est en conversation avec soi tant que l'appelant ne le dit pas.
+const NOBODY: readonly string[] = [];
+
+// Une personne, telle que la liste la montre : son nom et son personnage, et pour celle qui est en ligne son statut et son état d'activité.
+interface Row extends Person {
+  avatarKey: string | null;
+  // null : hors ligne.
+  status: Status | null;
+  activity: ActivityState | null;
+}
+
+type View = 'here' | 'all';
+
+// Le panneau Personnes (spec §10), dans la coque des panneaux (Drawer) : un sélecteur à deux positions, « Ici » (ceux qui sont dans le même lieu que
+// soi, soi compris : placeAt, la même règle que la puce du lieu) et « Tout le bureau » (tous ceux qui sont en ligne, puis les hors ligne, repliés sous
+// leur compte). Chaque ligne : le portrait de 38 px avec la pastille de son statut, le nom (et « toi » pour soi), et dessous ce qu'elle fait : son
+// mode (l'icône et le nom de l'état d'activité), sinon « Parle avec toi » si elle est dans notre conversation (`talkingWith` : ses identifiants), sinon
+// son lieu. Le statut est dit aux lecteurs d'écran, la pastille ne leur dit rien.
 //
 // Qui est en ligne et avec quel statut, c'est le magasin (ce que le serveur dit en direct) : les personnes en ligne sont affichées dès
 // l'ouverture, sans attendre la liste des membres (GET /api/members, chargée à l'ouverture), qui apporte les hors ligne. Une personne en
@@ -65,18 +86,19 @@ function useMembers(): Members {
 // sinon absente des hors ligne quand elle repart.
 //
 // Le focus va au titre à l'ouverture (le lecteur d'écran l'annonce, et Tab entre dans le panneau) ; Échap ferme.
-export function PeoplePanel({ id, onClose }: { id?: string; onClose(): void }) {
+export function PeoplePanel({ id, onClose, talkingWith = NOBODY }: { id?: string; onClose(): void; talkingWith?: readonly string[] }) {
   const self = useOfficeStore((state) => state.self);
   const players = useOfficeStore((state) => state.players);
   const { members, failed, reload } = useMembers();
-  const titleId = useId();
-  const onlineTitleId = useId();
-  const offlineTitleId = useId();
-  const heading = useRef<HTMLHeadingElement>(null);
-
-  useEffect(() => {
-    heading.current?.focus();
-  }, []);
+  const place = usePlace();
+  const places = usePlaces();
+  const [view, setView] = useState<View>('here');
+  const [offlineOpen, setOfflineOpen] = useState(false);
+  const uid = useId();
+  const panelId = `${uid}-liste`;
+  const tabId = (which: View) => `${uid}-onglet-${which}`;
+  const offlineTitleId = `${uid}-hors-ligne`;
+  const offlineListId = `${uid}-hors-ligne-liste`;
 
   // Les personnes en ligne : soi-même et les autres joueurs du bureau.
   const present = useMemo(() => (self ? [self, ...Object.values(players)] : Object.values(players)), [self, players]);
@@ -92,76 +114,124 @@ export function PeoplePanel({ id, onClose }: { id?: string; onClose(): void }) {
     void reload();
   }, [members, present, reload]);
 
-  const { online, offline, statuses, activities } = useMemo(() => {
-    const people = new Map<string, Person>();
-    for (const member of members ?? []) people.set(member.id, member);
+  const { online, offline } = useMemo(() => {
+    const people = new Map<string, Row>();
+    for (const member of members ?? []) people.set(member.id, { ...member, status: null, activity: null });
     // Le nom en ligne est celui que le serveur vient de dire, pas celui de la liste chargée à l'ouverture.
-    for (const p of present) people.set(p.id, p);
+    for (const p of present) people.set(p.id, { id: p.id, name: p.name, avatarKey: p.avatarKey, status: p.status, activity: p.activity ?? null });
     const sorted = sortPeople([...people.values()], new Set(present.map((p) => p.id)));
-    return {
-      ...sorted,
-      statuses: new Map<string, Status>(present.map((p) => [p.id, p.status])),
-      activities: new Map<string, ActivityState | null>(present.map((p) => [p.id, p.activity ?? null])),
-    };
-  }, [members, present]);
+    // Soi-même d'abord : c'est la ligne qu'on cherche en premier.
+    return { online: [...sorted.online.filter((p) => p.id === self?.id), ...sorted.online.filter((p) => p.id !== self?.id)], offline: sorted.offline };
+  }, [members, present, self?.id]);
 
-  function onKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key !== 'Escape') return;
-    event.preventDefault();
-    event.stopPropagation();
-    onClose();
+  // Ceux d'ici : soi, et ceux dont le lieu est le sien. Sans carte (le jeu n'est pas encore là), on n'a pas de lieu : soi seul.
+  const here = useMemo(() => online.filter((p) => p.id === self?.id || (place !== null && places.get(p.id) === place)), [online, self?.id, place, places]);
+  const talking = useMemo(() => new Set(talkingWith), [talkingWith]);
+
+  // Ce que fait la personne, sous son nom : son mode, sinon la conversation, sinon son lieu (le sien, pour soi : la puce du lieu).
+  function doing(person: Row) {
+    if (person.activity) {
+      return (
+        <>
+          <ActivityMark activity={person.activity} />
+          <span>{person.activity.label}</span>
+        </>
+      );
+    }
+    if (talking.has(person.id)) {
+      return (
+        <>
+          <AudioLinesIcon />
+          <span>{fr.office.people.talking}</span>
+        </>
+      );
+    }
+    const where = person.id === self?.id ? place : (places.get(person.id) ?? null);
+    if (where === null) return null;
+    return (
+      <>
+        <PlaceIcon />
+        <span>{where}</span>
+      </>
+    );
   }
 
-  const row = (person: Person) => {
-    const status = statuses.get(person.id) ?? null;
-    // L'état d'activité qu'elle a pris passe avant son statut : sa couleur et son nom.
-    const activity = activities.get(person.id) ?? null;
+  const options: SegmentedOption<View>[] = [
+    { id: 'here', label: fr.office.people.here, count: here.length },
+    { id: 'all', label: fr.office.people.all, count: online.length },
+  ];
+
+  const row = (person: Row) => {
+    const mine = person.id === self?.id;
+    const sub = person.status === null ? null : doing(person);
     return (
-      <li key={person.id} className="person">
-        <StatusDot status={status} userId={person.id} activity={activity} />
-        {/* Un nom trop long est coupé (« … ») : l'infobulle le donne en entier. */}
-        <span className="person-name" title={person.name}>
-          {person.name}
+      <li key={person.id} className="person" data-user={person.id} data-status={person.status ?? undefined}>
+        <AvatarPortrait avatarKey={person.avatarKey} name={person.name} size={38} status={person.status} />
+        <span className="person-text">
+          <span className="person-head">
+            {/* Un nom trop long est coupé (« … ») : l'infobulle le donne en entier. */}
+            <span className="person-name" title={person.name}>
+              {person.name}
+            </span>
+            {mine && <span className="person-you">{fr.office.people.you}</span>}
+          </span>
+          {sub && <span className="person-sub">{sub}</span>}
         </span>
-        {self?.id === person.id && <span className="person-you">{fr.office.people.you}</span>}
-        {status && <span className="person-status">{activity ? activity.label : fr.status[status]}</span>}
+        {person.status && <span className="visually-hidden">{fr.status[person.status]}</span>}
       </li>
     );
   };
 
   return (
-    <aside id={id} className="people-panel" aria-labelledby={titleId} onKeyDown={onKeyDown}>
-      <header className="people-panel-header">
-        <h2 id={titleId} ref={heading} tabIndex={-1}>
-          {fr.office.people.title}
-        </h2>
-        <button type="button" className="bar-button" aria-label={fr.office.people.close} onClick={onClose}>
-          <CloseIcon />
-        </button>
-      </header>
-      <div className="people-lists">
-        {online.length > 0 && (
-          <section className="people-group" aria-labelledby={onlineTitleId}>
-            <h3 id={onlineTitleId}>{t(fr.office.people.online, { count: online.length })}</h3>
-            <ul className="people-list">{online.map(row)}</ul>
+    <Drawer title={fr.office.people.title} onClose={onClose} id={id}>
+      <Segmented
+        label={fr.office.people.tabsLabel}
+        value={view}
+        panelId={panelId}
+        tabId={tabId}
+        options={options}
+        onSelect={(which) => setView(which)}
+      />
+      <div id={panelId} className="people-body" role="tabpanel" aria-labelledby={tabId(view)}>
+        {view === 'here' ? (
+          <section className="people-group" aria-label={t(fr.office.people.hereList, { count: here.length })}>
+            <ul className="people-list">{here.map(row)}</ul>
+            {here.length <= 1 && <p className="people-empty">{fr.office.people.nobodyHere}</p>}
           </section>
-        )}
-        {members === null && !failed && <p className="people-loading">{fr.common.loading}</p>}
-        {failed && (
-          <div className="people-failed">
-            <Alert>{fr.office.people.loadFailed}</Alert>
-            <button type="button" className="bar-button" onClick={() => void reload()}>
-              {fr.common.retry}
-            </button>
-          </div>
-        )}
-        {offline.length > 0 && (
-          <section className="people-group" aria-labelledby={offlineTitleId}>
-            <h3 id={offlineTitleId}>{t(fr.office.people.offline, { count: offline.length })}</h3>
-            <ul className="people-list">{offline.map(row)}</ul>
-          </section>
+        ) : (
+          <>
+            {online.length > 0 && (
+              <section className="people-group" aria-label={t(fr.office.people.online, { count: online.length })}>
+                <ul className="people-list">{online.map(row)}</ul>
+              </section>
+            )}
+            {members === null && !failed && <p className="people-loading">{fr.common.loading}</p>}
+            {failed && (
+              <div className="people-failed">
+                <Alert>{fr.office.people.loadFailed}</Alert>
+                <button type="button" className="bar-button" onClick={() => void reload()}>
+                  {fr.common.retry}
+                </button>
+              </div>
+            )}
+            {offline.length > 0 && (
+              <section className="people-group" aria-labelledby={offlineTitleId}>
+                <h3 id={offlineTitleId} className="people-fold">
+                  <button type="button" aria-expanded={offlineOpen} aria-controls={offlineListId} data-sfx="click" onClick={() => setOfflineOpen((wasOpen) => !wasOpen)}>
+                    <ChevronRightIcon />
+                    {t(fr.office.people.offline, { count: offline.length })}
+                  </button>
+                </h3>
+                {offlineOpen && (
+                  <ul id={offlineListId} className="people-list">
+                    {offline.map(row)}
+                  </ul>
+                )}
+              </section>
+            )}
+          </>
         )}
       </div>
-    </aside>
+    </Drawer>
   );
 }

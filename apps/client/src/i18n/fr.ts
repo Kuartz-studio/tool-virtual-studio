@@ -116,10 +116,18 @@ export const fr = {
     people: {
       toggle: 'Personnes',
       title: 'Personnes',
-      close: 'Fermer le panneau Personnes',
+      // Le sélecteur : ceux du même lieu que soi, ou tous (chacun avec son compte, écrit à côté).
+      tabsLabel: 'Qui afficher',
+      here: 'Ici',
+      all: 'Tout le bureau',
+      // Le nom de la liste de ceux d'ici, et de celle de tous ceux qui sont en ligne, pour les lecteurs d'écran ; le titre, replié, de ceux qui ne le sont pas.
+      hereList: 'Ici ({count})',
       online: 'En ligne ({count})',
       offline: 'Hors ligne ({count})',
-      you: '(toi)',
+      nobodyHere: 'Personne d\'autre ici pour l\'instant.',
+      you: 'toi',
+      // Sous le nom de quelqu'un de ta conversation (son mode, s'il en a un, passe avant).
+      talking: 'Parle avec toi',
       loadFailed: 'Impossible de charger la liste des membres.',
     },
     // Le lieu où l'on est (la puce en haut à gauche) et ceux qui y sont.
@@ -146,7 +154,6 @@ export const fr = {
   states: {
     toggle: 'Mes états',
     title: 'Mes états d\'activité',
-    close: 'Fermer le panneau Mes états d\'activité',
     intro: 'Crée tes états : un nom, une icône ou la couleur de ton point, et ce que chacun change pour toi. Tu les choisis ensuite dans le menu de ton profil, sous « Mode ».',
     listTitle: 'Mes états',
     empty: 'Aucun état pour l\'instant. Prends une suggestion, ou crée le tien ci-dessous.',

@@ -1,5 +1,5 @@
 import type { Role } from '@bureau/shared';
-import { Activity, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Activity, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { fr } from '../i18n/fr';
 import { listActivityStates } from '../lib/activity-api';
 import { useMailMode } from '../lib/config';
@@ -154,6 +154,10 @@ export function OfficeShell({
     if (micCutBy !== null && micOn) void media.client.setMic(false);
   }, [micCutBy, micOn, media.client]);
 
+  // Ceux de la conversation où l'on est (la room audio et vidéo), sans soi : « Parle avec toi », sur leur ligne du panneau Personnes.
+  const participants = media.snapshot.participants;
+  const talkingWith = useMemo(() => participants.filter((participant) => !participant.isLocal).map((participant) => participant.id), [participants]);
+
   const panels: PanelControls = {
     open: panel,
     toggle: (id, from) => (panel === id ? close() : show(id, from)),
@@ -192,7 +196,7 @@ export function OfficeShell({
           </div>
         )}
         <div className="office-side" data-panel={panel ?? undefined}>
-          {panel === 'people' && <PeoplePanel id={idOf('people')} onClose={close} />}
+          {panel === 'people' && <PeoplePanel id={idOf('people')} talkingWith={talkingWith} onClose={close} />}
           {panel === 'character' && <CharacterBuilder id={idOf('character')} onClose={close} />}
           {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
           {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}

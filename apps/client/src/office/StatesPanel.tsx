@@ -1,5 +1,5 @@
 import { ACTIVITY_ICONS, ACTIVITY_LABEL_MAX_LENGTH, ACTIVITY_MAX_PER_USER, type ActivityIcon, type ActivityInput, type ActivityState } from '@bureau/shared';
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useId, useState, type FormEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { ApiError } from '../lib/api';
 import { createActivityState, deleteActivityState, updateActivityState } from '../lib/activity-api';
@@ -8,7 +8,7 @@ import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { ActivityMark } from './ActivityMark';
 import { ACTIVITY_ICON_COMPONENTS } from './activity-icons';
-import { CloseIcon } from './icons';
+import { Drawer } from './ui/Drawer';
 
 // Des couleurs toutes prêtes pour le point (la couleur libre reste possible : le sélecteur du navigateur).
 export const ACTIVITY_SWATCHES = ['#22c55e', '#f59e0b', '#ef4444', '#6d28d9', '#2f5fd0', '#0ea5e9', '#ec4899', '#9ca3af'] as const;
@@ -49,11 +49,7 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
   const myStates = useOfficeStore((state) => state.myStates);
   const activity = useOfficeStore((state) => state.self?.activity ?? null);
   const ready = useOfficeStore((state) => state.ready);
-  const titleId = useId();
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => {
-    heading.current?.focus();
-  }, []);
+  const uid = useId();
 
   // Le formulaire : celui d'un nouvel état, ou la modification de l'état `editing`.
   const [form, setForm] = useState<ActivityInput>(EMPTY_FORM);
@@ -134,13 +130,6 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
     socket?.emit('state:set', state.id);
   }
 
-  function onKeyDown(event: KeyboardEvent<HTMLElement>) {
-    if (event.key !== 'Escape') return;
-    event.preventDefault();
-    event.stopPropagation();
-    onClose();
-  }
-
   const switches: Array<{ key: 'allowEntry' | 'hear' | 'heard'; label: string }> = [
     { key: 'allowEntry', label: fr.states.allowEntry },
     { key: 'hear', label: fr.states.hear },
@@ -148,16 +137,8 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
   ];
 
   return (
-    <aside id={id} className="people-panel states-panel" aria-labelledby={titleId} onKeyDown={onKeyDown}>
-      <header className="people-panel-header">
-        <h2 id={titleId} ref={heading} tabIndex={-1}>
-          {fr.states.title}
-        </h2>
-        <button type="button" className="bar-button" aria-label={fr.states.close} onClick={onClose}>
-          <CloseIcon />
-        </button>
-      </header>
-      <div className="people-lists desk-body">
+    <Drawer title={fr.states.title} onClose={onClose} id={id} className="states-drawer">
+      <div className="desk-body">
         <p className="desk-hint">{fr.states.intro}</p>
         {error && <Alert>{error}</Alert>}
         {notice && (
@@ -166,8 +147,8 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
           </p>
         )}
 
-        <section aria-labelledby={`${titleId}-list`}>
-          <h3 id={`${titleId}-list`} className="desk-subtitle">
+        <section aria-labelledby={`${uid}-list`}>
+          <h3 id={`${uid}-list`} className="desk-subtitle">
             {fr.states.listTitle}
           </h3>
           {myStates.length === 0 ? (
@@ -236,14 +217,14 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
           )}
         </section>
 
-        <form className="state-form" onSubmit={submit} aria-labelledby={`${titleId}-form`}>
-          <h3 id={`${titleId}-form`} className="desk-subtitle">
+        <form className="state-form" onSubmit={submit} aria-labelledby={`${uid}-form`}>
+          <h3 id={`${uid}-form`} className="desk-subtitle">
             {editing === null ? fr.states.formCreate : fr.states.formEdit}
           </h3>
           <div className="state-field">
-            <label htmlFor={`${titleId}-label`}>{fr.states.label}</label>
+            <label htmlFor={`${uid}-label`}>{fr.states.label}</label>
             <input
-              id={`${titleId}-label`}
+              id={`${uid}-label`}
               type="text"
               value={form.label}
               maxLength={ACTIVITY_LABEL_MAX_LENGTH}
@@ -315,6 +296,6 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
           {full && <p className="desk-hint">{t(fr.states.errors.limit, { max: ACTIVITY_MAX_PER_USER })}</p>}
         </form>
       </div>
-    </aside>
+    </Drawer>
   );
 }

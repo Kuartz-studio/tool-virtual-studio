@@ -1029,6 +1029,7 @@ svg.lucide.icon-s {
 }
 
 .drawer-body {
+  flex: 1 1 auto;
   min-height: 0;
   padding: 0 16px 16px;
   overflow-y: auto;
@@ -1888,12 +1889,11 @@ svg.lucide.icon-s {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   Les panneaux de droite : Personnes, Chat, Admin, Son, Mon bureau, Personnage, états, déco, bac à sable. Tous ont la même coque (celle
-   de .people-panel : l'en-tête, puis un contenu qui défile), et le chat et l'admin la leur, à l'identique.
+   Les panneaux de droite. Personnes, Chat et Mes états sont dans la coque Drawer (voir plus haut) ; Mon bureau, Personnage, la déco et le bac à
+   sable gardent celle de .people-panel (l'en-tête, puis un contenu qui défile), et l'admin la sienne, à l'identique.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .people-panel,
-.admin-panel,
-.chat-panel {
+.admin-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -1905,8 +1905,7 @@ svg.lucide.icon-s {
 }
 
 .people-panel-header,
-.admin-panel-header,
-.chat-panel-header {
+.admin-panel-header {
   flex: none;
   display: flex;
   align-items: center;
@@ -1916,8 +1915,7 @@ svg.lucide.icon-s {
 }
 
 .people-panel-header h2,
-.admin-panel-header h2,
-.chat-panel-header h2 {
+.admin-panel-header h2 {
   margin: 0;
   font-size: var(--text-l);
   font-weight: 600;
@@ -1932,8 +1930,7 @@ svg.lucide.icon-s {
 
 /* Le bouton de fermeture : une pastille ronde. */
 .people-panel-header .bar-button,
-.admin-panel-header .bar-button,
-.chat-panel-header .bar-button {
+.admin-panel-header .bar-button {
   width: 34px;
   min-width: 34px;
   min-height: 34px;
@@ -1945,8 +1942,7 @@ svg.lucide.icon-s {
 }
 
 .people-panel-header .bar-button:hover,
-.admin-panel-header .bar-button:hover,
-.chat-panel-header .bar-button:hover {
+.admin-panel-header .bar-button:hover {
   color: var(--text);
 }
 
@@ -1959,54 +1955,199 @@ svg.lucide.icon-s {
   scrollbar-color: var(--border-strong) transparent;
 }
 
-.people-group h3 {
-  margin: 16px 0 6px;
-  font-size: var(--text-s);
-  font-weight: 600;
+/* Le sélecteur à deux ou trois positions (SegmentedControl : Ici / Tout le bureau, Tout le monde / À proximité) : une piste en retrait, et
+   l'onglet choisi, en relief. */
+.seg {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 3px;
+  background: var(--surface-soft);
+  border-radius: 11px;
+}
+
+.seg-tab {
+  flex: 1;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 0.78rem;
+  font-weight: var(--weight-semibold);
   color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.seg-tab:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.seg-tab[aria-selected='true'] {
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(15 18 30 / 12%), 0 0 0 1px var(--border);
+}
+
+.seg-tab:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.seg-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.seg-count {
+  font-style: normal;
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+/* La liste des gens : des lignes de 38 px de portrait, dont le fond (au survol) déborde de 8 px de chaque côté, comme dans la maquette. */
+.people-body {
+  min-height: 0;
 }
 
 .people-list {
-  margin: 0;
+  margin: 0 -8px;
   padding: 0;
   list-style: none;
 }
 
 .person {
+  --dot-ring: var(--surface);
+
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 40px;
-  padding: 6px 0;
-  border-top: 1px solid var(--surface-sunk);
+  gap: 12px;
+  padding: 8px;
+  border-radius: var(--radius-btn);
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
-.person:first-child {
-  border-top: none;
+.person:hover {
+  --dot-ring: var(--surface-soft);
+
+  background: var(--surface-soft);
+}
+
+/* Hors ligne : le portrait en retrait, le nom plus discret. */
+.person:not([data-status]) .portrait {
+  opacity: 0.6;
+}
+
+.person:not([data-status]) .person-name {
+  font-weight: var(--weight-medium);
+  color: var(--text-soft);
+}
+
+.person-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+
+.person-head {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
 }
 
 .person-name {
   min-width: 0;
   overflow: hidden;
-  font-size: var(--text-m);
-  font-weight: 600;
+  font-size: 0.84375rem;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .person-you {
   flex: none;
-  font-size: var(--text-s);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
   color: var(--text-muted);
 }
 
-.person-status {
-  flex: none;
-  margin-left: auto;
-  padding-left: 8px;
+/* Ce qu'elle fait : son mode (son icône, ou le point de sa couleur), qu'elle parle avec toi, ou son lieu. */
+.person-sub {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--text-soft);
+}
+
+.person-sub > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.person-sub svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+
+.person-sub .status-dot {
+  width: 9px;
+  height: 9px;
+  margin: 0 2.5px;
+  box-shadow: none;
+}
+
+/* Les hors ligne : un titre qui les déplie, avec leur compte, et un chevron qui pivote. */
+.people-group + .people-group {
+  margin-top: 4px;
+}
+
+.people-fold {
+  margin: 8px 0 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.people-fold button {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 6px 0;
+  color: var(--text-muted);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.people-fold button:hover {
+  color: var(--text-soft);
+}
+
+.people-fold svg.lucide {
+  width: 14px;
+  height: 14px;
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.people-fold button[aria-expanded='true'] svg.lucide {
+  transform: rotate(90deg);
+}
+
+.people-empty {
+  margin: 4px 0 0;
   font-size: var(--text-s);
   color: var(--text-muted);
-  white-space: nowrap;
 }
 
 .people-loading {
@@ -2023,52 +2164,19 @@ svg.lucide.icon-s {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   Le panneau Chat : il prend toute la hauteur du panneau latéral, et la liste des messages défile. Les deux canaux sont un sélecteur à deux
-   positions ; les messages sont des bulles, les siennes teintées.
+   Le panneau Chat, dans la coque Drawer : il prend toute la hauteur du panneau latéral. Le sélecteur de canal est en haut, la liste des messages
+   prend la place qui reste et défile, le champ est collé en bas et ne se coupe jamais. Les messages d'un même auteur sont groupés : le portrait,
+   le nom et l'heure à la tête du groupe seulement.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
-.chat-tabs {
-  flex: none;
+.chat-drawer .drawer-body {
   display: flex;
-  gap: 4px;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.chat-drawer .seg {
   margin: 0 16px 8px;
-  padding: 4px;
-  background: var(--surface-soft);
-  border-radius: 13px;
-}
-
-.chat-tab {
-  flex: 1;
-  min-height: 36px;
-  padding: 0 10px;
-  font-size: var(--text-m);
-  font-weight: 600;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-
-.chat-tab:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.chat-tab[aria-selected='true'] {
-  color: var(--text);
-  background: var(--surface);
-  box-shadow: var(--shadow-s), 0 0 0 1px rgb(27 32 51 / 6%);
-}
-
-.chat-tab:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.chat-tab:focus-visible,
-.chat-log:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 /* Le contenu de l'onglet : la liste des messages, qui prend la place et défile, puis le champ. */
@@ -2083,29 +2191,54 @@ svg.lucide.icon-s {
 .chat-log {
   flex: 1 1 auto;
   min-height: 0;
-  padding: 8px 16px;
+  padding: 0 8px 8px;
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;
 }
 
+.chat-log:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
 .chat-messages {
-  display: grid;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
+/* Un message : le portrait de 28 px (ou, à la suite d'un autre du même auteur, le même renfoncement vide) et le texte. */
 .chat-message {
-  padding: 9px 13px 10px;
-  background: var(--surface-soft);
-  border-radius: 14px 14px 14px 5px;
+  --dot-ring: var(--surface);
+
+  display: flex;
+  gap: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
 }
 
-.chat-message[data-own='true'] {
-  background: var(--accent-soft);
-  border-radius: 14px 14px 5px 14px;
+.chat-message:hover {
+  background: var(--surface-soft);
+}
+
+.chat-message[data-first] {
+  margin-top: 10px;
+  padding-top: 6px;
+}
+
+.chat-message:first-child {
+  margin-top: 0;
+}
+
+.chat-gutter {
+  flex: none;
+  width: 28px;
+}
+
+.chat-body {
+  min-width: 0;
+  flex: 1;
 }
 
 .chat-message-head {
@@ -2118,7 +2251,7 @@ svg.lucide.icon-s {
   min-width: 0;
   overflow: hidden;
   font-size: var(--text-s);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2130,7 +2263,7 @@ svg.lucide.icon-s {
 .chat-you,
 .chat-time {
   flex: none;
-  font-size: 0.75rem;
+  font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
@@ -2140,18 +2273,20 @@ svg.lucide.icon-s {
   font-variant-numeric: tabular-nums;
 }
 
-/* Un message est du texte : un long mot ou une longue adresse passe à la ligne au lieu de déborder du panneau. */
+/* Un message est du texte, avec ses retours à la ligne : un long mot ou une longue adresse passe à la ligne au lieu de déborder du panneau. */
 .chat-text {
-  margin: 2px 0 0;
+  margin: 1px 0 0;
   font-size: var(--text-m);
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .chat-empty {
-  margin: 12px 4px;
+  margin: 12px 12px;
   color: var(--text-muted);
 }
 
+/* Le champ, collé en bas : un trait au-dessus, le message qui grandit avec ses lignes (cinq au plus), et le bouton qui envoie. */
 .chat-form {
   flex: none;
   display: grid;
@@ -2173,37 +2308,42 @@ svg.lucide.icon-s {
 
 .chat-compose {
   display: flex;
+  align-items: flex-end;
   gap: 8px;
 }
 
-.chat-compose input {
+.chat-compose textarea {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 42px;
-  padding: 0 14px;
+  max-height: 138px;
+  padding: 10px 14px;
+  line-height: 1.4;
+  resize: none;
+  overflow-y: auto;
   background: var(--surface-soft);
   border: 1px solid transparent;
   border-radius: 13px;
-  transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
 }
 
-.chat-compose input:focus-visible {
+.chat-compose textarea:focus-visible {
   outline: none;
   background: var(--surface);
   border-color: var(--accent);
   box-shadow: var(--ring);
 }
 
-.chat-compose .bar-button {
-  min-height: 42px;
-  padding: 0 16px;
+/* Envoyer : un bouton plein de l'accent, de la hauteur d'une ligne du champ. */
+.icon-btn.chat-send {
+  width: 42px;
+  height: 42px;
   color: var(--on-accent);
   background: var(--accent);
-  border-color: var(--accent);
   border-radius: 13px;
 }
 
-.chat-compose .bar-button:hover:not(:disabled) {
+.icon-btn.chat-send:hover:not(:disabled) {
   background: var(--accent-hover);
 }
 

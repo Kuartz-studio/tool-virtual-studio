@@ -347,7 +347,7 @@ describe('le panneau Personnes', () => {
     const user = userEvent.setup();
     renderShell();
     await user.click(toggle());
-    await user.click(screen.getByRole('button', { name: fr.office.people.close }));
+    await user.click(screen.getByRole('button', { name: fr.ui.close }));
     expect(screen.queryByRole('complementary')).toBeNull();
     expect(document.activeElement).toBe(toggle());
   });
@@ -359,14 +359,30 @@ describe('le panneau Personnes', () => {
     await user.keyboard('{Enter}');
     expect(screen.getByRole('complementary')).toBeTruthy();
     await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.office.people.close }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.ui.close }));
   });
 
   test('il liste les gens (l\'appel à /api/members part à l\'ouverture)', async () => {
     const user = userEvent.setup();
     renderShell();
     await user.click(toggle());
-    expect(await screen.findByRole('heading', { name: 'En ligne (2)' })).toBeTruthy();
+    await user.click(screen.getByRole('tab', { name: /^Tout le bureau/ }));
+    expect(await screen.findByRole('region', { name: 'En ligne (2)' })).toBeTruthy();
+    // Les hors ligne sont ceux que l'appel a apportés : ici, personne de plus que ceux qui sont là.
+    expect(screen.queryByRole('region', { name: /^Hors ligne/ })).toBeNull();
+  });
+
+  test('sa ligne dit qu\'on parle avec ceux de la conversation (les participants de la room, sans soi)', async () => {
+    const user = userEvent.setup();
+    const { client, refresh } = renderShell();
+    await act(() => client.join(payload('r1')));
+    client.addRemote({ id: 'bob', name: 'Bob', mic: true, cam: false });
+    refresh();
+    await user.click(toggle());
+    await user.click(screen.getByRole('tab', { name: /^Tout le bureau/ }));
+    expect(await screen.findByText(fr.office.people.talking)).toBeTruthy();
+    expect(document.querySelector('[data-user="bob"] .person-sub')?.textContent).toBe(fr.office.people.talking);
+    expect(document.querySelector('[data-user="moi"] .person-sub')?.textContent ?? '').not.toBe(fr.office.people.talking);
   });
 
   test('il est inactif tant que le serveur n\'a pas dit qui est là (avant l\'init)', () => {
@@ -489,7 +505,7 @@ describe('le panneau Chat', () => {
     const user = userEvent.setup();
     renderShell();
     await user.click(chatToggle());
-    await user.click(screen.getByRole('button', { name: fr.chat.close }));
+    await user.click(screen.getByRole('button', { name: fr.ui.close }));
     expect(screen.queryByRole('complementary', { name: fr.chat.title })).toBeNull();
     expect(document.activeElement).toBe(chatToggle());
   });
@@ -936,16 +952,19 @@ describe('les états d\'activité', () => {
     expect(micButton().disabled).toBe(false);
   });
 
-  test('le panneau Personnes : le nom et la couleur de l\'état d\'activité de chacun, à la place du statut', async () => {
+  test('le panneau Personnes : le nom et la couleur de l\'état d\'activité de chacun, sous son nom (sa pastille garde son statut)', async () => {
     const user = userEvent.setup();
     renderShell();
     act(() => useOfficeStore.getState().setActivity('bob', focus));
     await user.click(toggle());
+    await user.click(screen.getByRole('tab', { name: /^Tout le bureau/ }));
     const bob = document.querySelector('[data-user="bob"]') as HTMLElement;
-    expect(bob.getAttribute('data-activity')).toBe('s1');
-    expect(bob.style.backgroundColor).toMatch(/^(#6d28d9|rgb\(109, 40, 217\))$/i);
-    expect(within(bob.closest('li') as HTMLElement).getByText('En focus')).toBeTruthy();
-    expect(within(bob.closest('li') as HTMLElement).queryByText(fr.status.available)).toBeNull();
+    // Le mode n'a pas d'icône : le point de sa couleur (celle que le serveur a validée) devant son nom.
+    const dot = bob.querySelector('.person-sub [data-activity="s1"]') as HTMLElement;
+    expect(dot.style.backgroundColor).toMatch(/^(#6d28d9|rgb\(109, 40, 217\))$/i);
+    expect(bob.querySelector('.person-sub')?.textContent).toBe('En focus');
+    // La pastille du portrait dit toujours le statut.
+    expect(bob.querySelector('.portrait-dot')?.getAttribute('data-status')).toBe('available');
   });
 });
 

@@ -50,33 +50,50 @@ export function useInMyDesk(): boolean {
   return useFeetValue(useCallback((x: number, y: number, map: OfficeMap) => mine !== null && deskKeyAt(map, x, y) === mine, [mine])) ?? false;
 }
 
-// Les autres qui sont dans ce lieu (leurs dernières positions connues), dans l'ordre des noms.
-export function usePeopleHere(place: string | null): PublicPlayer[] {
+const NO_PLACES: ReadonlyMap<string, string> = new Map();
+
+// Où est chacun des autres : le nom de son lieu (placeAt), d'après sa dernière position connue, par identifiant. Relu deux fois par seconde (les
+// positions ne préviennent pas React) ; ne redessine que quand un lieu change. Sans carte, personne n'a de lieu.
+export function usePlaces(): ReadonlyMap<string, string> {
   const map = useOfficeStore((state) => state.officeMap);
   const desks = useOfficeStore((state) => state.desks);
   const players = useOfficeStore((state) => state.players);
-  const [ids, setIds] = useState<string[]>([]);
+  const [places, setPlaces] = useState(NO_PLACES);
 
   useEffect(() => {
-    if (map === null || place === null) {
-      setIds([]);
+    if (map === null) {
+      setPlaces(NO_PLACES);
       return;
     }
     const refresh = () => {
       const { positions } = useOfficeStore.getState();
-      const here = Object.values(players)
-        .filter((player) => {
-          const at = positions.get(player.id) ?? player;
-          return placeAt(map, desks, at.x, at.y) === place;
-        })
-        .sort((a, b) => a.name.localeCompare(b.name, 'fr'))
-        .map((player) => player.id);
-      setIds((known) => (known.length === here.length && known.every((id, index) => id === here[index]) ? known : here));
+      const next = new Map<string, string>();
+      for (const player of Object.values(players)) {
+        const at = positions.get(player.id) ?? player;
+        const place = placeAt(map, desks, at.x, at.y);
+        if (place !== null) next.set(player.id, place);
+      }
+      setPlaces((known) => (known.size === next.size && [...next].every(([id, place]) => known.get(id) === place) ? known : next));
     };
     refresh();
     const timer = setInterval(refresh, REFRESH_MS);
     return () => clearInterval(timer);
-  }, [map, desks, players, place]);
+  }, [map, desks, players]);
 
-  return useMemo(() => ids.flatMap((id) => (players[id] ? [players[id]] : [])), [ids, players]);
+  return places;
+}
+
+// Les autres qui sont dans ce lieu (leurs dernières positions connues), dans l'ordre des noms.
+export function usePeopleHere(place: string | null): PublicPlayer[] {
+  const players = useOfficeStore((state) => state.players);
+  const places = usePlaces();
+  return useMemo(
+    () =>
+      place === null
+        ? []
+        : Object.values(players)
+            .filter((player) => places.get(player.id) === place)
+            .sort((a, b) => a.name.localeCompare(b.name, 'fr')),
+    [players, places, place],
+  );
 }
