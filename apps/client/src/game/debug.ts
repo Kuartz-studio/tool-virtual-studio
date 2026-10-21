@@ -35,9 +35,22 @@ export interface OfficeDebug {
   zoom(): number;
 }
 
+// Ce que les tests de bout en bout lisent du son : window.__audio, dans le même build. Le son démarre avant le jeu (dès la page de connexion) :
+// c'est donc un objet à part, que tient audio/audio.ts.
+export interface AudioDebug {
+  // Le son marche-t-il (`running`), attend-il un geste (`locked`), ou n'existe-t-il pas (`unsupported`) ?
+  status(): 'locked' | 'running' | 'unsupported';
+  // L'ambiance qu'on entend, ou null.
+  playing(): string | null;
+  // Les effets que l'appli a demandés depuis le chargement de la page, dans l'ordre (qu'ils aient sonné ou non : un effet coupé, ou trop
+  // rapproché du précédent, est demandé quand même).
+  sfx(): string[];
+}
+
 declare global {
   interface Window {
     __office?: OfficeDebug;
+    __audio?: AudioDebug;
   }
 }
 

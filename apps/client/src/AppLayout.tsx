@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Outlet } from 'react-router';
+import { AudioDirector } from './audio/AudioDirector';
 import { fr } from './i18n/fr';
 import { reloadPage } from './lib/reload';
 
-// Ce qui entoure toutes les pages (router.tsx) : la page elle-même, et l'avis d'une nouvelle version.
+// Ce qui entoure toutes les pages (router.tsx) : la page elle-même, l'avis d'une nouvelle version, et le son (AudioDirector : la musique
+// et les effets suivent l'appli d'une page à l'autre, sans s'interrompre).
 export function AppLayout() {
   return (
     <>
       <Outlet />
       <NewVersionPrompt />
+      <AudioDirector />
     </>
   );
 }

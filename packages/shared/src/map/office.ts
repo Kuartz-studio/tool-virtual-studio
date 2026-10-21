@@ -51,6 +51,13 @@ export const MEETING_ROOM = { x: 1, y: 16, w: 14, h: 10 };
 export const GRAND_HALL = { x: 48, y: 16, w: 17, h: 10 };
 export const LOUNGE = { x: 1, y: 33, w: 42, h: 12 };
 export const POOL = { x: 3, y: 36, w: 14, h: 5 };
+// La place centrale, entre la salle de réunion et la grande salle, du couloir jusqu'à la zone détente (arche comprise) : le café et les
+// coins de conversation.
+export const PLAZA = { x: 16, y: 14, w: 31, h: 19 };
+// La zone détente se lit d'ouest en est en trois bandes : la terrasse de la piscine (sa largeur, en cases), le salon, puis le coin
+// musique (à partir de cette colonne).
+export const LOUNGE_TERRACE_WIDTH = 18;
+export const LOUNGE_MUSIC_X = 33;
 
 const OUTER_WALL = 'gris-perle';
 
@@ -73,7 +80,7 @@ export function buildOffice(): OfficeBuild {
   c.floor(18, 17, 12, 8, 'damier');                  // le café
   c.floor(44, 33, 21, 12, 'marbre');                 // l'accueil
   c.floor(1, 33, 42, 12, 'parquet-brun');            // la zone détente
-  c.floor(1, 33, 18, 12, 'pierre');                  // la terrasse de la piscine
+  c.floor(LOUNGE.x, LOUNGE.y, LOUNGE_TERRACE_WIDTH, LOUNGE.h, 'pierre');   // la terrasse de la piscine
 
   // ---- Les murs -------------------------------------------------------------------------------------------------------------
   // Le pourtour : le mur du nord et celui du sud sont des bandes, ceux de l'ouest et de l'est des pans.

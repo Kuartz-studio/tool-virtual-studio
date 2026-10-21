@@ -229,6 +229,46 @@ export const fr = {
     reset: 'Rétablir le zoom (100 %)',
     level: '{percent} %',
   },
+  // Le son : la musique d'ambiance (celle de l'endroit où l'on est, ou celle qu'on choisit) et les effets sonores (clics, arrivées, messages,
+  // toc toc…), que l'on coupe et règle chacun de son côté. La voix des autres n'en fait pas partie : elle suit le micro et la sortie du système.
+  sound: {
+    toggle: 'Son',
+    title: 'Son',
+    close: 'Fermer le panneau Son',
+    music: {
+      label: 'Musique',
+      hint: 'L\'ambiance de fond. Elle baisse quand quelqu\'un parle.',
+      volume: 'Volume de la musique',
+    },
+    effects: {
+      label: 'Effets sonores',
+      hint: 'Les clics, les arrivées, les messages, les toc toc.',
+      volume: 'Volume des effets sonores',
+      test: 'Écouter un effet',
+    },
+    ambiance: {
+      label: 'Ambiance',
+      auto: 'Selon l\'endroit',
+      autoHint: 'La musique change avec l\'endroit où tu es.',
+      playing: 'En cours',
+    },
+    // Les six ambiances : leur nom, ce qu'elles évoquent, et où elles jouent d'elles-mêmes.
+    scenes: {
+      lobby: { title: 'Salle d\'attente', mood: 'Calme, comme une ville la nuit', where: 'L\'accueil, le couloir, la connexion' },
+      focus: { title: 'Concentration', mood: 'Chill, pour travailler ou se reposer', where: 'Les bureaux et la salle de réunion' },
+      sunny: { title: 'Soleil', mood: 'Joyeux et décontracté', where: 'La place centrale et la piscine' },
+      dusk: { title: 'Crépuscule', mood: 'Mystérieux, façon Moyen Âge le soir', where: 'Le salon' },
+      drift: { title: 'Dérive', mood: 'Étrange et planant, un peu science-fiction', where: 'La grande salle' },
+      quest: { title: 'Expédition', mood: 'Plus rythmé : aventure et découverte', where: 'Le coin musique' },
+    },
+    status: {
+      locked: 'Le son démarre dès que tu cliques ou appuies sur une touche.',
+      unsupported: 'Ce navigateur ne sait pas jouer le son de l\'appli.',
+    },
+    credits: 'Musique : Abstraction, « Music Loop Bundle » (CC0). Effets : « 400 Sounds Pack ».',
+    // Le volume d'un curseur, lu par un lecteur d'écran.
+    percent: '{percent} %',
+  },
   // Le faux live (`pnpm dev:sim`) : le panneau « Bac à sable », réservé aux essais en local.
   // La déco du bureau : l'éditeur (panneau à droite, la pièce dans le jeu) et la banque d'éléments.
   decor: {

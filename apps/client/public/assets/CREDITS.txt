@@ -8,3 +8,21 @@ apps/client/scripts/assets (`pnpm --filter @bureau/client gen:assets`).
 Licence des packs : usage libre dans un projet, commercial ou non ; il est interdit de revendre ou de
 redistribuer les images, seules ou modifiées. Crédit à LimeZu (limezu.itch.io) obligatoire pour Modern Interiors,
 apprécié pour Modern Office. Ces fichiers ne doivent donc pas se retrouver dans un dépôt public.
+
+
+Musique : « Music Loop Bundle » d'Abstraction (Benjamin Burnes, Tallbeard Studios)
+  https://tallbeard.itch.io/music-loop-bundle  ·  https://abstractionmusic.com
+  Les six ambiances de audio/music/ : Seaside « Coral Reef » (focus), Primordial Soup « Jangles » (drift),
+  Sunburn « Beach House » (sunny), Distant Skyline « Night Drive » (lobby), Dark Portents « Mysterious Traveler »
+  (dusk) et The Walking Dunes « Evening Oasis » (quest).
+  Licence : domaine public (CC0), usage libre, commercial ou non, et modification libre. Aucun crédit n'est exigé ;
+  l'auteur le demande avec le nom « Abstraction » et un lien (il est dans le panneau Son). Il déconseille l'usage
+  pour des NFT, pour de l'apprentissage automatique et pour la revente telle quelle.
+  Les fichiers .ogg sont ceux du pack, sans leur pochette ni leurs étiquettes (le son est identique) ; les .m4a
+  (pour Safari) sont des copies en AAC. Rangés par apps/client/scripts/audio (`pnpm --filter @bureau/client gen:audio`).
+
+Effets sonores : « 400 Sounds Pack » (dossiers UI, Musical Effects et Other), rangés dans audio/sfx/.
+  Le dossier du pack ne contient aucun fichier de licence : vérifier auprès de son vendeur qu'elle autorise
+  d'en livrer des extraits dans une appli (comme ici), et ne pas les mettre dans un dépôt public.
+
+Icônes de l'interface : tracés d'après Lucide (https://lucide.dev), licence ISC.
