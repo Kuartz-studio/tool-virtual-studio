@@ -1,4 +1,5 @@
 import { TILE_SIZE } from '../constants';
+import { FLOOR_THEMES, TILESET, WALL_THEMES } from '../decor/generated-themes';
 import type { ZoneType } from './parse-map';
 import type { TiledMapJson, TiledObject, TiledObjectLayer, TiledTileLayer } from './tiled-types';
 
@@ -19,10 +20,17 @@ export interface TiledMapInput {
   tileset: { name: string; image: string };
 }
 
-// Les 5 tuiles du tileset de développement, dans l'ordre où apps/client/scripts/gen-dev-assets.ts les dessine sur une ligne.
-// Les numéros sont ceux de Tiled : le premier GID du tileset vaut 1, 0 est une case vide.
-export const DEV_TILE = { floor: 1, wall: 2, desk: 3, roomFloor: 4, deskFloor: 5 } as const;
-const DEV_TILE_COUNT = 5;
+// Les tuiles de la petite carte de développement et des tests : des sols et un mur du jeu de tuiles de la vraie carte. Les numéros sont ceux
+// de Tiled : le premier GID du tileset vaut 1, 0 est une case vide.
+const floorOf = (id: string): number => FLOOR_THEMES.find((theme) => theme.id === id)!.gid;
+const wallOf = (id: string) => WALL_THEMES.find((theme) => theme.id === id)!;
+export const DEV_TILE = {
+  floor: floorOf('beton'),
+  roomFloor: floorOf('lilas'),
+  deskFloor: floorOf('sauge'),
+  wall: wallOf('gris-perle').stem,
+  desk: wallOf('bois-sombre').bottom,
+} as const;
 
 // La légende d'un plan ASCII : `#` mur (bloquant), `.` sol, `T` bureau (bloquant).
 const LEGEND = ['#', '.', 'T'];
@@ -30,7 +38,7 @@ const LEGEND = ['#', '.', 'T'];
 // Fabrique un JSON Tiled (orthogonal, cases de 32 px, tileset intégré, calques en CSV) depuis un plan ASCII et des zones : la
 // carte de développement et les cartes des tests. Les clés sont dans l'ordre alphabétique, comme dans un export de Tiled.
 //
-// Calques, dans l'ordre de la spec : sol (partout : 1, ou 4 dans une zone private et 5 dans une zone desk), murs, meubles-bas
+// Calques, dans l'ordre de la spec : sol (partout : DEV_TILE.floor, ou roomFloor dans une zone private et deskFloor dans une zone desk), murs, meubles-bas
 // (les bureaux), objets (calque d'objets, vide), dessus (vide), collisions (invisible : les murs et les bureaux), zones.
 export function buildTiledMap(i: TiledMapInput): TiledMapJson {
   const rows = i.ascii;
@@ -100,15 +108,15 @@ export function buildTiledMap(i: TiledMapInput): TiledMapJson {
     tileheight: TILE_SIZE,
     tilesets: [
       {
-        columns: DEV_TILE_COUNT,
+        columns: TILESET.columns,
         firstgid: 1,
         image: i.tileset.image,
-        imageheight: TILE_SIZE,
-        imagewidth: DEV_TILE_COUNT * TILE_SIZE,
+        imageheight: Math.ceil(TILESET.tileCount / TILESET.columns) * TILE_SIZE,
+        imagewidth: TILESET.columns * TILE_SIZE,
         margin: 0,
         name: i.tileset.name,
         spacing: 0,
-        tilecount: DEV_TILE_COUNT,
+        tilecount: TILESET.tileCount,
         tileheight: TILE_SIZE,
         tilewidth: TILE_SIZE,
       },

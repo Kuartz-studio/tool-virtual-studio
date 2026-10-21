@@ -2,6 +2,8 @@ import { describe, expect, test } from 'vitest';
 import {
   AVATAR_BODY,
   DEV_OFFICE,
+  DEV_TILE,
+  TILESET,
   MapError,
   ZONE_TYPES,
   avatarBodyFits,
@@ -388,9 +390,21 @@ describe('buildTiledMap', () => {
     expect(m.nextlayerid).toBe(Math.max(...(layerIds as number[])) + 1);
   });
 
-  test('un tileset intégré de 5 tuiles de 32 px sur une ligne', () => {
+  test('un tileset intégré, des tuiles de 32 px : celui des sols et des murs du jeu', () => {
     expect(devJson().tilesets).toEqual([
-      { firstgid: 1, name: 'dev', image: 'tiles.png', imagewidth: 160, imageheight: 32, tilewidth: 32, tileheight: 32, tilecount: 5, columns: 5, margin: 0, spacing: 0 },
+      {
+        firstgid: 1,
+        name: 'dev',
+        image: 'tiles.png',
+        imagewidth: TILESET.columns * 32,
+        imageheight: Math.ceil(TILESET.tileCount / TILESET.columns) * 32,
+        tilewidth: 32,
+        tileheight: 32,
+        tilecount: TILESET.tileCount,
+        columns: TILESET.columns,
+        margin: 0,
+        spacing: 0,
+      },
     ]);
     const other = buildTiledMap({ ...DEV_OFFICE, tileset: { name: 'autre', image: '../dev/tiles.png' } });
     expect(other.tilesets[0]).toMatchObject({ name: 'autre', image: '../dev/tiles.png' });
@@ -409,29 +423,29 @@ describe('buildTiledMap', () => {
     }
   });
 
-  test('sols, murs et bureaux : tuiles 1 sol, 2 mur, 3 bureau, 4 salle de réunion, 5 espace de bureau', () => {
+  test('sols, murs et bureaux : une tuile de sol, de mur, de bureau, de salle de réunion et d\'espace de bureau', () => {
     const m = devJson();
     const at = (layer: string, tx: number, ty: number) => cells(m, layer)[ty * 24 + tx];
-    expect(at('sol', 1, 6)).toBe(1);      // open space
-    expect(at('sol', 0, 0)).toBe(1);      // le sol continue sous les murs
-    expect(at('sol', 8, 1)).toBe(4);      // coin de la salle de réunion
-    expect(at('sol', 13, 4)).toBe(4);     // coin opposé
-    expect(at('sol', 14, 4)).toBe(1);     // juste à côté, ce n'est plus la salle
-    expect(at('sol', 7, 4)).toBe(1);
-    expect(at('sol', 10, 5)).toBe(1);     // la porte est hors de la zone
-    expect(at('sol', 3, 10)).toBe(5);     // espace de bureau
-    expect(at('sol', 20, 12)).toBe(5);
-    expect(at('sol', 21, 12)).toBe(1);
-    expect(at('sol', 4, 9)).toBe(1);      // le bureau lui-même est au-dessus de la zone
-    expect(at('sol', 9, 8)).toBe(1);      // l'étiquette et l'apparition n'ont pas de sol à elles
-    expect(at('sol', 2, 7)).toBe(1);
-    expect(at('murs', 0, 0)).toBe(2);
-    expect(at('murs', 7, 2)).toBe(2);
+    expect(at('sol', 1, 6)).toBe(DEV_TILE.floor);      // open space
+    expect(at('sol', 0, 0)).toBe(DEV_TILE.floor);      // le sol continue sous les murs
+    expect(at('sol', 8, 1)).toBe(DEV_TILE.roomFloor);      // coin de la salle de réunion
+    expect(at('sol', 13, 4)).toBe(DEV_TILE.roomFloor);     // coin opposé
+    expect(at('sol', 14, 4)).toBe(DEV_TILE.floor);     // juste à côté, ce n'est plus la salle
+    expect(at('sol', 7, 4)).toBe(DEV_TILE.floor);
+    expect(at('sol', 10, 5)).toBe(DEV_TILE.floor);     // la porte est hors de la zone
+    expect(at('sol', 3, 10)).toBe(DEV_TILE.deskFloor);     // espace de bureau
+    expect(at('sol', 20, 12)).toBe(DEV_TILE.deskFloor);
+    expect(at('sol', 21, 12)).toBe(DEV_TILE.floor);
+    expect(at('sol', 4, 9)).toBe(DEV_TILE.floor);      // le bureau lui-même est au-dessus de la zone
+    expect(at('sol', 9, 8)).toBe(DEV_TILE.floor);      // l'étiquette et l'apparition n'ont pas de sol à elles
+    expect(at('sol', 2, 7)).toBe(DEV_TILE.floor);
+    expect(at('murs', 0, 0)).toBe(DEV_TILE.wall);
+    expect(at('murs', 7, 2)).toBe(DEV_TILE.wall);
     expect(at('murs', 1, 1)).toBe(0);
     expect(at('murs', 10, 5)).toBe(0);    // une porte
     expect(at('murs', 4, 9)).toBe(0);     // un bureau n'est pas un mur
-    expect(at('meubles-bas', 4, 9)).toBe(3);
-    expect(at('meubles-bas', 19, 9)).toBe(3);
+    expect(at('meubles-bas', 4, 9)).toBe(DEV_TILE.desk);
+    expect(at('meubles-bas', 19, 9)).toBe(DEV_TILE.desk);
     expect(at('meubles-bas', 6, 9)).toBe(0);
     expect(at('meubles-bas', 0, 0)).toBe(0);
     expect(cells(m, 'dessus').every((gid) => gid === 0)).toBe(true);

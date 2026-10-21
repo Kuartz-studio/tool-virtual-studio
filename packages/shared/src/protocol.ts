@@ -1,6 +1,9 @@
 import { z } from 'zod';
 import type { AvatarKey } from './avatars';
 import { ACTIVITY_LABEL_MAX_LENGTH, CHAT_MAX_LENGTH, DESK_NAME_MAX_LENGTH, DISPLAY_NAME_MAX_LENGTH } from './constants';
+import type { DecorError } from './decor/placement';
+import { MAX_DECOR_ITEMS } from './decor/placement';
+import type { PlacedItem } from './decor/types';
 import type { SimRoomPayload } from './sim';
 
 export const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
@@ -23,7 +26,8 @@ export const displayNameSchema = z.string().trim().min(1).max(DISPLAY_NAME_MAX_L
 // - kick : exclure quelqu'un qui est dans son bureau (il en est sorti, et n'y rentre plus tant qu'on ne l'a pas réadmis) ; unban : le
 //   réadmettre ;
 // - knock : toquer à la porte d'un bureau fermé (le propriétaire est prévenu) ; admit : laisser entrer quelqu'un qui a toqué ;
-// - goto : aller à son bureau.
+// - goto : aller à son bureau ;
+// - decor : régler la pièce de son bureau (sol, murs et éléments posés, d'un seul bloc : checkDecor, côté serveur, le valide en entier).
 const deskKeySchema = z.string().min(1).max(64);
 const userIdSchema = z.string().min(1).max(128);
 export const deskCommandSchema = z.discriminatedUnion('type', [
@@ -36,6 +40,12 @@ export const deskCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('knock'), key: deskKeySchema }),
   z.object({ type: z.literal('admit'), userId: userIdSchema }),
   z.object({ type: z.literal('goto') }),
+  z.object({
+    type: z.literal('decor'),
+    floor: z.string().min(1).max(40),
+    wall: z.string().min(1).max(40),
+    items: z.array(z.object({ id: z.string().min(1).max(40), x: z.number().int().min(-100).max(100), y: z.number().int().min(-100).max(100) })).max(MAX_DECOR_ITEMS),
+  }),
 ]);
 
 // Un état d'activité qu'une personne crée : un nom, la couleur de son point, et trois interrupteurs, ceux de ce qu'il change pour elle :
@@ -71,8 +81,19 @@ export interface ProximityPlayer { id: string; x: number; y: number; moving: boo
 export interface ChatMessage { id: string; channel: ChatChannel; userId: string; name: string; text: string; sentAt: string }
 // Une place de bureau, telle que tout le monde la voit : sa clé (le nom de la zone desk de la carte), qui l'occupe (id et nom affiché),
 // le nom qu'elle lui a donné (null : le nom par défaut), si son propriétaire a verrouillé la porte (`locked`) ou si elle est fermée parce que
-// son état d'activité ne laisse entrer personne (`closedByState`). Fermée par l'un ou l'autre, on n'y entre qu'admis.
-export interface DeskInfo { key: string; ownerId: string | null; ownerName: string | null; name: string | null; locked: boolean; closedByState: boolean }
+// son état d'activité ne laisse entrer personne (`closedByState`). Fermée par l'un ou l'autre, on n'y entre qu'admis. `floor`, `wall` et `items` sont la
+// pièce telle que son occupant l'a réglée (le poste de travail par défaut tant qu'il n'a rien changé, et pour une place libre).
+export interface DeskInfo {
+  key: string;
+  ownerId: string | null;
+  ownerName: string | null;
+  name: string | null;
+  locked: boolean;
+  closedByState: boolean;
+  floor: string;
+  wall: string;
+  items: PlacedItem[];
+}
 // Quelqu'un que le propriétaire a exclu de son bureau.
 export interface DeskBan { id: string; name: string }
 // Quelqu'un qui toque à la porte d'un bureau.
@@ -82,7 +103,7 @@ export interface InitPayload {
   players: PublicPlayer[];
   mapKey: string;
   chatHistory: ChatMessage[];
-  // Les 20 places, et celles dont la porte est fermée pour cette personne (bureau verrouillé dont elle n'a pas l'accès, ou dont elle est
+  // Les 6 places, et celles dont la porte est fermée pour cette personne (bureau verrouillé dont elle n'a pas l'accès, ou dont elle est
   // exclue) : son avatar n'y entre pas.
   desks: DeskInfo[];
   closedDesks: string[];
@@ -97,8 +118,11 @@ export type ChatAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limit
 // La réponse du serveur à `desk:do` : `invalid` (commande refusée), `rate_limited`, `unknown_desk` (aucune place de cette clé),
 // `taken` (déjà occupée par quelqu'un d'autre), `no_desk` (la commande suppose un bureau, et la personne n'en a pas), `not_inside`
 // (exclure quelqu'un qui n'est pas dans son bureau), `not_locked` (toquer à une porte ouverte), `unavailable` (la base n'a pas pris le
-// changement : rien n'a changé), `self` (exclure ou admettre soi-même).
-export type DeskAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'unknown_desk' | 'taken' | 'no_desk' | 'not_inside' | 'not_locked' | 'unavailable' | 'self' };
+// changement : rien n'a changé), `self` (exclure ou admettre soi-même), `bad_decor` (la déco est refusée : `reason` dit pourquoi, checkDecor).
+export type DeskAck =
+  | { ok: true }
+  | { ok: false; error: 'invalid' | 'rate_limited' | 'unknown_desk' | 'taken' | 'no_desk' | 'not_inside' | 'not_locked' | 'unavailable' | 'self'; reason?: undefined }
+  | { ok: false; error: 'bad_decor'; reason: DecorError };
 
 export interface ServerToClientEvents {
   init: (p: InitPayload) => void;

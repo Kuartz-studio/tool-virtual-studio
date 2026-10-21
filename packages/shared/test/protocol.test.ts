@@ -16,4 +16,13 @@ test('nom affiché : 1 à 40 caractères', () => {
   expect(displayNameSchema.safeParse('Léa').success).toBe(true);
   expect(displayNameSchema.safeParse('a'.repeat(41)).success).toBe(false);
 });
-test('avatars', () => { expect(isAvatarKey('dev-red')).toBe(true); expect(isAvatarKey('nope')).toBe(false); });
+test('avatars : personnage prêt à l\'emploi, personnage assemblé, ou rien', () => {
+  expect(isAvatarKey('p.01')).toBe(true);
+  expect(isAvatarKey('p.20')).toBe(true);
+  expect(isAvatarKey('p.21')).toBe(false);
+  expect(isAvatarKey('c.3.2.1-1.1-1.0')).toBe(true);
+  expect(isAvatarKey('c.3.2.1-1.0.0')).toBe(true);
+  expect(isAvatarKey('c.3.2.1-99.0.0')).toBe(false);
+  expect(isAvatarKey('dev-red')).toBe(false);
+  expect(isAvatarKey('nope')).toBe(false);
+});

@@ -67,7 +67,7 @@ describe('gainBetween : dans un bureau rien ne change', () => {
 
   test('soi-même dans une zone : plein volume, même d\'une personne très loin', () => {
     expect(gainBetween(map, inRoom, farOpen)).toBe(1);
-    expect(gainBetween(map, hall, { x: tile(70), y: tile(36) })).toBe(1);
+    expect(gainBetween(map, hall, { x: tile(60), y: tile(40) })).toBe(1);
   });
 
   test('dans un espace ouvert : le volume baisse avec la distance', () => {
@@ -91,33 +91,36 @@ describe('le calcul des groupes avec la règle du bureau (OPEN_SPACE_GROUPING)',
   };
 
   test('on rejoint ceux qu\'on pourrait entendre (moins de 14 cases), même en marchant', () => {
-    const s = settle([p('a', tile(36), tile(22), true), p('b', tile(36) + tile(10), tile(22), true)]);
+    const s = settle([p('a', tile(30), tile(12), true), p('b', tile(30) + tile(10), tile(12), true)]);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
   });
 
   test('au-delà de 14 cases : pas de groupe ; les liens se font de proche en proche', () => {
-    expect(settle([p('a', tile(36), tile(22)), p('b', tile(36) + tile(15), tile(22))]).assignment).toEqual({ a: null, b: null });
-    // Dans l'allée nord, qui est un espace ouvert de bout en bout.
-    const chain = settle([p('a', tile(4), tile(8)), p('b', tile(14), tile(8)), p('c', tile(24), tile(8))]);
+    expect(settle([p('a', tile(10), tile(12)), p('b', tile(10) + tile(15), tile(12))]).assignment).toEqual({ a: null, b: null });
+    // Dans le couloir, qui est un espace ouvert de bout en bout.
+    const chain = settle([p('a', tile(4), tile(12)), p('b', tile(14), tile(12)), p('c', tile(24), tile(12))]);
     expect(chain.assignment).toEqual({ a: 'g1', b: 'g1', c: 'g1' });
   });
 
   test('on reste dans le groupe une case au-delà (hystérésis) : à 14,5 cases, ensemble tant qu\'ils l\'étaient', () => {
-    const together = [p('a', tile(36), tile(22)), p('b', tile(36) + tile(10), tile(22))];
+    const together = [p('a', tile(10), tile(12)), p('b', tile(10) + tile(10), tile(12))];
     let s = settle(together);
-    const apart = [p('a', tile(36), tile(22)), p('b', tile(36) + tile(14) + 16, tile(22))];
+    const apart = [p('a', tile(10), tile(12)), p('b', tile(10) + tile(14) + 16, tile(12))];
     s = computeGroups(apart, office, s, 1000, OPEN_SPACE_GROUPING);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
-    const gone = [p('a', tile(36), tile(22)), p('b', tile(36) + tile(16), tile(22))];
+    const gone = [p('a', tile(10), tile(12)), p('b', tile(10) + tile(16), tile(12))];
     s = computeGroups(gone, office, s, 1250, OPEN_SPACE_GROUPING);
     s = computeGroups(gone, office, s, 1750, OPEN_SPACE_GROUPING);
     expect(s.assignment).toEqual({ a: null, b: null });
   });
 
   test('une salle ou un bureau : toujours tout le monde, quelle que soit la distance (la règle des zones ne change pas)', () => {
-    const s = settle([p('a', tile(50), tile(20)), p('b', tile(70), tile(30))]);
+    const s = settle([p('a', tile(49), tile(17)), p('b', tile(64), tile(25))]);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
     expect(s.groups.g1?.zoneId).not.toBeNull();
+    // La zone détente aussi : d'un bout à l'autre de ses 42 cases, de la piscine au coin musique.
+    const lounge = settle([p('a', tile(2), tile(34)), p('b', tile(41), tile(44))]);
+    expect(lounge.assignment).toEqual({ a: 'g1', b: 'g1' });
   });
 
   test('la carte de développement : le tout petit bureau s\'entend déjà d\'un bout à l\'autre', () => {
@@ -143,7 +146,7 @@ describe('hors de toute conversation (excluded) : comme en Ne pas déranger', ()
   };
 
   test('dans un espace ouvert : personne ne le rejoint, il ne rejoint personne', () => {
-    const s = settle([p('a', tile(4), tile(8)), p('b', tile(8), tile(8), { excluded: true }), p('c', tile(10), tile(8))]);
+    const s = settle([p('a', tile(4), tile(12)), p('b', tile(8), tile(12), { excluded: true }), p('c', tile(10), tile(12))]);
     expect(s.assignment).toEqual({ a: 'g1', b: null, c: 'g1' });
   });
 
@@ -154,7 +157,7 @@ describe('hors de toute conversation (excluded) : comme en Ne pas déranger', ()
   });
 
   test('l\'état prend en cours de conversation : il sort tout de suite de son groupe, sans attendre', () => {
-    const together = [p('a', tile(4), tile(8)), p('b', tile(8), tile(8))];
+    const together = [p('a', tile(4), tile(12)), p('b', tile(8), tile(12))];
     const s = settle(together);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
     const next = computeGroups([together[0]!, { ...together[1]!, excluded: true }], office, s, 1000, OPEN_SPACE_GROUPING);
@@ -163,7 +166,7 @@ describe('hors de toute conversation (excluded) : comme en Ne pas déranger', ()
   });
 
   test('l\'état s\'arrête : on le reprend dans un groupe après le délai habituel', () => {
-    const players = [p('a', tile(4), tile(8)), p('b', tile(8), tile(8), { excluded: true })];
+    const players = [p('a', tile(4), tile(12)), p('b', tile(8), tile(12), { excluded: true })];
     const s = settle(players);
     const back = [players[0]!, { ...players[1]!, excluded: false }];
     const waiting = computeGroups(back, office, s, 1000, OPEN_SPACE_GROUPING);
