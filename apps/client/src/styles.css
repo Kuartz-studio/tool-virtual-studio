@@ -193,7 +193,7 @@ a {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 72px 16px 32px;
+  padding: 32px 16px;
 }
 
 .auth-card,
@@ -245,35 +245,27 @@ a {
   font-size: var(--text-m);
 }
 
-/* L'interrupteur de la musique des pages sans barre : en haut à droite. */
-.music-toggle {
-  position: fixed;
-  top: 16px;
-  right: 16px;
-  z-index: 20;
-  display: inline-flex;
+/* L'en-tête d'une carte : le nom de l'appli à gauche, et à droite le bouton de la musique (une note : IconButton, nommé « Musique »). Le bouton
+   déborde de sa ligne pour que l'en-tête ne soit pas plus haut que le nom. */
+.auth-head {
+  display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 0 14px;
-  font-size: var(--text-m);
-  font-weight: 600;
-  color: var(--text);
-  background: rgb(255 255 255 / 92%);
-  border: 0;
-  border-radius: var(--radius-pill);
-  box-shadow: var(--edge), var(--shadow-m);
-  cursor: pointer;
-  backdrop-filter: blur(10px);
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
 }
 
-.music-toggle:hover {
-  background: var(--surface);
+.auth-head .auth-brand {
+  margin: 0;
 }
 
-.music-toggle[aria-pressed='true'] {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
+.auth-head .music-toggle {
+  margin: -8px -10px -8px 0;
+  color: var(--text-soft);
+}
+
+.auth-head .music-toggle.is-muted {
+  color: var(--text-muted);
 }
 
 /* Les champs : un libellé net, un champ à hauteur de doigt, un focus qui se voit. */
@@ -289,7 +281,8 @@ a {
 }
 
 .field input,
-.field select {
+.field select,
+.device-select select {
   width: 100%;
   min-height: 44px;
   padding: 10px 14px;
@@ -301,19 +294,22 @@ a {
 }
 
 .field input:hover:not(:disabled):not([readonly]),
-.field select:hover:not(:disabled) {
+.field select:hover:not(:disabled),
+.device-select select:hover:not(:disabled) {
   border-color: var(--text-muted);
 }
 
 .field input:focus-visible,
-.field select:focus-visible {
+.field select:focus-visible,
+.device-select select:focus-visible {
   outline: none;
   border-color: var(--accent);
   box-shadow: var(--ring);
 }
 
 .field input[readonly],
-.field select:disabled {
+.field select:disabled,
+.device-select select:disabled {
   color: var(--text-muted);
   background: var(--surface-soft);
 }
@@ -470,37 +466,35 @@ a {
   min-height: 100dvh;
   display: grid;
   place-items: center;
-  padding: 72px 16px 32px;
+  padding: 32px 16px;
 }
 
 .device-check-card {
   max-width: 540px;
-  padding: 32px 36px 36px;
+  padding: 24px 28px 28px;
 }
 
-.device-check-intro {
-  margin: -8px 0 20px;
-  color: var(--text-soft);
+/* L'aperçu, puis les réglages : l'un sous l'autre sur un téléphone. */
+.device-check-body {
+  display: grid;
+  gap: 16px;
 }
 
-/* Sur un écran large, deux colonnes : tout tient dans la hauteur d'un portable, « Entrer » compris. */
+/* Sur un écran large, deux colonnes : tout tient dans la hauteur d'un portable, « Entrer » compris. « Entrer » est au bas de la colonne des
+   réglages, à la hauteur du bas de l'aperçu. */
 @media (min-width: 760px) {
   .device-check-card {
-    max-width: 920px;
+    max-width: 880px;
   }
 
   .device-check-body {
-    display: grid;
-    grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-    gap: 32px;
-    align-items: start;
-  }
-
-  .device-check-settings .device-toggles {
-    margin-top: 0;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 28px;
+    align-items: stretch;
   }
 }
 
+/* L'aperçu de la caméra, et le niveau du micro posé sur son bas (une note et une barre, sur un fond sombre qui les détache de l'image). */
 .device-preview {
   position: relative;
   aspect-ratio: 16 / 9;
@@ -530,29 +524,38 @@ a {
   color: #c9cfda;
 }
 
-/* Le niveau du micro : une barre qui suit le volume (son transform est posé à chaque image). */
 .device-meter {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  left: 10px;
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin: 12px 0 0;
-  font-size: var(--text-s);
-  color: var(--text-soft);
+  gap: 8px;
+  padding: 6px 10px;
+  color: #ffffff;
+  background: rgb(0 0 0 / 45%);
+  border-radius: 10px;
+}
+
+.device-meter svg.lucide {
+  width: 16px;
+  height: 16px;
 }
 
 .device-meter-bar {
   flex: 1;
-  height: 8px;
+  height: 6px;
   overflow: hidden;
-  background: var(--surface-sunk);
-  border-radius: 4px;
+  background: rgb(255 255 255 / 25%);
+  border-radius: 3px;
 }
 
 .device-meter-level {
   display: block;
   height: 100%;
   background: var(--speaking);
-  border-radius: 4px;
+  border-radius: 3px;
   transform: scaleX(0);
   transform-origin: left;
 }
@@ -563,23 +566,51 @@ a {
   color: var(--text-muted);
 }
 
+/* Les réglages : micro et caméra en bascules, les appareils sur trois lignes compactes (icône et liste), le message, puis « Entrer » au bas. */
+.device-check-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
 .device-toggles {
   display: flex;
   gap: 10px;
-  margin: 18px 0 8px;
 }
 
 .device-toggles .bar-button {
   flex: 1;
+  min-height: 40px;
 }
 
 .device-selects {
   display: grid;
-  margin-top: 12px;
+  gap: 8px;
+}
+
+.device-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.device-select-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  color: var(--text-soft);
+}
+
+.device-select select {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 8px 12px;
 }
 
 .device-check-message {
-  margin: 0 0 16px;
+  margin: 0;
   padding: 11px 14px;
   color: var(--warning-text);
   background: var(--warning-background);
@@ -588,6 +619,7 @@ a {
 
 .device-check-enter {
   width: 100%;
+  margin-top: auto;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────

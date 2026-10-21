@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr } from '../i18n/fr';
@@ -222,5 +222,89 @@ describe('les choix', () => {
     devices.list.push({ kind: 'videoinput', deviceId: 'camera-usb', label: 'Caméra USB' });
     act(() => devices.change());
     await waitFor(() => expect([...camera.options].map((o) => o.textContent)).toEqual([fr.media.check.systemDefault, 'Webcam', 'Caméra USB']));
+  });
+});
+
+// La mise en page de l'écran : l'aperçu avec le niveau du micro posé dessus, les appareils sur trois lignes compactes, et l'aide en infobulles.
+describe('la mise en page', () => {
+  test('le niveau du micro est posé sur l\'aperçu : décoratif, sans libellé écrit, avec son nom en infobulle', async () => {
+    renderCheck();
+    await answered();
+    const meter = document.querySelector('.device-preview .device-meter')!;
+    expect(meter).not.toBeNull();
+    expect(meter.getAttribute('aria-hidden')).toBe('true');
+    expect(meter.getAttribute('title')).toBe(fr.media.check.micLevel);
+    expect(meter.querySelector('svg.lucide-mic')).not.toBeNull();
+    expect(screen.queryByText(fr.media.check.micLevel)).toBeNull();
+  });
+
+  test('sans caméra à montrer (coupée), le niveau reste sur l\'aperçu, qui dit pourquoi il est vide', async () => {
+    savePrefs({ mic: true, cam: false });
+    renderCheck();
+    await answered();
+    const box = document.querySelector('.device-preview')!;
+    expect(box.querySelector('.device-meter')).not.toBeNull();
+    expect(within(box as HTMLElement).getByText(fr.media.check.camOff)).toBeTruthy();
+  });
+
+  test('les appareils sont sur trois lignes compactes (micro, caméra, sortie du son) : une icône, une liste nommée, le nom en infobulle', async () => {
+    const prototype = HTMLMediaElement.prototype as unknown as { setSinkId?: unknown };
+    const original = Object.getOwnPropertyDescriptor(prototype, 'setSinkId');
+    try {
+      prototype.setSinkId = () => Promise.resolve();
+      renderCheck();
+      await answered();
+      const rows = [...document.querySelectorAll('.device-select')];
+      expect(rows).toHaveLength(3);
+      const names = [fr.media.check.audioInput, fr.media.check.videoInput, fr.media.check.audioOutput];
+      const icons = ['lucide-mic', 'lucide-video', 'lucide-volume-2'];
+      rows.forEach((row, index) => {
+        expect(row.getAttribute('title')).toBe(names[index]);
+        expect(row.querySelector(`svg.${icons[index]}`)).not.toBeNull();
+        const select = row.querySelector('select')!;
+        expect(select.getAttribute('aria-label')).toBe(names[index]);
+        // Le nom n'est pas écrit à l'écran : seul le contenu de la liste l'est.
+        expect(row.querySelector('label')).toBeNull();
+      });
+    } finally {
+      delete prototype.setSinkId;
+      if (original) Object.defineProperty(prototype, 'setSinkId', original);
+    }
+  });
+
+  test('l\'aide est en infobulle : l\'introduction est celle du titre, il n\'y a plus de paragraphe d\'aide', async () => {
+    renderCheck();
+    await answered();
+    expect(screen.getByRole('heading', { level: 1, name: fr.media.check.title }).getAttribute('title')).toBe(fr.media.check.intro);
+    expect(screen.queryByText(fr.media.check.intro)).toBeNull();
+  });
+
+  test('ce qu\'il faut faire (« Autorise… ») et ce qui n\'a pas marché restent écrits : ce ne sont pas de l\'aide', async () => {
+    devices.holdAnswers();
+    renderCheck();
+    expect(await screen.findByText(fr.media.check.asking)).toBeTruthy();
+  });
+
+  test('la musique : un bouton à icône seule dans l\'en-tête de la carte', async () => {
+    renderCheck();
+    await answered();
+    const head = document.querySelector('.device-check-card header')!;
+    expect(within(head as HTMLElement).getByRole('button', { name: fr.sound.music.label })).toBeTruthy();
+    expect(head.querySelector('.auth-brand')?.textContent).toBe(fr.common.appName);
+  });
+
+  test('un seul bouton principal : « Entrer », ou « Entrer quand même » quand le micro ou la caméra sont refusés', async () => {
+    renderCheck();
+    expect(screen.getAllByRole('button', { name: /^Entrer( quand même)?$/ })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /^Entrer( quand même)?$/ }).textContent).toBe(fr.media.check.enter);
+    await answered();
+    uninstall();
+    devices = new FakeMediaDevices();
+    devices.refuse.add('audio').add('video');
+    uninstall = installMediaDevices(devices);
+    cleanup();
+    renderCheck();
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Entrer( quand même)?$/ }).textContent).toBe(fr.media.check.enterAnyway));
+    expect(screen.getAllByRole('button', { name: /^Entrer( quand même)?$/ })).toHaveLength(1);
   });
 });

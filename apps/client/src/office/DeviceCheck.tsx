@@ -1,16 +1,18 @@
-import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { fr } from '../i18n/fr';
 import { DevicePreview, type PreviewState } from '../media/device-preview';
 import type { MediaPrefs } from '../media/media-client';
 import { loadPrefs, savePrefs } from '../media/prefs';
-import { CameraIcon, MicIcon } from './icons';
+import { CameraIcon, MicIcon, VolumeIcon } from './icons';
 import { MusicToggle } from './MusicToggle';
 
 // Les pseudo-périphériques de Chrome (« Par défaut », « Communications ») : « Celui du système » les remplace.
 const PSEUDO_DEVICES = new Set(['default', 'communications']);
 
-// L'écran d'entrée, avant le bureau : l'aperçu de sa caméra, le niveau de son micro, et le choix des périphériques. La personne y
-// règle le micro et la caméra allumés en entrant ; ses choix sont gardés pour la prochaine visite (savePrefs).
+// L'écran d'entrée, avant le bureau : l'aperçu de sa caméra, avec le niveau de son micro posé dessus, et le choix des périphériques sur trois
+// lignes compactes. La personne y règle le micro et la caméra allumés en entrant ; ses choix sont gardés pour la prochaine visite (savePrefs).
+// L'aide est en infobulles (l'introduction sur le titre, le nom du niveau, celui de chaque liste) : ne reste écrit que ce qu'il faut faire
+// (« Autorise le micro… ») et ce qui n'a pas marché.
 //
 // « Entrer » ouvre le bureau (onEnter, avec les préférences de la conversation à venir). Ce clic est aussi le geste qui permet au
 // navigateur de jouer le son des autres (la page appelle startAudio dedans). Les pistes de l'aperçu s'arrêtent à l'entrée : LiveKit
@@ -75,11 +77,12 @@ export function DeviceCheck({ onEnter }: { onEnter(prefs: MediaPrefs): void }) {
 
   return (
     <main className="device-check">
-      <MusicToggle />
       <div className="device-check-card">
-        <p className="auth-brand">{fr.common.appName}</p>
-        <h1>{fr.media.check.title}</h1>
-        <p className="device-check-intro">{fr.media.check.intro}</p>
+        <header className="auth-head">
+          <p className="auth-brand">{fr.common.appName}</p>
+          <MusicToggle />
+        </header>
+        <h1 title={fr.media.check.intro}>{fr.media.check.title}</h1>
 
         {/* Deux colonnes sur un écran large : l'aperçu à gauche, les réglages et « Entrer » à droite, sans avoir à faire défiler. */}
         <div className="device-check-body">
@@ -92,8 +95,8 @@ export function DeviceCheck({ onEnter }: { onEnter(prefs: MediaPrefs): void }) {
                   {!prefs.cam ? fr.media.check.camOff : camFailed ? fr.media.check.camUnavailable : ''}
                 </p>
               )}
+              <MicMeter track={state.audio} />
             </div>
-            <MicMeter track={state.audio} />
             {asking && <p className="device-check-hint">{fr.media.check.asking}</p>}
           </div>
 
@@ -111,6 +114,7 @@ export function DeviceCheck({ onEnter }: { onEnter(prefs: MediaPrefs): void }) {
 
             <div className="device-selects">
               <DeviceSelect
+                icon={<MicIcon />}
                 label={fr.media.check.audioInput}
                 devices={devices}
                 kind="audioinput"
@@ -118,6 +122,7 @@ export function DeviceCheck({ onEnter }: { onEnter(prefs: MediaPrefs): void }) {
                 onChange={(audioInput) => update({ audioInput })}
               />
               <DeviceSelect
+                icon={<CameraIcon />}
                 label={fr.media.check.videoInput}
                 devices={devices}
                 kind="videoinput"
@@ -126,6 +131,7 @@ export function DeviceCheck({ onEnter }: { onEnter(prefs: MediaPrefs): void }) {
               />
               {canChooseOutput && (
                 <DeviceSelect
+                  icon={<VolumeIcon />}
                   label={fr.media.check.audioOutput}
                   devices={devices}
                   kind="audiooutput"
@@ -178,28 +184,32 @@ function useDeviceList(granted: boolean): MediaDeviceInfo[] {
   return devices;
 }
 
-// Une liste de périphériques d'un genre : « Celui du système », puis ceux qui ont un nom (le navigateur n'en donne qu'avec l'accès).
+// Une ligne compacte : l'icône du genre de périphérique, et sa liste (« Celui du système », puis ceux qui ont un nom : le navigateur n'en donne qu'avec
+// l'accès). Son nom n'est pas écrit : il est en infobulle, et pour les lecteurs d'écran.
 function DeviceSelect({
+  icon,
   label,
   devices,
   kind,
   value,
   onChange,
 }: {
+  icon: ReactNode;
   label: string;
   devices: MediaDeviceInfo[];
   kind: MediaDeviceKind;
   value: string | undefined;
   onChange(deviceId: string): void;
 }) {
-  const id = useId();
   const options = devices.filter((d) => d.kind === kind && d.deviceId !== '' && d.label !== '' && !PSEUDO_DEVICES.has(d.deviceId));
   // Un périphérique choisi puis débranché : « Celui du système », qui le remplace aussi pour LiveKit.
   const selected = value !== undefined && options.some((d) => d.deviceId === value) ? value : '';
   return (
-    <div className="field device-select">
-      <label htmlFor={id}>{label}</label>
-      <select id={id} value={selected} disabled={options.length === 0} onChange={(event) => onChange(event.target.value)}>
+    <div className="device-select" title={label}>
+      <span className="device-select-icon" aria-hidden="true">
+        {icon}
+      </span>
+      <select aria-label={label} value={selected} disabled={options.length === 0} onChange={(event) => onChange(event.target.value)}>
         <option value="">{fr.media.check.systemDefault}</option>
         {options.map((d) => (
           <option key={d.deviceId} value={d.deviceId}>
@@ -228,8 +238,8 @@ function PreviewVideo({ track }: { track: MediaStreamTrack }) {
   return <video ref={video} className="device-preview-video device-preview-mirrored" aria-label={fr.media.check.preview} autoPlay muted playsInline />;
 }
 
-// Le niveau du micro : une barre qui suit le volume, de -60 dB (rien) à -10 dB (une voix forte). Décorative pour les lecteurs
-// d'écran : un niveau qui change 60 fois par seconde ne se lit pas.
+// Le niveau du micro : une note et une barre qui suit le volume, de -60 dB (rien) à -10 dB (une voix forte), posées sur le bas de l'aperçu. Décoratif
+// pour les lecteurs d'écran : un niveau qui change 60 fois par seconde ne se lit pas. Son nom n'est pas écrit : il est en infobulle.
 function MicMeter({ track }: { track: MediaStreamTrack | null }) {
   const level = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -269,8 +279,8 @@ function MicMeter({ track }: { track: MediaStreamTrack | null }) {
     };
   }, [track]);
   return (
-    <div className="device-meter" aria-hidden="true">
-      <span className="device-meter-label">{fr.media.check.micLevel}</span>
+    <div className="device-meter" aria-hidden="true" title={fr.media.check.micLevel}>
+      <MicIcon />
       <span className="device-meter-bar">
         <span ref={level} className="device-meter-level" />
       </span>

@@ -2,13 +2,16 @@ import { useId, type InputHTMLAttributes, type ReactNode } from 'react';
 import { fr } from '../i18n/fr';
 import { MusicToggle } from '../office/MusicToggle';
 
-// La carte centrée des pages de compte (connexion, invitation, mot de passe).
+// La carte centrée des pages de compte (connexion, invitation, mot de passe). Son en-tête : le nom de l'appli, et à droite le bouton de la musique
+// (la salle d'attente y joue dès le premier clic, et on doit pouvoir la couper sans entrer) ; puis le titre de la page.
 export function AuthLayout({ title, children }: { title: string; children: ReactNode }) {
   return (
     <main className="auth">
-      <MusicToggle />
       <div className="auth-card">
-        <p className="auth-brand">{fr.common.appName}</p>
+        <header className="auth-head">
+          <p className="auth-brand">{fr.common.appName}</p>
+          <MusicToggle />
+        </header>
         <h1>{title}</h1>
         {children}
       </div>
