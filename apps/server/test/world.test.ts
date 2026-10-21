@@ -44,12 +44,12 @@ test('mouvement refusé → correct = dernière position acceptée', () => {
   const { clock, world, join } = setup();
   join('a');
   clock.t = 100;
-  // 104 px en 100 ms : trop rapide. Le joueur n'a jamais bougé : sa dernière position acceptée est son arrivée.
-  expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+  // 253 px en 100 ms : trop rapide, même en courant. Le joueur n'a jamais bougé : sa dernière position acceptée est son arrivée.
+  expect(world.applyMove('a', { x: 333, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
   // Après un mouvement accepté, c'est celui-là.
   expect(world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
   clock.t = 200;
-  expect(world.applyMove('a', { x: 260, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 160, y: 240 } });
+  expect(world.applyMove('a', { x: 413, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 160, y: 240 } });
 });
 
 test('statut retenu après leave puis join', () => {
@@ -162,32 +162,32 @@ describe('applyMove', () => {
     clock.t = 5_000;
     join('a');
     clock.t = 5_100;
-    // 100 ms après join : 84 px permis. Si l'heure de départ était 0, plus de 1 200 px le seraient.
-    expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
-    expect(world.applyMove('a', { x: 164, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+    // 100 ms après join : 252 px permis. Si l'heure de départ était 0, plus de 3 600 px le seraient.
+    expect(world.applyMove('a', { x: 333, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+    expect(world.applyMove('a', { x: 332, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
   });
 
-  test('un mouvement accepté remet l\'heure de référence à jour : le suivant, au même instant, n\'a que la marge de gigue (60 px)', () => {
+  test('un mouvement accepté remet l\'heure de référence à jour : le suivant, au même instant, n\'a que la marge de gigue (180 px)', () => {
     const { clock, world, join } = setup();
     join('a');
     clock.t = 100;
     expect(world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
-    // Même instant : dt = 0, donc 60 px au plus. Si l'heure de référence était restée celle de join (0), 84 px passeraient.
-    expect(world.applyMove('a', { x: 221, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 160, y: 240 } });
-    expect(world.applyMove('a', { x: 220, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+    // Même instant : dt = 0, donc 180 px au plus. Si l'heure de référence était restée celle de join (0), 252 px passeraient.
+    expect(world.applyMove('a', { x: 341, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 160, y: 240 } });
+    expect(world.applyMove('a', { x: 340, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
   });
 
   test('un mouvement refusé ne change ni la position, ni la direction, ni l\'heure de référence', () => {
     const { clock, world, join } = setup();
     join('a');
     clock.t = 100;
-    expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });   // 104 px
+    expect(world.applyMove('a', { x: 333, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });   // 253 px
     expect(world.get('a')).toMatchObject({ x: 80, y: 240, dir: 'down', moving: false });
     expect(world.drainMoves()).toEqual([]);
-    // La même position, 100 ms plus tard : 200 ms depuis join, donc 108 px permis. Elle ne passerait pas si le refus avait
+    // La même position, 100 ms plus tard : 200 ms depuis join, donc 324 px permis. Elle ne passerait pas si le refus avait
     // remis l'heure de référence à 100.
     clock.t = 200;
-    expect(world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+    expect(world.applyMove('a', { x: 333, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
   });
 
   test('un mouvement refusé n\'efface pas le mouvement accepté de la même fenêtre', () => {
@@ -225,7 +225,7 @@ describe('applyMove', () => {
     const { clock, world, join } = setup();
     join('a');
     clock.t = 100;
-    const refused = world.applyMove('a', { x: 184, y: 240, dir: 'right', moving: true });
+    const refused = world.applyMove('a', { x: 333, y: 240, dir: 'right', moving: true });
     if (refused.ok) throw new Error('le mouvement aurait dû être refusé');
     refused.correct.x = 1;
     expect(world.get('a')?.x).toBe(80);
@@ -285,10 +285,10 @@ describe('teleport', () => {
     join('a');
     clock.t = 1_000;
     expect(world.teleport('a', 400, 400)).toBe(true);
-    // Au même instant que la téléportation, dt = 0 : 60 px au plus depuis (400, 400). Si l'heure de référence était restée celle
-    // de join (1 000 ms plus tôt), 300 px seraient permis, et (461, 400) n'est qu'à 61 px.
-    expect(world.applyMove('a', { x: 461, y: 400, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 400, y: 400 } });
-    expect(world.applyMove('a', { x: 460, y: 400, dir: 'right', moving: true })).toEqual({ ok: true });
+    // Au même instant que la téléportation, dt = 0 : 180 px au plus depuis (400, 400). Si l'heure de référence était restée celle
+    // de join (1 000 ms plus tôt), 900 px seraient permis, et (581, 400) n'est qu'à 181 px.
+    expect(world.applyMove('a', { x: 581, y: 400, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 400, y: 400 } });
+    expect(world.applyMove('a', { x: 580, y: 400, dir: 'right', moving: true })).toEqual({ ok: true });
   });
 });
 

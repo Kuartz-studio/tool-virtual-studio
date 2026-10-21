@@ -75,6 +75,15 @@ describe('DirectionInput', () => {
     expect(i.current()).toBe('down');
   });
 
+  test('Maj : on court tant qu\'elle est enfoncée, et clear() la relâche', () => {
+    const i = new DirectionInput();
+    expect(i.sprinting()).toBe(false);
+    i.setSprint(true);
+    expect(i.sprinting()).toBe(true);
+    i.clear();
+    expect(i.sprinting()).toBe(false);
+  });
+
   test('les noms que tout objet JavaScript hérite ne sont pas des touches', () => {
     const i = new DirectionInput();
     i.press('constructor'); i.press('toString'); i.press('__proto__');
@@ -119,6 +128,36 @@ describe('bindKeyboard', () => {
     fire(window, 'keyup', 'KeyW', { key: 'z' });
     // Le W d'un clavier AZERTY est à la position de KeyZ : il ne déplace pas.
     fire(window, 'keydown', 'KeyZ', { key: 'w' });
+    expect(input.current()).toBeNull();
+  });
+
+  test('Maj enfoncée : on court, sans changer de direction ; relâchée, on remarche', () => {
+    fire(window, 'keydown', 'ArrowRight');
+    expect(input.sprinting()).toBe(false);
+    fire(window, 'keydown', 'ShiftLeft', { shiftKey: true });
+    expect(input.sprinting()).toBe(true);
+    expect(input.current()).toBe('right');
+    // Une autre touche enfoncée pendant la course : Maj est toujours là.
+    fire(window, 'keydown', 'KeyW', { shiftKey: true });
+    expect(input.sprinting()).toBe(true);
+    expect(input.current()).toBe('up');
+    fire(window, 'keyup', 'ShiftRight', { shiftKey: false });
+    expect(input.sprinting()).toBe(false);
+    expect(input.current()).toBe('up');
+  });
+
+  test('Maj déjà enfoncée quand on appuie sur une direction : on court d\'emblée', () => {
+    fire(window, 'keydown', 'KeyD', { shiftKey: true });
+    expect(input.sprinting()).toBe(true);
+  });
+
+  test('le focus dans un champ ou la perte du focus de la fenêtre arrête la course', () => {
+    fire(window, 'keydown', 'KeyD', { shiftKey: true });
+    window.dispatchEvent(new Event('blur'));
+    expect(input.sprinting()).toBe(false);
+    fire(window, 'keydown', 'KeyD', { shiftKey: true });
+    fire(field('input'), 'keydown', 'KeyA', { shiftKey: true });
+    expect(input.sprinting()).toBe(false);
     expect(input.current()).toBeNull();
   });
 

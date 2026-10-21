@@ -39,7 +39,7 @@ Un bureau virtuel pour ton équipe, dans l'esprit de Gather **[ton choix]** :
   - connexion, mot de passe oublié par e-mail, déconnexion.
 - **Un seul bureau**, vu de dessus façon Gather, en pixel art **[ton choix]**.
 - **Déplacement :**
-  - au clavier (flèches, ZQSD ou WASD), dans 4 directions ;
+  - au clavier (flèches, ZQSD ou WASD), dans 4 directions ; Maj enfoncée, on court (trois fois la vitesse de marche, sans effet visuel : LimeZu ne fournit pas de sprite d'effet de vitesse) ;
   - bloqué par les murs et les meubles ;
   - l'avatar passe devant ou derrière les meubles.
 - **Multijoueur :** chacun voit les autres bouger de façon fluide, avec leur nom et leur statut.

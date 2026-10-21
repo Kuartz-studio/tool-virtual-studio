@@ -320,7 +320,7 @@ test('marcher à droite : ArrowRight enfoncée 500 ms fait avancer l\'avatar, qu
 
   const walked = await restingAt(page);
   expect(walked.x - x0).toBeGreaterThan(40);
-  // 160 px/s (MAX_SPEED_PX_PER_S) : une demi-seconde fait 80 px. Jamais plus vite que la vitesse maximale, pendant le temps qu'a
+  // 160 px/s (WALK_SPEED_PX_PER_S) : une demi-seconde fait 80 px. Jamais plus vite que la marche sans Maj, pendant le temps qu'a
   // duré l'appui (à quelques pixels près : l'image qui suit le relâchement).
   expect(walked.x - x0).toBeLessThanOrEqual(160 * heldSeconds + 12);
   // Une seule direction à la fois : il n'a pas bougé en y.
@@ -329,6 +329,34 @@ test('marcher à droite : ArrowRight enfoncée 500 ms fait avancer l\'avatar, qu
   // Relâchée, il s'arrête et ne repart pas.
   await page.waitForTimeout(300);
   expect(await selfAt(page)).toEqual(walked);
+});
+
+test('courir : avec Maj enfoncée, l\'avatar va trois fois plus vite, et le serveur ne le ramène pas en arrière', async ({ page }) => {
+  await joinOfficeAlone(page, 'Rosa');
+  const x0 = (await selfAt(page)).x;
+
+  await page.keyboard.down('Shift');
+  await page.keyboard.down('ArrowRight');
+  await expect.poll(async () => (await selfAt(page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(x0);
+  // Deux mesures, sans compter le départ : l'avatar court déjà. Entre elles, la marche (160 px/s) ferait au plus 160 × durée.
+  const before = Date.now();
+  const x1 = (await selfAt(page)).x;
+  await page.waitForTimeout(400);
+  const x2 = (await selfAt(page)).x;
+  const after = Date.now();
+  await page.keyboard.up('ArrowRight');
+  await page.keyboard.up('Shift');
+
+  const seconds = (after - before) / 1000;
+  expect(x2 - x1, 'course').toBeGreaterThan(2 * 160 * seconds);
+  // 480 px/s (MAX_SPEED_PX_PER_S) : jamais plus vite, à quelques pixels près.
+  expect(x2 - x1).toBeLessThanOrEqual(480 * seconds + 12);
+
+  // Le serveur a accepté le trajet : au repos, l'avatar est là où il s'est arrêté, sans retour en arrière (move:correct).
+  const stopped = await restingAt(page);
+  await page.waitForTimeout(500);
+  expect(await selfAt(page)).toEqual(stopped);
+  expect(stopped.x).toBeGreaterThanOrEqual(x2);
 });
 
 test('un mur arrête : depuis l\'apparition, ArrowUp enfoncée 2 s', async ({ page }) => {

@@ -12,31 +12,32 @@ const pt = (x: number, y: number, at: number) => ({ x, y, at });
 // ---- Les tests de la brief ------------------------------------------------------------------------------------------
 
 test('80 px en 100 ms : accepté', () => expect(validateMove(map, { x: 80, y: 240, at: 0 }, { x: 160, y: 240, at: 100 })).toEqual({ ok: true }));
-test('104 px en 100 ms : trop rapide', () => expect(validateMove(map, { x: 80, y: 240, at: 0 }, { x: 184, y: 240, at: 100 })).toEqual({ ok: false, reason: 'too_fast' }));
+test('254 px en 100 ms : trop rapide, même pour qui court', () => expect(validateMove(map, { x: 80, y: 240, at: 0 }, { x: 334, y: 240, at: 100 })).toEqual({ ok: false, reason: 'too_fast' }));
+test('la course (Maj) : 480 px/s, soit 48 px en 100 ms, est accepté', () => expect(validateMove(map, { x: 80, y: 240, at: 0 }, { x: 128, y: 240, at: 100 })).toEqual({ ok: true }));
 test('sur un bureau : bloqué', () => expect(validateMove(map, { x: 144, y: 272, at: 0 }, { x: 144, y: 304, at: 100 })).toEqual({ ok: false, reason: 'blocked' }));
 test('à travers un mur : bloqué', () => expect(validateMove(map, { x: 48, y: 208, at: 0 }, { x: 48, y: 144, at: 300 })).toEqual({ ok: false, reason: 'blocked' }));
 test('hors carte', () => expect(validateMove(map, { x: 80, y: 240, at: 0 }, { x: -10, y: 240, at: 100 }).ok).toBe(false));
 
-// ---- La vitesse : 160 × (dt + 250) / 1000 × 1,5 ---------------------------------------------------------------------------
+// ---- La vitesse : 480 × (dt + 250) / 1000 × 1,5 (480 px/s, la course : trois fois la marche) ----------------------------------
 
-describe('vitesse : distance autorisée = 160 × (dt + 250 ms) / 1000 × 1,5', () => {
+describe('vitesse : distance autorisée = 480 × (dt + 250 ms) / 1000 × 1,5', () => {
   // De (80, 240) vers la droite, tout est du sol jusqu'à x = 735 : seule la vitesse décide. L'heure de départ n'est pas 0 : seule
   // la différence compte.
   test.each([
-    ['dt = 0 : 60 px (la marge de gigue seule)', 0, 60, true],
-    ['dt = 0 : 61 px', 0, 61, false],
-    ['dt = 100 ms : 84 px, la limite est permise', 100, 84, true],
-    ['dt = 100 ms : 85 px', 100, 85, false],
-    ['dt = 1 s : 300 px', 1_000, 300, true],
-    ['dt = 1 s : 301 px', 1_000, 301, false],
+    ['dt = 0 : 180 px (la marge de gigue seule)', 0, 180, true],
+    ['dt = 0 : 181 px', 0, 181, false],
+    ['dt = 100 ms : 252 px, la limite est permise', 100, 252, true],
+    ['dt = 100 ms : 253 px', 100, 253, false],
+    ['dt = 400 ms : 468 px', 400, 468, true],
+    ['dt = 400 ms : 469 px', 400, 469, false],
   ])('%s', (_name, dt, distance, accepted) => {
     expect(validateMove(map, pt(80, 240, 1_000), pt(80 + distance, 240, 1_000 + dt))).toEqual(accepted ? { ok: true } : { ok: false, reason: 'too_fast' });
   });
 
-  test('la distance est celle du segment, en diagonale aussi : 59 × 59 px (83,4) passe en 100 ms, 60 × 60 px (84,85) non', () => {
-    // Lignes 10 à 12, colonnes 2 à 4 : du sol.
-    expect(validateMove(map, pt(80, 330, 0), pt(139, 389, 100))).toEqual({ ok: true });
-    expect(validateMove(map, pt(80, 330, 0), pt(140, 390, 100))).toEqual({ ok: false, reason: 'too_fast' });
+  test('la distance est celle du segment, en diagonale aussi : 108 × 144 px (180) passe sans délai, 109 × 144 px (180,6) non', () => {
+    // Lignes 10 à 14, colonnes 2 à 6 : du sol.
+    expect(validateMove(map, pt(80, 330, 0), pt(188, 474, 0))).toEqual({ ok: true });
+    expect(validateMove(map, pt(80, 330, 0), pt(189, 474, 0))).toEqual({ ok: false, reason: 'too_fast' });
   });
 
   test('sur place : accepté', () => expect(validateMove(map, pt(80, 240, 0), pt(80, 240, 0))).toEqual({ ok: true }));
@@ -44,10 +45,10 @@ describe('vitesse : distance autorisée = 160 × (dt + 250 ms) / 1000 × 1,5', (
   test('une horloge qui recule (dt < 0) ne fige pas le joueur : dt est ramené à 0', () => {
     // Sans ce plancher, dt + 250 deviendrait négatif et même un arrêt sur place serait refusé.
     expect(validateMove(map, pt(80, 240, 5_000), pt(80, 240, 4_000))).toEqual({ ok: true });
-    expect(validateMove(map, pt(80, 240, 5_000), pt(140, 240, 4_000))).toEqual({ ok: true });
-    expect(validateMove(map, pt(80, 240, 5_000), pt(141, 240, 4_000))).toEqual({ ok: false, reason: 'too_fast' });
-    // Un petit recul n'est pas plus sévère qu'un arrêt : 50 px passent (avec dt = -100, la formule n'en permettrait que 36).
-    expect(validateMove(map, pt(80, 240, 1_000), pt(130, 240, 900))).toEqual({ ok: true });
+    expect(validateMove(map, pt(80, 240, 5_000), pt(260, 240, 4_000))).toEqual({ ok: true });
+    expect(validateMove(map, pt(80, 240, 5_000), pt(261, 240, 4_000))).toEqual({ ok: false, reason: 'too_fast' });
+    // Un petit recul n'est pas plus sévère qu'un arrêt : 150 px passent (avec dt = -100, la formule n'en permettrait que 108).
+    expect(validateMove(map, pt(80, 240, 1_000), pt(230, 240, 900))).toEqual({ ok: true });
   });
 
   test('une heure illisible (NaN) refuse le mouvement au lieu de le laisser passer', () => {

@@ -3,6 +3,7 @@ import {
   MAX_SPEED_PX_PER_S,
   REMOTE_RENDER_DELAY_MS,
   TELEPORT_SNAP_PX,
+  WALK_SPEED_PX_PER_S,
   type Direction,
 } from '@bureau/shared';
 
@@ -21,8 +22,10 @@ interface Timed {
 
 const copy = (s: Snapshot): Snapshot => ({ x: s.x, y: s.y, dir: s.dir, moving: s.moving });
 
-// La vitesse de la marche, en px/ms, et son sens pour chaque direction (y augmente vers le bas).
-const WALK_PX_PER_MS = MAX_SPEED_PX_PER_S / 1000;
+// La vitesse de la marche et celle de la course, en px/ms, et le sens de chaque direction (y augmente vers le bas). Sans vitesse à lire,
+// on suppose la marche ; une vitesse lue peut aller jusqu'à la course (Maj enfoncée).
+const WALK_PX_PER_MS = WALK_SPEED_PX_PER_S / 1000;
+const MAX_PX_PER_MS = MAX_SPEED_PX_PER_S / 1000;
 const HEADING: Record<Direction, { x: number; y: number }> = {
   up: { x: 0, y: -1 },
   down: { x: 0, y: 1 },
@@ -44,9 +47,9 @@ const EDGE_PRECISION_PX = 0.001;
 //   distance(a, b) > TELEPORT_SNAP_PX + MAX_SPEED_PX_PER_S × (b.at − a.at) / 1000
 //
 // (distance en ligne droite, en pixels ; b.at − a.at en ms). À la limite exacte, l'avatar glisse encore ; un pixel de plus, il saute.
-// Entre deux ticks (100 ms), la marche fait 16 px : 112 px glissent, 113 px sautent (le test du brief : 100 px glissent, 200 px
+// Entre deux ticks (100 ms), la course fait 48 px : 144 px glissent, 145 px sautent (le test du brief : 100 px glissent, 200 px
 // sautent ; TELEPORT_SNAP_PX seul, 96 px, ferait sauter les 100 px). push() ne crée jamais de segment plus long que
-// REMOTE_RENDER_DELAY_MS : une longue attente n'élargit pas la limite (24 px de marche au plus à 150 ms).
+// REMOTE_RENDER_DELAY_MS : une longue attente n'élargit pas la limite (72 px de course au plus à 150 ms).
 function isJump(a: Timed, b: Timed): boolean {
   const walkable = (MAX_SPEED_PX_PER_S * (b.at - a.at)) / 1000;
   return Math.hypot(b.s.x - a.s.x, b.s.y - a.s.y) > TELEPORT_SNAP_PX + walkable;
@@ -60,11 +63,11 @@ function isJump(a: Timed, b: Timed): boolean {
 //   l'un ou à l'autre : on le voit marcher jusqu'au point où il s'est arrêté.
 // - Avant le premier, le premier.
 // - Après le dernier : s'il marchait, une extrapolation courte (décision de la tâche 15, à la place du « pas d'extrapolation » du
-//   plan). L'avatar continue à la vitesse des deux derniers instantanés, plafonnée à MAX_SPEED_PX_PER_S (ou, sans vitesse à lire,
-//   dans sa direction à MAX_SPEED_PX_PER_S), pendant EXTRAPOLATION_MAX_MS au plus, puis attend au point atteint. Arrêté, il reste
-//   au dernier. C'est ce qui couvre les 50 ms sans position que laisse un tick vide (voir EXTRAPOLATION_MAX_MS). Le prix : une
-//   personne qui s'arrête juste après sa dernière position reçue peut être dessinée jusqu'à 9,6 px plus loin, jusqu'à la position
-//   suivante. Avec la carte (`bodyFits`), l'extrapolation ne fait jamais entrer la zone de collision de l'avatar dans une case
+//   plan). L'avatar continue à la vitesse des deux derniers instantanés, plafonnée à MAX_SPEED_PX_PER_S, la course (ou, sans vitesse
+//   à lire, dans sa direction à WALK_SPEED_PX_PER_S), pendant EXTRAPOLATION_MAX_MS au plus, puis attend au point atteint. Arrêté, il
+//   reste au dernier. C'est ce qui couvre les 50 ms sans position que laisse un tick vide (voir EXTRAPOLATION_MAX_MS). Le prix : une
+//   personne qui s'arrête juste après sa dernière position reçue peut être dessinée plus loin, jusqu'à la position suivante : 9,6 px
+//   à la marche, 28,8 px à la course. Avec la carte (`bodyFits`), l'extrapolation ne fait jamais entrer la zone de collision de l'avatar dans une case
 //   bloquante : elle avance le long de son segment pas à pas, comme la vérification des mouvements du serveur, et s'arrête au bord
 //   du premier obstacle (cherché par dichotomie), pas avant. Sans cela, une personne qui garde une touche enfoncée contre un mur
 //   (elle n'envoie plus rien : sa position ne change plus) serait dessinée 10 px dans le mur.
@@ -166,8 +169,8 @@ export class SnapshotBuffer {
     return to;
   }
 
-  // La vitesse des deux derniers instantanés, en px/ms, plafonnée à celle de la marche (un rattrapage peut aller plus vite que
-  // personne ne marche). Sans elle (un seul instantané, deux de la même heure, ou un saut entre eux) : la direction du dernier, à la
+  // La vitesse des deux derniers instantanés, en px/ms, plafonnée à celle de la course (un rattrapage peut aller plus vite que
+  // personne ne court). Sans elle (un seul instantané, deux de la même heure, ou un saut entre eux) : la direction du dernier, à la
   // vitesse de la marche.
   private lastVelocity(): { x: number; y: number } {
     const last = this.items.at(-1)!;
@@ -179,6 +182,6 @@ export class SnapshotBuffer {
     const dt = last.at - before.at;
     const v = { x: (last.s.x - before.s.x) / dt, y: (last.s.y - before.s.y) / dt };
     const speed = Math.hypot(v.x, v.y);
-    return speed > WALK_PX_PER_MS ? { x: (v.x * WALK_PX_PER_MS) / speed, y: (v.y * WALK_PX_PER_MS) / speed } : v;
+    return speed > MAX_PX_PER_MS ? { x: (v.x * MAX_PX_PER_MS) / speed, y: (v.y * MAX_PX_PER_MS) / speed } : v;
   }
 }

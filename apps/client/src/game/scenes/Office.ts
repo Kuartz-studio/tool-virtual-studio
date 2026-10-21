@@ -185,7 +185,7 @@ export class Office extends Scene {
   // glissent vers leurs dernières positions reçues. L'état de l'avatar local part après la physique (afterPhysics).
   update() {
     const now = clock();
-    this.player.step(this.directions.current());
+    this.player.step(this.directions.current(), this.directions.sprinting());
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];

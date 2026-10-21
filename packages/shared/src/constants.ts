@@ -5,7 +5,11 @@ export const TILE_SIZE = 32;
 // de la physique Arcade (feetBody, dans le client), et l'extrapolation des autres avatars ne la fait pas entrer dans un mur
 // (avatarBodyFits).
 export const AVATAR_BODY = { width: 20, height: 12, belowFeet: 1 } as const;
-export const MAX_SPEED_PX_PER_S = 160;
+// La marche, et la course (Maj enfoncée) : trois fois plus vite. Le serveur n'a pas à savoir laquelle des deux on fait ; il refuse ce qui
+// dépasse la course (MAX_SPEED_PX_PER_S), la plus grande vitesse qu'une personne puisse avoir.
+export const WALK_SPEED_PX_PER_S = 160;
+export const SPRINT_FACTOR = 3;
+export const MAX_SPEED_PX_PER_S = WALK_SPEED_PX_PER_S * SPRINT_FACTOR;
 export const MOVE_TOLERANCE = 1.5;
 export const MOVE_JITTER_MS = 250;
 export const MOVE_SEGMENT_STEP_PX = 8;

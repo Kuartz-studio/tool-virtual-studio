@@ -20,6 +20,8 @@ const KEY_DIRECTIONS: ReadonlyMap<string, Direction> = new Map<string, Direction
 export class DirectionInput {
   // Les touches de déplacement enfoncées, de la plus ancienne à la plus récente.
   private held: string[] = [];
+  // Maj est enfoncée : on court au lieu de marcher.
+  private sprint = false;
 
   press(code: string): void {
     // Une touche maintenue enfoncée se répète : elle ne reprend pas la main sur une touche enfoncée après elle.
@@ -31,9 +33,20 @@ export class DirectionInput {
     this.held = this.held.filter((held) => held !== code);
   }
 
+  // Maj enfoncée ou relâchée. Lue sur chaque événement clavier (shiftKey), pas retenue touche par touche : une Maj enfoncée avant que la
+  // page prenne le focus compte, et une Maj relâchée ailleurs ne reste pas coincée.
+  setSprint(on: boolean): void {
+    this.sprint = on;
+  }
+
+  sprinting(): boolean {
+    return this.sprint;
+  }
+
   // Plus aucune touche enfoncée.
   clear(): void {
     this.held = [];
+    this.sprint = false;
   }
 
   current(): Direction | null {
@@ -64,7 +77,7 @@ function isTypingField(target: EventTarget | null): boolean {
 
 // Branche le clavier de la page sur `input`. Renvoie la fonction qui le débranche.
 //
-// - La touche enfoncée est reconnue à sa position (`event.code`), pas à la lettre.
+// - La touche enfoncée est reconnue à sa position (`event.code`), pas à la lettre. Maj enfoncée : on court (trois fois la marche).
 // - Quand le focus est dans un champ de saisie, les touches sont ignorées et celles qui étaient enfoncées sont relâchées : un
 //   relâchement qui arriverait dans le champ ne serait pas pour nous, et l'avatar continuerait de marcher.
 // - Un raccourci du navigateur (Ctrl, Alt ou ⌘ enfoncé) n'est pas un déplacement. Sur macOS, la page ne reçoit pas le
@@ -81,6 +94,7 @@ export function bindKeyboard(input: DirectionInput): () => void {
     }
     // Un autre écouteur a déjà pris cette touche (un menu qui en fait sa navigation, par exemple).
     if (event.defaultPrevented) return;
+    input.setSprint(event.shiftKey);
     input.press(event.code);
   };
   const onKeyUp = (event: KeyboardEvent) => {
@@ -90,6 +104,7 @@ export function bindKeyboard(input: DirectionInput): () => void {
     }
     // Toujours : même sous un modificateur, une touche relâchée n'est plus enfoncée.
     input.release(event.code);
+    input.setSprint(event.shiftKey);
   };
   const onBlur = () => input.clear();
 

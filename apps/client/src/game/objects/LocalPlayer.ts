@@ -1,4 +1,4 @@
-import { MAX_SPEED_PX_PER_S, type ActivityState, type Direction, type MovePayload, type PublicPlayer, type Status } from '@bureau/shared';
+import { SPRINT_FACTOR, WALK_SPEED_PX_PER_S, type ActivityState, type Direction, type MovePayload, type PublicPlayer, type Status } from '@bureau/shared';
 import { GameObjects, Physics, Scenes, type Scene } from 'phaser';
 import { animKey, avatarObjectName, feetBody, resolveAvatarKey, type AvatarSpec } from '../avatars';
 import { feetPayload } from '../move-sender';
@@ -15,13 +15,15 @@ const HEADING: Record<Direction, { x: number; y: number }> = {
   right: { x: 1, y: 0 },
 };
 const STILL = { x: 0, y: 0 };
+// En courant, les pas s'enchaînent plus vite, sans aller à trois fois la cadence : le dessin garde ses six images par direction.
+const RUN_ANIMATION_SCALE = 1.7;
 
 // L'avatar de la personne qui joue : un sprite physique (Arcade), dont les pieds sont le point de référence.
 //
 // - L'origine du sprite est aux pieds (0.5, 1) : x et y sont ceux de ses pieds, les coordonnées que le serveur connaît.
 // - Seuls les pieds butent contre les murs et les meubles : la zone de collision fait 20 × 12 px, au bas de l'image (feetBody).
-// - Il marche à MAX_SPEED_PX_PER_S dans une seule des 4 directions, ou il est immobile : step() est appelé à chaque image avec la
-//   direction demandée.
+// - Il marche à WALK_SPEED_PX_PER_S dans une seule des 4 directions, ou il est immobile ; en courant (Maj), il va SPRINT_FACTOR fois plus
+//   vite, et son animation de marche aussi : step() est appelé à chaque image avec la direction demandée.
 // - Sa profondeur est le y de ses pieds : plus il est bas dans la carte, plus il est devant. Son ombre est juste derrière, son
 //   étiquette (nom et statut) au-dessus de sa tête.
 export class LocalPlayer extends Physics.Arcade.Sprite {
@@ -68,14 +70,17 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
     });
   }
 
-  // Une image du jeu : la direction demandée par le clavier (null : aucune touche), appliquée à la vitesse et à l'animation.
-  step(dir: Direction | null): void {
+  // Une image du jeu : la direction demandée par le clavier (null : aucune touche) et si on court, appliquées à la vitesse et à
+  // l'animation.
+  step(dir: Direction | null, sprint = false): void {
     if (dir !== null) this.facing = dir;
     this.moving = dir !== null;
     const heading = dir === null ? STILL : HEADING[dir];
-    this.arcadeBody().setVelocity(heading.x * MAX_SPEED_PX_PER_S, heading.y * MAX_SPEED_PX_PER_S);
+    const speed = WALK_SPEED_PX_PER_S * (sprint ? SPRINT_FACTOR : 1);
+    this.arcadeBody().setVelocity(heading.x * speed, heading.y * speed);
     // `true` : une animation déjà en cours n'est pas relancée à chaque image.
     this.play(animKey(this.spec.key, this.moving ? 'walk' : 'idle', this.facing), true);
+    this.anims.timeScale = this.moving && sprint ? RUN_ANIMATION_SCALE : 1;
   }
 
   // Ce que le serveur doit savoir : les pieds, en pixels entiers arrondis vers le bas (feetPayload), la direction et la marche. (Pas

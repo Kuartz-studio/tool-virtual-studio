@@ -8,7 +8,7 @@ export type MoveRejection = 'out_of_bounds' | 'too_fast' | 'blocked';
 // recevoir. x et y sont les pieds de l'avatar, en pixels ; `at` est l'heure (ms) à laquelle le serveur a reçu chaque position, jamais
 // une heure donnée par le client. Trois contrôles, dans cet ordre, le premier qui échoue donne la raison :
 // 1. out_of_bounds : `to` n'est pas dans la carte ;
-// 2. too_fast : la distance dépasse MAX_SPEED_PX_PER_S × (dt + MOVE_JITTER_MS) / 1000 × MOVE_TOLERANCE, avec dt = to.at − from.at.
+// 2. too_fast : la distance dépasse MAX_SPEED_PX_PER_S (la course, 3 × la marche) × (dt + MOVE_JITTER_MS) / 1000 × MOVE_TOLERANCE, avec dt = to.at − from.at.
 //    La gigue (MOVE_JITTER_MS) absorbe les paquets qui arrivent groupés ou en retard ; la tolérance est une marge de plus ;
 // 3. blocked : le segment entier, de `from` à `to`, passe sur des cases praticables.
 //
