@@ -455,3 +455,118 @@ D'après la maquette `jour.png`, bords à 16px :
 - **Opus** pour celles où le rendu compte : T1, T2, T3, T4 et T7.
 
 Une seule relecture complète à la fin, au lieu d'une par tâche, pour tenir le budget.
+### Tâche 11a : le son et le bureau dans le dock du bas (P0, demandée par Andrea pendant l'intégration)
+
+**But.** Le son se règle depuis le dock du centre. Une icône musique ouvre un « juke-box » où l'on choisit l'ambiance : mieux intégré, plus dans le thème que le panneau actuel. À côté, un bouton change selon l'endroit : hors de mon bureau, « Aller à mon bureau » ; dedans, « Réglages du bureau ».
+
+**Fichiers**
+- Modifier :
+  - `office/MediaDock.tsx`, `office/OfficeShell.tsx`
+  - `office/MeMenu.tsx` : retirer « Son et musique » et « Mon bureau », qui passent dans le dock
+  - `office/panels.ts` : retirer `'sound'`
+  - `styles.css`, `fr.ts` / `fr.test.ts`
+  - les tests et e2e touchés, dont `son.spec.ts` et `musique-lieux.spec.ts`
+- Créer :
+  - `office/SoundPopover.tsx`, qui remplace `SoundPanel.tsx` ; supprimer ce dernier en reportant ses cas de test
+  - `office/ambiance-covers.ts` et son test
+  - `office/DeskButton.tsx` et son test
+
+**Dock du centre :** `[micro][caméra][partage] | [musique][bureau]`.
+- **Musique :**
+  - icône Lucide `Music` (vérifier le nom dans lucide-react 1.x) ;
+  - nom accessible et infobulle « Musique et ambiances » ;
+  - `aria-pressed` vrai quand le juke-box est ouvert ;
+  - musique coupée : la même icône, en `--text-muted`, barrée en oblique (classe `is-muted`).
+
+**Juke-box (`SoundPopover`)**
+
+Un `Popover` ancré au-dessus du bouton et centré (ajouter `placement: 'top'` à `Popover` s'il n'existe pas). Largeur 320 px, `role="dialog"` nommé « Musique et ambiances ».
+1. **En-tête :**
+   - « Musique » et son interrupteur, nommé « Musique » comme aujourd'hui ;
+   - dessous, le curseur « Volume de la musique », avec une icône haut-parleur à gauche.
+2. **Ambiances :**
+   - **« Selon l'endroit » :** une carte large en tête, avec l'icône `MapPin`, le sous-titre « Ici : {titre de l'ambiance du lieu} » et à droite la mini-pochette de cette ambiance.
+   - **La grille :** puis 3 × 2 cartes, une par ambiance. Chacune a sa pochette pixel (16 × 10 px affichée ×5, `image-rendering: pixelated`, coins de 8 px) et son titre dessous (13 px, graisse 600).
+   - **Textes descriptifs :** `mood` et `where` ne sont plus dans la carte. Ils passent en infobulle (`title` et `aria-description`).
+   - **Radios cachées :** ce sont de vrais boutons radio, cachés visuellement dans un `label`. Même groupe et mêmes noms accessibles qu'aujourd'hui (« Selon l'endroit », titres des ambiances), pour l'e2e.
+   - **États :** choisie, un anneau `--accent` de 2 px. En train de jouer, trois barres d'égaliseur animées en CSS en bas à droite de la pochette (3 px de large, hauteurs qui alternent, cycle de 900 ms) ; fixes en mouvement réduit.
+   - **Musique coupée :** la grille reste utilisable, à 50 % d'opacité.
+3. **Pied :**
+   - une ligne « Effets sonores » : interrupteur (même nom), curseur compact « Volume des effets sonores », bouton à icône `Play` « Écouter un effet » ;
+   - puis le crédit, en 11 px et `--text-muted`.
+4. **Messages :** `status` (son verrouillé, non pris en charge) reste en haut, en bandeau discret.
+
+**Pochettes (`ambiance-covers.ts`)**
+
+`COVERS: Record<SceneId, { palette: Record<string, string>; rows: string[] }>` (10 lignes de 16 caractères) et `drawCover(canvas: HTMLCanvasElement, id: SceneId): void`, qui dessine 1 px par caractère. Valeurs exactes :
+```
+lobby (ville la nuit)  k #141a3a  s #23295a  * #e8e6ff  b #0b0f24  w #ffd27a  r #2b2f45  l #8a7a4a
+  kkk*kkkkkkkkk*kk / kkkkkkkk*kkkkkkk / ssssbbbsssssssss / ssssbwbsssbbbbss / bbbsbbbsssbwbwss
+  bwbsbwbsbbbbwbss / bbbsbbbsbwbwbbbb / bwbbbwbbbbbbwbwb / rrrrrrrrrrrrrrrr / rrllrrrllrrrllrr
+focus (récif)  c #2f8f9a  r #5fb8b8  o #bfeff0  b #1b6b7a  f #ffb347  a #0f4c5c  g #3fbf7f  p #ff7a8a  s #e7d3a1
+  ccrccccccrcccccc / cccrcccccrccccoc / bbbbrbbbbbrbbbbb / bbobbrbbbbbrbbbb / bbbbbbbbbfffbbbb
+  aaoaaaaaaaaaaaaa / agaaaaaaaaaaapaa / agagaaapaaaapppa / sgsgsspppssspppg / ssssssssssssssss
+sunny (plage)  k #7cc8f2  o #ffb02e  u #ffd84a  l #b6e3fb  w #2f8fd6  f #e9f7ff  s #f2d38c  r #ff5a5a  x #fff3e0  p #8a5a3c  d #e0b96a
+  kkkkkkkkkkkouokk / kkkkkkkkkkouuuok / lllllllllllouoll / llllllllllllllll / wwwwwwwwwwwwwwww
+  wwfwwwwwwfwwwwfw / ssrxrxrsssssssss / sssspssssssddsss / sssspsssssssssss / dddddddddddddddd
+dusk (château au crépuscule)  v #3b2a5c  n #f3ecd2  m #6b3a6e  c #1a1426  o #e0784a  y #f5b85a  w #ffcf6b
+  vvvvvvvvvvvvnnvv / vvvvvvvvvvvvnnvv / mmmmmmmmmmmmmmmm / mmcmcmmmmmmmmmmm / oocccooooooccooo
+  yycwcyyyyyyccyyy / cccccccccccccccc / ccccwcccccccwccc / cccccccccccccccc / cccccccccccccccc
+drift (espace)  d #170f2e  * #f0e9ff  n #4a2a7a  p #b06ad9  q #7d3fb0  r #ffd27a  e #2c1b54
+  dd*dddddddd*dddd / dddddnnddddddd*d / d*ddnnddddppdddd / ddddnnnddpppqd*d / deeeeeerrpppqrre
+  eeeeeeeeepqqqeee / e*eeeeeeeeqqeeee / eeeeennneeeeeeee / eeee*eeeeeeee*ee / eeeeeeeeeeeeeeee
+quest (oasis au soir)  o #f08a4b  y #f6c26b  g #2f8f5b  u #fff0b3  t #6b4a2f  d #d9a25c  w #4fb3c8  e #b97f3d
+  oooooooooooooooo / oooooooooooooooo / yyyyyyyyyyyyyyyy / yyygggyyyyuuuyyy / yyggtggyyuuuuuyy
+  ddddtddddddddddd / ddwwtwwdddeeeddd / ddeeddddddeeeeed / eeeedddddeeeeeee / dddeeeeeeedddddd
+```
+
+**Bouton du bureau (`DeskButton`)**
+- **Pas de bureau à moi :** pas de bouton.
+- **Hors de mon bureau :**
+  - icône `DoorOpen`, nom « Aller à mon bureau » ;
+  - clic : `bus.emit('local:walk-to-desk')`, et le jeu fait marcher l'avatar (tâche 11b) ;
+  - pendant la marche, `aria-pressed` est vrai (suivi par l'événement de bus `walk:state { walking }`), et un second clic émet `local:walk-cancel`.
+- **Dans mon bureau** (même calcul que `where.ts` pour « le bureau de quelqu'un », appliqué à moi) :
+  - icône `SlidersHorizontal`, nom « Réglages du bureau » ;
+  - ouvre ou ferme le panneau `desk` ; `aria-pressed` vrai quand il est ouvert.
+- Le passage d'un état à l'autre est instantané.
+
+**Tests**
+- `SoundPopover` :
+  - choisir une ambiance appelle `setPrefs({ scene })` ;
+  - l'interrupteur coupe la musique ;
+  - Échap ferme et rend le focus au bouton.
+- `ambiance-covers` : chaque pochette fait 10 × 16 et n'utilise que des lettres de sa palette.
+- `DeskButton` :
+  - absent sans bureau ;
+  - dehors, « Aller à mon bureau » émet l'événement ;
+  - dedans, « Réglages du bureau » ouvre le panneau.
+- Les e2e `son` et `musique-lieux` passent.
+
+**Commit** `feat(client): juke-box d'ambiances et bouton du bureau dans le dock`.
+
+### Tâche 11b : marcher jusqu'à mon bureau (P0, demandée par Andrea pendant l'intégration)
+
+**But.** « Aller à mon bureau » fait marcher l'avatar tout seul jusque dans son bureau, par le plus court chemin et à la vitesse normale : les autres le voient marcher. Une touche de déplacement l'interrompt.
+
+**Fichiers**
+- `apps/client/src/game/**`, avec un nouveau `game/auto-walk.ts` et son test.
+- Si la recherche de chemin des personnes fictives (`sim-find-path`) vit côté serveur, la déplacer dans `packages/shared` pour la partager, en mettant à jour ses imports et ses tests serveur.
+
+**Règles**
+- **Bus :** `local:walk-to-desk` démarre, `local:walk-cancel` arrête. Le jeu émet `walk:state { walking: boolean }`.
+- **Cible :**
+  - une case libre dans mon bureau, devant le siège si on le connaît, sinon une case libre au centre de la pièce ;
+  - mon bureau est celui que le magasin attribue à `selfId`.
+- **Comme au clavier :** la marche pilote le joueur exactement comme le clavier (même vitesse, mêmes animations, même envoi des positions). Pas de téléportation : le serveur ne voit aucune différence.
+- **Arrêt :** à l'arrivée, sur toute touche de déplacement, si l'avatar est bloqué plus d'une seconde, ou sur `local:walk-cancel`.
+- **Chemin introuvable :** l'avatar ne bouge pas et le jeu émet `walk:state { walking: false }`.
+- **Debug e2e :** `window.__office.autoWalking(): boolean`.
+
+**Tests** (`auto-walk.test.ts`)
+- Le prochain point de passage et la direction donnés par une suite de cases.
+- L'arrêt à l'arrivée.
+- Une touche de déplacement annule.
+- Chemin introuvable : rien ne bouge.
+
+**Commit** `feat: marcher tout seul jusqu'à son bureau`.
