@@ -10,6 +10,7 @@ const execFileAsync = promisify(execFile);
 const serverDir = resolve(import.meta.dirname, '..');
 // Le chemin que donne la spec, relatif au dossier du serveur (pnpm --filter y lance la commande).
 const DEV_MAP = '../client/public/assets/maps/dev-office.json';
+const OFFICE_MAP = '../client/public/assets/maps/office.json';
 
 // Lance la vraie commande (src/cli/map-check.ts sous tsx, comme `pnpm map:check`) avec ces arguments, jusqu'à sa sortie.
 async function runCommand(args: string[]) {
@@ -48,6 +49,20 @@ test('map:check sur la carte de développement : résumé en français (zones pa
   expect(run.stdout).toMatch(/^\s+desk : 3$/m);
   expect(run.stdout).toMatch(/^\s+label : 1$/m);
   expect(run.stdout).toMatch(/Point d'apparition : x = 80, y = 240 \(case 2, 7\)/);
+}, 60_000);
+
+// La carte que le serveur charge en production (MAP_KEY=office) : le JSON généré dans le client doit rester lisible par le code du serveur.
+test('map:check sur la grande carte du bureau : 66 × 47 cases, 6 bureaux avec leur porte, 3 salles, apparition à l\'accueil, code 0', async () => {
+  const run = await runCommand([OFFICE_MAP]);
+  expect(run.code, run.stderr).toBe(0);
+  expect(run.stderr).toBe('');
+  expect(run.stdout).toMatch(/^Carte valide : \.\.\/client\/public\/assets\/maps\/office\.json$/m);
+  expect(run.stdout).toMatch(/Taille : 66 × 47 cases de 32 px/);
+  expect(run.stdout).toMatch(/^\s+desk : 6$/m);
+  expect(run.stdout).toMatch(/^\s+door : 6$/m);
+  expect(run.stdout).toMatch(/^\s+private : 3$/m);   // la zone détente, la grande salle, la salle de réunion
+  expect(run.stdout).toMatch(/^\s+spawn : 1$/m);
+  expect(run.stdout).toMatch(/Point d'apparition : x = 1744, y = 1328 \(case 54, 41\)/);
 }, 60_000);
 
 test('map:check refuse une carte invalide : code 1, le code de MapError et un message en français, rien sur la sortie normale', async () => {

@@ -1,7 +1,19 @@
-import { DESK_NAME_MAX_LENGTH, deskKey, type DeskBan, type DeskInfo, type OfficeMap, type Zone } from '@bureau/shared';
+import {
+  DEFAULT_DESK_DECOR,
+  DESK_NAME_MAX_LENGTH,
+  checkDecor,
+  deskKey,
+  type DeskAck,
+  type DeskBan,
+  type DeskDecor,
+  type DeskInfo,
+  type OfficeMap,
+  type PlacedItem,
+  type Zone,
+} from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { desk, user } from '../db/schema';
+import { desk, deskSetup, user } from '../db/schema';
 import { oneAtATimePerKey } from '../one-at-a-time';
 
 // Une place de bureau de la carte : sa zone desk, sa porte (la zone door qui porte la même clé, s'il y en a une) et le point, juste
@@ -25,14 +37,16 @@ export function deskSlots(map: OfficeMap): DeskSlot[] {
     });
 }
 
-// Un pas de plus hors de la pièce, par le centre de la porte : vers le haut si la porte est au-dessus de la pièce, vers le bas si elle est
-// en dessous, de côté sinon.
-function exitPoint(room: Zone, door: Zone | null, tile: number): { x: number; y: number } {
+// Le point juste devant la porte, côté couloir, par le centre de la porte : vers le haut si la porte est au-dessus de la pièce, vers le bas si
+// elle est en dessous, de côté sinon. La porte perce une bande de mur qui peut faire plusieurs cases d'épaisseur (2 cases de haut pour les
+// bureaux) : le point est une demi-case au-delà de son bord extérieur, donc hors du mur, et non à une case de son centre, qui tomberait encore
+// dans la bande. Pour une porte d'une case d'épaisseur, les deux calculs donnent le même point.
+export function exitPoint(room: Zone, door: Zone | null, tile: number): { x: number; y: number } {
   if (door === null) return { x: room.x + room.width / 2, y: room.y + room.height + tile / 2 };
   const center = { x: door.x + door.width / 2, y: door.y + door.height / 2 };
-  if (door.y + door.height <= room.y) return { x: center.x, y: center.y - tile };
-  if (door.y >= room.y + room.height) return { x: center.x, y: center.y + tile };
-  return { x: center.x + (door.x + door.width <= room.x ? -tile : tile), y: center.y };
+  if (door.y + door.height <= room.y) return { x: center.x, y: door.y - tile / 2 };
+  if (door.y >= room.y + room.height) return { x: center.x, y: door.y + door.height + tile / 2 };
+  return { x: door.x + door.width <= room.x ? door.x - tile / 2 : door.x + door.width + tile / 2, y: center.y };
 }
 
 interface DeskState {
@@ -46,20 +60,23 @@ interface DeskState {
   admitted: Set<string>;
 }
 
-export type DeskError = 'unknown_desk' | 'taken' | 'no_desk' | 'not_locked' | 'unavailable' | 'self';
-
 // Ce que fait un changement : les places à rediffuser à tout le bureau, et si les accès de quelqu'un ont pu changer (les portes
-// fermées pour chacun sont alors à relire).
-export type DeskResult = { ok: true; changed: DeskInfo[]; access: boolean } | { ok: false; error: DeskError };
+// fermées pour chacun sont alors à relire). Un échec est celui de la réponse à la commande (DeskAck) : `bad_decor` y porte sa raison.
+type DeskFailure = Extract<DeskAck, { ok: false }>;
+export type DeskError = DeskFailure['error'];
+export type DeskResult = { ok: true; changed: DeskInfo[]; access: boolean } | DeskFailure;
 
 export interface DeskServiceOptions {
   /** Le propriétaire laisse-t-il entrer d'après son état d'activité du moment ? Faux : sa porte est fermée, comme verrouillée. */
   ownerAllowsEntry?: (ownerId: string) => boolean;
 }
 
-// Les bureaux du bureau virtuel : 20 places sur la carte, chacune libre ou à quelqu'un (une place par personne), avec son nom, sa porte
+// Les bureaux du bureau virtuel : 6 places sur la carte, chacune libre ou à quelqu'un (une place par personne), avec son nom, sa porte
 // ouverte ou fermée, ceux qu'on en a exclus et ceux qu'on y a admis. L'état vit en mémoire (une seule instance de serveur) et la table
 // `desk` le garde d'un redémarrage à l'autre. Les changements passent l'un après l'autre : un « vérifier puis écrire » ne se croise jamais.
+//
+// Le décor de la pièce (sol, murs, éléments posés) n'est pas à la place mais à la personne (table `desk_setup`) : il la suit quand elle
+// déménage et reste à elle quand elle rend son bureau. Une place libre, comme une personne qui n'a rien réglé, montre le poste par défaut.
 //
 // Qui peut entrer dans une place (canEnter) : son propriétaire toujours ; une place libre, tout le monde ; sinon, pas les exclus, et si la
 // porte est fermée (verrou, ou état d'activité qui ne laisse pas entrer), seulement ceux qu'on a admis. Cela ne vaut qu'à l'entrée :
@@ -67,10 +84,12 @@ export interface DeskServiceOptions {
 export class DeskService {
   private readonly states = new Map<string, DeskState>();
   private readonly byOwner = new Map<string, string>();
+  // Le décor réglé par chaque personne, qu'elle ait un bureau ou non. Qui n'a rien réglé n'y figure pas.
+  private readonly setups = new Map<string, DeskDecor>();
   private readonly serial = oneAtATimePerKey();
   private readonly ownerAllowsEntry: (ownerId: string) => boolean;
 
-  /** Résolue quand les bureaux occupés sont lus en base ; rejetée si elle est illisible. Les commandes l'attendent. */
+  /** Résolue quand les bureaux occupés et les décors sont lus en base ; rejetée si elle est illisible. Les commandes l'attendent. */
   readonly ready: Promise<void>;
   readonly slots: DeskSlot[];
 
@@ -95,7 +114,9 @@ export class DeskService {
     return service;
   }
 
-  // Charge les bureaux occupés. Une ligne dont la place n'est plus sur la carte (la carte a changé) est ignorée, et reste en base.
+  // Charge les bureaux occupés, puis les décors de tout le monde (y compris de ceux qui n'ont plus de bureau : ils le retrouveront). Une ligne
+  // dont la place n'est plus sur la carte (la carte a changé) est ignorée, et reste en base. Un décor est repris tel qu'il a été enregistré :
+  // checkDecor l'a validé à l'écriture.
   private async load(): Promise<void> {
     const rows = await this.db
       .select({ key: desk.key, ownerId: desk.ownerId, name: desk.name, locked: desk.locked, ownerName: user.name, disabledAt: user.disabledAt })
@@ -106,6 +127,9 @@ export class DeskService {
       if (!state || row.disabledAt !== null) continue;
       Object.assign(state, { ownerId: row.ownerId, ownerName: row.ownerName, name: row.name, locked: row.locked });
       this.byOwner.set(row.ownerId, row.key);
+    }
+    for (const row of await this.db.select().from(deskSetup)) {
+      this.setups.set(row.ownerId, { floor: row.floor, wall: row.wall, items: copyItems(row.items) });
     }
   }
 
@@ -207,6 +231,30 @@ export class DeskService {
     });
   }
 
+  // Régler la pièce de son bureau, d'un seul bloc (sol, murs, éléments). Le serveur ne fait confiance à rien : checkDecor revérifie tout, et
+  // une déco refusée ne change rien. Le décor est enregistré au nom de la personne, pas de la place.
+  setDecor(userId: string, decor: DeskDecor): Promise<DeskResult> {
+    return this.serial('desks', async () => {
+      await this.ready;
+      const state = this.stateOf(userId);
+      if (!state) return fail('no_desk');
+      const checked = checkDecor(decor);
+      if (!checked.ok) return { ok: false, error: 'bad_decor', reason: checked.error };
+      // Une copie à nous, réduite à { id, x, y } : ni les champs en trop, ni la liste de l'appelant ne se retrouvent en mémoire ou en base.
+      const next: DeskDecor = { floor: decor.floor, wall: decor.wall, items: copyItems(decor.items) };
+      try {
+        await this.db
+          .insert(deskSetup)
+          .values({ ownerId: userId, ...next })
+          .onConflictDoUpdate({ target: deskSetup.ownerId, set: { ...next, updatedAt: new Date() } });
+      } catch {
+        return fail('unavailable');
+      }
+      this.setups.set(userId, next);
+      return this.ok([state], false);
+    });
+  }
+
   // Fermer ou rouvrir la porte. Refermer efface la liste de ceux qu'on avait admis.
   setLocked(userId: string, locked: boolean): Promise<DeskResult> {
     return this.serial('desks', async () => {
@@ -291,7 +339,14 @@ export class DeskService {
     return state.ownerId !== null && (state.locked || !this.ownerAllowsEntry(state.ownerId));
   }
 
+  // Le décor que montre une place : celui de son occupant s'il en a réglé un, le poste par défaut sinon (et pour une place libre).
+  private decorOf(state: DeskState): DeskDecor {
+    const own = state.ownerId === null ? undefined : this.setups.get(state.ownerId);
+    return own ?? DEFAULT_DESK_DECOR;
+  }
+
   private info(state: DeskState): DeskInfo {
+    const decor = this.decorOf(state);
     return {
       key: state.key,
       ownerId: state.ownerId,
@@ -299,10 +354,20 @@ export class DeskService {
       name: state.name,
       locked: state.locked,
       closedByState: state.ownerId !== null && !state.locked && !this.ownerAllowsEntry(state.ownerId),
+      floor: decor.floor,
+      wall: decor.wall,
+      // Des copies : ce qui part dans une `DeskInfo` ne doit jamais permettre de changer le décor par défaut ou celui d'une personne.
+      items: copyItems(decor.items),
     };
   }
 }
 
-function fail(error: DeskError): { ok: false; error: DeskError } {
+// Les éléments posés réduits à { id, x, y }, dans des objets neufs.
+function copyItems(items: readonly PlacedItem[]): PlacedItem[] {
+  return items.map(({ id, x, y }) => ({ id, x, y }));
+}
+
+// Un échec qui ne dit rien de plus que son nom (`bad_decor`, qui porte une raison, se construit à part).
+function fail(error: Exclude<DeskError, 'bad_decor'>): DeskFailure {
   return { ok: false, error };
 }

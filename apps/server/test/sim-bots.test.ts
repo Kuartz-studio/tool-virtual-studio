@@ -1,4 +1,5 @@
 import {
+  CHARACTER_PARTS,
   CLOSE_RANGE_GROUPING,
   DEV_OFFICE,
   EMPTY_GROUPING,
@@ -7,6 +8,7 @@ import {
   SIM_BOT_SPEED_PX_PER_S,
   buildTiledMap,
   computeGroups,
+  isAvatarKey,
   isWalkablePoint,
   parseOfficeMap,
   type GroupingState,
@@ -62,7 +64,7 @@ function setup() {
 
   // Une personne réelle, au monde, avec une socket factice qui retient ses `sim:room`.
   function addUser(id: string, at = SPAWN) {
-    world.join({ id, name: `Nom de ${id}`, avatarKey: 'dev-red', x: at.x, y: at.y, dir: 'down', status: 'available' });
+    world.join({ id, name: `Nom de ${id}`, avatarKey: 'p.01', x: at.x, y: at.y, dir: 'down', status: 'available' });
     const received: SimRoomPayload[] = [];
     const socket = { emit: vi.fn((event: string, payload: SimRoomPayload) => event === 'sim:room' && received.push(payload)) } as unknown as TypedSocket;
     sockets.set(id, [socket]);
@@ -101,7 +103,7 @@ describe('apparition', () => {
     const bot = await bots.spawn();
     expect(bot.id.startsWith(SIM_BOT_PREFIX)).toBe(true);
     expect(bot.name).toBe('Fictif 1');
-    expect(bot.avatarKey).toBe('dev-red');
+    expect(bot.avatarKey).toBe('p.01');
     expect(bot.audio).toBeNull();
     expect(world.get(bot.id)).toMatchObject({ name: 'Fictif 1', status: 'available', moving: false, media: { mic: false, cam: false, screen: false } });
     expect(isWalkablePoint(map, bot.x, bot.y)).toBe(true);
@@ -109,8 +111,18 @@ describe('apparition', () => {
 
     const second = await bots.spawn();
     expect(second.name).toBe('Fictif 2');
-    expect(second.avatarKey).toBe('dev-blue');
+    expect(second.avatarKey).toBe('p.02');
     expect(second.id).not.toBe(bot.id);
+  });
+
+  test('leurs avatars sont les personnages prêts à l\'emploi du pack, l\'un après l\'autre, puis ça recommence', async () => {
+    const { bots } = setup();
+    const keys: string[] = [];
+    for (let i = 0; i < CHARACTER_PARTS.premade + 1; i++) keys.push((await bots.spawn()).avatarKey);
+    expect(keys.every(isAvatarKey)).toBe(true);
+    expect(keys.slice(0, 3)).toEqual(['p.01', 'p.02', 'p.03']);
+    expect(new Set(keys.slice(0, CHARACTER_PARTS.premade)).size).toBe(CHARACTER_PARTS.premade);
+    expect(keys.at(-1)).toBe('p.01');
   });
 
   test('chacune apparaît sur une case libre, près de l\'apparition, jamais sur quelqu\'un', async () => {
@@ -121,7 +133,8 @@ describe('apparition', () => {
       const bot = await bots.spawn();
       expect(isWalkablePoint(map, bot.x, bot.y)).toBe(true);
       expect(Math.hypot(bot.x - SPAWN.x, bot.y - SPAWN.y)).toBeLessThanOrEqual(3 * 32);
-      for (const [x, y] of spots) expect(Math.hypot(bot.x - x, bot.y - y)).toBeGreaterThanOrEqual(20);
+      // Pas sur une case voisine : un personnage fait deux cases de haut, et cacherait celui d'à côté.
+      for (const [x, y] of spots) expect(Math.hypot(bot.x - x, bot.y - y)).toBeGreaterThanOrEqual(44);
       spots.push([bot.x, bot.y]);
     }
   });

@@ -1,4 +1,4 @@
-import { DEV_AVATAR_KEYS, SESSION_TTL_S } from '@bureau/shared';
+import { CHARACTER_PARTS, SESSION_TTL_S, formatCharacter, formatPremade } from '@bureau/shared';
 import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
@@ -7,6 +7,17 @@ import { session, user } from '../src/db/schema';
 import { createTestApp } from './helpers/test-app';
 
 const DAY_MS = 24 * 3600 * 1000;
+
+// Des clés d'avatar valides : deux personnages prêts à l'emploi, et un personnage assemblé (corps, yeux, tenue, coiffure, sans accessoire)
+// avec les premières pièces du pack plutôt qu'une clé écrite en dur.
+const PREMADE = [formatPremade(2), formatPremade(3)] as const;
+const BUILT = formatCharacter({
+  body: 1,
+  eyes: 1,
+  outfit: { style: CHARACTER_PARTS.outfits[0]!.number, color: 1 },
+  hair: { style: CHARACTER_PARTS.hair[0]!.number, color: 1 },
+  accessory: null,
+});
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 
@@ -33,7 +44,7 @@ describe('GET /api/members', () => {
     const t = await createTestApp();
     const lea = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
     const tom = await t.inviteAndAccept('tom@x.fr', { name: 'Tom', role: 'admin' });
-    await t.db.update(user).set({ avatarKey: 'dev-blue' }).where(eq(user.id, tom.userId));
+    await t.db.update(user).set({ avatarKey: PREMADE[0] }).where(eq(user.id, tom.userId));
 
     // Un membre et un admin voient la même liste, dans l'ordre d'arrivée.
     for (const { cookie } of [lea, tom]) {
@@ -42,7 +53,7 @@ describe('GET /api/members', () => {
       expect(res.get('Cache-Control')).toBe('no-store');   // des données privées : pas de copie gardée par le navigateur
       expect(res.body).toEqual([
         { id: lea.userId, name: 'Léa', avatarKey: null },
-        { id: tom.userId, name: 'Tom', avatarKey: 'dev-blue' },
+        { id: tom.userId, name: 'Tom', avatarKey: PREMADE[0] },
       ]);
     }
   });
@@ -109,22 +120,22 @@ describe('PATCH /api/me', () => {
     expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa B.', avatarKey: null });
 
     // L'avatar : le profil envoyé aux autres porte aussi le nom actuel.
-    const avatarKey = DEV_AVATAR_KEYS[1];
+    const avatarKey = PREMADE[1];
     const withAvatar = await patchMe(t, cookie, { avatarKey });
     expect(withAvatar.status).toBe(200);
     expect(withAvatar.body).toEqual({ id: userId, name: 'Léa B.', avatarKey });
     expect(changed).toHaveBeenCalledTimes(2);
     expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa B.', avatarKey });
 
-    // Les deux ensemble, dans une seule requête et un seul événement.
-    const both = await patchMe(t, cookie, { name: 'Léa', avatarKey: DEV_AVATAR_KEYS[2] });
+    // Les deux ensemble, dans une seule requête et un seul événement ; une clé de personnage assemblé vaut une clé de personnage prêt à l'emploi.
+    const both = await patchMe(t, cookie, { name: 'Léa', avatarKey: BUILT });
     expect(both.status).toBe(200);
     expect(changed).toHaveBeenCalledTimes(3);
-    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa', avatarKey: DEV_AVATAR_KEYS[2] });
+    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa', avatarKey: BUILT });
 
     // Better Auth relit la même base : la session voit le nouveau profil.
     const me = await request(t.app).get('/api/auth/get-session').set('Cookie', cookie);
-    expect(me.body.user).toMatchObject({ id: userId, name: 'Léa', avatarKey: DEV_AVATAR_KEYS[2] });
+    expect(me.body.user).toMatchObject({ id: userId, name: 'Léa', avatarKey: BUILT });
   });
 
   test('le nom suit displayNameSchema : espaces retirés, vide ou trop long refusé', async () => {
@@ -147,12 +158,16 @@ describe('PATCH /api/me', () => {
   test('avatarKey doit être une clé d\'avatar connue', async () => {
     const t = await createTestApp();
     const { cookie, userId } = await t.inviteAndAccept('lea@x.fr');
-    for (const avatarKey of ['', 'DEV-RED', ' dev-red', 'dev-red ', null, 3, {}]) {
+    // Les anciennes clés (dev-red…) ne sont plus valables ; pas plus qu'un numéro hors du pack, une pièce qui n'existe pas ou une clé mal écrite.
+    const refused = ['', 'dev-red', 'DEV-RED', ' dev-red', 'P.01', ' p.01', 'p.01 ', 'p.1', 'p.00', 'p.21', 'c.1.1.1-99.0.0', 'c.1.1.1-1.0', null, 3, {}];
+    for (const avatarKey of refused) {
       const res = await patchMe(t, cookie, { avatarKey });
       expect(res.status, JSON.stringify(avatarKey)).toBe(400);
     }
     expect((await accountOf(t, userId))?.avatarKey).toBeNull();
-    expect((await patchMe(t, cookie, { avatarKey: DEV_AVATAR_KEYS[0] })).status).toBe(200);
+    expect((await patchMe(t, cookie, { avatarKey: PREMADE[0] })).status).toBe(200);
+    expect((await patchMe(t, cookie, { avatarKey: BUILT })).status).toBe(200);
+    expect((await accountOf(t, userId))?.avatarKey).toBe(BUILT);
   });
 
   test('un corps sans nom ni avatar → 400, pas d\'événement', async () => {

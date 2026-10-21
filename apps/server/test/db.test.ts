@@ -169,13 +169,13 @@ test('commande de migration : applique les migrations du premier dossier qui a u
   await close();
 });
 
-test('les migrations du dépôt créent les tables de Better Auth, des invitations et du chat', async () => {
+test('les migrations du dépôt créent les tables de Better Auth, des invitations, du chat, des bureaux (et de leur décor) et des états d\'activité', async () => {
   const { db, close } = await createDb('memory://');
   await runMigrations(db);
   const { rows } = await db.execute<{ table_name: string }>(
     sql`select table_name from information_schema.tables where table_schema = 'public' order by table_name`,
   );
-  expect(rows.map((row) => row.table_name)).toEqual(expect.arrayContaining(['account', 'chat_message', 'invitation', 'session', 'user', 'verification']));
+  expect(rows.map((row) => row.table_name)).toEqual(expect.arrayContaining(['account', 'activity_state', 'chat_message', 'desk', 'desk_setup', 'invitation', 'session', 'user', 'verification']));
   expect(rows.some((row) => /^rate_?limit$/i.test(row.table_name))).toBe(true);
   await close();
 });

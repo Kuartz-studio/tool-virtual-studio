@@ -166,9 +166,10 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     sendChat(payload, ack).catch((err: unknown) => logServerError(d.logger, { err, userId }, 'Message du chat impossible'));
   });
 
-  // Les commandes d'un bureau (prendre une place, la nommer, fermer la porte, exclure, toquer…), avec accusé de réception. Une socket
-  // qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée sans réponse, comme pour le chat. Puis, dans cet ordre :
-  // 1. au-delà de DESK_RATE par socket : `rate_limited` ; 2. commande invalide (deskCommandSchema) : `invalid` ; 3. la commande (DeskController).
+  // Les commandes d'un bureau (prendre une place, la nommer, fermer la porte, exclure, toquer, régler le décor…), avec accusé de réception.
+  // Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée sans réponse, comme pour le chat. Puis, dans
+  // cet ordre : 1. au-delà de DESK_RATE par socket : `rate_limited` ; 2. commande invalide (deskCommandSchema) : `invalid` ; 3. la commande
+  // (DeskController).
   socket.on('desk:do', (payload, ack) => {
     const reply = (r: DeskAck): void => {
       if (typeof ack === 'function') ack(r);

@@ -114,6 +114,9 @@ export function createDeskController(d: DeskControllerDeps) {
         return knock(userId, me.name, command.key);
       case 'goto':
         return goto(userId);
+      case 'decor':
+        // Le service revérifie tout (checkDecor) : un refus répond `bad_decor` avec sa raison, et rien n'est diffusé.
+        return applied(await d.desks.setDecor(userId, { floor: command.floor, wall: command.wall, items: command.items }));
     }
   }
 

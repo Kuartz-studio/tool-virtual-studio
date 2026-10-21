@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import {
-  DEV_AVATAR_KEYS,
+  CHARACTER_PARTS,
   EMPTY_GROUPING,
   OFFICE_ROOM,
   SIM_BOT_PREFIX,
   SIM_BOT_SPEED_PX_PER_S,
+  formatPremade,
   isSimBot,
   isWalkableTile,
   type Direction,
@@ -23,8 +24,10 @@ import { findPath, type Point } from './find-path';
 export const SIM_STEP_MS = 50;
 // Un pas ne compte jamais plus de ce temps : après une pause du serveur, la personne ne saute pas, elle reprend sa marche.
 const MAX_STEP_MS = 250;
-// Les gens en dessous de cette distance (px) d'une case l'occupent : on n'y fait pas apparaître quelqu'un d'autre.
-const OCCUPIED_PX = 20;
+// Les gens en dessous de cette distance (px) d'une case l'occupent : on n'y fait pas apparaître quelqu'un d'autre. Un personnage fait deux
+// cases de haut : deux personnes sur des cases voisines (32 px) se cacheraient le visage et le nom, l'une devant l'autre ; en diagonale
+// (45 px), non.
+const OCCUPIED_PX = 44;
 
 // Pourquoi une commande est refusée : unknown_bot (cet identifiant n'est pas une personne fictive), unknown_audio (ce fichier n'est pas
 // dans le dossier), unreachable (la personne est sur une case bloquante : rien à faire marcher).
@@ -133,7 +136,7 @@ export class SimBots {
     const bot: Bot = {
       id: `${SIM_BOT_PREFIX}${randomUUID().slice(0, 8)}`,
       name: options.name ?? `Fictif ${n}`,
-      avatarKey: DEV_AVATAR_KEYS[(n - 1) % DEV_AVATAR_KEYS.length]!,
+      avatarKey: formatPremade(((n - 1) % CHARACTER_PARTS.premade) + 1),   // les personnages prêts à l'emploi, l'un après l'autre
       audio,
       pos: spot,
       path: [],

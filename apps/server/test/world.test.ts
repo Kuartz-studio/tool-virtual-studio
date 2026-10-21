@@ -14,7 +14,7 @@ function setup() {
   const clock = { t: 0 };
   const world = new World(map, () => clock.t);
   const join = (id: string, over: Partial<JoinArgs> = {}) =>
-    world.join({ id, name: `Nom de ${id}`, avatarKey: 'dev-red', x: 80, y: 240, dir: 'down', status: 'available', ...over });
+    world.join({ id, name: `Nom de ${id}`, avatarKey: 'p.01', x: 80, y: 240, dir: 'down', status: 'available', ...over });
   return { clock, world, join };
 }
 
@@ -71,7 +71,7 @@ describe('join, leave, get, list', () => {
     expect(join('a', { x: 336, y: 80, dir: 'up', status: 'busy' })).toEqual({
       id: 'a',
       name: 'Nom de a',
-      avatarKey: 'dev-red',
+      avatarKey: 'p.01',
       x: 336,
       y: 80,
       dir: 'up',
@@ -352,8 +352,8 @@ describe('statut, médias, profil', () => {
   test('setProfile change le nom et l\'avatar', () => {
     const { world, join } = setup();
     join('a');
-    world.setProfile('a', { name: 'Alice', avatarKey: 'dev-blue' });
-    expect(world.get('a')).toMatchObject({ name: 'Alice', avatarKey: 'dev-blue' });
+    world.setProfile('a', { name: 'Alice', avatarKey: 'p.02' });
+    expect(world.get('a')).toMatchObject({ name: 'Alice', avatarKey: 'p.02' });
     world.setProfile('a', { name: 'Alice B.', avatarKey: null });
     expect(world.get('a')).toMatchObject({ name: 'Alice B.', avatarKey: null });
   });

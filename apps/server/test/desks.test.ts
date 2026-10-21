@@ -1,11 +1,12 @@
-import { OFFICE, buildTiledMap, parseOfficeMap } from '@bureau/shared';
+import { OFFICE, buildTiledMap, isWalkablePoint, parseOfficeMap, type Zone } from '@bureau/shared';
 import { eq, sql } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
-import { desk, user } from '../src/db/schema';
-import { DeskService, deskSlots, type DeskServiceOptions } from '../src/desks/desk-service';
+import { desk, deskSetup, user } from '../src/db/schema';
+import { DeskService, deskSlots, exitPoint, type DeskServiceOptions } from '../src/desks/desk-service';
+import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS } from './helpers/decor';
 import { createTestDb } from './helpers/test-db';
 
-// La grande carte (20 places A1…C4) et un compte par prénom, créés dans la base.
+// La grande carte (6 places A1…A6) et un compte par prénom, créés dans la base.
 const map = parseOfficeMap(buildTiledMap({ ...OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
 
 async function setup(options: DeskServiceOptions = {}) {
@@ -19,21 +20,51 @@ async function setup(options: DeskServiceOptions = {}) {
 const owner = (service: DeskService, key: string) => service.get(key)?.ownerId;
 
 describe('les places de la carte', () => {
-  test('20 places dans l\'ordre de la carte, chacune avec sa porte et un point de sortie hors de la pièce, devant la porte', () => {
+  test('6 places dans l\'ordre de la carte, chacune avec sa porte et un point de sortie hors de la pièce, devant la porte', () => {
     const slots = deskSlots(map);
-    expect(slots).toHaveLength(20);
-    expect(slots[0]!.key).toBe('A1');
+    expect(slots.map((slot) => slot.key)).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6']);
     for (const slot of slots) {
       expect(slot.door, slot.key).not.toBeNull();
       const { x, y, width, height } = slot.zone;
       const inside = slot.exit.x >= x && slot.exit.x < x + width && slot.exit.y >= y && slot.exit.y < y + height;
       expect(inside, `sortie de ${slot.key}`).toBe(false);
+      // La porte perce une bande de mur de 2 cases : la sortie est au-delà de son bord extérieur (dans le couloir), sur une case où l'on marche.
+      expect(slot.exit.y, `sortie de ${slot.key}`).toBeGreaterThanOrEqual(slot.door!.y + slot.door!.height);
+      expect(isWalkablePoint(map, slot.exit.x, slot.exit.y), `sortie de ${slot.key}`).toBe(true);
     }
-    // Rangée A (porte au sud) : on sort vers le bas ; rangée B (porte au nord) : vers le haut.
-    const a1 = slots.find((slot) => slot.key === 'A1')!;
-    const b1 = slots.find((slot) => slot.key === 'B1')!;
-    expect(a1.exit.y).toBeGreaterThan(a1.door!.y);
-    expect(b1.exit.y).toBeLessThan(b1.door!.y);
+    // Les six portes sont au sud (cases 4 et 5 de la pièce A1, 11 cases plus loin pour la suivante) : on sort vers le bas, au centre de la porte.
+    expect(slots.find((slot) => slot.key === 'A1')!.exit).toEqual({ x: 160, y: 368 });
+    expect(slots.find((slot) => slot.key === 'A2')!.exit).toEqual({ x: 160 + 11 * 32, y: 368 });
+  });
+});
+
+// Une zone pour ces tests, en pixels (cases de 32 px).
+const area = (x: number, y: number, width: number, height: number, type: Zone['type'] = 'desk'): Zone => ({ id: 'z', type, name: null, text: null, x, y, width, height });
+
+describe('le point de sortie devant une porte', () => {
+  const tile = 32;
+  const room = area(32, 352, 288, 224);   // 9 × 7 cases, dont le coin haut-gauche est la case (1, 11)
+
+  test('une porte de 2 cases de haut en dessous de la pièce : une demi-case au-delà de son bord extérieur, hors de la bande de mur', () => {
+    const door = area(128, 576, 64, 64, 'door');   // les cases (4..5, 18..19), juste sous la pièce
+    expect(exitPoint(room, door, tile)).toEqual({ x: 160, y: 656 });   // le milieu de la case (5, 20) : la bande finit à y 640
+  });
+
+  test('une porte de 2 cases de haut au-dessus de la pièce : une demi-case au-delà de son bord supérieur', () => {
+    const door = area(128, 288, 64, 64, 'door');   // les cases (4..5, 9..10), juste au-dessus
+    expect(exitPoint(room, door, tile)).toEqual({ x: 160, y: 272 });
+  });
+
+  test('une porte d\'une case de haut : le point d\'avant les portes de 2 cases, une case au-delà de son centre', () => {
+    expect(exitPoint(room, area(128, 576, 64, 32, 'door'), tile)).toEqual({ x: 160, y: 576 + 16 + tile });
+    expect(exitPoint(room, area(128, 320, 64, 32, 'door'), tile)).toEqual({ x: 160, y: 320 + 16 - tile });
+  });
+
+  test('une porte sur le côté : au-delà de son bord extérieur, à la hauteur de son centre ; sans porte, sous la pièce', () => {
+    const beside = area(128, 352, 288, 224);   // la pièce de la case (4, 11) à la case (12, 17)
+    expect(exitPoint(beside, area(96, 416, 32, 64, 'door'), tile)).toEqual({ x: 80, y: 448 });   // à gauche : x 96 à 128
+    expect(exitPoint(beside, area(416, 416, 32, 64, 'door'), tile)).toEqual({ x: 464, y: 448 });   // à droite : x 416 à 448
+    expect(exitPoint(room, null, tile)).toEqual({ x: 176, y: 576 + 16 });
   });
 });
 
@@ -63,7 +94,7 @@ describe('prendre et rendre une place', () => {
 
   test('deux demandes en même temps pour la même place : une seule l\'obtient', async () => {
     const { db, service } = await setup();
-    const [first, second] = await Promise.all([service.claim('ana', 'Ana', 'B2'), service.claim('bob', 'Bob', 'B2')]);
+    const [first, second] = await Promise.all([service.claim('ana', 'Ana', 'A3'), service.claim('bob', 'Bob', 'A3')]);
     expect([first.ok, second.ok].sort()).toEqual([false, true]);
     expect(await db.select().from(desk)).toHaveLength(1);
   });
@@ -74,13 +105,13 @@ describe('prendre et rendre une place', () => {
     await service.rename('ana', 'Atelier');
     await service.setLocked('ana', true);
     service.kick('ana', 'bob', 'Bob');
-    const moved = await service.claim('ana', 'Ana', 'C3');
+    const moved = await service.claim('ana', 'Ana', 'A6');
     expect(moved).toMatchObject({ ok: true });
-    if (moved.ok) expect(moved.changed.map((d) => d.key)).toEqual(['A1', 'C3']);
+    if (moved.ok) expect(moved.changed.map((d) => d.key)).toEqual(['A1', 'A6']);
     expect(service.get('A1')).toMatchObject({ ownerId: null, name: null, locked: false });
-    expect(service.get('C3')).toMatchObject({ ownerId: 'ana', name: 'Atelier', locked: true });
+    expect(service.get('A6')).toMatchObject({ ownerId: 'ana', name: 'Atelier', locked: true });
     expect(service.bansOf('ana')).toEqual([]);
-    expect(await db.select().from(desk)).toMatchObject([{ key: 'C3', ownerId: 'ana', name: 'Atelier', locked: true }]);
+    expect(await db.select().from(desk)).toMatchObject([{ key: 'A6', ownerId: 'ana', name: 'Atelier', locked: true }]);
   });
 
   test('prendre sa propre place : rien ne change', async () => {
@@ -136,7 +167,7 @@ describe('au redémarrage', () => {
     await service.setLocked('ana', true);
     service.kick('ana', 'bob', 'Bob');
     const reloaded = await DeskService.create(db, map);
-    expect(reloaded.get('A3')).toEqual({ key: 'A3', ownerId: 'ana', ownerName: 'ANA', name: 'Chez Ana', locked: true, closedByState: false });
+    expect(reloaded.get('A3')).toEqual({ key: 'A3', ownerId: 'ana', ownerName: 'ANA', name: 'Chez Ana', locked: true, closedByState: false, ...DEFAULT_SETUP });
     expect(reloaded.deskOf('ana')?.key).toBe('A3');
     // Les exclus et les admis ne sont pas gardés.
     expect(reloaded.bansOf('ana')).toEqual([]);
@@ -246,5 +277,149 @@ describe('qui peut entrer', () => {
     expect(service.canEnter('ana', 'A1')).toBe(true);
     open = true;
     expect(service.canEnter('bob', 'A1')).toBe(true);
+  });
+});
+
+describe('le décor de la pièce', () => {
+  test('sans réglage : le poste par défaut, pour une place prise comme pour une place libre', async () => {
+    const { service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    expect(service.get('A1')).toMatchObject(DEFAULT_SETUP);
+    expect(service.get('A2')).toMatchObject(DEFAULT_SETUP);
+    expect(service.list().every((info) => info.floor === DEFAULT_SETUP.floor && info.items.length === DEFAULT_SETUP.items.length)).toBe(true);
+  });
+
+  test('setDecor : enregistré en base au nom de la personne, gardé en mémoire, rediffusé pour sa seule place', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.claim('bob', 'Bob', 'A2');
+    const result = await service.setDecor('ana', CUSTOM_DECOR);
+    expect(result).toEqual({ ok: true, access: false, changed: [expect.objectContaining({ key: 'A1', ownerId: 'ana', ...CUSTOM_DECOR })] });
+    expect(service.get('A1')).toMatchObject(CUSTOM_DECOR);
+    expect(service.deskOf('ana')).toMatchObject(CUSTOM_DECOR);
+    expect(service.get('A2')).toMatchObject(DEFAULT_SETUP);   // celle de bob n'a pas bougé
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...CUSTOM_DECOR }]);
+  });
+
+  test('un nouveau réglage remplace le précédent, d\'un bloc : une seule ligne en base', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.setDecor('ana', CUSTOM_DECOR);
+    await service.setDecor('ana', OTHER_DECOR);
+    expect(service.get('A1')).toMatchObject(OTHER_DECOR);
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...OTHER_DECOR }]);
+    await service.setDecor('ana', { ...OTHER_DECOR, items: [] });   // tout enlever est permis
+    expect(service.get('A1')?.items).toEqual([]);
+  });
+
+  test('sans bureau : no_desk, et rien n\'est écrit', async () => {
+    const { db, service } = await setup();
+    expect(await service.setDecor('ana', CUSTOM_DECOR)).toEqual({ ok: false, error: 'no_desk' });
+    expect(await db.select().from(deskSetup)).toEqual([]);
+  });
+
+  test.each(REFUSED_DECORS)('une déco que checkDecor refuse ($reason) : bad_decor avec la raison, et rien ne change', async ({ decor, reason }) => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.setDecor('ana', CUSTOM_DECOR);
+    expect(await service.setDecor('ana', decor)).toEqual({ ok: false, error: 'bad_decor', reason });
+    expect(service.get('A1')).toMatchObject(CUSTOM_DECOR);
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...CUSTOM_DECOR }]);
+  });
+
+  test('le serveur ne retient que { id, x, y } et ne garde pas la liste de l\'appelant ; une DeskInfo ne laisse pas changer le décor', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    const items = CUSTOM_DECOR.items.map((item) => ({ ...item, extra: 'en trop' }));
+    await service.setDecor('ana', { ...CUSTOM_DECOR, items });
+    items[0]!.x = 5;   // l'appelant change sa liste après coup
+    expect(service.get('A1')?.items).toEqual(CUSTOM_DECOR.items);
+    expect((await db.select().from(deskSetup))[0]!.items).toEqual(CUSTOM_DECOR.items);
+    service.get('A1')!.items.length = 0;   // et une DeskInfo n'est qu'une copie
+    service.get('A2')!.items.length = 0;   // y compris celle du poste par défaut
+    expect(service.get('A1')?.items).toEqual(CUSTOM_DECOR.items);
+    expect(service.get('A2')?.items).toEqual(DEFAULT_SETUP.items);
+  });
+
+  test('une base qui refuse l\'écriture : unavailable, et la mémoire n\'a pas changé', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await db.execute(sql`drop table "desk_setup"`);
+    expect(await service.setDecor('ana', CUSTOM_DECOR)).toEqual({ ok: false, error: 'unavailable' });
+    expect(service.get('A1')).toMatchObject(DEFAULT_SETUP);
+  });
+
+  test('deux réglages en même temps passent l\'un après l\'autre : le dernier l\'emporte, en mémoire comme en base', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await Promise.all([service.setDecor('ana', CUSTOM_DECOR), service.setDecor('ana', OTHER_DECOR)]);
+    expect(service.get('A1')).toMatchObject(OTHER_DECOR);
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...OTHER_DECOR }]);
+  });
+
+  test('après un redémarrage (une nouvelle instance sur la même base) : le décor est revenu', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A4');
+    await service.setDecor('ana', CUSTOM_DECOR);
+    const reloaded = await DeskService.create(db, map);
+    expect(reloaded.get('A4')).toEqual({ key: 'A4', ownerId: 'ana', ownerName: 'ANA', name: null, locked: false, closedByState: false, ...CUSTOM_DECOR });
+    expect(reloaded.get('A1')).toMatchObject(DEFAULT_SETUP);
+  });
+
+  test('le décor est à la personne : il la suit quand elle déménage, et la place qu\'elle laisse montre le poste par défaut', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.setDecor('ana', CUSTOM_DECOR);
+    const moved = await service.claim('ana', 'Ana', 'A6');
+    expect(moved).toMatchObject({
+      ok: true,
+      changed: [expect.objectContaining({ key: 'A1', ownerId: null, ...DEFAULT_SETUP }), expect.objectContaining({ key: 'A6', ownerId: 'ana', ...CUSTOM_DECOR })],
+    });
+    expect(service.get('A1')).toMatchObject(DEFAULT_SETUP);
+    expect(service.get('A6')).toMatchObject(CUSTOM_DECOR);
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...CUSTOM_DECOR }]);   // toujours une seule ligne, la sienne
+    // La place qu'elle a laissée, prise par quelqu'un d'autre, montre le réglage de celui-là (ici aucun) et non le sien.
+    await service.claim('bob', 'Bob', 'A1');
+    expect(service.get('A1')).toMatchObject({ ownerId: 'bob', ...DEFAULT_SETUP });
+  });
+
+  test('release : la place libre montre le poste par défaut, mais la personne garde son décor et le retrouve à sa prochaine place', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.setDecor('ana', CUSTOM_DECOR);
+    expect(await service.release('ana')).toMatchObject({ ok: true, changed: [{ key: 'A1', ownerId: null, ...DEFAULT_SETUP }] });
+    expect(service.get('A1')).toMatchObject(DEFAULT_SETUP);
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...CUSTOM_DECOR }]);
+
+    // Quelqu'un d'autre prend la place : le poste par défaut. Elle en reprend une autre : son décor est revenu avec elle.
+    await service.claim('bob', 'Bob', 'A1');
+    expect(service.get('A1')).toMatchObject(DEFAULT_SETUP);
+    expect(await service.claim('ana', 'Ana', 'A3')).toMatchObject({ ok: true, changed: [expect.objectContaining({ key: 'A3', ...CUSTOM_DECOR })] });
+    expect(service.get('A3')).toMatchObject(CUSTOM_DECOR);
+  });
+
+  test('le décor d\'une personne qui n\'a plus de bureau est lui aussi rechargé au démarrage', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.setDecor('ana', CUSTOM_DECOR);
+    await service.release('ana');
+    const reloaded = await DeskService.create(db, map);
+    expect(reloaded.list().every((info) => info.ownerId === null)).toBe(true);
+    expect(await reloaded.claim('ana', 'Ana', 'A2')).toMatchObject({ ok: true });
+    expect(reloaded.get('A2')).toMatchObject(CUSTOM_DECOR);
+  });
+
+  test('le décor part avec le compte (ON DELETE CASCADE, comme le bureau)', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.setDecor('ana', CUSTOM_DECOR);
+    await db.delete(user).where(eq(user.id, 'ana'));
+    expect(await db.select().from(deskSetup)).toEqual([]);
+  });
+
+  test('si les décors sont illisibles au démarrage, ready est rejetée : le service ne s\'ouvre pas avec des pièces fausses', async () => {
+    const { db } = await setup();
+    await db.execute(sql`drop table "desk_setup"`);
+    await expect(DeskService.create(db, map)).rejects.toThrow();
   });
 });

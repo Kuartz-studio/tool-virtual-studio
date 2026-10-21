@@ -1,5 +1,4 @@
 import {
-  DEV_AVATAR_KEYS,
   DEV_OFFICE,
   MEDIA_STATE_RATE,
   MOVE_RATE,
@@ -7,6 +6,7 @@ import {
   OFFICE_ROOM,
   WORLD_TICK_MS,
   buildTiledMap,
+  formatPremade,
   parseOfficeMap,
   type MovePayload,
   type WorldTick,
@@ -321,12 +321,12 @@ describe('profils', () => {
     const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
 
     const forB = nextEvent(b.socket, 'profile:changed');
-    const res = await request(srv.app).patch('/api/me').set('Cookie', cookieA).send({ avatarKey: DEV_AVATAR_KEYS[1] });
+    const res = await request(srv.app).patch('/api/me').set('Cookie', cookieA).send({ avatarKey: formatPremade(2) });
 
     expect(res.status).toBe(200);
-    expect(await forB).toEqual({ id: a.id, name: 'a', avatarKey: 'dev-blue' });   // avec le nom : le client remplace les deux ensemble
+    expect(await forB).toEqual({ id: a.id, name: 'a', avatarKey: 'p.02' });   // avec le nom : le client remplace les deux ensemble
     const c = await enter(srv, await srv.inviteAndLogin('c@x.fr'));
-    expect(c.init.players.find((p) => p.id === a.id)).toMatchObject({ name: 'a', avatarKey: 'dev-blue' });
+    expect(c.init.players.find((p) => p.id === a.id)).toMatchObject({ name: 'a', avatarKey: 'p.02' });
   });
 
   test('un membre qui n\'est pas au bureau change de profil → annoncé quand même, et le monde n\'y gagne personne', async () => {
