@@ -57,7 +57,7 @@ test('A écrit à tout le monde → B le voit ; B recharge → toujours là', as
 
   // B, panneau fermé, a un badge de non-lus : le message de A, et lui seul (l'historique de son arrivée est lu).
   await expect(chatToggle(b.page)).toHaveAccessibleName('Chat, 1 nouveau message', PROPAGATION);
-  await expect(chatToggle(b.page).locator('.bar-badge')).toHaveText('1');
+  await expect(chatToggle(b.page).locator('.icon-badge')).toHaveText('1');
 
   // Il ouvre le panneau : le message de A, avec son nom, son heure et son lien ; le badge a disparu.
   const panelOfB = await openChat(b.page);
@@ -188,8 +188,11 @@ test('la liste suit le dernier message ; remontée lire plus haut, elle ne saute
   // La liste déborde, et elle est tout en bas : le dernier message est sous les yeux.
   await expect.poll(atBottom, PROPAGATION).toBe(true);
 
-  // Un autre panneau s'ouvre : le chat se rétrécit, et la liste reste en bas.
+  // Un autre panneau prend sa place (un seul est ouvert à la fois) : le chat reste monté, caché ; revenu, sa liste est en bas.
   await officeBar(a.page).getByRole('button', { name: 'Personnes' }).click();
+  await expect(panelOfA).toBeHidden();
+  await chatToggle(a.page).click();
+  await expect(panelOfA).toBeVisible();
   await expect.poll(atBottom, PROPAGATION).toBe(true);
 
   // A remonte tout en haut lire : un message de plus ne la ramène pas en bas.

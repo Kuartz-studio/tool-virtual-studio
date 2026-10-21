@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type AriaRole, type CSSProperties, type ReactNode, type RefObject } from 'react';
 
 // L'écart entre l'ancre et la fenêtre qui s'ouvre au-dessus d'elle.
-const GAP = 10;
+const GAP = 14;
 
 export interface PopoverProps {
   open: boolean;

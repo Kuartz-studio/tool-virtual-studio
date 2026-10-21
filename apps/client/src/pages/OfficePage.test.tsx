@@ -101,6 +101,13 @@ async function enter() {
   await findOfficeFor('Léa');
 }
 
+// « Se déconnecter » et Admin sont des lignes du menu « Plus » de la barre.
+const moreButton = () => screen.getByRole('button', { name: fr.office.more.toggle });
+async function chooseInMoreMenu(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(moreButton());
+  await user.click(screen.getByRole('menuitem', { name }));
+}
+
 // La page ouverte, et le bureau, après « Entrer ».
 async function openOffice(account?: FakeUser) {
   const router = await openPage(account);
@@ -175,7 +182,7 @@ test('pas de « Connexion perdue » quand un autre onglet a pris la place, ni pe
   fakeAuth.signOut.mockImplementationOnce(
     () => new Promise((resolve) => (finishSignOut = () => resolve({ data: { success: true }, error: null }))),
   );
-  await userEvent.click(screen.getByRole('button', { name: fr.office.signOut }));
+  await chooseInMoreMenu(userEvent.setup(), fr.office.signOut);
   expect(socket().active).toBe(false);
   expect(screen.queryByText(fr.office.reconnecting)).toBeNull();
   finishSignOut();
@@ -341,7 +348,7 @@ test('le statut ne se change pas avant que le serveur ait répondu, ni connexion
 test('on peut se déconnecter avant le premier init (le serveur ne répond pas)', async () => {
   const router = await openOffice();
   expect(screen.getByText('Connexion au bureau…')).toBeTruthy();
-  await userEvent.click(screen.getByRole('button', { name: 'Se déconnecter' }));
+  await chooseInMoreMenu(userEvent.setup(), 'Se déconnecter');
   await waitFor(() => expect(router.state.location.pathname).toBe('/connexion'));
   expect(socket().active).toBe(false);
 });
@@ -358,7 +365,7 @@ test('se déconnecter ferme d\'abord la connexion au bureau, puis la session', a
     setFakeSession(null);
     return { data: { success: true }, error: null };
   });
-  await userEvent.click(screen.getByRole('button', { name: 'Se déconnecter' }));
+  await chooseInMoreMenu(userEvent.setup(), 'Se déconnecter');
   await waitFor(() => expect(router.state.location.pathname).toBe('/connexion'));
   expect(officeOpenAtSignOut).toBe(false);
 });
@@ -366,7 +373,7 @@ test('se déconnecter ferme d\'abord la connexion au bureau, puis la session', a
 test('la déconnexion échoue : le message, et la connexion au bureau est rouverte', async () => {
   const router = await openOffice();
   fakeAuth.signOut.mockResolvedValueOnce({ data: null, error: { status: 500 } });
-  await userEvent.click(screen.getByRole('button', { name: 'Se déconnecter' }));
+  await chooseInMoreMenu(userEvent.setup(), 'Se déconnecter');
   expect((await screen.findByRole('alert')).textContent).toBe('Une erreur est survenue. Réessaie dans un instant.');
   expect(router.state.location.pathname).toBe('/');
   expect(socket().connectCalls).toBe(2);
@@ -559,8 +566,8 @@ test('StrictMode (développement) : le panneau Chat s\'ouvre sur son champ, et e
 
 // ---- Le panneau Admin, du compte à la barre -------------------------------------------------------------------------------------
 
-// Le rôle vient de la session (Better Auth le renvoie avec le compte) : il décide si la barre a un bouton Admin.
-test('admin : la barre a un bouton Admin, qui ouvre le panneau sur les listes du serveur, et le compte de la session s\'y reconnaît', async () => {
+// Le rôle vient de la session (Better Auth le renvoie avec le compte) : il décide si le menu « Plus » a une ligne Admin.
+test('admin : le menu « Plus » a une ligne Admin, qui ouvre le panneau sur les listes du serveur, et le compte de la session s\'y reconnaît', async () => {
   const user = userEvent.setup();
   fakeApi({
     'GET /api/admin/members': () =>
@@ -576,7 +583,8 @@ test('admin : la barre a un bouton Admin, qui ouvre le panneau sur les listes du
     socket().receive('init', init());
   });
 
-  await user.click(await screen.findByRole('button', { name: fr.admin.toggle }));
+  await user.click(await screen.findByRole('button', { name: fr.office.more.toggle }));
+  await user.click(screen.getByRole('menuitem', { name: fr.admin.toggle }));
   const members = await screen.findByRole('region', { name: 'Membres (2)' });
   // Léa est le compte de la session : pas de bouton pour se retirer elle-même.
   expect(within(members).getByText('Léa').closest('li')?.textContent).toContain(fr.admin.you);
@@ -584,7 +592,7 @@ test('admin : la barre a un bouton Admin, qui ouvre le panneau sur les listes du
   expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
 });
 
-test('membre : ni bouton Admin dans la barre, ni requête à /api/admin', async () => {
+test('membre : ni ligne Admin dans le menu « Plus », ni requête à /api/admin', async () => {
   const api = fakeApi({});
   await openOffice();
   act(() => {
@@ -592,6 +600,7 @@ test('membre : ni bouton Admin dans la barre, ni requête à /api/admin', async 
     socket().receive('init', init());
   });
   expect(screen.getByRole('button', { name: fr.chat.toggle })).toBeTruthy();
-  expect(screen.queryByRole('button', { name: fr.admin.toggle })).toBeNull();
+  await userEvent.click(moreButton());
+  expect(screen.queryByRole('menuitem', { name: fr.admin.toggle })).toBeNull();
   expect(api).not.toHaveBeenCalled();
 });

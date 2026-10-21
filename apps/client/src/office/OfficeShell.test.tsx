@@ -97,6 +97,13 @@ function renderShell({
 const bar = () => screen.getByRole('group', { name: fr.office.barLabel });
 const toggle = () => within(bar()).getByRole('button', { name: fr.office.people.toggle }) as HTMLButtonElement;
 const chatToggle = () => within(bar()).getByRole('button', { name: /^Chat/ }) as HTMLButtonElement;
+const moreButton = () => within(bar()).getByRole('button', { name: fr.office.more.toggle }) as HTMLButtonElement;
+// Ce que choisit une ligne du menu « Plus » : Mon bureau, Personnage, Son et Se déconnecter y sont, en attendant la puce « Moi ».
+type User = ReturnType<typeof userEvent.setup>;
+async function chooseInMoreMenu(user: User, name: string) {
+  await user.click(moreButton());
+  await user.click(screen.getByRole('menuitem', { name }));
+}
 const chatPanel = () => screen.getByRole('complementary', { name: fr.chat.title });
 const chatInput = () => screen.getByRole('textbox') as HTMLInputElement;
 const chatMessage = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
@@ -133,11 +140,18 @@ describe('la mise en page', () => {
     expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, le Son, puis Chat, Personnes, Personnage, Mon bureau et Se déconnecter', () => {
+  test('la barre du bas : le statut, micro, caméra, partage d\'écran et réactions, le zoom, puis Chat, Personnes et Plus ; le nom est à côté du statut', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Son', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Réactions', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
     expect(within(bar()).getByText('Léa')).toBeTruthy();
+  });
+
+  test('en haut à gauche, le lieu où l\'on est (la carte n\'est pas là : rien) ; les messages passagers sont sous les vignettes', () => {
+    const { container } = renderShell();
+    expect(container.querySelector('.office-ui > .dock-where')).toBeNull();
+    act(() => useOfficeStore.getState().addDeskKnock({ key: 'A1', userId: 'bob', name: 'Bob' }));
+    expect(container.querySelector('.office-ui > .toasts')?.textContent).toContain(t(fr.desk.knockToast, { name: 'Bob' }));
   });
 
   test('la barre dit sa hauteur à la couche (--bar-size) : les panneaux s\'arrêtent au-dessus d\'elle, même sur plusieurs lignes', () => {
@@ -218,23 +232,24 @@ describe('la mise en page', () => {
 });
 
 describe('Se déconnecter', () => {
-  test('le bouton appelle onSignOut', async () => {
+  test('la ligne du menu « Plus » appelle onSignOut', async () => {
     const onSignOut = vi.fn();
     renderShell({ onSignOut });
-    await userEvent.click(within(bar()).getByRole('button', { name: fr.office.signOut }));
+    await chooseInMoreMenu(userEvent.setup(), fr.office.signOut);
     expect(onSignOut).toHaveBeenCalledTimes(1);
   });
 
-  test('pendant la déconnexion : « Déconnexion… », inactif', () => {
+  test('pendant la déconnexion : « Déconnexion… », inactif', async () => {
     renderShell({ signingOut: true });
-    const button = within(bar()).getByRole('button', { name: fr.office.signingOut }) as HTMLButtonElement;
-    expect(button.disabled).toBe(true);
+    await userEvent.click(moreButton());
+    const item = screen.getByRole('menuitem', { name: fr.office.signingOut }) as HTMLButtonElement;
+    expect(item.disabled).toBe(true);
   });
 
   test('il marche avant l\'init (le serveur ne répond pas) : on doit pouvoir se déconnecter', async () => {
     const onSignOut = vi.fn();
     renderShell({ init: false, connecting: true, onSignOut });
-    await userEvent.click(within(bar()).getByRole('button', { name: fr.office.signOut }));
+    await chooseInMoreMenu(userEvent.setup(), fr.office.signOut);
     expect(onSignOut).toHaveBeenCalledTimes(1);
   });
 });
@@ -324,62 +339,62 @@ describe('le panneau Personnes', () => {
 });
 
 describe('le panneau Son', () => {
-  const soundToggle = () => within(bar()).getByRole('button', { name: fr.sound.toggle }) as HTMLButtonElement;
   const soundPanel = () => screen.getByRole('complementary', { name: fr.sound.title });
+  const soundEntry = () => screen.getByRole('menuitem', { name: fr.sound.toggle }) as HTMLButtonElement;
 
   beforeEach(() => {
     localStorage.clear();
     useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, status: 'locked', playing: null, place: 'lobby' });
   });
 
-  test('fermé au départ ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {
+  test('fermé au départ ; la ligne « Son » du menu « Plus » l\'ouvre, et le menu se referme', async () => {
     const user = userEvent.setup();
     renderShell();
     expect(screen.queryByRole('complementary')).toBeNull();
-    expect(soundToggle().getAttribute('aria-expanded')).toBe('false');
-    expect(soundToggle().hasAttribute('aria-controls')).toBe(false);
-
-    await user.click(soundToggle());
-    const panel = soundPanel();
-    expect(soundToggle().getAttribute('aria-expanded')).toBe('true');
-    expect(soundToggle().getAttribute('aria-controls')).toBe(panel.id);
-
-    await user.click(soundToggle());
-    expect(screen.queryByRole('complementary')).toBeNull();
+    await user.click(moreButton());
+    await user.click(soundEntry());
+    expect(soundPanel().id).not.toBe('');
+    expect(screen.queryByRole('menu')).toBeNull();
+    // Le bouton « Plus » n'est pas celui du panneau : il dit seulement que son menu est fermé.
+    expect(moreButton().getAttribute('aria-expanded')).toBe('false');
   });
 
-  test('il s\'ouvre à droite, par-dessus le jeu ; le focus va au titre, Échap le ferme et rend le focus au bouton', async () => {
+  test('il s\'ouvre à droite, par-dessus le jeu ; le focus va au titre, Échap le ferme et rend le focus au bouton « Plus »', async () => {
     const user = userEvent.setup();
     const { container } = renderShell();
-    await user.click(soundToggle());
+    await chooseInMoreMenu(user, fr.sound.toggle);
     expect(container.querySelector('.office-ui .office-side')?.contains(soundPanel())).toBe(true);
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.sound.title }));
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('complementary')).toBeNull();
-    expect(document.activeElement).toBe(soundToggle());
+    expect(document.activeElement).toBe(moreButton());
   });
 
-  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton', async () => {
+  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton « Plus »', async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(soundToggle());
+    await chooseInMoreMenu(user, fr.sound.toggle);
     await user.click(screen.getByRole('button', { name: fr.sound.close }));
     expect(screen.queryByRole('complementary')).toBeNull();
-    expect(document.activeElement).toBe(soundToggle());
+    expect(document.activeElement).toBe(moreButton());
   });
 
-  test('le bouton marche avant l\'init : le son ne dépend pas du serveur', () => {
+  test('la ligne marche avant l\'init : le son ne dépend pas du serveur', async () => {
     renderShell({ init: false });
-    expect(soundToggle().disabled).toBe(false);
+    await userEvent.click(moreButton());
+    expect(soundEntry().disabled).toBe(false);
   });
 
-  test('Son, Personnes et Chat peuvent être ouverts ensemble', async () => {
+  test('un seul panneau à la fois : Son, puis Personnes, puis Chat laissent le dernier seul', async () => {
     const user = userEvent.setup();
     renderShell();
-    await user.click(soundToggle());
+    await chooseInMoreMenu(user, fr.sound.toggle);
     await user.click(toggle());
+    expect(screen.getAllByRole('complementary').map((panel) => panel.getAttribute('aria-labelledby') ?? panel.getAttribute('aria-label'))).toHaveLength(1);
+    expect(screen.queryByRole('complementary', { name: fr.sound.title })).toBeNull();
     await user.click(chatToggle());
-    expect(screen.getAllByRole('complementary')).toHaveLength(3);
+    expect(screen.getAllByRole('complementary')).toHaveLength(1);
+    expect(chatPanel()).toBeTruthy();
   });
 });
 
@@ -492,27 +507,47 @@ describe('le panneau Chat', () => {
     expect(chatToggle().disabled).toBe(true);
   });
 
-  test('Chat et Personnes peuvent être ouverts ensemble, Personnes au-dessus', async () => {
+  test('Personnes puis Chat laissent un seul panneau visible, et chaque bouton dit s\'il est ouvert', async () => {
     const user = userEvent.setup();
-    const { container } = renderShell();
+    renderShell();
+    await user.click(toggle());
     await user.click(chatToggle());
-    await user.click(toggle());
-    const side = container.querySelector('.office-ui .office-side')!;
-    expect([...side.querySelectorAll(':scope > aside')].map((panel) => panel.querySelector('h2')?.textContent)).toEqual([fr.office.people.title, fr.chat.title]);
-    await user.click(toggle());
+    expect(screen.getAllByRole('complementary')).toHaveLength(1);
     expect(chatPanel()).toBeTruthy();
     expect(screen.queryByRole('complementary', { name: fr.office.people.title })).toBeNull();
+    expect(chatToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(toggle().getAttribute('aria-expanded')).toBe('false');
+
+    await user.click(toggle());
+    expect(screen.getAllByRole('complementary')).toHaveLength(1);
+    expect(screen.getByRole('complementary', { name: fr.office.people.title })).toBeTruthy();
+    expect(screen.queryByRole('complementary', { name: fr.chat.title })).toBeNull();
+    expect(toggle().getAttribute('aria-expanded')).toBe('true');
+    expect(chatToggle().getAttribute('aria-expanded')).toBe('false');
   });
 
-  test('la colonne de droite sait si le chat est ouvert (Personnes lui laisse alors de la place)', async () => {
+  test('quitter le Chat pour un autre panneau le garde monté, caché : on retrouve le brouillon en y revenant', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(chatToggle());
+    await user.type(chatInput(), 'Pas fini');
+    await user.click(toggle());
+    expect(screen.queryByRole('textbox')).toBeNull();
+    await user.click(chatToggle());
+    expect(chatInput().value).toBe('Pas fini');
+  });
+
+  test('la colonne de droite dit quel panneau est ouvert (data-panel)', async () => {
     const user = userEvent.setup();
     const { container } = renderShell();
     const side = container.querySelector('.office-side')!;
-    expect(side.hasAttribute('data-chat-open')).toBe(false);
+    expect(side.hasAttribute('data-panel')).toBe(false);
     await user.click(chatToggle());
-    expect(side.getAttribute('data-chat-open')).toBe('true');
-    await user.click(chatToggle());
-    expect(side.hasAttribute('data-chat-open')).toBe(false);
+    expect(side.getAttribute('data-panel')).toBe('chat');
+    await user.click(toggle());
+    expect(side.getAttribute('data-panel')).toBe('people');
+    await user.click(toggle());
+    expect(side.hasAttribute('data-panel')).toBe(false);
   });
 
   test('l\'écran « Ouvert dans un autre onglet » rend le panneau inerte avec le reste', async () => {
@@ -525,7 +560,7 @@ describe('le panneau Chat', () => {
   });
 
   describe('le badge de non-lus', () => {
-    const badge = () => chatToggle().querySelector('.bar-badge');
+    const badge = () => chatToggle().querySelector('.icon-badge');
 
     test('rien tant qu\'il n\'y a rien de nouveau ; l\'historique de l\'arrivée est lu', () => {
       renderShell({ init: false });
@@ -533,8 +568,7 @@ describe('le panneau Chat', () => {
         useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'dev-office', chatHistory: [chatMessage('m1'), chatMessage('m2')], desks: [], closedDesks: [], deskBans: [] }),
       );
       expect(badge()).toBeNull();
-      expect(chatToggle().getAttribute('aria-label')).toBeNull();
-      expect(chatToggle().textContent).toBe('Chat');
+      expect(chatToggle().getAttribute('aria-label')).toBe('Chat');
     });
 
     test('sur le bouton fermé : le nombre de nouveaux messages « Tout le monde » des autres, et un nom accessible qui le dit', () => {
@@ -618,118 +652,104 @@ describe('le panneau Admin', () => {
       ]),
     'GET /api/admin/invitations': () => json(200, []),
   };
-  const adminToggle = () => within(bar()).getByRole('button', { name: fr.admin.toggle }) as HTMLButtonElement;
+  // Admin est une ligne du menu « Plus », pour un admin seulement.
+  const adminEntry = () => screen.getByRole('menuitem', { name: fr.admin.toggle }) as HTMLButtonElement;
+  const openAdmin = (user: User) => chooseInMoreMenu(user, fr.admin.toggle);
   const adminPanel = () => screen.getByRole('complementary', { name: fr.admin.title });
   const adminCalls = (api: ReturnType<typeof fakeApi>) => api.mock.calls.filter(([url]) => String(url).startsWith('/api/admin'));
 
-  test('un membre n\'a pas de bouton Admin : ni panneau, ni requête à /api/admin, même Chat et Personnes ouverts', async () => {
+  test('un membre n\'a pas de ligne Admin : ni panneau, ni requête à /api/admin, même Personnes ouvert', async () => {
     const user = userEvent.setup();
     const api = fakeApi({ 'GET /api/members': () => json(200, []) });
     renderShell({ role: 'member' });
     await user.click(toggle());
-    await user.click(chatToggle());
-    expect(within(bar()).queryByRole('button', { name: fr.admin.toggle })).toBeNull();
+    await user.click(moreButton());
+    expect(screen.queryByRole('menuitem', { name: fr.admin.toggle })).toBeNull();
     expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
     expect(adminCalls(api)).toEqual([]);
   });
 
-  test('un admin a le bouton Admin dans la barre, entre Mon bureau et Se déconnecter', () => {
+  test('un admin a Admin dans le menu « Plus », après Décorer et avant le zoom', async () => {
+    const user = userEvent.setup();
     renderShell({ role: 'admin' });
-    const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Son', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Admin', 'Se déconnecter']);
+    await user.click(moreButton());
+    const names = screen.getAllByRole('menuitem').map((item) => item.getAttribute('aria-label') ?? item.textContent);
+    expect(names).toEqual([fr.decor.toggle, fr.admin.toggle, fr.zoom.reset, fr.desk.toggle, fr.character.toggle, fr.sound.toggle, fr.office.signOut]);
   });
 
-  test('fermé au départ, sans rien demander au serveur ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {
+  test('fermé au départ, sans rien demander au serveur ; la ligne l\'ouvre (le panneau a son id), Fermer le ferme', async () => {
     const user = userEvent.setup();
     const api = fakeApi(adminLists);
     renderShell({ role: 'admin' });
     expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
-    expect(adminToggle().getAttribute('aria-expanded')).toBe('false');
-    expect(adminToggle().hasAttribute('aria-controls')).toBe(false);
     expect(adminCalls(api)).toEqual([]);
 
-    await user.click(adminToggle());
-    expect(adminToggle().getAttribute('aria-expanded')).toBe('true');
-    expect(adminToggle().getAttribute('aria-controls')).toBe(adminPanel().id);
+    await openAdmin(user);
     expect(adminPanel().id).not.toBe('');
     expect(await screen.findByRole('region', { name: 'Membres (2)' })).toBeTruthy();
 
-    await user.click(adminToggle());
+    await user.click(screen.getByRole('button', { name: fr.admin.close }));
     expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
-    expect(adminToggle().getAttribute('aria-expanded')).toBe('false');
-    expect(adminToggle().hasAttribute('aria-controls')).toBe(false);
   });
 
-  test('à l\'ouverture le focus passe au panneau (son titre) ; Échap le ferme et rend le focus au bouton, à chaque fois', async () => {
+  test('à l\'ouverture le focus passe au panneau (son titre) ; Échap le ferme et rend le focus au bouton « Plus », à chaque fois', async () => {
     const user = userEvent.setup();
     fakeApi(adminLists);
     renderShell({ role: 'admin' });
     for (let times = 0; times < 2; times++) {
-      await user.click(adminToggle());
+      await openAdmin(user);
       expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.admin.title }));
       await screen.findByRole('region', { name: 'Membres (2)' });
       await user.keyboard('{Escape}');
       expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
-      expect(document.activeElement).toBe(adminToggle());
+      expect(document.activeElement).toBe(moreButton());
     }
   });
 
-  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton', async () => {
+  test('le bouton Fermer du panneau le ferme aussi, focus rendu au bouton « Plus »', async () => {
     const user = userEvent.setup();
     fakeApi(adminLists);
     renderShell({ role: 'admin' });
-    await user.click(adminToggle());
+    await openAdmin(user);
     await user.click(screen.getByRole('button', { name: fr.admin.close }));
     expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
-    expect(document.activeElement).toBe(adminToggle());
+    expect(document.activeElement).toBe(moreButton());
   });
 
-  test('au clavier : Entrée ouvre le panneau, et Tab y entre', async () => {
+  test('au clavier : Entrée ouvre le menu, le focus va à la première ligne qu\'on peut choisir (Admin : Décorer attend un bureau), Entrée ouvre le panneau, et Tab y entre', async () => {
     const user = userEvent.setup();
     fakeApi(adminLists);
     renderShell({ role: 'admin' });
-    adminToggle().focus();
+    moreButton().focus();
+    await user.keyboard('{Enter}');
+    expect(document.activeElement).toBe(adminEntry());
     await user.keyboard('{Enter}');
     expect(adminPanel()).toBeTruthy();
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.admin.close }));
   });
 
-  test('il s\'ouvre dans la couche par-dessus le jeu, à droite ; avec Personnes et Chat, de haut en bas : Personnes, Admin, Chat', async () => {
+  test('il s\'ouvre dans la couche par-dessus le jeu, à droite, et prend la place d\'un autre panneau', async () => {
     const user = userEvent.setup();
     fakeApi({ ...adminLists, 'GET /api/members': () => json(200, []) });
     const { container } = renderShell({ role: 'admin' });
     const game = screen.getByTestId('jeu');
     await user.click(chatToggle());
-    await user.click(adminToggle());
-    await user.click(toggle());
+    await openAdmin(user);
     const side = container.querySelector('.office-ui .office-side')!;
     expect(side.contains(adminPanel())).toBe(true);
-    expect([...side.querySelectorAll(':scope > aside')].map((panel) => panel.querySelector('h2')?.textContent)).toEqual([
-      fr.office.people.title,
-      fr.admin.title,
-      fr.chat.title,
-    ]);
+    expect(screen.getAllByRole('complementary')).toHaveLength(1);
+    expect(screen.queryByRole('complementary', { name: fr.chat.title })).toBeNull();
+    await user.click(toggle());
+    expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
     expect(screen.getByTestId('jeu')).toBe(game);
-  });
-
-  test('la colonne de droite sait si l\'admin est ouvert (Personnes lui laisse alors de la place)', async () => {
-    const user = userEvent.setup();
-    fakeApi(adminLists);
-    const { container } = renderShell({ role: 'admin' });
-    const side = container.querySelector('.office-side')!;
-    expect(side.hasAttribute('data-admin-open')).toBe(false);
-    await user.click(adminToggle());
-    expect(side.getAttribute('data-admin-open')).toBe('true');
-    await user.click(adminToggle());
-    expect(side.hasAttribute('data-admin-open')).toBe(false);
   });
 
   test('le panneau reconnaît le compte connecté : sa ligne est « (toi) » et n\'a pas de bouton Retirer, celle de Bob oui', async () => {
     const user = userEvent.setup();
     fakeApi(adminLists);
     renderShell({ role: 'admin' });
-    await user.click(adminToggle());
+    await openAdmin(user);
     const members = await screen.findByRole('region', { name: 'Membres (2)' });
     const lea = within(members).getByText('Léa').closest('li')!;
     expect(lea.textContent).toContain(fr.admin.you);
@@ -749,15 +769,15 @@ describe('le panneau Admin', () => {
       renderShell({ role: 'admin' });
       expect(configCalls(api)).toHaveLength(0);   // panneau fermé : rien n'est demandé
 
-      await user.click(adminToggle());
+      await openAdmin(user);
       const members = await screen.findByRole('region', { name: 'Membres (2)' });
       expect(await within(members).findByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name: 'Bob' }) })).toBeTruthy();
       expect(passwordLink('Léa')).toBeNull();
       expect(configCalls(api)).toHaveLength(1);
 
       // Fermé puis rouvert : la configuration est connue, elle n'est pas relue, et les boutons sont là tout de suite.
-      await user.click(adminToggle());
-      await user.click(adminToggle());
+      await user.click(screen.getByRole('button', { name: fr.admin.close }));
+      await openAdmin(user);
       expect(await screen.findByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name: 'Bob' }) })).toBeTruthy();
       expect(configCalls(api)).toHaveLength(1);
     });
@@ -773,7 +793,7 @@ describe('le panneau Admin', () => {
       const user = userEvent.setup();
       const api = fakeApi({ ...adminLists, 'GET /api/config': config });
       renderShell({ role: 'admin' });
-      await user.click(adminToggle());
+      await openAdmin(user);
       const members = await screen.findByRole('region', { name: 'Membres (2)' });
       await waitFor(() => expect(configCalls(api)).toHaveLength(1));
       await new Promise((resolve) => setTimeout(resolve, 20));
@@ -790,16 +810,17 @@ describe('le panneau Admin', () => {
     });
   });
 
-  test('il n\'attend pas l\'init (il ne parle qu\'à l\'API, et ne lit du bureau que qui est là) : le bouton est actif avant elle', () => {
+  test('il n\'attend pas l\'init (il ne parle qu\'à l\'API, et ne lit du bureau que qui est là) : la ligne est active avant elle', async () => {
     renderShell({ role: 'admin', init: false });
-    expect(adminToggle().disabled).toBe(false);
+    await userEvent.click(moreButton());
+    expect(adminEntry().disabled).toBe(false);
   });
 
   test('l\'écran « Ouvert dans un autre onglet » rend le panneau inerte avec le reste', async () => {
     const user = userEvent.setup();
     fakeApi(adminLists);
     const { container } = renderShell({ role: 'admin' });
-    await user.click(adminToggle());
+    await openAdmin(user);
     act(() => useOfficeStore.getState().setReplaced(true));
     expect(container.querySelector('.office-ui')?.contains(adminPanel())).toBe(true);
     expect(container.querySelector('.office-ui')?.hasAttribute('inert')).toBe(true);
@@ -855,7 +876,7 @@ describe('les états d\'activité', () => {
     refresh();
     expect(client.getSnapshot().local.mic).toBe(false);
     expect(micButton().disabled).toBe(true);
-    expect(micButton().title).toBe(t(fr.states.micCut, { label: 'En focus' }));
+    expect(screen.getByRole('button', { name: fr.media.controls.mic, description: t(fr.states.micCut, { label: 'En focus' }) })).toBe(micButton());
 
     act(() => useOfficeStore.getState().setActivity('moi', null));
     refresh();

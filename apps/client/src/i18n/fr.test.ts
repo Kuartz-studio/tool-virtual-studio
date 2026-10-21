@@ -28,6 +28,30 @@ test('les textes attendus par les tests de bout en bout', () => {
   expect(fr.office.reconnecting).toBe('Connexion perdue, reconnexion…');
 });
 
+// L'interface par icônes : les noms des boutons sans texte (aussi leurs infobulles), que lisent les tests de bout en bout (e2e/helpers.ts).
+test('les noms des boutons de la barre du bas et de ses menus', () => {
+  expect(fr.ui.close).toBe('Fermer');
+  expect(fr.office.more.toggle).toBe('Plus');
+  expect(fr.office.more.menu).toBe('Plus d\'options');
+  expect(fr.media.controls.reactions).toBe('Réactions');
+  expect(fr.media.controls.screen).toBe('Partager l\'écran');
+  expect(fr.zoom.in).toBe('Zoom avant');
+  expect(fr.zoom.out).toBe('Zoom arrière');
+  // Les noms qu'on garde : l'action ne change pas.
+  expect(fr.chat.toggle).toBe('Chat');
+  expect(fr.desk.toggle).toBe('Mon bureau');
+  expect(fr.sound.toggle).toBe('Son');
+  expect(fr.character.toggle).toBe('Personnage');
+  expect(fr.decor.toggle).toBe('Décorer');
+  expect(fr.zoom.reset).toBe('Rétablir le zoom (100 %)');
+});
+
+test('le lieu : « Couloir » faute de zone, et combien sont ici', () => {
+  expect(fr.office.where.hallway).toBe('Couloir');
+  expect(fr.office.where.onePerson).toBe('1 personne ici');
+  expect(t(fr.office.where.manyPeople, { count: 4 })).toBe('4 personnes ici');
+});
+
 // Les textes du panneau Admin que lisent les tests de bout en bout (e2e/admin.spec.ts).
 test('le panneau Admin : ses textes et les messages de chaque erreur de l\'API', () => {
   expect(fr.admin.toggle).toBe('Admin');

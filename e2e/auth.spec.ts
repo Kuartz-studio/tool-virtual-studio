@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createInvitation, enterOffice, expectInOffice, inviteAndJoin, joinWithLink, lastMail, officeBar, signIn, submitJoinForm, uniqueEmail } from './helpers';
+import { createInvitation, enterOffice, expectInOffice, inviteAndJoin, joinWithLink, lastMail, officeBar, signIn, signOut, submitJoinForm, uniqueEmail } from './helpers';
 
 test('invitation → compte → bureau → déconnexion → connexion', async ({ page }) => {
   const lea = { email: uniqueEmail('lea'), name: 'Léa', password: 'motdepasse-de-lea' };
@@ -10,7 +10,7 @@ test('invitation → compte → bureau → déconnexion → connexion', async ({
   await expect(officeBar(page).getByRole('button', { name: 'Statut : Disponible' })).toBeVisible();
   await expect(page).toHaveURL('/');
 
-  await page.getByRole('button', { name: 'Se déconnecter' }).click();
+  await signOut(page);
   await expect(page).toHaveURL('/connexion');
   // La session est bien fermée : le bureau renvoie à la connexion.
   await page.goto('/');
@@ -28,7 +28,7 @@ test('invitation → compte → bureau → déconnexion → connexion', async ({
 test('mot de passe oublié de bout en bout', async ({ page }) => {
   const max = { email: uniqueEmail('max'), name: 'Max', password: 'ancien-motdepasse' };
   await inviteAndJoin(page, max);
-  await page.getByRole('button', { name: 'Se déconnecter' }).click();
+  await signOut(page);
 
   await page.getByRole('link', { name: 'Mot de passe oublié ?' }).click();
   // La page de connexion a aussi un champ « Adresse e-mail » : on attend la nouvelle page avant de remplir le sien.
@@ -86,6 +86,6 @@ test('lien d\'invitation ouvert en étant connecté avec un autre compte : déco
   // Le formulaire apparaît une fois Léa déconnectée.
   await submitJoinForm(page, { name: 'Sam', password: 'motdepasse-de-sam' });
   // Léa n'a rien perdu : son compte marche toujours.
-  await page.getByRole('button', { name: 'Se déconnecter' }).click();
+  await signOut(page);
   await signIn(page, lea);
 });

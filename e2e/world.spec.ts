@@ -6,6 +6,7 @@ import {
   holdUntilStopped,
   inviteAndJoin,
   joinOffice,
+  openMoreMenu,
   restingAt,
   selfAt,
   uniqueEmail,
@@ -394,11 +395,13 @@ test('zoom : la molette, les boutons et les touches, jusqu\'à ×2 plus près et
   await wheel(100);
   expect(await zoom()).toBe(start / 4);
 
-  // Les boutons : 25 % montré, + remonte, le pourcentage rétablit la vue de départ.
-  await expect(page.getByRole('button', { name: 'Rétablir le zoom (100 %)' })).toHaveText('25 %');
+  // Les boutons : le menu « Plus » dit 25 %, + remonte, « Rétablir le zoom » dans ce menu rend la vue de départ.
+  const resetZoom = async () => (await openMoreMenu(page)).getByRole('menuitem', { name: 'Rétablir le zoom (100 %)' });
+  await expect(await resetZoom()).toContainText('25 %');
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: 'Zoom avant' }).click();
   await expect.poll(zoom).toBe(start / 2);
-  await page.getByRole('button', { name: 'Rétablir le zoom (100 %)' }).click();
+  await (await resetZoom()).click();
   await expect.poll(zoom).toBe(start);
 
   // Le clavier : + rapproche, 0 rétablit, - éloigne.

@@ -1,6 +1,6 @@
 import type { Role } from '@bureau/shared';
 import { Activity, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
-import { fr, t } from '../i18n/fr';
+import { fr } from '../i18n/fr';
 import { listActivityStates } from '../lib/activity-api';
 import { useMailMode } from '../lib/config';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
@@ -14,15 +14,15 @@ import { ChatPanel } from './ChatPanel';
 import { CharacterBuilder } from './CharacterBuilder';
 import { DecorPanel } from './DecorPanel';
 import { ControlBar } from './ControlBar';
-import { ChatIcon, FlaskIcon, LaptopIcon, ShieldIcon, SmileIcon, UsersIcon } from './icons';
-import { DeskKnocks } from './DeskKnocks';
 import { DeskPanel } from './DeskPanel';
+import type { PanelControls, PanelId } from './panels';
 import { PeoplePanel } from './PeoplePanel';
 import { SoundPanel } from './SoundPanel';
 import { StatesPanel } from './StatesPanel';
 import { ReplacedScreen } from './ReplacedScreen';
+import { Toasts } from './Toasts';
 import { VideoStrip } from './VideoStrip';
-import { ZoomControls } from './ZoomControls';
+import { WhereChip } from './WhereChip';
 
 // La hauteur réelle de la barre du bas, posée sur la couche d'interface (--bar-size) : les panneaux et les messages s'arrêtent au-dessus d'elle,
 // qu'elle tienne sur une ligne ou, dans une fenêtre étroite, sur plusieurs.
@@ -40,8 +40,8 @@ function useBarSize(layer: RefObject<HTMLDivElement | null>): void {
 }
 
 interface OfficeShellProps {
-  // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`). Son rôle décide du panneau Admin (bouton et
-  // panneau n'existent que pour un admin) ; son identifiant, de la ligne « (toi) » de ce panneau, qui n'a pas de bouton Retirer.
+  // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`). Son rôle décide du panneau Admin (sa ligne du menu
+  // « Plus » et le panneau n'existent que pour un admin) ; son identifiant, de la ligne « (toi) » de ce panneau, qui n'a pas de bouton Retirer.
   user: { id: string; name: string; role: Role };
   // La connexion au bureau, que la page ouvre (null avant).
   socket: OfficeSocket | null;
@@ -64,10 +64,10 @@ interface OfficeShellProps {
 }
 
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
-// - en haut, les vignettes de la conversation (VideoStrip) ;
-// - à droite, les panneaux (Personnes, Son, Admin pour un admin, Chat), qui peuvent être ouverts ensemble : de haut en bas, dans cet ordre ;
-// - en bas, la barre de commandes (ControlBar) : ton nom, ton statut, micro, caméra et partage d'écran, Son, Chat, Personnes, Admin (pour
-//   un admin) et la déconnexion.
+// - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), et en haut au milieu les vignettes de la conversation (VideoStrip) ;
+// - sous elles, les messages passagers (Toasts) : un toc toc à la porte de son bureau, une porte fermée ;
+// - à droite, un seul panneau à la fois (Personnes, Chat, Son, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
+// - en bas, la barre (ControlBar) : des docks à icônes (ton statut, le micro et la caméra, le zoom, le chat et les personnes).
 // Rien de cela ne prend de place au jeu : les éléments sont posés sur lui, et ouvrir un panneau ne redimensionne pas le canevas (ni
 // ne change le zoom de la caméra).
 //
@@ -96,50 +96,33 @@ export function OfficeShell({
   const layer = useRef<HTMLDivElement>(null);
   useBarSize(layer);
 
-  const [peopleOpen, setPeopleOpen] = useState(false);
-  const peopleToggle = useRef<HTMLButtonElement>(null);
-  const peopleId = useId();
+  // Le panneau ouvert, s'il y en a un. `opener` est ce qui l'a ouvert (un bouton) : à la fermeture, le focus lui revient.
+  const [panel, setPanel] = useState<PanelId | null>(null);
+  const opener = useRef<HTMLElement | null>(null);
+  const baseId = useId();
+  const idOf = (id: PanelId) => `${baseId}-${id}`;
 
-  function closePeople() {
-    setPeopleOpen(false);
-    peopleToggle.current?.focus();
+  function show(id: PanelId, from: HTMLElement | null) {
+    opener.current = from;
+    setPanel(id);
   }
 
-  const [chatOpen, setChatOpen] = useState(false);
-  const chatToggle = useRef<HTMLButtonElement>(null);
-  const chatId = useId();
+  function close() {
+    setPanel(null);
+    opener.current?.focus();
+    opener.current = null;
+  }
+
   // Les messages « Tout le monde » des autres que le panneau, fermé, n'a pas montrés : le badge du bouton.
   const unread = useOfficeStore(selectChatUnread);
 
-  function closeChat() {
-    setChatOpen(false);
-    chatToggle.current?.focus();
-  }
-
   // Le panneau Admin envoie tout à l'API (rien au bureau en temps réel) ; du bureau, il ne lit que qui est là, pour relire ses listes quand
-  // quelqu'un d'inconnu arrive : son bouton n'attend pas l'`init`. Un membre n'a ni le bouton ni le panneau, et rien ne part vers /api/admin.
+  // quelqu'un d'inconnu arrive : sa ligne du menu « Plus » n'attend pas l'`init`. Un membre n'a ni la ligne ni le panneau, et rien ne part vers
+  // /api/admin.
   const isAdmin = user.role === 'admin';
-  const [adminOpen, setAdminOpen] = useState(false);
   // Le mode d'envoi du serveur, lu (une fois pour la page) à la première ouverture du panneau Admin : sans e-mail, ses membres ont
   // « Lien de mot de passe ». Inconnu tant qu'il n'est pas lu, ou s'il ne se lit pas : le panneau est celui des e-mails.
-  const mail = useMailMode(isAdmin && adminOpen);
-  const adminToggle = useRef<HTMLButtonElement>(null);
-  const adminId = useId();
-
-  function closeAdmin() {
-    setAdminOpen(false);
-    adminToggle.current?.focus();
-  }
-
-  // Le panneau Mes états d'activité : on y crée ses propres états (nom, couleur, entrée au bureau, entendre, être entendu).
-  const [statesOpen, setStatesOpen] = useState(false);
-  const statesId = useId();
-
-  function closeStates() {
-    setStatesOpen(false);
-    // Le focus revient au bouton du statut, d'où le panneau s'est ouvert.
-    document.querySelector<HTMLButtonElement>('.status-menu > button')?.focus();
-  }
+  const mail = useMailMode(isAdmin && panel === 'admin');
 
   // Ses états d'activité, lus à chaque (re)connexion prête : ils servent au menu des statuts.
   const ready = useOfficeStore((state) => state.ready);
@@ -166,65 +149,23 @@ export function OfficeShell({
     if (micCutBy !== null && micOn) void media.client.setMic(false);
   }, [micCutBy, micOn, media.client]);
 
-  // Le panneau Mon bureau : nom, porte, exclusions, changement de place.
-  const [deskOpen, setDeskOpen] = useState(false);
-  const deskToggle = useRef<HTMLButtonElement>(null);
-  const deskId = useId();
-
-  function closeDesk() {
-    setDeskOpen(false);
-    deskToggle.current?.focus();
-  }
-
-  // L'éditeur de déco : il remplace le panneau Mon bureau (qui le lance), dans la même colonne. Fermé, le focus revient au bouton Mon bureau.
-  const [decorOpen, setDecorOpen] = useState(false);
-  const decorId = useId();
-
-  function openDecor() {
-    setDeskOpen(false);
-    setDecorOpen(true);
-  }
-
-  function closeDecor() {
-    setDecorOpen(false);
-    deskToggle.current?.focus();
-  }
-
-  // Le builder de personnage.
-  const [characterOpen, setCharacterOpen] = useState(false);
-  const characterToggle = useRef<HTMLButtonElement>(null);
-  const characterId = useId();
-
-  function closeCharacter() {
-    setCharacterOpen(false);
-    characterToggle.current?.focus();
-  }
-
-  // Le panneau Son : la musique et les effets sonores (volume, coupure, ambiance).
-  const [soundOpen, setSoundOpen] = useState(false);
-  const soundToggle = useRef<HTMLButtonElement>(null);
-  const soundId = useId();
-
-  function closeSound() {
-    setSoundOpen(false);
-    soundToggle.current?.focus();
-  }
-
-  // Le faux live (pnpm dev:sim) : le panneau Bac à sable, pour tout le monde. Absent d'un build normal.
-  const [simOpen, setSimOpen] = useState(false);
-  const simToggle = useRef<HTMLButtonElement>(null);
-  const simId = useId();
-
-  function closeSim() {
-    setSimOpen(false);
-    simToggle.current?.focus();
-  }
+  const panels: PanelControls = {
+    open: panel,
+    toggle: (id, from) => (panel === id ? close() : show(id, from)),
+    show,
+    idOf,
+    ready: knowsWhoIsHere,
+    unread,
+    admin: isAdmin,
+    sim: __SIM__,
+  };
 
   return (
     <main className="office">
       <h1 className="visually-hidden">{fr.common.appName}</h1>
       {children}
       <div ref={layer} className="office-ui" inert={replaced}>
+        <WhereChip />
         <div className="office-top">
           <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />
         </div>
@@ -245,114 +186,23 @@ export function OfficeShell({
             ))}
           </div>
         )}
-        <div
-          className="office-side"
-          data-chat-open={chatOpen ? 'true' : undefined}
-          data-admin-open={isAdmin && adminOpen ? 'true' : undefined}
-          data-decor-open={decorOpen ? 'true' : undefined}
-        >
-          {peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}
-          {characterOpen && <CharacterBuilder id={characterId} onClose={closeCharacter} />}
-          {deskOpen && <DeskPanel id={deskId} socket={socket} onClose={closeDesk} onDecorate={openDecor} />}
-          {decorOpen && <DecorPanel id={decorId} socket={socket} onClose={closeDecor} />}
-          {statesOpen && <StatesPanel id={statesId} socket={socket} onClose={closeStates} />}
-          {soundOpen && <SoundPanel id={soundId} onClose={closeSound} />}
-          {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} mail={mail} onClose={closeAdmin} />}
-          {__SIM__ && simOpen && <SimPanel id={simId} onClose={closeSim} />}
+        <div className="office-side" data-panel={panel ?? undefined}>
+          {panel === 'people' && <PeoplePanel id={idOf('people')} onClose={close} />}
+          {panel === 'character' && <CharacterBuilder id={idOf('character')} onClose={close} />}
+          {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
+          {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}
+          {panel === 'states' && <StatesPanel id={idOf('states')} socket={socket} onClose={close} />}
+          {panel === 'sound' && <SoundPanel id={idOf('sound')} onClose={close} />}
+          {isAdmin && panel === 'admin' && <AdminPanel id={idOf('admin')} selfId={user.id} mail={mail} onClose={close} />}
+          {__SIM__ && panel === 'sim' && <SimPanel id={idOf('sim')} onClose={close} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont
               arrêtés : il ne prend pas le focus, et ne lit rien. À l'affichage, ils reprennent (focus dans le champ, messages lus). */}
-          <Activity mode={chatOpen ? 'visible' : 'hidden'}>
-            <ChatPanel id={chatId} socket={socket} room={media.snapshot.room} onClose={closeChat} />
+          <Activity mode={panel === 'chat' ? 'visible' : 'hidden'}>
+            <ChatPanel id={idOf('chat')} socket={socket} room={media.snapshot.room} onClose={close} />
           </Activity>
         </div>
-        <DeskKnocks socket={socket} />
-        <ZoomControls />
-        <ControlBar
-          name={name}
-          socket={socket}
-          client={media.client}
-          snapshot={media.snapshot}
-          onManageStates={() => setStatesOpen(true)}
-          micCutBy={micCutBy}
-          sound={{
-            label: fr.sound.toggle,
-            open: soundOpen,
-            panelId: soundId,
-            buttonRef: soundToggle,
-            onToggle: () => (soundOpen ? closeSound() : setSoundOpen(true)),
-          }}
-          panels={[
-            {
-              label: fr.chat.toggle,
-              icon: <ChatIcon />,
-              open: chatOpen,
-              disabled: !knowsWhoIsHere,
-              panelId: chatId,
-              buttonRef: chatToggle,
-              onToggle: () => (chatOpen ? closeChat() : setChatOpen(true)),
-              // Ouvert, il n'y a rien de non lu à signaler : le panneau montre tout.
-              badge:
-                !chatOpen && unread > 0 ? { count: unread, label: t(unread === 1 ? fr.chat.unreadOne : fr.chat.unreadMany, { count: unread }) } : undefined,
-            },
-            {
-              label: fr.office.people.toggle,
-              icon: <UsersIcon />,
-              open: peopleOpen,
-              disabled: !knowsWhoIsHere,
-              panelId: peopleId,
-              buttonRef: peopleToggle,
-              onToggle: () => (peopleOpen ? closePeople() : setPeopleOpen(true)),
-            },
-            {
-              label: fr.character.toggle,
-              icon: <SmileIcon />,
-              secondary: true,
-              open: characterOpen,
-              disabled: !knowsWhoIsHere,
-              panelId: characterId,
-              buttonRef: characterToggle,
-              onToggle: () => (characterOpen ? closeCharacter() : setCharacterOpen(true)),
-            },
-            {
-              label: fr.desk.toggle,
-              icon: <LaptopIcon />,
-              secondary: true,
-              open: deskOpen || decorOpen,
-              disabled: !knowsWhoIsHere,
-              panelId: decorOpen ? decorId : deskId,
-              buttonRef: deskToggle,
-              onToggle: () => (decorOpen ? closeDecor() : deskOpen ? closeDesk() : setDeskOpen(true)),
-            },
-            ...(isAdmin
-              ? [
-                  {
-                    label: fr.admin.toggle,
-                    icon: <ShieldIcon />,
-                    secondary: true,
-                    open: adminOpen,
-                    panelId: adminId,
-                    buttonRef: adminToggle,
-                    onToggle: () => (adminOpen ? closeAdmin() : setAdminOpen(true)),
-                  },
-                ]
-              : []),
-            ...(__SIM__
-              ? [
-                  {
-                    label: fr.sim.toggle,
-                    icon: <FlaskIcon />,
-                    secondary: true,
-                    open: simOpen,
-                    panelId: simId,
-                    buttonRef: simToggle,
-                    onToggle: () => (simOpen ? closeSim() : setSimOpen(true)),
-                  },
-                ]
-              : []),
-          ]}
-          onSignOut={onSignOut}
-          signingOut={signingOut}
-        />
+        <Toasts socket={socket} />
+        <ControlBar name={name} socket={socket} client={media.client} snapshot={media.snapshot} panels={panels} micCutBy={micCutBy} onSignOut={onSignOut} signingOut={signingOut} />
       </div>
       {replaced && <ReplacedScreen onUseHere={onUseHere} />}
     </main>

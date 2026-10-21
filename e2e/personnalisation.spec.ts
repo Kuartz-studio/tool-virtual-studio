@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { avatarsOf, enterOffice, expectInOffice, joinOffice, officeBar, playerSeenBy, selfAt, signIn, WALK_TIMEOUT, type Account } from './helpers';
+import { avatarsOf, enterOffice, expectInOffice, joinOffice, openPanel, playerSeenBy, selfAt, signIn, WALK_TIMEOUT, type Account } from './helpers';
 import { TEST_AVATAR_KEY } from './pixels';
 
 // Le personnage et le bureau de chacun : le builder (le nouveau personnage est vu par les autres, sans recharger) et l'éditeur de déco
@@ -17,8 +17,7 @@ async function arrive(browser: Browser, name: string, desk: 'needed' | 'given ba
   contexts.push(context);
   const page = await context.newPage();
   const account = await joinOffice(page, name);
-  await officeBar(page).getByRole('button', { name: 'Mon bureau' }).click();
-  const panel = page.getByRole('complementary', { name: 'Mon bureau' });
+  const panel = await openPanel(page, 'Mon bureau');
   if (desk === 'given back') {
     await expect(panel.getByRole('button', { name: 'Rendre mon bureau' }).or(panel.getByText('Tu n\'as pas de bureau.'))).toBeVisible();
     if (await panel.getByRole('button', { name: 'Rendre mon bureau' }).isVisible()) await panel.getByRole('button', { name: 'Rendre mon bureau' }).click();
@@ -30,7 +29,7 @@ async function arrive(browser: Browser, name: string, desk: 'needed' | 'given ba
       await expect(panel.getByRole('button', { name: 'Décorer mon bureau' })).toBeVisible({ timeout: 1500 });
     }).toPass({ timeout: 20_000 });
   }
-  await officeBar(page).getByRole('button', { name: 'Mon bureau' }).click();
+  await panel.getByRole('button', { name: 'Fermer le panneau Mon bureau' }).click();
   await expect(panel).toHaveCount(0);
   return { page, id: (await selfAt(page)).id, account };
 }
@@ -42,9 +41,7 @@ test('le builder : A choisit un autre personnage prêt à jouer, B le voit tout 
   await expect.poll(() => avatarsOf(b.page, a.id), { timeout: WALK_TIMEOUT }).toBe(1);
   await expect.poll(async () => (await playerSeenBy(b.page, a.id))?.avatarKey).toBe(TEST_AVATAR_KEY);
 
-  await officeBar(a.page).getByRole('button', { name: 'Personnage' }).click();
-  const panel = a.page.getByRole('complementary', { name: 'Mon personnage' });
-  await expect(panel).toBeVisible();
+  const panel = await openPanel(a.page, 'Personnage');
   // Les 20 personnages prêts à jouer, dont celui qu'on a est enfoncé.
   await expect(panel.getByRole('group', { name: 'Personnages prêts à jouer' }).getByRole('button')).toHaveCount(20);
   await expect(panel.getByRole('button', { name: 'Personnage 1', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -72,8 +69,7 @@ test('le builder : « Créer le mien » assemble un personnage pièce par pièce
   const b = await arrive(browser, 'Bruno');
   await expect.poll(() => avatarsOf(b.page, a.id), { timeout: WALK_TIMEOUT }).toBe(1);
 
-  await officeBar(a.page).getByRole('button', { name: 'Personnage' }).click();
-  const panel = a.page.getByRole('complementary', { name: 'Mon personnage' });
+  const panel = await openPanel(a.page, 'Personnage');
   await panel.getByRole('tab', { name: 'Créer le mien' }).click();
   await panel.getByRole('button', { name: 'Peau', exact: true }).click();
   await panel.getByRole('button', { name: 'Peau 3', exact: true }).click();
@@ -90,7 +86,7 @@ test('le builder : « Créer le mien » assemble un personnage pièce par pièce
 
 test('la déco du bureau : le sol et les murs se règlent, s\'enregistrent, et se retrouvent après une reconnexion', async ({ browser }) => {
   const a = await arrive(browser, 'Ambre', 'needed');
-  await officeBar(a.page).getByRole('button', { name: 'Mon bureau' }).click();
+  await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
 
   const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
@@ -114,7 +110,7 @@ test('la déco du bureau : le sol et les murs se règlent, s\'enregistrent, et s
   await a.page.goto('/connexion');
   await signIn(a.page, a.account);
   await expectInOffice(a.page, 'Ambre');
-  await officeBar(a.page).getByRole('button', { name: 'Mon bureau' }).click();
+  await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   const again = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
   await again.getByRole('tab', { name: 'Murs et sol' }).click();
@@ -124,7 +120,7 @@ test('la déco du bureau : le sol et les murs se règlent, s\'enregistrent, et s
 
 test('la déco du bureau : un élément pris en main se pose dans la pièce, et « Tout vider » puis « Poste par défaut » remplacent le brouillon', async ({ browser }) => {
   const a = await arrive(browser, 'Alex', 'needed');
-  await officeBar(a.page).getByRole('button', { name: 'Mon bureau' }).click();
+  await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
 
@@ -149,7 +145,7 @@ test('la déco du bureau : un élément pris en main se pose dans la pièce, et 
 
 test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'enregistre et se retrouve après un rechargement', async ({ browser }) => {
   const a = await arrive(browser, 'Anouk', 'needed');
-  await officeBar(a.page).getByRole('button', { name: 'Mon bureau' }).click();
+  await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
   await expect(panel.getByText('12 / 80 éléments')).toBeVisible();
@@ -197,7 +193,7 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
 
   await a.page.reload();
   await enterOffice(a.page);
-  await officeBar(a.page).getByRole('button', { name: 'Mon bureau' }).click();
+  await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText('13 / 80 éléments')).toBeVisible();
 });

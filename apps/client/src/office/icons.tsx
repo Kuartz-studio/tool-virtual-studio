@@ -4,8 +4,8 @@ import {
   Ellipsis,
   Eraser,
   FlaskConical,
+  Focus,
   LampDesk,
-  Laptop,
   Lightbulb,
   LightbulbOff,
   LogOut,
@@ -24,7 +24,6 @@ import {
   ShieldCheck,
   Shirt,
   Slash,
-  Smile,
   SmilePlus,
   Sofa,
   Sparkles,
@@ -79,6 +78,11 @@ export function MinusIcon() {
   return <Minus />;
 }
 
+// Un viseur : revenir à la vue de départ du zoom.
+export function ZoomResetIcon() {
+  return <Focus />;
+}
+
 // L'épingle : un lieu.
 export function PlaceIcon() {
   return <MapPin />;
@@ -97,15 +101,6 @@ export function ShirtIcon() {
 // Une lampe de bureau : son bureau.
 export function DeskIcon() {
   return <LampDesk />;
-}
-
-// Provisoires : l'ancienne barre les montre encore (son personnage, son bureau), la nouvelle coque prend ShirtIcon et DeskIcon.
-export function SmileIcon() {
-  return <Smile />;
-}
-
-export function LaptopIcon() {
-  return <Laptop />;
 }
 
 // Un haut-parleur : avec des ondes quand le son est là, barré quand il est coupé.

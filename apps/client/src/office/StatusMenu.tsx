@@ -21,7 +21,7 @@ import { StatusDot } from './StatusDot';
 // Une ligne du menu : un statut, un état d'activité, ou « Mes états d'activité… ».
 type Entry = { key: string; kind: 'status'; status: Status } | { key: string; kind: 'state'; state: ActivityState } | { key: string; kind: 'manage' };
 
-export function StatusMenu({ socket, onManage }: { socket: OfficeSocket | null; onManage?: () => void }) {
+export function StatusMenu({ socket, onManage }: { socket: OfficeSocket | null; onManage?: (opener: HTMLElement | null) => void }) {
   const current = useOfficeStore((state) => state.self?.status ?? null);
   const activity = useOfficeStore((state) => state.self?.activity ?? null);
   const myStates = useOfficeStore((state) => state.myStates);
@@ -99,9 +99,10 @@ export function StatusMenu({ socket, onManage }: { socket: OfficeSocket | null; 
     if (activity?.id !== state.id) socket?.emit('state:set', state.id);
   }
 
+  // « Mes états d'activité… » ouvre un panneau, qui rendra le focus au bouton à sa fermeture : `onManage` reçoit le bouton.
   function manage() {
     setOpen(false);
-    onManage?.();
+    onManage?.(trigger.current);
   }
 
   function focusItem(index: number) {
@@ -147,7 +148,7 @@ export function StatusMenu({ socket, onManage }: { socket: OfficeSocket | null; 
       <button
         ref={trigger}
         type="button"
-        className="bar-button"
+        className="status-trigger"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
@@ -157,7 +158,7 @@ export function StatusMenu({ socket, onManage }: { socket: OfficeSocket | null; 
       >
         <StatusDot status={current} activity={activity} />
         <span>{label}</span>
-        <span className="bar-button-caret">
+        <span className="status-caret">
           <ChevronUpIcon />
         </span>
       </button>

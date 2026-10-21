@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { joinOffice, officeBar, openChat, playerSeenBy, say, selfAt } from './helpers';
+import { joinOffice, officeBar, openChat, openPanel, playerSeenBy, say, selfAt } from './helpers';
 
 // Le son, avec les vrais fichiers décodés par Chromium (Playwright coupe son haut-parleur : on lit ce que le moteur dit, window.__audio,
 // apps/client/src/game/debug.ts). La musique d'ambiance par endroit est dans musique-lieux.spec.ts, sur la grande carte.
@@ -88,9 +88,7 @@ test('le panneau Son : choisir une ambiance la joue partout, « Selon l\'endroit
   const { page } = await arrive(browser, 'Blandine');
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('focus');
 
-  await officeBar(page).getByRole('button', { name: 'Son', exact: true }).click();
-  const panel = page.getByRole('complementary', { name: 'Son', exact: true });
-  await expect(panel).toBeVisible();
+  const panel = await openPanel(page, 'Son');
   await expect(panel.getByRole('radio', { name: /^Selon l'endroit/ })).toBeChecked();
   // L'ambiance qui joue est marquée.
   await expect(panel.getByText('En cours')).toBeVisible();

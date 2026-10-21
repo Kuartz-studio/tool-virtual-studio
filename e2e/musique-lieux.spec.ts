@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { buildOfficeTiledMap, GRAND_HALL, isWalkableTile, LOUNGE, LOUNGE_MUSIC_X, LOUNGE_TERRACE_WIDTH, MEETING_ROOM, OFFICE_DESK_SLOTS, parseOfficeMap, PLAZA } from '../packages/shared/src/index';
-import { joinOffice, officeBar, selfAt } from './helpers';
+import { joinOffice, openPanel, selfAt } from './helpers';
 
 // La musique d'ambiance par endroit, sur la vraie carte (le second serveur des tests : playwright.config.ts) : en marchant d'un endroit à
 // l'autre, l'ambiance change, avec les vrais fichiers décodés par Chromium. Les règles sont dans apps/client/src/audio/scene-at.ts.
@@ -30,13 +30,12 @@ const playing = (page: Page) => page.evaluate(() => window.__audio?.playing() ??
 // Il n'y a que six bureaux sur cette carte, et le serveur en donne un à chaque arrivant : ce test n'a pas besoin du sien, il le rend tout de
 // suite, pour que les tests de personnalisation, qui tournent en même temps sur ce serveur, en trouvent un de libre.
 async function giveDeskBack(page: Page): Promise<void> {
-  await officeBar(page).getByRole('button', { name: 'Mon bureau' }).click();
-  const panel = page.getByRole('complementary', { name: 'Mon bureau' });
+  const panel = await openPanel(page, 'Mon bureau');
   const giveBack = panel.getByRole('button', { name: 'Rendre mon bureau' });
   await expect(giveBack.or(panel.getByText('Tu n\'as pas de bureau.'))).toBeVisible();
   if (await giveBack.isVisible()) await giveBack.click();
   await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
-  await officeBar(page).getByRole('button', { name: 'Mon bureau' }).click();
+  await panel.getByRole('button', { name: 'Fermer le panneau Mon bureau' }).click();
   await expect(panel).toHaveCount(0);
 }
 
@@ -76,8 +75,7 @@ test('l\'ambiance choisie à la main prime sur l\'endroit, et « Selon l\'endroi
   await giveDeskBack(page);
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('lobby');
 
-  await officeBar(page).getByRole('button', { name: 'Son', exact: true }).click();
-  const panel = page.getByRole('complementary', { name: 'Son', exact: true });
+  const panel = await openPanel(page, 'Son');
   await panel.getByRole('radio', { name: /^Expédition/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('quest');
 

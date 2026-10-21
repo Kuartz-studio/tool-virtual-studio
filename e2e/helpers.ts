@@ -25,18 +25,52 @@ export async function lastMail(request: APIRequestContext, to: string): Promise<
   return res.ok() ? ((await res.json()) as { subject: string; link: string }) : null;
 }
 
-// La barre du bas du bureau (le groupe « Barre du bureau ») : le nom de la personne, son statut, micro, caméra et partage d'écran,
-// Chat, Personnes, Admin (pour un admin) et Se déconnecter.
+// La barre du bas du bureau (le groupe « Barre du bureau »), faite de docks : à gauche le nom de la personne et son statut ; au milieu micro,
+// caméra, partage d'écran et réactions ; à droite le zoom, Chat, Personnes et « Plus ».
 export function officeBar(page: Page): Locator {
   return page.getByRole('group', { name: 'Barre du bureau' });
 }
 
-// Le bouton Admin de la barre, qu'ont les admins seulement.
-export function adminToggle(page: Page): Locator {
-  return officeBar(page).getByRole('button', { name: 'Admin', exact: true });
+// Le bouton « Plus » de la barre : son menu a la déco, l'Admin (pour un admin), le zoom de départ, et, en attendant la puce « Moi », Mon
+// bureau, Personnage, Son et Se déconnecter.
+export function moreButton(page: Page): Locator {
+  return officeBar(page).getByRole('button', { name: 'Plus', exact: true });
 }
 
-// Le bouton Chat de la barre : son nom devient « Chat, N nouveaux messages » quand il y en a de non lus.
+// Ouvre le menu « Plus » de cette page, et le renvoie.
+export async function openMoreMenu(page: Page): Promise<Locator> {
+  await moreButton(page).click();
+  const menu = page.getByRole('menu', { name: 'Plus d\'options' });
+  await expect(menu).toBeVisible();
+  return menu;
+}
+
+// La ligne de ce nom dans le menu « Plus », que cette fonction ouvre : à l'appelant de la choisir (ou de fermer le menu avec Échap).
+export async function moreMenuEntry(page: Page, name: string): Promise<Locator> {
+  return (await openMoreMenu(page)).getByRole('menuitem', { name, exact: true });
+}
+
+// Les panneaux qu'on peut ouvrir, et le nom que porte chacun (celui de son `complementary`) quand il n'est pas le même.
+export type PanelName = 'Chat' | 'Personnes' | 'Mon bureau' | 'Personnage' | 'Son' | 'Décorer' | 'Admin';
+const PANEL_TITLES: Partial<Record<PanelName, string>> = { Personnage: 'Mon personnage', Décorer: 'Décorer mon bureau' };
+
+// Ouvre ce panneau et le renvoie, une fois visible. Un seul est ouvert à la fois : il prend la place du précédent. Chat et Personnes ont leur
+// bouton dans la barre ; les autres sont des lignes du menu « Plus ».
+export async function openPanel(page: Page, name: PanelName): Promise<Locator> {
+  if (name === 'Chat') await chatToggle(page).click();
+  else if (name === 'Personnes') await officeBar(page).getByRole('button', { name: 'Personnes', exact: true }).click();
+  else await (await moreMenuEntry(page, name)).click();
+  const panel = page.getByRole('complementary', { name: PANEL_TITLES[name] ?? name, exact: true });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+// Se déconnecte, par la ligne du menu « Plus ».
+export async function signOut(page: Page): Promise<void> {
+  await (await moreMenuEntry(page, 'Se déconnecter')).click();
+}
+
+// Le bouton Chat de la barre : son nom devient « Chat, N nouveaux messages » quand il y en a de non lus (la pastille, `.icon-badge`, le dit).
 export function chatToggle(page: Page): Locator {
   return officeBar(page).getByRole('button', { name: /^Chat/ });
 }

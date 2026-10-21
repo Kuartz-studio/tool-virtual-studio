@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
-import { adminToggle, joinOffice, joinWithLink, lastMail, officeBar, restingAt, selfAt, uniqueEmail, WALK_TIMEOUT, type Account } from './helpers';
+import { joinOffice, joinWithLink, lastMail, moreMenuEntry, officeBar, openPanel, restingAt, selfAt, uniqueEmail, WALK_TIMEOUT, type Account } from './helpers';
 
 // Le panneau Admin de bout en bout : inviter, les invitations en attente, retirer un membre. Chaque personne a son navigateur (un contexte :
 // ses cookies, donc sa session). Tous les tests partagent le serveur, et donc ses membres : chacun ne cherche dans les listes que les
@@ -41,9 +41,7 @@ async function arriveWithoutAccount(browser: Browser): Promise<Page> {
 
 // Ouvre le panneau Admin de cette page, et le renvoie : ses deux listes sont arrivées.
 async function openAdmin(page: Page): Promise<Locator> {
-  await adminToggle(page).click();
-  const panel = page.getByRole('complementary', { name: 'Admin' });
-  await expect(panel).toBeVisible();
+  const panel = await openPanel(page, 'Admin');
   await expect(panel.getByRole('region', { name: /^Membres \(\d+\)$/ })).toBeVisible();
   await expect(panel.getByRole('region', { name: /^Invitations en attente \(\d+\)$/ })).toBeVisible();
   return panel;
@@ -112,9 +110,10 @@ test('l\'admin invite → le lien d\'e-mail de test → le nouveau membre entre 
   await expect(own).toContainText('Admin');
   await expect(own.getByRole('button')).toHaveCount(0);
 
-  // Nina est un membre : ni bouton Admin, ni accès aux routes admin.
+  // Nina est un membre : pas de ligne Admin dans le menu « Plus », ni d'accès aux routes admin.
   await expect(officeBar(ninaPage).getByRole('button', { name: 'Personnes' })).toBeVisible();
-  await expect(adminToggle(ninaPage)).toHaveCount(0);
+  await expect(await moreMenuEntry(ninaPage, 'Admin')).toHaveCount(0);
+  await ninaPage.keyboard.press('Escape');
   expect((await ninaPage.request.get('/api/admin/members')).status()).toBe(403);
 });
 
@@ -219,17 +218,19 @@ test('l\'admin retire un membre → la page du membre est déconnectée ; après
   await expect(panel.getByRole('alert')).toHaveText('Cette adresse a déjà un compte (actif ou retiré).');
 });
 
-test('un membre n\'a pas de bouton Admin, ni panneau, et le serveur lui refuse /api/admin ; l\'admin y a accès', async ({ browser }) => {
+test('un membre n\'a pas de ligne Admin, ni panneau, et le serveur lui refuse /api/admin ; l\'admin y a accès', async ({ browser }) => {
   test.slow();
   const member = await arrive(browser, 'Maëlle');
   const admin = await arrive(browser, 'Axelle', 'admin');
 
-  await expect(adminToggle(member.page)).toHaveCount(0);
+  await expect(await moreMenuEntry(member.page, 'Admin')).toHaveCount(0);
+  await member.page.keyboard.press('Escape');
   await expect(member.page.getByRole('complementary', { name: 'Admin' })).toHaveCount(0);
   const refused = await member.page.request.get('/api/admin/invitations');
   expect(refused.status()).toBe(403);
 
-  await expect(adminToggle(admin.page)).toBeVisible();
+  await expect(await moreMenuEntry(admin.page, 'Admin')).toBeVisible();
+  await admin.page.keyboard.press('Escape');
   const allowed = await admin.page.request.get('/api/admin/members');
   expect(allowed.status()).toBe(200);
   expect(((await allowed.json()) as Array<{ email: string }>).map((m) => m.email)).toContain(member.account.email);

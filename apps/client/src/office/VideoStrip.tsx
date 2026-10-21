@@ -3,6 +3,7 @@ import { mediaDebug } from '../game/debug';
 import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaParticipant, MediaSnapshot, VideoSource } from '../media/media-client';
 import { FullscreenIcon, MicIcon } from './icons';
+import { initials } from './ui/initials';
 
 interface VideoStripProps {
   // L'état de l'audio et de la vidéo (useMedia), et le client qui montre les vidéos.
@@ -244,13 +245,3 @@ function fullscreenAvailable(): boolean {
   return document.fullscreenEnabled === true && typeof Element.prototype.requestFullscreen === 'function';
 }
 
-// Les initiales d'un nom : la première lettre de ses deux premiers mots.
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((word) => Array.from(word)[0] ?? '')
-    .join('')
-    .toLocaleUpperCase('fr');
-}

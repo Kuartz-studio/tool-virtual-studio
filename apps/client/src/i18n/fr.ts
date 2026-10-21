@@ -117,6 +117,19 @@ export const fr = {
       you: '(toi)',
       loadFailed: 'Impossible de charger la liste des membres.',
     },
+    // Le lieu où l'on est (la puce en haut à gauche) et ceux qui y sont.
+    where: {
+      label: 'Lieu',
+      // Là où aucune zone de la carte ne porte de nom.
+      hallway: 'Couloir',
+      onePerson: '1 personne ici',
+      manyPeople: '{count} personnes ici',
+    },
+    // Le menu « Plus » de la barre du bas : ce qu'on ouvre moins souvent.
+    more: {
+      toggle: 'Plus',
+      menu: 'Plus d\'options',
+    },
     // La connexion au bureau est tombée après l'arrivée : Socket.io se reconnecte seul.
     reconnecting: 'Connexion perdue, reconnexion…',
     errors: {
@@ -537,6 +550,8 @@ export const fr = {
       screenHint: 'Partager une fenêtre ou ton écran avec la conversation',
       screenStopHint: 'Arrêter le partage',
       screenUnavailable: 'Le partage d\'écran se fait pendant une conversation.',
+      reactions: 'Réactions',
+      reactionsHint: 'Pas encore disponible.',
     },
     tiles: {
       label: 'Vidéos de la conversation',

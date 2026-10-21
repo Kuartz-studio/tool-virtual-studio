@@ -644,27 +644,14 @@ a {
   background: var(--error-background);
 }
 
-.bar-button-caret {
-  display: inline-flex;
-  color: var(--text-muted);
+/* Micro ou caméra coupés, sur l'écran d'entrée : en rouge, qu'on le voie d'un coup d'œil. */
+.media-button[aria-pressed='false'] {
+  color: var(--error-text);
+  background: var(--error-background);
 }
 
-.icon {
-  flex: none;
-}
-
-.bar-badge {
-  display: inline-grid;
-  place-items: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 6px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  line-height: 1;
-  color: var(--on-accent);
-  background: var(--accent);
-  border-radius: 10px;
+.media-button[aria-pressed='false']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--error-text) 12%, var(--error-background));
 }
 
 /* Un interrupteur : une case à cocher habillée, qui garde ses touches et son annonce. */
@@ -1064,19 +1051,24 @@ svg.lucide.icon-s {
   --bar-gap: 16px;
   --bar-height: 56px;
   --bar-size: var(--bar-height);
+  /* La place que prend la puce du lieu en haut à gauche : les vignettes, au milieu, s'arrêtent avant elle (et, pour rester au milieu, à
+     la même distance de l'autre bord). */
+  --where-room: 324px;
 
   position: absolute;
   inset: 0;
   z-index: 1;
   pointer-events: none;
+  /* Le texte prend la couleur du thème ici : celui qui n'en dit pas hérite de :root, qui a figé celle du jour. */
+  color: var(--text);
 }
 
 /* Les vignettes de la conversation, en haut au milieu. Hors conversation, vide : sans hauteur, il ne cache rien. */
 .office-top {
   position: absolute;
   top: var(--bar-gap);
-  left: var(--bar-gap);
-  right: var(--bar-gap);
+  left: calc(var(--bar-gap) + var(--where-room));
+  right: calc(var(--bar-gap) + var(--where-room));
   display: flex;
   justify-content: center;
   gap: 8px;
@@ -1131,7 +1123,7 @@ svg.lucide.icon-s {
 
 /* Qui parle : un anneau de la couleur « Disponible », comme celui de son étiquette dans le jeu. */
 .tile[data-speaking] {
-  box-shadow: 0 0 0 3px var(--speaking), 0 8px 22px rgb(0 0 0 / 34%);
+  box-shadow: 0 0 0 2px var(--ok), 0 8px 22px rgb(0 0 0 / 34%);
 }
 
 .tile-video {
@@ -1176,10 +1168,10 @@ svg.lucide.icon-s {
   align-items: center;
   gap: 5px;
   padding: 2px 8px;
-  font-size: var(--text-s);
-  font-weight: 600;
-  background: rgb(15 18 30 / 62%);
-  border-radius: 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  background: rgb(0 0 0 / 38%);
+  border-radius: 7px;
 }
 
 .tile-name {
@@ -1192,6 +1184,11 @@ svg.lucide.icon-s {
   display: flex;
   flex: none;
   color: #ff9a9a;
+}
+
+.tile-muted svg.lucide {
+  width: 14px;
+  height: 14px;
 }
 
 /* La vignette agrandie (un partage d'écran, ou celle qu'on a cliquée), sous la liste. */
@@ -1341,21 +1338,27 @@ svg.lucide.icon-s {
   box-shadow: var(--shadow-m);
 }
 
-/* Les panneaux, à droite, de haut en bas de la page, au-dessus de la barre : Personnes en haut, Chat en bas, ensemble ou seuls. */
+/* Le panneau ouvert, à droite, de haut en bas de la page et au-dessus de la barre : un seul à la fois, de 340 px de large (celui de la déco
+   un peu plus : sa banque d'éléments y respire). Il prend toute la hauteur, comme dans la maquette. */
 .office-side {
   position: absolute;
   top: var(--bar-gap);
   right: var(--bar-gap);
   bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
-  width: min(364px, calc(100% - 2 * var(--bar-gap)));
+  width: min(340px, calc(100% - 2 * var(--bar-gap)));
   display: flex;
   flex-direction: column;
-  gap: 12px;
+}
+
+.office-side[data-panel='decor'] {
+  width: min(400px, calc(100% - 2 * var(--bar-gap)));
 }
 
 .office-side > * {
+  flex: 1 1 0;
+  min-height: 0;
   pointer-events: auto;
-  animation: panel-in 0.18s ease-out;
+  animation: panel-in var(--dur-pop) var(--ease-out);
 }
 
 @keyframes panel-in {
@@ -1365,221 +1368,291 @@ svg.lucide.icon-s {
   }
 }
 
-/* Le zoom, en bas à gauche, juste au-dessus de la barre : plus près, la vue de départ avec son pourcentage, plus loin. */
-.zoom-controls {
-  position: absolute;
-  left: var(--bar-gap);
-  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Les docks : des surfaces pleines, posées sur le jeu, qui portent des boutons à icône (IconButton). Le lieu en haut à gauche ; en bas, ton
+   statut à gauche, le micro et la caméra au milieu, le zoom, le chat, les personnes et « Plus » à droite.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.dock {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 5px;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  color: var(--text);
   background: var(--surface);
-  border-radius: var(--radius-l);
-  box-shadow: var(--edge), var(--shadow-l);
+  border-radius: var(--radius-dock);
+  box-shadow: var(--shadow-dock);
   pointer-events: auto;
+  transition: background-color var(--dur-theme) var(--ease-out), color var(--dur-theme) var(--ease-out), box-shadow var(--dur-theme) var(--ease-out);
 }
 
-.zoom-controls .bar-button {
-  min-width: 48px;
-  min-height: 38px;
-  padding: 0 8px;
-  font-size: 1.15rem;
-  font-weight: 600;
-  background: transparent;
-  border-color: transparent;
-  border-radius: 12px;
+.dock-rule {
+  flex: none;
+  width: 1px;
+  height: 24px;
+  margin: 0 4px;
+  background: var(--border);
 }
 
-.zoom-controls .bar-button:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.zoom-controls .zoom-level {
+/* Le lieu : son nom, et ceux qui y sont (trois portraits qui se recouvrent, puis « +N »). */
+.dock-where {
+  position: absolute;
+  top: var(--bar-gap);
+  left: var(--bar-gap);
+  max-width: calc(var(--where-room) - 12px);
+  gap: 8px;
+  padding: 6px 12px 6px 10px;
   font-size: var(--text-s);
-  font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
+  border-radius: 14px;
+}
+
+.dock-where > svg.lucide {
+  width: 16px;
+  height: 16px;
   color: var(--text-soft);
 }
 
-/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   La barre du bas : en trois groupes. Ton nom et ton statut à gauche ; le micro, la caméra, l'écran et le son au milieu ; les panneaux et
-   la déconnexion à droite. Les boutons ont une icône et un nom. Quand la place manque, les moins courants ne gardent que l'icône, puis
-   tous (leur nom reste lu par les lecteurs d'écran, et s'affiche en infobulle).
-   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.where-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.where-stack {
+  display: flex;
+  flex: none;
+  margin-left: 4px;
+}
+
+.where-stack .portrait {
+  margin-left: -6px;
+  box-shadow: 0 0 0 2px var(--surface);
+}
+
+.where-more {
+  align-self: center;
+  margin-left: 6px;
+  font-size: var(--text-xs);
+  font-style: normal;
+  font-weight: var(--weight-medium);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+}
+
+/* La barre : un groupe sans surface, qui laisse passer la souris entre les docks. Le dock du milieu est au milieu de la page (les deux autres
+   colonnes ont la même largeur), quelle que soit la place que prennent ceux des bords. */
 .office-bar {
   position: absolute;
   left: var(--bar-gap);
   right: var(--bar-gap);
   bottom: var(--bar-gap);
   min-height: var(--bar-height);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: end;
   gap: 8px 12px;
-  container: bar / inline-size;
+  pointer-events: none;
 }
 
-.office-bar-start,
-.office-bar-end,
-.media-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 5px;
-  background: var(--surface);
-  border-radius: var(--radius-l);
-  box-shadow: var(--edge), var(--shadow-l);
-  pointer-events: auto;
-}
-
-.office-bar-center {
-  flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  justify-content: center;
+.dock-me {
+  justify-self: start;
+  min-height: var(--bar-height);
   gap: 10px;
+  padding: 6px 8px 6px 18px;
 }
 
-.office-bar-center > * {
-  pointer-events: auto;
+.dock-media {
+  justify-self: center;
+}
+
+.office-bar-end {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 8px;
+  justify-self: end;
+  pointer-events: none;
+}
+
+.dock-zoom .icon-btn {
+  width: 38px;
+  color: var(--text-soft);
+}
+
+.dock-zoom svg.lucide {
+  width: 16px;
+  height: 16px;
 }
 
 .office-user {
   max-width: 14ch;
-  padding: 0 4px 0 10px;
   overflow: hidden;
   font-size: var(--text-m);
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* Dans la barre, les boutons n'ont pas de trait : le groupe est déjà une surface. */
-.office-bar .bar-button {
-  min-height: 42px;
-  padding: 0 14px;
-  font-size: var(--text-m);
+/* Le statut : son point, son nom, et le chevron du menu qui s'ouvre vers le haut. */
+.status-menu {
+  position: relative;
+}
+
+.status-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 10px;
+  font-size: var(--text-s);
+  font-weight: var(--weight-medium);
+  color: var(--text-soft);
   background: transparent;
-  border-color: transparent;
-  border-radius: 13px;
+  border: 0;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
 }
 
-.office-bar .bar-button:hover:not(:disabled):not([aria-disabled='true']) {
-  background: var(--surface-sunk);
+.status-trigger:hover:not(:disabled) {
+  background: var(--surface-soft);
 }
 
-.office-bar .bar-button[aria-expanded='true'] {
-  color: var(--accent-ink);
+.status-trigger[aria-expanded='true'] {
+  color: var(--accent);
   background: var(--accent-soft);
 }
 
-/* Micro ou caméra coupés : en rouge, qu'on le voie d'un coup d'œil. Le partage d'écran en cours : en accent. */
-.media-button[aria-pressed='false']:not(.media-share) {
-  color: var(--error-text);
-  background: var(--error-background);
+.status-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 
-.office-bar .media-button[aria-pressed='false']:not(.media-share):hover:not(:disabled) {
-  background: #fbdada;
-}
-
-.media-share[aria-pressed='true'] {
-  color: var(--on-accent);
-  background: var(--accent);
-}
-
-.office-bar .media-share[aria-pressed='true']:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-/* « Se déconnecter » : à l'écart des panneaux, derrière un trait, et discret jusqu'au survol. */
-.office-bar .bar-button-quiet {
-  position: relative;
-  margin-left: 6px;
+.status-caret {
+  display: inline-flex;
   color: var(--text-muted);
 }
 
-.office-bar .bar-button-quiet::before {
-  content: '';
+.status-caret svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+
+/* Un portrait : la tête et les épaules du personnage (AvatarPortrait), ou les initiales avant qu'il soit prêt. Sa taille est celle de --s. */
+.portrait {
+  position: relative;
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: var(--s);
+  height: var(--s);
+  background: var(--surface-sunk);
+  border-radius: calc(var(--s) * 0.3);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 8%, transparent);
+}
+
+.portrait-image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  image-rendering: pixelated;
+}
+
+.portrait-initials {
+  font-size: calc(var(--s) * 0.4);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  color: var(--text-soft);
+}
+
+.portrait-dot {
   position: absolute;
-  left: -6px;
-  top: 9px;
-  bottom: 9px;
-  width: 1px;
-  background: var(--border);
+  right: -3px;
+  bottom: -3px;
+  width: max(8px, calc(var(--s) * 0.32));
+  height: max(8px, calc(var(--s) * 0.32));
+  background: var(--ok);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2.5px var(--surface);
 }
 
-.office-bar .bar-button-quiet:hover:not(:disabled) {
-  color: var(--error-text);
-  background: var(--error-background);
+.portrait-dot[data-status='busy'] {
+  background: var(--busy);
 }
 
-/* Place comptée : les boutons moins courants (Personnage, Mon bureau, Admin, Bac à sable) et la déconnexion n'ont que leur icône. */
-.office-bar .bar-button-secondary .bar-label,
-.office-bar .bar-button-quiet .bar-label {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
+.portrait-dot[data-status='away'] {
+  background: var(--away);
 }
 
-/* Très large : tout est écrit. */
-@container bar (min-width: 1660px) {
-  .office-bar .bar-button-secondary .bar-label,
-  .office-bar .bar-button-quiet .bar-label {
-    position: static;
-    width: auto;
-    height: auto;
-    margin: 0;
-    overflow: visible;
-    clip-path: none;
-  }
+.portrait-dot[data-status='dnd'] {
+  background: var(--dnd);
 }
 
-/* Étroit : plus que des icônes. */
-@container bar (max-width: 1259px) {
-  .office-bar .bar-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
+/* Moins de 720 px : des icônes seulement. La barre passe sur deux lignes (ton statut et les panneaux au-dessus, le micro et la caméra en
+   bas, sous le pouce), le lieu ne garde que son nom, les vignettes descendent sous lui, et le panneau devient une feuille en bas. */
+@media (max-width: 719px) {
+  .office-ui {
+    --where-room: 0px;
   }
 
-  .office-bar .bar-button {
-    padding: 0 12px;
+  .dock-where {
+    max-width: calc(100% - 2 * var(--bar-gap));
   }
-}
 
-/* Plus étroit encore : le statut n'est plus que son point (son nom reste celui du bouton, pour les lecteurs d'écran), et le nom raccourcit. */
-@container bar (max-width: 899px) {
-  .status-menu > .bar-button > span:not(.bar-button-caret) {
+  .office-top {
+    top: calc(var(--bar-gap) + 56px);
+  }
+
+  .office-bar {
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      'me . end'
+      'media media media';
+  }
+
+  .dock-me {
+    grid-area: me;
+    padding: 6px 4px;
+  }
+
+  .office-user,
+  .status-trigger > span:not(.status-caret):not(.status-dot) {
     display: none;
   }
 
-  .office-user {
-    max-width: 9ch;
+  .dock-media {
+    grid-area: media;
+  }
+
+  .office-bar-end {
+    grid-area: end;
+  }
+
+  .office-side,
+  .office-side[data-panel='decor'] {
+    top: auto;
+    left: var(--bar-gap);
+    right: var(--bar-gap);
+    width: auto;
+    height: 70%;
+    max-height: calc(100% - var(--bar-gap) * 3 - var(--bar-size) - 56px);
+  }
+
+  .where-more {
+    margin-left: 4px;
   }
 }
 
-/* Sur un téléphone, la barre passe sur plusieurs lignes : le zoom monte en haut à gauche, hors de son chemin. */
-@media (max-width: 640px) {
-  .zoom-controls {
-    top: var(--bar-gap);
-    bottom: auto;
-    flex-direction: row;
+/* Les petits téléphones : des boutons de 40 px, pour que la ligne du haut de la barre tienne. */
+@media (max-width: 420px) {
+  .icon-btn {
+    width: 40px;
+    height: 40px;
   }
 
-  .zoom-controls .bar-button {
-    min-width: 44px;
+  .dock-zoom .icon-btn {
+    width: 34px;
   }
 }
 
@@ -1591,7 +1664,7 @@ svg.lucide.icon-s {
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px rgb(255 255 255 / 80%);
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 .status-dot:not([data-status]) {
@@ -1599,51 +1672,49 @@ svg.lucide.icon-s {
   box-shadow: none;
 }
 
-/* Le menu des statuts, qui s'ouvre vers le haut. */
-.status-menu {
-  position: relative;
-}
-
+/* Le menu des statuts, qui s'ouvre vers le haut : une fenêtre comme celle de « Plus » (rayon, ombre, lignes). */
 .status-menu-list {
   position: absolute;
-  left: 0;
+  left: -8px;
   bottom: calc(100% + 14px);
-  z-index: 2;
-  min-width: max(100%, 220px);
+  z-index: 4;
+  min-width: max(100%, 232px);
   display: grid;
   gap: 2px;
-  padding: 6px;
+  padding: 8px;
   background: var(--surface);
-  border-radius: 16px;
-  box-shadow: var(--edge), var(--shadow-l);
-  animation: panel-in 0.14s ease-out;
+  border-radius: var(--radius-pop);
+  box-shadow: var(--shadow-pop);
+  transform-origin: bottom left;
+  animation: pop-in var(--dur-pop) var(--ease-out);
 }
 
 .status-menu-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  min-height: 42px;
-  padding: 0 12px;
+  min-height: 40px;
+  padding: 9px 10px;
   font-size: var(--text-m);
+  font-weight: var(--weight-medium);
   color: var(--text);
   text-align: left;
   white-space: nowrap;
   background: transparent;
   border: none;
-  border-radius: 10px;
+  border-radius: 11px;
   cursor: pointer;
 }
 
 .status-menu-item:hover,
 .status-menu-item:focus-visible {
-  background: var(--surface-sunk);
+  background: var(--surface-soft);
   outline: none;
 }
 
 .status-menu-item[aria-checked='true'] {
-  font-weight: 600;
+  font-weight: var(--weight-semibold);
   background: var(--accent-soft);
 }
 
@@ -1655,10 +1726,10 @@ svg.lucide.icon-s {
 
 /* « Mes états d'activité… » au bas du menu des statuts, séparé des états. */
 .status-menu-manage {
-  margin-top: 4px;
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 10px 10px;
+  margin-top: 6px;
   color: var(--text-soft);
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 11px 11px;
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -1796,29 +1867,10 @@ svg.lucide.icon-s {
   margin-bottom: 8px;
 }
 
-/* Chat ou Admin ouvert, Personnes ne prend que la place de sa liste, jusqu'à moins de la moitié de la hauteur : le reste est à l'autre
-   panneau, et la liste des personnes défile si elle est plus longue. Seul, Personnes peut occuper toute la hauteur. */
-.office-side[data-chat-open='true'] .people-panel,
-.office-side[data-admin-open='true'] .people-panel {
-  flex: 0 0 auto;
-  max-height: 45%;
-}
-
-/* Les panneaux courts (Bac à sable, Son) ne prennent que la place de leur contenu, et rétrécissent (leur contenu défile) quand d'autres sont ouverts. */
-.sim-panel,
-.sound-panel {
-  flex: 0 1 auto;
-}
-
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   Le panneau Chat : en bas à droite, au-dessus de la barre, de 560 px au plus. Il prend le reste de la hauteur, et la liste des messages
-   défile. Les deux canaux sont un sélecteur à deux positions ; les messages sont des bulles, les siennes teintées.
+   Le panneau Chat : il prend toute la hauteur du panneau latéral, et la liste des messages défile. Les deux canaux sont un sélecteur à deux
+   positions ; les messages sont des bulles, les siennes teintées.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
-.chat-panel {
-  flex: 0 1 580px;
-  margin-top: auto;
-}
-
 .chat-tabs {
   flex: none;
   display: flex;
@@ -2672,43 +2724,95 @@ svg.lucide.icon-s {
   background: var(--accent-hover);
 }
 
-/* Ce que les bureaux disent au-dessus de la barre : un message passager, et ceux qui toquent à la porte. */
-.desk-toasts {
+/* Les toasts (Toasts) : ce que la page dit sans qu'on l'ait demandé, en haut au milieu, sous les vignettes. Un toast : le portrait de qui l'a fait,
+   une icône de la couleur de l'accent, le texte, et ses réponses. */
+.toasts {
   position: absolute;
+  top: 126px;
   left: 50%;
-  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
-  width: min(440px, calc(100% - 2 * var(--bar-gap)));
+  z-index: 3;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 8px;
+  max-width: calc(100% - 2 * var(--bar-gap));
   transform: translateX(-50%);
   pointer-events: none;
 }
 
-.desk-toast {
-  margin: 0;
-  padding: 11px 16px;
-  color: #ffffff;
-  text-align: center;
-  background: rgb(27 32 51 / 94%);
-  border-radius: var(--radius-m);
-  box-shadow: var(--shadow-l);
-  pointer-events: auto;
-  animation: panel-in 0.18s ease-out;
-}
-
-.desk-knock {
+.toast {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  gap: 8px;
-}
-
-.desk-knock .bar-button {
+  gap: 10px;
+  max-width: 100%;
+  padding: 7px 14px 7px 7px;
+  font-size: var(--text-s);
+  font-weight: var(--weight-medium);
   color: var(--text);
   background: var(--surface);
-  border-color: transparent;
+  border-radius: 14px;
+  box-shadow: var(--shadow-pop);
+  pointer-events: auto;
+  animation: toast-in var(--dur-pop) var(--ease-out);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.toast-text {
+  min-width: 0;
+}
+
+.toast-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--accent);
+}
+
+.toast-icon svg.lucide {
+  width: 18px;
+  height: 18px;
+}
+
+/* Sans portrait, l'icône prend sa place à gauche, avec la même marge. */
+.toast > .toast-icon:first-child {
+  margin-left: 7px;
+}
+
+.toast-action {
+  flex: none;
+  padding: 6px 12px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.toast-action:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+@media (max-width: 719px) {
+  .toasts {
+    top: calc(var(--bar-gap) + 56px);
+  }
+
+  /* Étroit, un toast qui a des réponses les passe sous son texte plutôt que de l'écraser. */
+  .toast {
+    flex-wrap: wrap;
+    gap: 8px 10px;
+  }
+
+  .toast-text {
+    flex: 1 1 140px;
+  }
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2881,11 +2985,6 @@ svg.lucide.icon-s {
 .swatch-wall {
   display: flex;
   flex-direction: column;
-}
-
-/* La déco du bureau : l'éditeur occupe la colonne de droite, un peu plus large que les autres panneaux. */
-.office-side[data-decor-open='true'] {
-  width: min(400px, calc(100% - 2 * var(--bar-gap)));
 }
 
 .decor-panel {

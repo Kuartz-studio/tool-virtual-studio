@@ -14,6 +14,13 @@ beforeEach(() => {
 
 const LEA = { id: 'u-lea', name: 'Léa', email: 'lea@x.fr' };
 
+// « Se déconnecter », Mon bureau et Admin sont des lignes du menu « Plus » de la barre.
+const moreButton = () => screen.getByRole('button', { name: fr.office.more.toggle });
+async function chooseInMoreMenu(user: ReturnType<typeof userEvent.setup>, name: string) {
+  await user.click(moreButton());
+  await user.click(screen.getByRole('menuitem', { name }));
+}
+
 test('sans session, le bureau renvoie à /connexion', async () => {
   const router = renderRoute('/');
   expect(await screen.findByRole('heading', { name: fr.login.title })).toBeTruthy();
@@ -26,7 +33,7 @@ test('avec session : le bureau, avec le nom de Léa ; « Se déconnecter » ferm
   const router = renderRoute('/');
 
   expect(await enterOffice('Léa')).toBeTruthy();
-  await user.click(screen.getByRole('button', { name: fr.office.signOut }));
+  await chooseInMoreMenu(user, fr.office.signOut);
   expect(await screen.findByRole('heading', { name: fr.login.title })).toBeTruthy();
   expect(fakeAuth.signOut).toHaveBeenCalledOnce();
   expect(router.state.location.pathname).toBe('/connexion');
@@ -63,8 +70,10 @@ test.each([
   const router = renderRoute('/');
 
   await enterOffice('Léa');
-  await user.click(screen.getByRole('button', { name: fr.office.signOut }));
+  await chooseInMoreMenu(user, fr.office.signOut);
   expect(await screen.findByRole('alert')).toHaveProperty('textContent', message);
   expect(router.state.location.pathname).toBe('/');
-  expect(screen.getByRole('button', { name: fr.office.signOut })).toHaveProperty('disabled', false);
+  // La ligne est de nouveau là, active : on peut réessayer.
+  await user.click(moreButton());
+  expect(screen.getByRole('menuitem', { name: fr.office.signOut })).toHaveProperty('disabled', false);
 });
