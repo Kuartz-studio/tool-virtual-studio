@@ -25,4 +25,7 @@ Effets sonores : « 400 Sounds Pack » (dossiers UI, Musical Effects et Other), 
   Le dossier du pack ne contient aucun fichier de licence : vérifier auprès de son vendeur qu'elle autorise
   d'en livrer des extraits dans une appli (comme ici), et ne pas les mettre dans un dépôt public.
 
-Icônes de l'interface : tracés d'après Lucide (https://lucide.dev), licence ISC.
+Icônes de l'interface : Lucide (https://lucide.dev), licence ISC, par le paquet lucide-react.
+
+Police de l'interface : Instrument Sans (https://fonts.google.com/specimen/Instrument+Sans), licence SIL Open Font License 1.1,
+  par le paquet @fontsource-variable/instrument-sans.

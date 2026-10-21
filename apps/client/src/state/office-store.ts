@@ -86,7 +86,7 @@ export interface OfficeState {
   self: PublicPlayer | null;
   // La carte du bureau, d'après le dernier `init` : le jeu ne démarre qu'avec elle.
   mapKey: string | null;
-  // Le dernier statut que la personne a choisi dans le menu (StatusMenu), dans cet onglet ; null si elle n'en a pas choisi. Le serveur
+  // Le dernier statut que la personne a choisi dans le menu de la puce « Moi » (MeMenu), dans cet onglet ; null si elle n'en a pas choisi. Le serveur
   // ne garde les statuts qu'en mémoire : redémarré (un déploiement), son `init` dit « Disponible », et la connexion lui redit ce choix
   // (office-connection.ts). Un `init` ne le change donc pas. Il ne survit pas au rechargement de la page.
   chosenStatus: Status | null;

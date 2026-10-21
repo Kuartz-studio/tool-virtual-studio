@@ -107,7 +107,7 @@ Pendant l'exécution du plan, certaines questions n'avaient pas de réponse dans
 | « Les 200 derniers messages » est une limite de lecture : rien n'est purgé en base | Conforme au §9 de la conception | La table grossit sans limite (négligeable pour une petite équipe) |
 | Un code d'erreur « indisponible » existe pour le chat ; le brouillon est gardé en cas d'échec | Avant, une panne de base répondait « invalide » | Rien |
 | « À proximité » n'est utilisable que pendant une conversation audio/vidéo | C'est la règle du plan | Pas de chat de proximité si LiveKit n'est pas configuré |
-| Choix d'interface du chat : un brouillon par onglet, panneau gardé en mémoire une fois fermé, Chat et Personnes ouverts ensemble, badge de non-lus sur « Tout le monde » seulement | Choix raisonnables, acceptés | Rien |
+| Choix d'interface du chat : un brouillon par onglet, panneau gardé en mémoire une fois fermé, Chat et Personnes ouverts ensemble (depuis, un seul panneau à la fois : voir « Refonte de l'interface et nuit »), badge de non-lus sur « Tout le monde » seulement | Choix raisonnables, acceptés | Rien |
 
 ## Après la relecture finale
 
@@ -187,10 +187,26 @@ Ajoutés d'après la demande « retravail de l'interface » et « de la musique,
 | « Connexion perdue » ne sonne qu'après 1,5 s sans retour, et jamais pour un onglet remplacé ou une déconnexion | Se déconnecter coupe la connexion : un bruit d'erreur serait absurde | Un bruit manquant lors d'une vraie panne très brève : sans effet |
 | Le son est **muet dans les tests** (`happy-dom` n'a pas Web Audio) ; les vrais fichiers sont éprouvés de bout en bout, dans Chromium | Les tests unitaires restent rapides et sûrs, et l'essentiel (le décodage, les ambiances, les déclencheurs) est vérifié dans un vrai navigateur | Un navigateur qu'on n'éprouve pas (Safari) peut se comporter autrement : l'AAC de repli y est à essayer à la main |
 | Le pack d'effets n'a pas de fichier de licence : ses extraits sont dans l'appli, comme des fichiers servis | Rien à décider sans l'information ; le dépôt est privé | À vérifier auprès du vendeur avant de rendre le dépôt public (voir `CREDITS.txt`) |
-| L'interface a des **jetons** (couleurs, rayons, ombres, tailles), un texte de 15 px au lieu de 13 à 14, des boutons de 42 px dans la barre, des icônes sur tous les boutons de la barre et des bulles dans le chat | « Plus travaillée et facile à lire » : plus grande, mieux hiérarchisée, et d'un seul tenant | Un goût différent : tout est dans les jetons de `styles.css` |
-| Dans la barre, les boutons les moins courants perdent leur nom sous 1 660 px de large, tous sous 1 260 px, et le statut n'est plus que son point sous 900 px (des *container queries* sur la barre) ; sa hauteur est mesurée (`--bar-size`) | À 1 440 px (un portable) la barre complète ne tient pas sur une ligne ; les icônes sont connues, et le nom reste en infobulle et pour les lecteurs d'écran | Un bouton dont l'icône ne parle pas : le sortir du groupe « moins courants » (`secondary` dans `OfficeShell.tsx`) |
-| Les icônes sont des tracés de Lucide (ISC), écrits en SVG dans `icons.tsx` | Pas de dépendance de plus, et la même épaisseur de trait partout | Le crédit Lucide est dans `CREDITS.txt` |
-| Aucun thème sombre | Le jeu est dessiné pour un fond clair ; les jetons permettraient d'en ajouter un | Une demande de thème sombre : redéfinir les jetons sous `prefers-color-scheme` |
+| L'interface a des **jetons** (couleurs, rayons, ombres, tailles de texte) et des bulles dans le chat | « Plus travaillée et facile à lire » : mieux hiérarchisée, et d'un seul tenant | Un goût différent : tout est dans les jetons de `styles.css` |
+| La première barre du bas, une seule rangée aux boutons qui perdaient leur nom par *container queries*, a été remplacée par des docks (voir « Refonte de l'interface et nuit » plus bas) | À 1 440 px la barre complète ne tenait pas sur une ligne ; trois docks, aux icônes qui parlent d'elles-mêmes, tiennent partout | Une icône qui ne parle pas : son nom est en infobulle et lu par les lecteurs d'écran |
+| Les icônes sont celles de `lucide-react` (ISC), réunies dans `office/icons.tsx` | Voir « Refonte de l'interface et nuit » : des tracés collés à la main étaient fragiles | Le crédit Lucide est dans `CREDITS.txt` |
+| Un thème sombre, d'abord écarté (le jeu était dessiné pour un fond clair), existe maintenant : `night`, qui est la lumière du bureau éteinte (`.office-ui[data-theme]`) | Voir « Refonte de l'interface et nuit » : le thème suit un état partagé du bureau, pas la préférence du système | Une demande de thème sombre à la carte : lier `data-theme` à `prefers-color-scheme` en plus |
+
+## Refonte de l'interface et nuit (octobre 2026)
+
+Ajoutés d'après la demande d'une interface refaite et d'une lumière qu'on éteint. Une décision a été prise à chaque fois que la demande ne disait rien.
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| Les icônes viennent de `lucide-react`, non de tracés collés à la main dans `icons.tsx` | Des tracés copiés à la main n'ont pas tous la même épaisseur ni les mêmes arrondis ; la bibliothèque les tient d'accord, et seules les icônes utilisées sont embarquées | La dépendance gêne : revenir à des tracés dans `icons.tsx`, dont les noms ne changeraient pas |
+| La police est Instrument Sans (`@fontsource-variable/instrument-sans`, licence OFL, dans `CREDITS.txt`), servie avec l'appli | Lisible en petit, variable (une seule fonte pour toutes les graisses), et sans appel à un service tiers | Un goût différent : changer la `font-family` de `styles.css` |
+| **Un seul panneau latéral à la fois** : en ouvrir un ferme l'autre | Le premier lot laissait Chat et Personnes ouverts ensemble ; deux panneaux côte à côte prenaient la place du jeu | Quelqu'un veut les deux : le panneau ouvert devient une liste de panneaux |
+| La nuit est une **RenderTexture** d'obscurité trouée (paliers, halo des lampes, halo des personnes), non les `Light` de Phaser | Les lumières de Phaser sont limitées à 10 par passe, et une carte avec des lampes et des personnes en a bien plus ; la RenderTexture n'a pas de limite et rien n'est dessiné lumière allumée | La nuit est trop coûteuse sur un petit ordinateur : réduire les paliers dans `lighting.ts` |
+| La lumière est **une pour tout le monde**, enregistrée (`office_lights`) et diffusée (`lights:changed`) | Un interrupteur que chacun règle de son côté ne serait qu'un réglage d'affichage ; partagé, c'est un geste que les autres voient | Quelqu'un veut sa propre nuit : l'apparence du menu « Moi » est faite pour cela |
+| **Le serveur fait foi** : il vérifie la distance à l'interrupteur (3 cases) et laisse 800 ms entre deux changements d'une personne ; la lumière ne change qu'à `lights:changed` | Le client ne se croit pas : un client modifié pourrait éteindre de n'importe où, ou clignoter à l'infini | Un interrupteur qui semble ne rien faire : la personne est à plus de 3 cases, ou l'appui est venu trop vite |
+| « Aller à mon bureau » **marche** (`auto-walk.ts`, `findPath` partagé) au lieu de téléporter | Une téléportation saute la carte : la personne apparaît d'un coup, sans que les autres la voient arriver ; en marchant, elle passe par les cases que le serveur accepte (`findPath`, le même code des deux côtés) | Quelqu'un préfère l'instantané : un bouton de plus, ou `debug:teleport` pour les tests |
+| Le clignotement de néon au rallumage s'éteint avec `prefers-reduced-motion` | Un clignotement est exactement ce que ce réglage demande de retirer | Rien |
+
 
 ## Points restants
 

@@ -181,11 +181,29 @@ L'appli a deux sons, que chacun règle de son côté dans le panneau **Son** (le
 
 ## Interface
 
-Toute l'interface est HTML posé sur le jeu, et une seule feuille de style (`apps/client/src/styles.css`) la dessine, par des **jetons** en tête de fichier (couleurs, rayons, ombres, tailles de texte : `--text`, `--accent`, `--surface`, `--radius-l`, `--shadow-l`…) : changer une couleur ou un arrondi se fait là. Le texte courant fait 15 px (13 px au plus petit), les boutons de la barre 42 px de haut ; le focus au clavier est le même trait partout. Les mouvements s'éteignent avec `prefers-reduced-motion`.
+Toute l'interface est HTML posé sur le jeu, et une seule feuille de style (`apps/client/src/styles.css`) la dessine, par des **jetons** en tête de fichier (couleurs, rayons, ombres, tailles de texte : `--text`, `--accent`, `--surface`, `--radius-l`, `--shadow-l`…) : changer une couleur ou un arrondi se fait là. Le texte est en Instrument Sans (`@fontsource-variable/instrument-sans`) ; les icônes viennent de `lucide-react`, réunies dans `apps/client/src/office/icons.tsx`. Le thème, `day` ou `night`, est porté par `.office-ui[data-theme]` : la nuit, c'est la lumière du bureau éteinte (voir plus bas). Les mouvements s'éteignent avec `prefers-reduced-motion`.
 
-- **La barre du bas** a trois groupes : ton nom et ton statut ; micro, caméra, partage d'écran et son ; les panneaux (Chat, Personnes, puis Personnage, Mon bureau, Admin, Bac à sable) et « Se déconnecter ». Chaque bouton a une icône et son nom. Quand la place manque, la barre le mesure elle-même (une *container query*, pas la taille de la fenêtre) : sous 1 660 px de large, les boutons les moins courants (Personnage, Mon bureau, Admin, Bac à sable, Se déconnecter) ne gardent que leur icône ; sous 1 260 px, tous ; sous 900 px, le statut n'est plus que son point. Le nom reste lu par les lecteurs d'écran et s'affiche en infobulle. Sur une fenêtre très étroite, la barre passe sur plusieurs lignes : l'interface mesure sa hauteur (`--bar-size`, `useBarSize` dans `OfficeShell.tsx`), et les panneaux et les messages s'arrêtent au-dessus d'elle.
-- **Les panneaux** (Personnes, Chat, Son, Admin, Mon bureau, Personnage, états, déco, bac à sable) ont la même coque (`.people-panel`) : un titre, une pastille de fermeture, un contenu qui défile. Le chat a un sélecteur à deux positions et des bulles, les siennes teintées ; le panneau Son a des interrupteurs, des curseurs dont la partie remplie suit la position, et une liste d'ambiances.
+- **Des docks, pas une barre.** Trois docks flottent en bas, et un seul panneau latéral est ouvert à la fois (ouvrir Chat ferme Personnes, et ainsi de suite).
+  - **En bas à gauche**, la puce « Moi » : portrait, nom, statut. Son menu donne le statut, le mode (avec son icône), l'apparence et « Se déconnecter ».
+  - **Au centre**, micro, caméra, partage d'écran, le juke-box d'ambiances (voir « Son et musique »), puis le bouton du bureau : « Aller à mon bureau » (l'avatar y marche) quand on est dehors, « Réglages du bureau » quand on y est.
+  - **À droite**, le zoom, Chat, Personnes et « Plus » (la déco, l'Admin, le zoom de départ).
+- **En haut**, la puce du lieu à gauche (le nom de l'endroit où l'on est) et, au centre, les toasts : les messages passagers (un toc toc, un changement de lumière, une porte).
+- **Les panneaux** (Personnes, Chat, Admin, Mon bureau, Personnage, états, déco, bac à sable) ont la même coque (`.people-panel`) : un titre, une pastille de fermeture, un contenu qui défile.
 - **Les pages de compte et l'écran d'entrée** sont des cartes sur un fond doux, avec la marque de l'appli, des champs de 44 px et un bouton d'action en accent.
+
+## Lumière du bureau
+
+Une seule lumière pour tout le bureau, que n'importe qui éteint ou rallume.
+
+- **L'interrupteur** est sur le mur nord du couloir (la case 32, 10 de la carte `office`, une zone de type `switch`). On l'actionne avec la touche E ou d'un clic, à 3 cases au plus (`LIGHT_SWITCH_REACH_TILES`).
+- **L'état est partagé et persistant** (table `office_lights`). Le client envoie `lights:set`, le serveur répond à tout le monde par `lights:changed` ; il ne change rien avant. Le serveur fait foi : il vérifie lui-même la distance à l'interrupteur, et laisse 800 ms entre deux changements d'une même personne (`LIGHTS_RATE_MS`). Un toast dit qui a éteint ou rallumé.
+- **Le rendu** est dans `apps/client/src/game/lighting.ts` : une RenderTexture d'obscurité, trouée en paliers, le halo des lampes (`light-sources.ts`) et celui de chaque personne. Lumière allumée, rien n'est dessiné.
+- **Au rallumage**, un néon clignote un instant, sauf avec `prefers-reduced-motion`.
+- **Débogage.** `window.__office.nightLevel()` donne la nuit du moment, de 0 (allumé) à 1 (pleine nuit).
+
+### Marche automatique
+
+« Aller à mon bureau » ne téléporte pas : l'avatar y marche (`apps/client/src/game/auto-walk.ts`), par le chemin que calcule `findPath`, partagé entre le client et le serveur. Une touche de déplacement l'interrompt. `window.__office.autoWalking()` dit s'il marche tout seul.
 
 ## Bureaux
 

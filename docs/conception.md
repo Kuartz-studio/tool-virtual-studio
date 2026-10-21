@@ -58,12 +58,12 @@ Un bureau virtuel pour ton équipe, dans l'esprit de Gather **[ton choix]** :
 
 ### Juste après la V1 (V1.1)
 
-- S'asseoir sur une chaise (touche E), avec l'animation assise des personnages.
+- S'asseoir sur une chaise, avec l'animation assise des personnages. La touche E existe déjà : elle actionne l'interrupteur de la lumière (voir plus bas), et servira aussi à s'asseoir.
 - Des émotes au-dessus de la tête : coucou, cœur, etc.
 - Rejoindre quelqu'un depuis la liste des personnes (téléportation à côté de lui).
 - Un volume qui baisse avec la distance pendant une conversation.
 - Des messages privés.
-- Les lumières de Phaser 4 : lampes de bureau, cycle jour/nuit.
+- Les lumières, faites : une lumière commune au bureau, que l'interrupteur du couloir éteint et rallume pour tout le monde (la nuit est dessinée dans une RenderTexture, avec le halo des lampes et celui des personnes). Un cycle jour/nuit automatique reste à faire.
 - Absent automatique quand l'ordinateur est inactif, en option. Cette détection n'existe que dans Chrome et Edge, et demande une autorisation.
 
 ### Non-objectifs (hors projet, sauf si on le redécide)
@@ -73,7 +73,7 @@ Un bureau virtuel pour ton équipe, dans l'esprit de Gather **[ton choix]** :
 - Un éditeur de carte dans l'appli : la carte se modifie dans Tiled.
 - Une inscription ouverte au public.
 - Le mobile et la tablette. Seuls les navigateurs d'ordinateur sont pris en charge : Chrome, Edge, Firefox et Safari récents.
-- Les objets interactifs (tableaux blancs, jeux), les intégrations (calendrier, Slack) et l'enregistrement des appels.
+- Les objets interactifs autres que l'interrupteur de la lumière, qui est dans le périmètre (tableaux blancs, jeux), les intégrations (calendrier, Slack) et l'enregistrement des appels.
 
 ### Anti-objectifs (des échecs, même si « ça marche »)
 
@@ -138,6 +138,7 @@ Les zones sont des rectangles avec une propriété `type` :
 - `private`, avec un `name` (par exemple « Salle de réunion ») : une zone d'audio/vidéo privée ;
 - `desk` : l'espace d'un bureau, environ 3 × 3 cases autour de la chaise. Il se comporte comme une petite zone privée ;
 - `label`, avec un `text` : une étiquette affichée dans le monde, comme « DEV TEAM » ;
+- `switch` : un interrupteur de lumière, une case posée sur un mur (celui du couloir est en 32, 10) ;
 - plus tard : `seat` (chaise où s'asseoir), et l'attribution d'un bureau à une personne.
 
 Le **serveur lit le même fichier** pour connaître les cases bloquantes et les zones.
