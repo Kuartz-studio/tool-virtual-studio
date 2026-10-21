@@ -135,6 +135,16 @@ export const fr = {
       label: 'Lieu',
       // Là où aucune zone de la carte ne porte de nom.
       hallway: 'Couloir',
+      // Les grandes pièces de la grande carte (office/where.ts).
+      rooms: {
+        cafe: 'Café',
+        reception: 'Accueil',
+        pool: 'Piscine',
+        lounge: 'Salon',
+        music: 'Coin musique',
+        hall: 'Grande salle',
+        meeting: 'Salle de réunion',
+      },
       onePerson: '1 personne ici',
       manyPeople: '{count} personnes ici',
     },

@@ -1,4 +1,4 @@
-import type { OfficeMap, PublicPlayer, Zone } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, PLAZA, type OfficeMap, type PublicPlayer, type Zone } from '@bureau/shared';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { EventBus } from '../game/EventBus';
@@ -121,4 +121,20 @@ test('les positions des autres, que le magasin tient sans prévenir, sont relues
     vi.advanceTimersByTime(500);
   });
   expect(chip().querySelector('.where-stack')).toBeNull();
+});
+
+test('sur la grande carte, la puce nomme les grandes pièces : le café, l\'accueil, la piscine ; plus « Couloir » partout', () => {
+  const office = parseOfficeMap(buildOfficeTiledMap());
+  act(() => useOfficeStore.getState().applyInit({ self: player('moi', 'Léa', office.spawn.x, office.spawn.y), players: [], mapKey: 'office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
+  act(() => useOfficeStore.getState().setOfficeMap(office));
+  render(<WhereChip />);
+  // On apparaît à l'accueil.
+  expect(chip().textContent).toContain('Accueil');
+  const go = (tx: number, ty: number) => act(() => void emitOnBus(EventBus, 'local:move', { x: tx * 32 + 16, y: ty * 32 + 16, dir: 'up', moving: true }));
+  go(PLAZA.x + 15, PLAZA.y + 6);
+  expect(chip().textContent).toContain('Café');
+  go(5, 38);
+  expect(chip().textContent).toContain('Piscine');
+  go(30, 12);
+  expect(chip().textContent).toContain(fr.office.where.hallway);
 });

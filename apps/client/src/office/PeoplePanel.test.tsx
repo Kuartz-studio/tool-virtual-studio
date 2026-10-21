@@ -1,4 +1,4 @@
-import type { ActivityState, OfficeMap, PublicPlayer, Status, Zone } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, PLAZA, type ActivityState, type OfficeMap, type PublicPlayer, type Status, type Zone } from '@bureau/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
@@ -176,6 +176,44 @@ describe('le sélecteur', () => {
     expect(tab(/^Tout le bureau/).getAttribute('aria-selected')).toBe('true');
     await user.keyboard('{ArrowLeft}');
     expect(document.activeElement).toBe(tab(/^Ici/));
+  });
+});
+
+// « Ici », sur la grande carte : le même lieu que la puce du lieu (placeAt), qui nomme ses grandes pièces. Le café est la place centrale, bien plus
+// large que la bande d'une case que la carte étiquette « CAFÉ » : deux personnes aux deux bouts de la place sont ici ensemble, et non avec celle qui
+// est dans le couloir.
+describe('« Ici » sur la grande carte', () => {
+  const office = parseOfficeMap(buildOfficeTiledMap());
+  const spot = (tx: number, ty: number) => ({ x: tx * 32 + 16, y: ty * 32 + 16 });
+  const arriveInOffice = (others: PublicPlayer[], self: PublicPlayer) => {
+    act(() => useOfficeStore.getState().applyInit({ self, players: others, mapKey: 'office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }));
+    act(() => useOfficeStore.getState().setOfficeMap(office));
+  };
+
+  test('au café, aux deux bouts de la place : ensemble ; celui du couloir : ailleurs', () => {
+    fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
+    arriveInOffice(
+      [player('bob', 'Bob', 'available', spot(PLAZA.x + 1, PLAZA.y + 1)), player('zoe', 'Zoé', 'available', spot(30, 12))],
+      player('moi', 'Moi', 'available', spot(PLAZA.x + PLAZA.w - 2, PLAZA.y + PLAZA.h - 2)),
+    );
+    render(<PeoplePanel onClose={() => {}} />);
+    expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
+    expect(tab(/^Ici/).textContent).toBe('Ici 2');
+    expect(sub('moi')?.textContent).toBe('Café');
+    expect(sub('bob')?.textContent).toBe('Café');
+  });
+
+  test('« Tout le bureau » dit le lieu de chacun : le café, l\'accueil, le couloir', async () => {
+    fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
+    arriveInOffice(
+      [player('bob', 'Bob', 'available', spot(54, 41)), player('zoe', 'Zoé', 'available', spot(30, 12))],
+      player('moi', 'Moi', 'available', spot(PLAZA.x + 5, PLAZA.y + 5)),
+    );
+    render(<PeoplePanel onClose={() => {}} />);
+    await userEvent.click(tab(/^Tout le bureau/));
+    expect(sub('moi')?.textContent).toBe('Café');
+    expect(sub('bob')?.textContent).toBe('Accueil');
+    expect(sub('zoe')?.textContent).toBe('Couloir');
   });
 });
 

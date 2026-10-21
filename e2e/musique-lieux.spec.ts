@@ -1,6 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { buildOfficeTiledMap, GRAND_HALL, isWalkableTile, LOUNGE, LOUNGE_MUSIC_X, LOUNGE_TERRACE_WIDTH, MEETING_ROOM, OFFICE_DESK_SLOTS, parseOfficeMap, PLAZA } from '../packages/shared/src/index';
-import { deskSettingsButton, goToDeskButton, joinOffice, openDeskPanel, openJukebox, selfAt } from './helpers';
+import { deskSettingsButton, goToDeskButton, joinOffice, openDeskPanel, openJukebox, openPanel, selfAt } from './helpers';
 
 // La musique d'ambiance par endroit, sur la vraie carte (le second serveur des tests : playwright.config.ts) : en marchant d'un endroit à
 // l'autre, l'ambiance change, avec les vrais fichiers décodés par Chromium. Les règles sont dans apps/client/src/audio/scene-at.ts.
@@ -53,27 +53,69 @@ async function teleport(page: Page, spot: { x: number; y: number }): Promise<voi
   await expect.poll(() => selfAt(page)).toMatchObject(spot);
 }
 
-test('chaque endroit a son ambiance : on y reste un moment, la musique change', async ({ page }) => {
+// Les endroits de la grande carte : où se poser, l'ambiance qu'on y entend, et le nom du lieu que dit la puce en haut à gauche (office/where.ts :
+// le même découpage de la carte, dans les deux cas).
+const PLACES: Array<[name: string, at: { x: number; y: number }, scene: string, place: string]> = [
+  ['la grande salle', spotNear(GRAND_HALL.x + 8, GRAND_HALL.y + 8), 'drift', 'Grande salle'],
+  ['la place centrale', spotNear(PLAZA.x + 16, PLAZA.y + 6), 'sunny', 'Café'],
+  ['la salle de réunion', spotNear(MEETING_ROOM.x + 6, MEETING_ROOM.y + 4), 'focus', 'Salle de réunion'],
+  ['le coin musique', spotNear(LOUNGE_MUSIC_X + 4, LOUNGE.y + 7), 'quest', 'Coin musique'],
+  ['le salon', spotNear(LOUNGE.x + LOUNGE_TERRACE_WIDTH + 6, LOUNGE.y + 9), 'dusk', 'Salon'],
+  ['la terrasse de la piscine', spotNear(LOUNGE.x + 4, LOUNGE.y + 10), 'sunny', 'Piscine'],
+  // Le bureau rendu est libre : « Place A3 ».
+  ['un bureau', { x: (OFFICE_DESK_SLOTS[2]!.room.x + 4) * 32 + 16, y: (OFFICE_DESK_SLOTS[2]!.room.y + 3) * 32 + 16 }, 'focus', 'Place A3'],
+  ['le couloir', spotNear(30, 12), 'lobby', 'Couloir'],
+];
+
+const whereChip = (page: Page) => page.getByRole('group', { name: 'Lieu' });
+
+test('chaque endroit a son ambiance : on y reste un moment, la musique change, et la puce du lieu le nomme', async ({ page }) => {
   test.slow();
   await joinOffice(page, 'Fanny');
   await giveDeskBack(page);
 
-  // On apparaît à l'accueil : la salle d'attente.
+  // On apparaît à l'accueil : la salle d'attente, et le lieu s'appelle « Accueil » (non « Couloir »).
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('lobby');
+  await expect(whereChip(page)).toContainText('Accueil');
 
-  const places: Array<[name: string, at: { x: number; y: number }, scene: string]> = [
-    ['la grande salle', spotNear(GRAND_HALL.x + 8, GRAND_HALL.y + 8), 'drift'],
-    ['la place centrale', spotNear(PLAZA.x + 16, PLAZA.y + 6), 'sunny'],
-    ['la salle de réunion', spotNear(MEETING_ROOM.x + 6, MEETING_ROOM.y + 4), 'focus'],
-    ['le coin musique', spotNear(LOUNGE_MUSIC_X + 4, LOUNGE.y + 7), 'quest'],
-    ['le salon', spotNear(LOUNGE.x + LOUNGE_TERRACE_WIDTH + 6, LOUNGE.y + 9), 'dusk'],
-    ['la terrasse de la piscine', spotNear(LOUNGE.x + 4, LOUNGE.y + 10), 'sunny'],
-    ['un bureau', { x: (OFFICE_DESK_SLOTS[2]!.room.x + 4) * 32 + 16, y: (OFFICE_DESK_SLOTS[2]!.room.y + 3) * 32 + 16 }, 'focus'],
-    ['le couloir', spotNear(30, 12), 'lobby'],
-  ];
-  for (const [name, at, scene] of places) {
+  for (const [name, at, scene, place] of PLACES) {
     await teleport(page, at);
     await expect.poll(() => playing(page), { message: `l'ambiance de ${name}`, timeout: DECODE_TIMEOUT }).toBe(scene);
+    await expect(whereChip(page), `le lieu de ${name}`).toContainText(place);
+  }
+});
+
+test('« Ici », dans Personnes, ne réunit que ceux du même lieu : deux personnes au café, l\'une part à la grande salle', async ({ browser }) => {
+  test.slow();
+  const contexts: BrowserContext[] = [];
+  try {
+    const arrive = async (name: string) => {
+      const context = await browser.newContext();
+      contexts.push(context);
+      const page = await context.newPage();
+      await joinOffice(page, name);
+      return page;
+    };
+    const [a, b] = await Promise.all([arrive('Axelle'), arrive('Bruno')]);
+    // Leurs bureaux d'abord (les tests de personnalisation en cherchent de libres), puis chacun à un bout de la place centrale.
+    await Promise.all([giveDeskBack(a), giveDeskBack(b)]);
+    await teleport(a, spotNear(PLAZA.x + 3, PLAZA.y + 3));
+    await teleport(b, spotNear(PLAZA.x + PLAZA.w - 4, PLAZA.y + PLAZA.h - 4));
+    await expect(whereChip(a)).toContainText('Café');
+
+    const people = await openPanel(a, 'Personnes');
+    const here = people.getByRole('region', { name: /^Ici/ });
+    await expect(here.getByText('Axelle', { exact: true })).toBeVisible();
+    await expect(here.getByText('Bruno', { exact: true })).toBeVisible({ timeout: 15_000 });
+
+    // Bruno va à la grande salle : plus ici. « Tout le bureau » le montre toujours, avec son lieu.
+    await teleport(b, spotNear(GRAND_HALL.x + 8, GRAND_HALL.y + 8));
+    await expect(here.getByText('Bruno', { exact: true })).toHaveCount(0, { timeout: 15_000 });
+    await people.getByRole('tab', { name: /^Tout le bureau/ }).click();
+    const idOfB = (await selfAt(b)).id;
+    await expect(people.locator(`[data-user="${idOfB}"] .person-sub`)).toHaveText('Grande salle', { timeout: 15_000 });
+  } finally {
+    await Promise.all(contexts.map((context) => context.close()));
   }
 });
 
