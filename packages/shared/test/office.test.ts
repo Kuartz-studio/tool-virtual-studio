@@ -8,10 +8,12 @@ import {
   OFFICE_DESK_SLOTS,
   OFFICE_HEIGHT,
   OFFICE_WIDTH,
+  buildOffice,
   buildOfficeTiledMap,
   buildTiledMap,
   decorItem,
   deskKey,
+  footprintOf,
   isWalkableTile,
   parseOfficeMap,
   zoneAt,
@@ -164,3 +166,54 @@ describe('les portes et les bureaux dans parseOfficeMap', () => {
     expect(deskKey({ name: 'A1', id: '7' })).toBe('A1');
   });
 });
+
+// Ce que la carte pose : les éléments de la banque, par leur case de départ.
+const placed = buildOffice().canvas.decor.map((d) => ({ ...d, item: decorItem(d.id)! }));
+
+describe('la salle de réunion', () => {
+  const table = placed.find((d) => d.id === 'cf-0-1')!;
+  const chairs = placed.filter((d) => d.item.cat === 'sieges' && d.y >= MEETING_ROOM.y && d.y < MEETING_ROOM.y + MEETING_ROOM.h && d.x >= MEETING_ROOM.x && d.x < MEETING_ROOM.x + MEETING_ROOM.w);
+
+  test('la table, de 4 × 2 cases au sol, est au milieu de la salle', () => {
+    const f = footprintOf(table.item, table);
+    expect([f.w, f.h]).toEqual([4, 2]);
+    expect(f.x + f.w / 2).toBe(MEETING_ROOM.x + MEETING_ROOM.w / 2);
+  });
+
+  test('les chaises touchent la table : une rangée au nord, une au sud, une à chaque bout', () => {
+    const f = footprintOf(table.item, table);
+    const north = chairs.filter((c) => c.y === f.y - 1);
+    const south = chairs.filter((c) => c.y === f.y + f.h);
+    expect(north.map((c) => c.x).sort((a, b) => a - b)).toEqual([f.x, f.x + 1, f.x + 2, f.x + 3]);
+    expect(south.map((c) => c.x).sort((a, b) => a - b)).toEqual([f.x, f.x + 1, f.x + 2, f.x + 3]);
+    expect(chairs.filter((c) => c.x === f.x - 1 || c.x === f.x + f.w)).toHaveLength(2);
+    expect(chairs).toHaveLength(10);
+  });
+
+  test('les cases qui bloquent sont celles de la table, ni plus ni moins', () => {
+    const f = footprintOf(table.item, table);
+    const blocked = new Set<string>();
+    for (let y = MEETING_ROOM.y; y < MEETING_ROOM.y + MEETING_ROOM.h; y++) {
+      for (let x = MEETING_ROOM.x; x < MEETING_ROOM.x + MEETING_ROOM.w; x++) {
+        if (!isWalkableTile(map, x, y) && OFFICE.ascii[y]![x] === 'T') blocked.add(`${x},${y}`);
+      }
+    }
+    // Hors les deux grandes plantes d'angle (qui se traversent) : seule la table bloque, sur 4 × 2 cases.
+    expect([...blocked].sort()).toEqual(
+      Array.from({ length: f.w * f.h }, (_, i) => `${f.x + (i % f.w)},${f.y + Math.floor(i / f.w)}`).sort(),
+    );
+  });
+});
+
+describe('les fontaines à eau', () => {
+  test('jamais dans l\'axe d\'une porte de bureau, qu\'elles masqueraient', () => {
+    const fountains = placed.filter((d) => d.item.name === 'Fontaine à eau' && d.y === 12);
+    expect(fountains.length).toBeGreaterThan(0);
+    for (const fountain of fountains) {
+      for (const slot of OFFICE_DESK_SLOTS) {
+        expect(fountain.x < slot.door.x || fountain.x >= slot.door.x + slot.door.w, `fontaine en ${fountain.x}, porte ${slot.key}`).toBe(true);
+      }
+    }
+  });
+});
+

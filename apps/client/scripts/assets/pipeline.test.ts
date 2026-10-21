@@ -7,7 +7,7 @@ import { ATLAS_MARGIN, packImages } from './pack';
 import { extract, segmentSheet } from './segment';
 import { ASSETS_DIR } from './build-assets';
 import { mapFiles, MAPS_DIR } from './build-map';
-import { BIG_FOOTPRINT_CELLS, BIG_ITEM_TILES, defaultsOf, type ResolvedEntry } from './decor';
+import { BIG_FOOTPRINT_CELLS, BIG_ITEM_TILES, MIN_FLOAT_PX, defaultsOf, fitOnFootprint, type ResolvedEntry } from './decor';
 import { readFileSync } from 'node:fs';
 
 const solid = (w: number, h: number, a = 255): Img => {
@@ -167,3 +167,71 @@ describe('qui arrête l\'avatar : les gros éléments seuls', () => {
     for (const desk of bigDesks) expect(desk.solid, desk.name).toBe(true);
   });
 });
+
+describe('les meubles sont ramenés sur leur case', () => {
+  const entry = (cat: ResolvedEntry['cat'], rect: ResolvedEntry['rect'], more: Partial<ResolvedEntry> = {}): ResolvedEntry => ({ sheet: 'of', name: 'x', cat, rect, ...more });
+  // Une image de w × h cases dont seul le rectangle (x, y, largeur, hauteur) est dessiné.
+  const drawn = (w: number, h: number, box: [number, number, number, number]): Img => {
+    const image = new Img(w * 32, h * 32);
+    image.fillRect(box[0], box[1], box[2], box[3], { r: 200, g: 100, b: 50, a: 255 });
+    return image;
+  };
+
+  test('un meuble qui flotte au-dessus de sa case descend jusqu\'au bas de son empreinte', () => {
+    // Une chaise de 1 × 2 cases dont le dessin s'arrête 20 px au-dessus du bas.
+    const fit = fitOnFootprint(drawn(1, 2, [2, 2, 26, 42]), entry('sieges', [0, 0, 1, 2]), 'object');
+    expect(fit.image.contentBox()).toEqual({ left: 2, top: 22, right: 28, bottom: 64 });
+    expect([fit.w, fit.h]).toEqual([1, 2]);
+  });
+
+  test('un petit écart (une ombre) ne bouge pas le dessin, ni ce qui n\'est pas un meuble au sol', () => {
+    expect(MIN_FLOAT_PX).toBe(4);
+    const near = drawn(1, 2, [0, 0, 32, 62]);
+    expect(fitOnFootprint(near, entry('sieges', [0, 0, 1, 2]), 'object').image.contentBox()).toEqual({ left: 0, top: 0, right: 32, bottom: 62 });
+    const lamp = drawn(1, 2, [0, 0, 32, 40]);
+    for (const kind of ['onTop', 'wall', 'floor'] as const) {
+      expect(fitOnFootprint(lamp, entry('deco', [0, 0, 1, 2]), kind).image.contentBox()?.bottom, kind).toBe(40);
+    }
+  });
+
+  test('une table n\'occupe que les colonnes qu\'elle couvre, le dessin recentré ; son rectangle de 5 cases passe à 4', () => {
+    // 120 px de large (3,75 cases) dans 5 cases (160 px), 22 px de vide à gauche, 18 à droite.
+    const fit = fitOnFootprint(drawn(5, 3, [22, 22, 120, 68]), entry('bureaux', [0, 1, 5, 3]), 'object');
+    expect([fit.w, fit.h]).toEqual([4, 3]);
+    const box = fit.image.contentBox()!;
+    expect(fit.image.width).toBe(128);
+    expect(box.left + (128 - box.right)).toBe(8);
+    expect(Math.abs(box.left - (128 - box.right))).toBeLessThanOrEqual(1);
+  });
+
+  test('la profondeur au sol (claim) n\'est jamais changée : elle fixe où le dessin se pose, et une déco enregistrée y est accrochée', () => {
+    const fit = fitOnFootprint(drawn(5, 3, [22, 22, 120, 68]), entry('bureaux', [0, 1, 5, 3], { claim: 2 }), 'object');
+    expect(defaultsOf(entry('bureaux', [0, 1, 5, 3], { claim: 2 }), fit).claim).toBe(2);
+    expect(defaultsOf(entry('bureaux', [0, 1, 5, 3]), fit).claim).toBe(3);
+  });
+
+  test('une table qui remplit sa largeur n\'est pas rétrécie ; un autre meuble garde sa largeur', () => {
+    expect(fitOnFootprint(drawn(3, 2, [0, 0, 96, 64]), entry('bureaux', [0, 0, 3, 2]), 'object').w).toBe(3);
+    expect(fitOnFootprint(drawn(4, 2, [30, 0, 70, 64]), entry('rangement', [0, 0, 4, 2]), 'object').w).toBe(4);
+  });
+
+  test('dans la banque : aucun meuble au sol ne flotte (le bas du dessin touche le bas de l\'image, à une ombre près)', () => {
+    const atlases = new Map<string, Img>();
+    const floating: string[] = [];
+    for (const item of DECOR_ITEMS) {
+      if (item.kind !== 'object') continue;
+      if (!atlases.has(item.cat)) atlases.set(item.cat, readImage(join(ASSETS_DIR, 'decor', `${item.cat}.png`)));
+      const box = atlases.get(item.cat)!.crop(item.fx, item.fy, item.w * 32, item.h * 32).contentBox();
+      if (box && item.h * 32 - box.bottom >= MIN_FLOAT_PX) floating.push(`${item.id} (${item.name}) : ${item.h * 32 - box.bottom} px`);
+    }
+    expect(floating).toEqual([]);
+  });
+
+  test('la table de conférence : 4 cases de large, 2 au sol, le dessin au milieu', () => {
+    const table = DECOR_ITEMS.find((item) => item.id === 'cf-0-1')!;
+    expect([table.w, table.h, table.claim]).toEqual([4, 3, 2]);
+    const box = readImage(join(ASSETS_DIR, 'decor', 'bureaux.png')).crop(table.fx, table.fy, table.w * 32, table.h * 32).contentBox()!;
+    expect(Math.abs(box.left - (table.w * 32 - box.right))).toBeLessThanOrEqual(8);
+  });
+});
+

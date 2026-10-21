@@ -5,7 +5,7 @@ import { DECOR_CATEGORIES, type DecorCategoryId, type DecorItem, type DecorKind 
 import { INTERIOR_ENTRIES } from './curation/interiors';
 import { OFFICE_ENTRIES } from './curation/office';
 import { SHEETS, type Entry } from './curation/types';
-import { readImage, type Img } from './image';
+import { Img, readImage } from './image';
 import { packImages } from './pack';
 import { segmentSheet, type Component } from './segment';
 
@@ -23,8 +23,25 @@ export type ResolvedEntry = Entry & { rect: Rect };
 export const BIG_ITEM_TILES = 3;
 export const BIG_FOOTPRINT_CELLS = 2;
 
-export function defaultsOf(entry: ResolvedEntry): { kind: DecorKind; claim: number; solid: boolean } {
-  const [, , w, h] = entry.rect;
+// La taille de l'élément en cases : celle de son rectangle, ou de son découpage au pixel près (`crop`, multiple de 32 px) quand la curation en
+// donne un. `fit` : le résultat de fitOnFootprint (largeur et profondeur au sol ramenées à ce que le dessin couvre).
+export function cellsOf(entry: ResolvedEntry): readonly [number, number] {
+  if (!entry.crop) return [entry.rect[2], entry.rect[3]];
+  const [, , pw, ph] = entry.crop;
+  if (pw % 32 !== 0 || ph % 32 !== 0) throw new Error(`« ${entry.name} » : le découpage ${pw} × ${ph} px n'est pas un nombre entier de cases.`);
+  return [pw / 32, ph / 32];
+}
+
+// Le rectangle à découper dans la planche, en pixels.
+export function pixelRect(entry: ResolvedEntry): readonly [number, number, number, number] {
+  if (entry.crop) return entry.crop;
+  const [tx, ty, tw, th] = entry.rect;
+  return [tx * 32, ty * 32, tw * 32, th * 32];
+}
+
+export function defaultsOf(entry: ResolvedEntry, fit?: Pick<FittedSprite, 'w' | 'h'>): { kind: DecorKind; claim: number; solid: boolean } {
+  const [cellsW, cellsH] = cellsOf(entry);
+  const [w, h] = fit ? [fit.w, fit.h] : [cellsW, cellsH];
   const kind: DecorKind = entry.kind ?? (entry.cat === 'ecrans' || entry.cat === 'papeterie' ? 'onTop' : 'object');
   const claim = Math.min(entry.claim ?? (kind === 'wall' ? 0 : kind === 'floor' ? h : entry.cat === 'bureaux' ? h : 1), h);
   const wide = w * claim >= BIG_FOOTPRINT_CELLS;
@@ -83,16 +100,50 @@ export class Sheets {
   }
 }
 
+// Les rectangles de la curation suivent les cases de la planche, pas les objets : un meuble de 1,4 case de haut dans un rectangle de
+// 2 cases flotterait 20 px au-dessus de sa case, et une table de 3,75 cases dans un rectangle de 5 bloquerait 1,25 case de vide. À la
+// génération, chaque meuble posé au sol est donc ramené sur sa case :
+// - son dessin descend jusqu'au bas de son empreinte (quand il flotte d'au moins MIN_FLOAT_PX) ;
+// - une table ou un bureau (catégorie `bureaux`) n'occupe que les colonnes qu'il couvre vraiment : sa largeur est arrondie à ce que le
+//   dessin couvre, et le dessin est recentré. Cela ne fait que rétrécir : une déco enregistrée avant reste valable. (La profondeur au sol,
+//   `claim`, reste celle de la curation : elle fixe où le bas du dessin se pose, et la changer déplacerait tout ce qui est déjà posé.)
+export const MIN_FLOAT_PX = 4;
+
+export interface FittedSprite {
+  image: Img;
+  w: number;
+  h: number;
+}
+
+export function fitOnFootprint(image: Img, entry: ResolvedEntry, kind: DecorKind): FittedSprite {
+  const [w, h] = cellsOf(entry);
+  const box = image.contentBox();
+  if (kind !== 'object' || !box) return { image, w, h };
+  let fitted = image;
+  const lift = h * 32 - box.bottom;
+  if (lift >= MIN_FLOAT_PX) {
+    fitted = new Img(image.width, image.height);
+    fitted.paste(image, 0, lift, false);
+  }
+  if (entry.cat !== 'bureaux') return { image: fitted, w, h };
+  const fitW = Math.max(1, Math.min(w, Math.ceil((box.right - box.left) / 32)));
+  if (fitW < w) fitted = fitted.crop(Math.round((box.left + box.right) / 2 - fitW * 16), 0, fitW * 32, h * 32);
+  return { image: fitted, w: fitW, h };
+}
+
 export function buildDecor(sheets: Sheets, entries: Entry[] = ENTRIES): BuiltDecor {
   const resolved = entries.map((entry) => sheets.resolve(entry));
   const sprites = new Map<string, Img>();
+  const fits = new Map<string, FittedSprite>();
   for (const entry of resolved) {
     const id = itemId(entry);
     if (sprites.has(id)) throw new Error(`Deux éléments portent l'identifiant ${id} (« ${entry.name} »).`);
-    const [tx, ty, tw, th] = entry.rect;
-    const image = sheets.image(entry.sheet).crop(tx * 32, ty * 32, tw * 32, th * 32);
+    const [px, py, pw, ph] = pixelRect(entry);
+    const image = sheets.image(entry.sheet).crop(px, py, pw, ph);
     if (image.isEmpty()) throw new Error(`« ${entry.name} » (${id}) : le rectangle est vide.`);
-    sprites.set(id, image);
+    const fit = fitOnFootprint(image, entry, defaultsOf(entry).kind);
+    fits.set(id, fit);
+    sprites.set(id, fit.image);
   }
 
   const items: DecorItem[] = [];
@@ -104,8 +155,9 @@ export function buildDecor(sheets: Sheets, entries: Entry[] = ENTRIES): BuiltDec
     atlases.set(cat, packed.atlas);
     for (const entry of inCat) {
       const frame = packed.frames.get(itemId(entry))!;
-      const { kind, claim, solid } = defaultsOf(entry);
-      items.push({ id: itemId(entry), cat, name: entry.name, kind, w: entry.rect[2], h: entry.rect[3], claim, solid, fx: frame.x, fy: frame.y });
+      const fit = fits.get(itemId(entry))!;
+      const { kind, claim, solid } = defaultsOf(entry, fit);
+      items.push({ id: itemId(entry), cat, name: entry.name, kind, w: fit.w, h: fit.h, claim, solid, fx: frame.x, fy: frame.y });
     }
   }
   return { items, atlases, sprites };

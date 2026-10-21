@@ -148,16 +148,17 @@ function furnish(c: MapCanvas): void {
     for (const [id, x, y] of items) c.put(id, x, y);
   };
 
-  // Le couloir : des plantes entre les portes des bureaux, des fontaines à eau.
+  // Le couloir : des plantes entre les portes des bureaux, des fontaines à eau (jamais dans l'axe d'une porte : elles la masqueraient).
   at([
     ['lr-12-0', 1, 12], ['lr-12-0', 10, 12], ['lr-12-0', 21, 12], ['lr-12-0', 32, 12], ['lr-12-0', 43, 12], ['lr-12-0', 54, 12], ['lr-12-0', 64, 12],
-    ['of-12-15', 15, 12], ['of-12-15', 49, 12],
+    ['of-12-15', 12, 12], ['of-12-15', 46, 12],
   ]);
 
-  // La salle de réunion : l'écran et les tableaux au mur, la grande table, ses douze chaises.
-  at([['of-9-12', 2, m.y], ['of-9-14', 4, m.y], ['tv-10-3', 10, m.y], ['cf-0-1', 5, 19]]);
-  for (const x of [5, 6, 7, 8, 9]) at([['cf-7-0', x, 18], ['cf-8-0', x, 22]]);
-  at([['cf-9-0', 4, 20], ['cf-9-0', 10, 20], ['of-6-7', 1, 23], ['of-6-7', 13, 23], ['lr-12-9', 12, 19], ['lr-12-9', 2, 19]]);
+  // La salle de réunion : l'écran et les tableaux au mur, la grande table (4 × 2 cases au sol, au milieu de la salle), et dix chaises
+  // autour : quatre au nord, qui regardent la table, quatre au sud, vues de dos, une à chaque bout, de profil. Les chaises touchent la table.
+  at([['of-9-12', 2, m.y], ['of-9-14', 4, m.y], ['tv-10-3', 10, m.y], ['cf-0-1', 6, 20]]);
+  for (const x of [6, 7, 8, 9]) at([['of-2-8', x, 19], ['of-0-8', x, 22]]);
+  at([['of-5-8', 5, 21], ['of-4-8', 10, 21], ['of-6-7', 1, 23], ['of-6-7', 13, 23], ['lr-12-9', 12, 19], ['lr-12-9', 2, 19]]);
 
   // La grande salle : l'écran, deux tableaux, un pupitre, trois rangées de chaises tournées vers l'écran.
   at([['tv-10-3', 53, g.y], ['of-9-12', 49, g.y], ['of-9-14', 61, g.y], ['cl-14-14', 55, 17]]);
@@ -181,7 +182,7 @@ function furnish(c: MapCanvas): void {
   at([
     ['cf-0-8', 52, 40],
     ['cf-8-4', 52, 35], ['of-14-28', 53, 35],
-    ['lr-12-9', 51, 36], ['lr-12-9', 57, 36],
+    ['lr-12-9', 51, 36], ['lr-12-9', 56, 36],
     ['lr-1-28', 46, 40], ['of-6-18', 47, 43], ['lr-13-21', 45, 34], ['lr-13-21', 62, 41], ['cl-0-13', 60, 34],
     ['of-0-17', 57, 43], ['of-6-18', 60, 43], ['lr-13-21', 62, 36], ['lr-12-20', 49, 43],
   ]);

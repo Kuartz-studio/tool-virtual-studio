@@ -86,6 +86,24 @@ export class Img {
     }
   }
 
+  // Le plus petit rectangle qui contient tout ce qui n'est pas transparent ; null si l'image est vide.
+  contentBox(): { left: number; top: number; right: number; bottom: number } | null {
+    let left = this.width;
+    let top = this.height;
+    let right = 0;
+    let bottom = 0;
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        if (this.alphaAt(x, y) === 0) continue;
+        left = Math.min(left, x);
+        right = Math.max(right, x + 1);
+        top = Math.min(top, y);
+        bottom = Math.max(bottom, y + 1);
+      }
+    }
+    return right === 0 ? null : { left, top, right, bottom };
+  }
+
   // Une case entièrement transparente ?
   isEmpty(): boolean {
     for (let i = 3; i < this.data.length; i += 4) if (this.data[i] !== 0) return false;

@@ -8,6 +8,9 @@ export interface Entry {
   // de la planche (segment.ts) l'isole bien : le rectangle est alors celui de l'objet trouvé là.
   rect?: readonly [number, number, number, number];
   at?: readonly [number, number];
+  // Le découpage au pixel près (x, y, largeur, hauteur, en pixels de la planche ; largeur et hauteur multiples de 32), quand le rectangle en
+  // cases est trop grand ou mal calé pour l'objet. `rect` (ou `at`) reste ce qui fait l'identifiant. Hors de la planche, l'image est transparente.
+  crop?: readonly [number, number, number, number];
   name: string;
   cat: DecorCategoryId;
   kind?: DecorKind;
@@ -15,7 +18,7 @@ export interface Entry {
   solid?: boolean;
 }
 
-export type EntryOptions = Partial<Pick<Entry, 'kind' | 'claim' | 'solid'>>;
+export type EntryOptions = Partial<Pick<Entry, 'kind' | 'claim' | 'solid' | 'crop'>>;
 
 // Les planches sources, par clé (celle des identifiants : `of-4-12` est la case 4, 12 de la planche `of`), relatives au dossier des ressources.
 export const SHEETS: Record<string, string> = {

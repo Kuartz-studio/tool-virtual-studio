@@ -53,7 +53,7 @@ const cfDeco = on('cf', 'deco');
 const cfScreen = on('cf', 'ecrans');
 
 const CONFERENCE: Entry[] = [
-  cfDesk('Table de conférence ovale', [0, 1, 5, 3], { claim: 3 }),
+  cfDesk('Table de conférence ovale', [0, 1, 5, 3], { claim: 2 }),
   cfDesk("Comptoir d'accueil", [8, 4, 5, 2], { claim: 2 }),
   cfDesk('Banc de bois', [0, 4, 5, 2], { claim: 2 }),
   cfDeco('Grand tapis blanc', [0, 8, 5, 3], { kind: 'floor' }),
