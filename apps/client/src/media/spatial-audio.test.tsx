@@ -9,8 +9,8 @@ import { AUDIBLE_GAIN, SPATIAL_AUDIO_HZ, useSpatialAudio, volumesFor } from './s
 
 const map = parseOfficeMap(buildTiledMap({ ...OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
 const tile = (n: number) => n * TILE_SIZE;
-// Un point de l'allée nord (espace ouvert) : y 8, x en cases.
-const corridor = (x: number) => ({ x: tile(x), y: tile(8) });
+// Un point du couloir au nord (espace ouvert) : y 12, x en cases.
+const corridor = (x: number) => ({ x: tile(x), y: tile(12) });
 
 const player = (id: string, at: { x: number; y: number }): PublicPlayer => ({
   id,
@@ -42,7 +42,7 @@ describe('volumesFor', () => {
   });
 
   test('arrondi à deux décimales', () => {
-    const [volume] = Object.values(volumesFor(map, corridor(4), [{ id: 'a' }], () => ({ x: tile(4) + tile(10) + 7, y: tile(8) })));
+    const [volume] = Object.values(volumesFor(map, corridor(4), [{ id: 'a' }], () => ({ x: tile(4) + tile(10) + 7, y: tile(12) })));
     expect(Math.round(volume! * 100) / 100).toBe(volume);
   });
 });
@@ -56,7 +56,7 @@ describe('useSpatialAudio', () => {
     vi.useRealTimers();
   });
 
-  // Moi dans l'allée nord, Bob et Zoé dans la même room ; la carte est lue.
+  // Moi dans le couloir, Bob et Zoé dans la même room ; la carte est lue.
   async function inRoom(positions: Record<string, { x: number; y: number }>) {
     const client = new FakeMediaClient();
     act(() => {

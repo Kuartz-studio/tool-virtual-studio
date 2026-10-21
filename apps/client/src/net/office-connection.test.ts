@@ -6,6 +6,9 @@ import { createOfficeStore } from '../state/office-store';
 import { FakeBus, FakeSocket } from '../test/fake-socket';
 import { connectOffice, retryDelay, superviseConnection } from './office-connection';
 
+// Le réglage de la pièce d'un bureau qui n'a rien de particulier.
+const DEFAULT_ROOM = { floor: 'parquet-clair', wall: 'creme', items: [] };
+
 const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => ({
   id,
   name: id.toUpperCase(),
@@ -279,9 +282,9 @@ describe('connectOffice', () => {
     test('desk:changed, desk:access, desk:bans, desk:knock : au magasin, pas au jeu', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.serverAccepts();
-      socket.receive('init', { ...init([A]), desks: [{ key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false }] });
+      socket.receive('init', { ...init([A]), desks: [{ key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_ROOM }] });
       bus.emitted.length = 0;
-      socket.receive('desk:changed', { key: 'A1', ownerId: 'a', ownerName: 'A', name: 'Labo', locked: true, closedByState: false });
+      socket.receive('desk:changed', { key: 'A1', ownerId: 'a', ownerName: 'A', name: 'Labo', locked: true, closedByState: false, ...DEFAULT_ROOM });
       socket.receive('desk:access', { closed: ['A1'] });
       socket.receive('desk:bans', [{ id: 'z', name: 'Zoé' }]);
       socket.receive('desk:knock', { key: 'A1', userId: 'z', name: 'Zoé' });
@@ -298,7 +301,7 @@ describe('connectOffice', () => {
       expect(socket.sentOf('desk:do')).toEqual([]);
 
       socket.serverAccepts();
-      socket.receive('init', { ...init([A]), desks: [{ key: 'A1', ownerId: 'a', ownerName: 'Ana', name: null, locked: true, closedByState: false }] });
+      socket.receive('init', { ...init([A]), desks: [{ key: 'A1', ownerId: 'a', ownerName: 'Ana', name: null, locked: true, closedByState: false, ...DEFAULT_ROOM }] });
       bus.emit('local:knock', { key: 'A1' });
       expect(socket.sentOf('desk:do')).toEqual([{ type: 'knock', key: 'A1' }]);
       socket.serverAcks('desk:do', { ok: true });

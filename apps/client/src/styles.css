@@ -1755,3 +1755,274 @@ a {
   padding-top: 8px;
   border-top: 1px solid var(--border);
 }
+
+/* Les images du pack dans l'interface : un morceau d'atlas, sans flou. */
+.sprite-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  overflow: hidden;
+}
+
+.sprite-image,
+.swatch-tile,
+.part-thumb {
+  display: block;
+  flex: none;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+.sprite-image {
+  transform-origin: center;
+}
+
+.swatch-wall {
+  display: flex;
+  flex-direction: column;
+}
+
+/* La déco du bureau : l'éditeur occupe la colonne de droite, un peu plus large que les autres panneaux. */
+.office-side[data-decor-open='true'] {
+  width: min(380px, calc(100% - 2 * var(--bar-gap)));
+}
+
+.decor-panel {
+  flex: 1;
+  min-height: 0;
+}
+
+.decor-tabs,
+.character-tabs {
+  display: flex;
+  gap: 6px;
+  padding: 4px 16px 8px;
+}
+
+.decor-tabs .bar-button,
+.character-tabs .bar-button {
+  flex: 1;
+  justify-content: center;
+}
+
+.decor-panel .bar-button[aria-selected='true'],
+.decor-panel .bar-button[aria-pressed='true'],
+.character-panel .bar-button[aria-selected='true'],
+.character-panel .bar-button[aria-pressed='true'] {
+  color: #ffffff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.decor-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.decor-search input {
+  width: 100%;
+  padding: 7px 10px;
+  font: inherit;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.decor-search input:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.decor-categories,
+.part-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.decor-categories .bar-button,
+.part-tabs .bar-button {
+  padding: 4px 9px;
+  font-size: 0.8rem;
+}
+
+.decor-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  gap: 6px;
+}
+
+.decor-item,
+.swatch,
+.part-choice {
+  padding: 3px;
+  background: var(--background);
+  border: 2px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.decor-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.decor-item:hover,
+.swatch:hover,
+.part-choice:hover {
+  border-color: var(--border);
+}
+
+.decor-item[aria-pressed='true'],
+.swatch[aria-pressed='true'],
+.part-choice[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: #e4ebfb;
+}
+
+.decor-item:focus-visible,
+.swatch:focus-visible,
+.part-choice:focus-visible,
+.decor-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.swatch-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.swatch {
+  display: inline-flex;
+}
+
+.decor-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.decor-footer .desk-hint {
+  margin: 0;
+}
+
+.decor-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.decor-footer-row .bar-button {
+  flex: 1;
+  justify-content: center;
+}
+
+.decor-footer-row .desk-hint:only-child {
+  flex: 1;
+}
+
+.decor-unsaved {
+  color: var(--warning-text);
+}
+
+.decor-refused {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--error-text);
+}
+
+.decor-link {
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.credits {
+  text-align: center;
+}
+
+/* Le builder de personnage : l'aperçu en haut, les pièces dessous. */
+.character-panel {
+  max-height: 100%;
+}
+
+.character-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.character-stage {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 10px;
+  background: linear-gradient(180deg, #dfe6f2, #f4f6fa);
+  border-radius: 10px;
+}
+
+.character-stage-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.avatar-preview {
+  width: 96px;
+  height: 192px;
+  image-rendering: pixelated;
+}
+
+.character-tabs {
+  padding: 0;
+}
+
+.part-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.part-choice {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.part-none {
+  min-height: 56px;
+  padding: 0 10px;
+}
+
+.part-colors {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+.character-save {
+  justify-content: center;
+}

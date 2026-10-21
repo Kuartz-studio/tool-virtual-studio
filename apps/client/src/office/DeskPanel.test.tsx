@@ -7,9 +7,12 @@ import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
 import { DeskPanel } from './DeskPanel';
 
+// Le réglage de la pièce d'un bureau qui n'a rien de particulier.
+const DEFAULT_ROOM = { floor: 'parquet-clair', wall: 'creme', items: [] };
+
 const map = parseOfficeMap(buildTiledMap({ ...OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
 
-const player = (id: string, name: string, at = { x: 80, y: 240 }): PublicPlayer => ({
+const player = (id: string, name: string, at = { x: 80, y: 400 }): PublicPlayer => ({
   id,
   name,
   avatarKey: null,
@@ -19,7 +22,7 @@ const player = (id: string, name: string, at = { x: 80, y: 240 }): PublicPlayer 
   status: 'available',
   media: { mic: false, cam: false, screen: false },
 });
-const free = (key: string): DeskInfo => ({ key, ownerId: null, ownerName: null, name: null, locked: false, closedByState: false });
+const free = (key: string): DeskInfo => ({ key, ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_ROOM });
 const owned = (key: string, ownerId: string, ownerName: string, more: Partial<DeskInfo> = {}): DeskInfo => ({
   ...free(key),
   ownerId,
@@ -54,7 +57,7 @@ function setup({
     if (withMap) useOfficeStore.getState().setOfficeMap(map);
   });
   let closed = 0;
-  const view = render(<DeskPanel socket={socket.asSocket()} onClose={() => closed++} />);
+  const view = render(<DeskPanel socket={socket.asSocket()} onClose={() => closed++} onDecorate={() => {}} />);
   return { socket, view, closed: () => closed };
 }
 
@@ -129,7 +132,7 @@ describe('avec un bureau', () => {
   });
 
   test('porte fermée par l\'état d\'activité : le panneau le dit', () => {
-    setup({ desks: [owned('A1', 'moi', 'Léa', { closedByState: true })] });
+    setup({ desks: [owned('A1', 'moi', 'Léa', { closedByState: true, ...DEFAULT_ROOM })] });
     expect(screen.getByText(fr.desk.closedByState)).toBeTruthy();
   });
 
@@ -147,7 +150,7 @@ describe('avec un bureau', () => {
     // A1 : pièce des cases x 1 à 7, y 1 à 5 ; le point (80, 144) y est, (80, 240) est dans l'allée au sud.
     const { socket } = setup({
       desks: [owned('A1', 'moi', 'Léa')],
-      others: [player('bob', 'Bob', { x: 80, y: 144 }), player('zoe', 'Zoé', { x: 80, y: 240 })],
+      others: [player('bob', 'Bob', { x: 80, y: 144 }), player('zoe', 'Zoé', { x: 80, y: 400 })],
     });
     const inside = screen.getByRole('region', { name: fr.desk.insideTitle });
     expect(within(inside).getAllByRole('listitem').map((li) => li.querySelector('.person-name')?.textContent)).toEqual(['Bob']);
@@ -156,7 +159,7 @@ describe('avec un bureau', () => {
   });
 
   test('les positions relues : quelqu\'un qui entre apparaît dans la liste', async () => {
-    const { view } = setup({ desks: [owned('A1', 'moi', 'Léa')], others: [player('bob', 'Bob', { x: 80, y: 240 })] });
+    const { view } = setup({ desks: [owned('A1', 'moi', 'Léa')], others: [player('bob', 'Bob', { x: 80, y: 400 })] });
     expect(screen.getByText(fr.desk.insideEmpty)).toBeTruthy();
     useOfficeStore.getState().positions.set('bob', { x: 80, y: 144, dir: 'up', moving: false });
     await act(async () => {
@@ -199,7 +202,7 @@ describe('avec un bureau', () => {
       useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [], mapKey: 'office', chatHistory: [], desks: [owned('A1', 'moi', 'Léa')], closedDesks: [], deskBans: [] });
       useOfficeStore.getState().setReady(false);
     });
-    render(<DeskPanel socket={socket.asSocket()} onClose={() => {}} />);
+    render(<DeskPanel socket={socket.asSocket()} onClose={() => {}} onDecorate={() => {}} />);
     expect((screen.getByRole('button', { name: fr.desk.lock }) as HTMLButtonElement).disabled).toBe(true);
     expect(socket.sentOf('desk:do')).toEqual([]);
   });

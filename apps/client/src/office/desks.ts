@@ -12,6 +12,10 @@ export function deskTitle(desk: Pick<DeskInfo, 'key' | 'ownerName' | 'name'>): s
 // Pourquoi une commande de bureau a échoué, en toutes lettres.
 export function deskErrorText(ack: DeskAck): string {
   if (ack.ok) return '';
+  if (ack.error === 'bad_decor') {
+    const reasons: Record<string, string> = fr.decor.errors;
+    return reasons[ack.reason] ?? fr.desk.errors.bad_decor;
+  }
   const errors: Record<string, string> = fr.desk.errors;
   return errors[ack.error] ?? fr.desk.errors.generic;
 }

@@ -2,7 +2,9 @@ import {
   CHAT_HISTORY_LIMIT,
   type ActivityState,
   type ChatMessage,
+  type DecorError,
   type DeskBan,
+  type DeskDecor,
   type DeskInfo,
   type DeskKnock,
   type InitPayload,
@@ -13,6 +15,7 @@ import {
   type Status,
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
+import { anchorFor, removeAt, tryPlace } from '../office/decor-draft';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
 // dernière consigne audio/vidéo, et les messages du chat. Le serveur le dit à chaque (re)connexion (`init`), puis par événements
@@ -26,6 +29,17 @@ export type PlayerPosition = Pick<PublicPlayer, 'x' | 'y' | 'dir' | 'moving'>;
 
 // Une consigne audio/vidéo du serveur : rejoindre la room de son groupe (media:join), ou la quitter (media:leave).
 export type MediaInstruction = { type: 'join'; p: MediaJoinPayload } | { type: 'leave' };
+
+// L'éditeur de la déco de son bureau : le brouillon (ce que le jeu montre dans la pièce à la place de ce que le serveur a), l'élément qu'on tient
+// pour le poser au prochain clic, et pourquoi le dernier geste a été refusé. `saved` est ce qu'avait le serveur à l'ouverture : on sait
+// s'il y a des changements à enregistrer.
+export interface DecorEditor {
+  deskKey: string;
+  saved: DeskDecor;
+  draft: DeskDecor;
+  held: string | null;
+  error: DecorError | null;
+}
 
 export interface OfficeState {
   // Le compte connecté, d'après le dernier `init` ; null avant le premier.
@@ -79,6 +93,8 @@ export interface OfficeState {
   // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
   // null avant le jeu, et en dehors de lui.
   officeMap: OfficeMap | null;
+  // L'éditeur de la déco de son bureau ; null quand il est fermé.
+  decorEditor: DecorEditor | null;
   // La dernière position connue de chaque autre joueur présent (init, arrivée, ticks). Un Map modifié sur place, sans prévenir les
   // abonnés : un `init` et reset() le remplacent, un départ en retire le joueur ; rien n'y reste de ceux qui sont partis.
   positions: Map<string, PlayerPosition>;
@@ -90,6 +106,18 @@ export interface OfficeState {
   dismissDeskKnock(userId: string): void;
   setOfficeMap(map: OfficeMap | null): void;
   setDeskNotice(text: string | null): void;
+  // L'éditeur de déco : ouvert sur ce bureau (le sien), fermé ; le thème ; l'élément en main ; poser l'élément en main sur cette case de la pièce
+  // (refusé si la pièce cesse d'être valable : `error` dit pourquoi) ; reprendre en main, ou jeter, l'élément n° i ; remplacer tout le brouillon.
+  openDecorEditor(desk: DeskInfo): void;
+  closeDecorEditor(): void;
+  patchDecorTheme(patch: Partial<Pick<DeskDecor, 'floor' | 'wall'>>): void;
+  holdDecorItem(id: string | null): void;
+  placeHeld(cell: { x: number; y: number }): void;
+  pickDecorItem(index: number): void;
+  removeDecorItem(index: number): void;
+  setDecorDraft(draft: DeskDecor): void;
+  // Le brouillon est enregistré : il devient ce que le serveur a.
+  markDecorSaved(): void;
   // Tout l'état d'une (re)connexion : remplace tous les joueurs (ceux qui sont partis pendant la coupure disparaissent).
   applyInit(p: InitPayload): void;
   upsertPlayer(p: PublicPlayer): void;
@@ -142,6 +170,7 @@ type Data = Pick<
   | 'deskKnocks'
   | 'deskNotice'
   | 'officeMap'
+  | 'decorEditor'
   | 'positions'
 >;
 
@@ -165,6 +194,7 @@ const initialData = (): Data => ({
   deskKnocks: [],
   deskNotice: null,
   officeMap: null,
+  decorEditor: null,
   positions: new Map(),
 });
 
@@ -278,6 +308,34 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
       setOfficeMap: (officeMap) => set({ officeMap }),
       setDeskNotice: (deskNotice) => set({ deskNotice }),
+
+      openDecorEditor: (desk) => {
+        const saved: DeskDecor = { floor: desk.floor, wall: desk.wall, items: desk.items };
+        set({ decorEditor: { deskKey: desk.key, saved, draft: saved, held: null, error: null } });
+      },
+      closeDecorEditor: () => set({ decorEditor: null }),
+      patchDecorTheme: (patch) =>
+        set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft: { ...state.decorEditor.draft, ...patch }, error: null } } : state)),
+      holdDecorItem: (held) => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, held, error: null } } : state)),
+      placeHeld: (cell) =>
+        set((state) => {
+          const editor = state.decorEditor;
+          if (!editor || editor.held === null) return state;
+          const at = anchorFor(editor.held, cell);
+          if (!at) return state;
+          const result = tryPlace(editor.draft, editor.held, at);
+          return { decorEditor: result.ok ? { ...editor, draft: result.decor, error: null } : { ...editor, error: result.error } };
+        }),
+      pickDecorItem: (index) =>
+        set((state) => {
+          const editor = state.decorEditor;
+          const item = editor?.draft.items[index];
+          return editor && item ? { decorEditor: { ...editor, draft: removeAt(editor.draft, index), held: item.id, error: null } } : state;
+        }),
+      removeDecorItem: (index) =>
+        set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft: removeAt(state.decorEditor.draft, index), error: null } } : state)),
+      setDecorDraft: (draft) => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft, held: null, error: null } } : state)),
+      markDecorSaved: () => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, saved: state.decorEditor.draft } } : state)),
 
       setActivity: (id, activity) => updatePlayer(id, (p) => ({ ...p, activity })),
       setMyStates: (myStates) => set({ myStates }),

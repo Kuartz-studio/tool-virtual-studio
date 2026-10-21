@@ -11,6 +11,8 @@ import { SimPanel } from '../sim/SimPanel';
 import { selectChatUnread, useOfficeStore } from '../state/office-store';
 import { AdminPanel } from './AdminPanel';
 import { ChatPanel } from './ChatPanel';
+import { CharacterBuilder } from './CharacterBuilder';
+import { DecorPanel } from './DecorPanel';
 import { ControlBar } from './ControlBar';
 import { DeskKnocks } from './DeskKnocks';
 import { DeskPanel } from './DeskPanel';
@@ -153,6 +155,30 @@ export function OfficeShell({
     deskToggle.current?.focus();
   }
 
+  // L'éditeur de déco : il remplace le panneau Mon bureau (qui le lance), dans la même colonne. Fermé, le focus revient au bouton Mon bureau.
+  const [decorOpen, setDecorOpen] = useState(false);
+  const decorId = useId();
+
+  function openDecor() {
+    setDeskOpen(false);
+    setDecorOpen(true);
+  }
+
+  function closeDecor() {
+    setDecorOpen(false);
+    deskToggle.current?.focus();
+  }
+
+  // Le builder de personnage.
+  const [characterOpen, setCharacterOpen] = useState(false);
+  const characterToggle = useRef<HTMLButtonElement>(null);
+  const characterId = useId();
+
+  function closeCharacter() {
+    setCharacterOpen(false);
+    characterToggle.current?.focus();
+  }
+
   // Le faux live (pnpm dev:sim) : le panneau Bac à sable, pour tout le monde. Absent d'un build normal.
   const [simOpen, setSimOpen] = useState(false);
   const simToggle = useRef<HTMLButtonElement>(null);
@@ -188,9 +214,16 @@ export function OfficeShell({
             ))}
           </div>
         )}
-        <div className="office-side" data-chat-open={chatOpen ? 'true' : undefined} data-admin-open={isAdmin && adminOpen ? 'true' : undefined}>
+        <div
+          className="office-side"
+          data-chat-open={chatOpen ? 'true' : undefined}
+          data-admin-open={isAdmin && adminOpen ? 'true' : undefined}
+          data-decor-open={decorOpen ? 'true' : undefined}
+        >
           {peopleOpen && <PeoplePanel id={peopleId} onClose={closePeople} />}
-          {deskOpen && <DeskPanel id={deskId} socket={socket} onClose={closeDesk} />}
+          {characterOpen && <CharacterBuilder id={characterId} onClose={closeCharacter} />}
+          {deskOpen && <DeskPanel id={deskId} socket={socket} onClose={closeDesk} onDecorate={openDecor} />}
+          {decorOpen && <DecorPanel id={decorId} socket={socket} onClose={closeDecor} />}
           {statesOpen && <StatesPanel id={statesId} socket={socket} onClose={closeStates} />}
           {isAdmin && adminOpen && <AdminPanel id={adminId} selfId={user.id} mail={mail} onClose={closeAdmin} />}
           {__SIM__ && simOpen && <SimPanel id={simId} onClose={closeSim} />}
@@ -229,12 +262,20 @@ export function OfficeShell({
               onToggle: () => (peopleOpen ? closePeople() : setPeopleOpen(true)),
             },
             {
-              label: fr.desk.toggle,
-              open: deskOpen,
+              label: fr.character.toggle,
+              open: characterOpen,
               disabled: !knowsWhoIsHere,
-              panelId: deskId,
+              panelId: characterId,
+              buttonRef: characterToggle,
+              onToggle: () => (characterOpen ? closeCharacter() : setCharacterOpen(true)),
+            },
+            {
+              label: fr.desk.toggle,
+              open: deskOpen || decorOpen,
+              disabled: !knowsWhoIsHere,
+              panelId: decorOpen ? decorId : deskId,
               buttonRef: deskToggle,
-              onToggle: () => (deskOpen ? closeDesk() : setDeskOpen(true)),
+              onToggle: () => (decorOpen ? closeDecor() : deskOpen ? closeDesk() : setDeskOpen(true)),
             },
             ...(isAdmin
               ? [

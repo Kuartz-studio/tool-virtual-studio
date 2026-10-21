@@ -2,6 +2,9 @@ import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlay
 import { beforeEach, describe, expect, test } from 'vitest';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
 
+// Le réglage de la pièce d'un bureau qui n'a rien de particulier.
+const DEFAULT_ROOM = { floor: 'parquet-clair', wall: 'creme', items: [] };
+
 const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => ({
   id,
   name: id.toUpperCase(),
@@ -389,7 +392,7 @@ describe('chat', () => {
 
 
 describe('les bureaux', () => {
-  const free = (key: string) => ({ key, ownerId: null, ownerName: null, name: null, locked: false, closedByState: false });
+  const free = (key: string) => ({ key, ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_ROOM });
   const initWithDesks = (desks: ReturnType<typeof free>[], closedDesks: string[] = [], deskBans: Array<{ id: string; name: string }> = []): InitPayload => ({
     ...init(SELF, []),
     desks,

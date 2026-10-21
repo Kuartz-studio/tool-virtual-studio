@@ -75,10 +75,8 @@ export class DeskLayer {
     for (const room of map.zones.filter((zone) => zone.type === 'desk')) {
       const key = deskKey(room);
       const door = doors.get(key) ?? null;
-      const above = door !== null && door.y < room.y;
-      const label = snapToPixels(
-        scene.add.text(room.x + room.width / 2, above || door === null ? room.y + 14 : room.y + room.height - 14, '', LABEL_STYLE).setOrigin(0.5),
-      ).setDepth(DEPTH.meublesBas + 0.6);
+      // Le nom en haut de la pièce, devant les meubles (qui se trient par leur bas) : on le lit où qu'ils soient.
+      const label = snapToPixels(scene.add.text(room.x + room.width / 2, room.y + 14, '', LABEL_STYLE).setOrigin(0.5)).setDepth(DEPTH.dessus - 1);
       this.slots.push({ key, room, door, label, panel: null, wall: null, view: 'open' });
     }
   }

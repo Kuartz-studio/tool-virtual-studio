@@ -13,7 +13,7 @@ export function tilesetTextureKey(tilesetName: string): string {
 }
 
 // Les images à charger pour cette carte : celles de ses tilesets intégrés, avec leur adresse. Tiled écrit l'image d'un tileset
-// relativement au fichier de la carte (../dev/tiles.png pour maps/dev-office.json), et c'est ainsi qu'on la résout. Un tileset
+// relativement au fichier de la carte (../tiles/office.png pour maps/office.json), et c'est ainsi qu'on la résout. Un tileset
 // sans image (une collection d'images) ou externe n'a rien à charger : Phaser ne les sait pas lire, et parseOfficeMap refuse
 // déjà les externes.
 export function tilesetImages(json: TiledMapJson, mapUrl: string): Array<{ key: string; url: string }> {
@@ -29,9 +29,13 @@ export function tilesetImages(json: TiledMapJson, mapUrl: string): Array<{ key: 
 
 // Construit ce que la carte montre et ce qui bloque : les calques de tuiles (sol, murs, meubles-bas, dessus) à leur profondeur,
 // et le calque `collisions`, invisible, dont toute tuile est un obstacle pour la physique Arcade. Le monde physique prend la
-// taille de la carte. Les images des tilesets doivent déjà être chargées (Preloader). Le calque `objets` (des objets-tuiles, triés
-// par profondeur) n'est pas encore dessiné ; les étiquettes se posent avec addZoneLabels.
-export function buildMapLayers(scene: Phaser.Scene, map: Phaser.Tilemaps.Tilemap): { collisions: Phaser.Tilemaps.TilemapLayer } {
+// taille de la carte. Les images des tilesets doivent déjà être chargées (Preloader). Les calques `sol` et `murs` sont rendus aussi : les
+// thèmes des bureaux les repeignent (DecorLayer). Le calque `objets` (les meubles de la carte) se dessine avec DecorLayer ; les étiquettes se
+// posent avec addZoneLabels.
+export function buildMapLayers(
+  scene: Phaser.Scene,
+  map: Phaser.Tilemaps.Tilemap,
+): { collisions: Phaser.Tilemaps.TilemapLayer; sol: Phaser.Tilemaps.TilemapLayer | null; murs: Phaser.Tilemaps.TilemapLayer | null } {
   // Tout le jeu (vitesse, distances de conversation) compte en cases de TILE_SIZE : une carte à une autre échelle serait fausse.
   if (map.tileWidth !== TILE_SIZE || map.tileHeight !== TILE_SIZE) {
     throw new Error(`Les tuiles de la carte font ${map.tileWidth} × ${map.tileHeight} px, le jeu attend des tuiles de ${TILE_SIZE} px.`);
@@ -51,8 +55,10 @@ export function buildMapLayers(scene: Phaser.Scene, map: Phaser.Tilemaps.Tilemap
   };
 
   // Un calque visible absent n'empêche pas de jouer : la carte n'a simplement rien à cet étage.
-  createLayer('sol')?.setDepth(DEPTH.sol);
-  createLayer('murs')?.setDepth(DEPTH.murs);
+  const sol = createLayer('sol');
+  sol?.setDepth(DEPTH.sol);
+  const murs = createLayer('murs');
+  murs?.setDepth(DEPTH.murs);
   createLayer('meubles-bas')?.setDepth(DEPTH.meublesBas);
   createLayer('dessus')?.setDepth(DEPTH.dessus);
 
@@ -63,7 +69,7 @@ export function buildMapLayers(scene: Phaser.Scene, map: Phaser.Tilemaps.Tilemap
   collisions.setCollisionByExclusion([-1]);
 
   scene.physics.world.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
-  return { collisions };
+  return { collisions, sol, murs };
 }
 
 // Le texte d'une étiquette : en gras, de la couleur d'une inscription peinte au sol.

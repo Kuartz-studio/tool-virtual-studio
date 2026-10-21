@@ -9,11 +9,11 @@ import { deskErrorText, deskTitle, occupantsOf } from './desks';
 
 // Le panneau Mon bureau : chacun a son bureau, qu'il nomme, dont il ferme la porte et dont il exclut qui il veut.
 // - sans bureau : les places libres, à prendre ;
-// - avec un bureau : son nom, la porte (fermée, seuls ceux qu'on laisse entrer entrent, ceux qui sont déjà dedans restent), aller à son
+// - avec un bureau : son nom, la déco (l'éditeur du décor, DecorPanel), la porte (fermée, seuls ceux qu'on laisse entrer entrent, ceux qui sont déjà dedans restent), aller à son
 //   bureau, qui est dans la pièce (avec « Exclure »), ceux qu'on a exclus (« Réadmettre »), changer de place, rendre le bureau.
 // Chaque bouton envoie une commande (`desk:do`) et montre l'erreur que le serveur renvoie, s'il y en a une. Le focus va au titre à
 // l'ouverture ; Échap ferme.
-export function DeskPanel({ id, socket, onClose }: { id?: string; socket: OfficeSocket | null; onClose(): void }) {
+export function DeskPanel({ id, socket, onClose, onDecorate }: { id?: string; socket: OfficeSocket | null; onClose(): void; onDecorate(): void }) {
   const selfId = useOfficeStore((state) => state.selfId);
   const desks = useOfficeStore((state) => state.desks);
   const bans = useOfficeStore((state) => state.deskBans);
@@ -143,6 +143,13 @@ export function DeskPanel({ id, socket, onClose }: { id?: string; socket: Office
             <button type="button" className="bar-button" disabled={busy || !ready} onClick={() => void run({ type: 'goto' })}>
               {fr.desk.goto}
             </button>
+
+            <section>
+              <button type="button" className="bar-button desk-decorate" disabled={!ready} onClick={onDecorate}>
+                {fr.desk.decorate}
+              </button>
+              <p className="desk-hint">{fr.desk.decorateHint}</p>
+            </section>
 
             <section aria-labelledby={`${titleId}-inside`}>
               <h3 id={`${titleId}-inside`} className="desk-subtitle">

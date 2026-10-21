@@ -131,10 +131,10 @@ describe('la mise en page', () => {
     expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Chat, Personnes, Mon bureau et Se déconnecter', () => {
+  test('la barre du bas : le nom, le statut, micro, caméra et partage d\'écran, puis Chat, Personnes, Personnage, Mon bureau et Se déconnecter', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Mon bureau', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Se déconnecter']);
     expect(within(bar()).getByText('Léa')).toBeTruthy();
   });
 
@@ -547,7 +547,7 @@ describe('le panneau Admin', () => {
   test('un admin a le bouton Admin dans la barre, entre Mon bureau et Se déconnecter', () => {
     renderShell({ role: 'admin' });
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Mon bureau', 'Admin', 'Se déconnecter']);
+    expect(names).toEqual(['Statut : Disponible', 'Micro', 'Caméra', 'Partager l\'écran', 'Chat', 'Personnes', 'Personnage', 'Mon bureau', 'Admin', 'Se déconnecter']);
   });
 
   test('fermé au départ, sans rien demander au serveur ; le bouton l\'ouvre et le ferme, et le dit (aria-expanded, aria-controls)', async () => {

@@ -9,6 +9,7 @@ import {
   type Status,
   type TiledMapJson,
   type WorldTick,
+  type Zone,
 } from '@bureau/shared';
 import { Scale, Scene, Scenes } from 'phaser';
 import { fr, t } from '../../i18n/fr';
@@ -17,6 +18,8 @@ import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { useOfficeStore } from '../../state/office-store';
 import { avatarObjectName } from '../avatars';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
+import { DecorEditorView } from '../decor-editor';
+import { DecorLayer } from '../decor-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
 import { bindKeyboard, DirectionInput } from '../input';
@@ -27,6 +30,9 @@ import { SpeakingRings } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
 import { cameraBounds, chooseZoom } from '../zoom';
 import { SimDrag } from '../../sim/sim-drag';
+
+// La largeur du panneau de déco (à droite de l'écran), en pixels de l'écran : la pièce se centre dans le reste.
+const EDITOR_PANEL_WIDTH_PX = 380;
 
 // L'horloge des mouvements : celle de la cadence des `move` (MoveSender) et de la réception des positions des autres (SnapshotBuffer),
 // en ms. Jamais l'heure `t` des ticks du serveur, qui est celle de son horloge à lui.
@@ -51,6 +57,10 @@ export class Office extends Scene {
   private othersVisible = true;
   private rings: SpeakingRings;
   private deskLayer: DeskLayer;
+  private decorLayer: DecorLayer;
+  private decorEditor: DecorEditorView;
+  // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
+  private editingRoom: Zone | null = null;
   // Le faux live (VITE_SIM=1) : le glisser-déposer des personnes fictives. Absent d'un build normal.
   private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
@@ -69,6 +79,12 @@ export class Office extends Scene {
       teleport: (x, y) => this.teleport(x, y),
       showOthers: (visible) => this.showOthers(visible),
       avatarsOf: (id) => this.children.list.filter((object) => object.name === avatarObjectName(id)).length,
+      selfAvatar: () => (this.player ? { wanted: this.player.avatarWanted, shown: this.player.avatarShown } : null),
+      toScreen: (x, y) => {
+        const { worldView, zoom } = this.cameras.main;
+        return { x: (x - worldView.x) * zoom, y: (y - worldView.y) * zoom };
+      },
+      editorRoom: () => (this.editingRoom ? { x: this.editingRoom.x, y: this.editingRoom.y } : null),
     };
     exposeDebug(this.debug);
 
@@ -76,8 +92,11 @@ export class Office extends Scene {
     // zones, tels que le serveur les voit.
     this.officeMap = parseOfficeMap(this.cache.tilemap.get(this.mapKey).data as TiledMapJson);
     this.tilemap = this.add.tilemap(this.mapKey);
-    const { collisions } = buildMapLayers(this, this.tilemap);
+    const { collisions, sol, murs } = buildMapLayers(this, this.tilemap);
     addZoneLabels(this, this.officeMap.zones);
+    // Les meubles de la carte, et dans chaque bureau le décor de son occupant (thèmes compris).
+    this.decorLayer = new DecorLayer(this, this.tilemap, { sol, murs }, this.officeMap);
+    this.decorEditor = new DecorEditorView(this, this.decorLayer, { onOpen: (room) => this.focusRoom(room), onClose: () => this.followPlayer() });
     useOfficeStore.getState().setOfficeMap(this.officeMap);
     // Le zoom d'abord : les étiquettes des avatars en dépendent.
     this.layoutCamera();
@@ -99,8 +118,13 @@ export class Office extends Scene {
       onBlocked: (key) => this.deskBlocked(key),
     });
     this.deskLayer.collideWith(this.player);
-    const showDesks = () => this.deskLayer.update(useOfficeStore.getState().desks, useOfficeStore.getState().closedDesks);
+    this.decorLayer.collideWith(this.player);
+    const showDesks = () => {
+      this.deskLayer.update(useOfficeStore.getState().desks, useOfficeStore.getState().closedDesks);
+      this.decorLayer.setDesks(useOfficeStore.getState().desks);
+    };
     showDesks();
+    this.decorEditor.sync(useOfficeStore.getState().decorEditor);
     this.rings = new SpeakingRings((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
 
     // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
@@ -130,6 +154,7 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'media:speaking', (ids) => this.rings.update(ids)),
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
+        if (state.decorEditor !== previous.decorEditor) this.decorEditor.sync(state.decorEditor);
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -143,6 +168,8 @@ export class Office extends Scene {
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       this.deskLayer.destroy();
+      this.decorEditor.destroy();
+      this.decorLayer.destroy();
       useOfficeStore.getState().setOfficeMap(null);
       this.debug.ready = false;
       this.debug.self = null;
@@ -182,6 +209,25 @@ export class Office extends Scene {
   private feet(): { x: number; y: number } {
     const { x, y } = this.player.movePayload();
     return { x, y };
+  }
+
+  // L'éditeur de déco s'ouvre : la caméra quitte l'avatar et va à la pièce, qu'elle place dans la partie de l'écran que le panneau du bureau
+  // laisse libre (il est à droite).
+  private focusRoom(room: Zone): void {
+    this.editingRoom = room;
+    const camera = this.cameras.main;
+    camera.stopFollow();
+    const panelShift = EDITOR_PANEL_WIDTH_PX / 2 / camera.zoom;
+    camera.pan(room.x + room.width / 2 + panelShift, room.y + room.height / 2, 450, 'Sine.easeInOut', true);
+  }
+
+  // Il se ferme : la caméra revient à l'avatar.
+  private followPlayer(): void {
+    this.editingRoom = null;
+    const camera = this.cameras.main;
+    camera.pan(this.player.x, this.player.y - this.player.displayHeight / 2, 350, 'Sine.easeInOut', true, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
+      if (progress === 1 && this.editingRoom === null) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
+    });
   }
 
   // L'avatar bute contre la porte fermée d'un bureau : on dit à qui il appartient, et comment toquer (ou qu'on n'y est plus le bienvenu).

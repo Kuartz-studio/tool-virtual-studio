@@ -3,7 +3,10 @@ import { describe, expect, test } from 'vitest';
 import { fr } from '../i18n/fr';
 import { deskLabel, doorView } from './desk-layer';
 
-const free: DeskInfo = { key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false };
+// Le réglage de la pièce d'un bureau qui n'a rien de particulier.
+const DEFAULT_ROOM = { floor: 'parquet-clair', wall: 'creme', items: [] };
+
+const free: DeskInfo = { key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_ROOM };
 const owned = (more: Partial<DeskInfo> = {}): DeskInfo => ({ ...free, ownerId: 'ana', ownerName: 'Ana', ...more });
 
 describe('doorView : la porte, vue de soi', () => {
@@ -15,14 +18,14 @@ describe('doorView : la porte, vue de soi', () => {
 
   test('fermée pour soi (verrou d\'un autre, état d\'activité, exclusion) : un battant plein qui bloque', () => {
     expect(doorView(owned({ locked: true }), ['A1'], 'A1')).toBe('closed');
-    expect(doorView(owned({ closedByState: true }), ['A1'], 'A1')).toBe('closed');
+    expect(doorView(owned({ closedByState: true, ...DEFAULT_ROOM }), ['A1'], 'A1')).toBe('closed');
     // Exclu d'une porte ouverte : bloquée aussi.
     expect(doorView(owned(), ['A1'], 'A1')).toBe('closed');
   });
 
   test('fermée mais pas pour soi (son bureau, ou admis) : un trait clair qui ne bloque pas', () => {
     expect(doorView(owned({ locked: true }), [], 'A1')).toBe('locked-mine');
-    expect(doorView(owned({ closedByState: true }), ['A2'], 'A1')).toBe('locked-mine');
+    expect(doorView(owned({ closedByState: true, ...DEFAULT_ROOM }), ['A2'], 'A1')).toBe('locked-mine');
   });
 });
 

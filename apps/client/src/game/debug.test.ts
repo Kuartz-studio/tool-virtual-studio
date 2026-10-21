@@ -9,6 +9,9 @@ const debug = (): OfficeDebug => ({
   teleport: () => {},
   showOthers: () => {},
   avatarsOf: () => 0,
+  selfAvatar: () => null,
+  toScreen: (x, y) => ({ x, y }),
+  editorRoom: () => null,
 });
 
 afterEach(() => {

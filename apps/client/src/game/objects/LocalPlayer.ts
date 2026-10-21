@@ -1,8 +1,9 @@
 import { MAX_SPEED_PX_PER_S, type ActivityState, type Direction, type MovePayload, type PublicPlayer, type Status } from '@bureau/shared';
 import { GameObjects, Physics, Scenes, type Scene } from 'phaser';
-import { animKey, avatarObjectName, avatarSpec, feetBody, type AvatarSpec } from '../avatars';
+import { animKey, avatarObjectName, feetBody, resolveAvatarKey, type AvatarSpec } from '../avatars';
 import { feetPayload } from '../move-sender';
 import { snapToPixels } from '../pixel-snap';
+import { AvatarSkin, avatarLibraryOf } from './avatar-skin';
 import { NameTag } from './NameTag';
 import { addShadow, placeShadow } from './shadow';
 
@@ -25,6 +26,7 @@ const STILL = { x: 0, y: 0 };
 //   étiquette (nom et statut) au-dessus de sa tête.
 export class LocalPlayer extends Physics.Arcade.Sprite {
   private spec: AvatarSpec;
+  private readonly skin: AvatarSkin;
   private readonly shadow: GameObjects.Ellipse;
   private readonly tag: NameTag;
   // Vers où il regarde : la dernière direction prise, gardée à l'arrêt.
@@ -34,8 +36,10 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
 
   // `p` : soi-même, tel que le serveur l'a placé (init) ; `zoom` : celui de la caméra, pour l'étiquette.
   constructor(scene: Scene, p: Pick<PublicPlayer, 'id' | 'x' | 'y' | 'dir' | 'avatarKey' | 'name' | 'status' | 'activity'>, zoom: number) {
-    const spec = avatarSpec(p.avatarKey);
+    const library = avatarLibraryOf(scene);
+    const spec = library.specFor(resolveAvatarKey(p.id, p.avatarKey));
     super(scene, p.x, p.y, spec.key, spec.idle[p.dir][0]);
+    this.skin = new AvatarSkin(library, p.id, p.avatarKey, (next) => this.takeSpec(next));
     this.spec = spec;
     this.facing = p.dir;
     this.setOrigin(0.5, 1).setName(avatarObjectName(p.id));
@@ -58,6 +62,7 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
     events.on(Scenes.Events.POST_UPDATE, this.followFeet, this);
     this.once(GameObjects.Events.DESTROY, () => {
       events.off(Scenes.Events.POST_UPDATE, this.followFeet, this);
+      this.skin.destroy();
       this.shadow.destroy();
       this.tag.destroy();
     });
@@ -92,14 +97,25 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
 
   // Un autre avatar (le profil a changé) : l'image, les animations et la zone de collision, qui suit la taille de son image.
   setAvatar(avatarKey: string | null): void {
-    const spec = avatarSpec(avatarKey);
-    if (spec === this.spec) return;
+    this.skin.set(avatarKey);
+  }
+
+  private takeSpec(spec: AvatarSpec): void {
     this.spec = spec;
     this.stop();
     this.setTexture(spec.key, spec.idle[this.facing][0]);
     this.fitBody();
     this.play(animKey(spec.key, this.moving ? 'walk' : 'idle', this.facing), true);
     this.followFeet();
+  }
+
+  // L'avatar voulu (sa clé), et la texture montrée maintenant : elles sont les mêmes une fois le personnage assemblé.
+  get avatarWanted(): string {
+    return this.skin.key;
+  }
+
+  get avatarShown(): string {
+    return this.spec.key;
   }
 
   setDisplayedName(name: string): void {
@@ -136,6 +152,6 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
   private followFeet(): void {
     this.setDepth(this.y);
     placeShadow(this.shadow, this.x, this.y);
-    this.tag.placeAbove(this.x, this.y - this.spec.frameHeight);
+    this.tag.placeAbove(this.x, this.y - this.spec.height);
   }
 }

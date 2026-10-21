@@ -24,6 +24,13 @@ export interface OfficeDebug {
   showOthers(visible: boolean): void;
   // Le nombre d'avatars que la scène dessine pour ce joueur, local ou distant : 1 s'il est là (jamais de doublon), 0 sinon.
   avatarsOf(id: string): number;
+  // L'avatar local : celui qu'il doit avoir (sa clé) et la texture qu'il montre (la même quand son personnage est assemblé, sinon la silhouette).
+  selfAvatar(): { wanted: string; shown: string } | null;
+  // Où est ce point de la carte (en pixels) à l'écran (pixels de la page) : la caméra, son zoom et son défilement du moment.
+  toScreen(x: number, y: number): { x: number; y: number };
+  // La pièce que l'éditeur de déco montre (le coin haut-gauche, en pixels de la carte), ou null quand il est fermé ou que la caméra n'y est
+  // pas encore arrivée.
+  editorRoom(): { x: number; y: number } | null;
 }
 
 declare global {

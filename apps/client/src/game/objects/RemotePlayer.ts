@@ -1,8 +1,9 @@
 import { REMOTE_RENDER_DELAY_MS, type ActivityState, type PublicPlayer, type Status } from '@bureau/shared';
 import type { GameObjects, Input, Scene } from 'phaser';
-import { animKey, avatarObjectName, avatarSpec, type AvatarSpec } from '../avatars';
+import { animKey, avatarObjectName, resolveAvatarKey, type AvatarSpec } from '../avatars';
 import { snapToPixels } from '../pixel-snap';
 import { SnapshotBuffer, type BodyFits, type Snapshot } from '../snapshot-buffer';
+import { AvatarSkin, avatarLibraryOf } from './avatar-skin';
 import { NameTag } from './NameTag';
 import { addShadow, placeShadow } from './shadow';
 
@@ -13,6 +14,7 @@ export class RemotePlayer {
   readonly id: string;
   private snapshots: SnapshotBuffer;
   private spec: AvatarSpec;
+  private readonly skin: AvatarSkin;
   private readonly sprite: GameObjects.Sprite;
   private readonly shadow: GameObjects.Ellipse;
   private readonly tag: NameTag;
@@ -27,11 +29,13 @@ export class RemotePlayer {
     this.id = p.id;
     this.bodyFits = options.bodyFits;
     this.snapshots = new SnapshotBuffer(undefined, this.bodyFits);
-    this.spec = avatarSpec(p.avatarKey);
+    const library = avatarLibraryOf(scene);
+    this.spec = library.specFor(resolveAvatarKey(p.id, p.avatarKey));
     this.drawn = { x: p.x, y: p.y, dir: p.dir, moving: p.moving };
     this.sprite = snapToPixels(scene.add.sprite(p.x, p.y, this.spec.key, this.spec.idle[p.dir][0]))
       .setOrigin(0.5, 1)
       .setName(avatarObjectName(p.id));
+    this.skin = new AvatarSkin(library, p.id, p.avatarKey, (next) => this.takeSpec(next));
     this.shadow = addShadow(scene, p.x, p.y);
     this.tag = new NameTag(scene, p.name, p.status, options.zoom, p.activity ?? null);
     this.snapshots.push(now, this.drawn);
@@ -68,10 +72,12 @@ export class RemotePlayer {
 
   setProfile(name: string, avatarKey: string | null): void {
     this.tag.setName(name);
-    const spec = avatarSpec(avatarKey);
-    if (spec === this.spec) return;
+    this.skin.set(avatarKey);
+  }
+
+  // Un autre avatar est prêt (ou le profil a changé) : l'animation de l'ancien s'arrête ; render() lance celle du nouveau.
+  private takeSpec(spec: AvatarSpec): void {
     this.spec = spec;
-    // L'animation de l'ancien avatar s'arrête ; render() lance celle du nouveau.
     this.sprite.stop();
     this.sprite.setTexture(spec.key, spec.idle[this.drawn.dir][0]);
   }
@@ -107,15 +113,17 @@ export class RemotePlayer {
     // `true` : une animation déjà en cours n'est pas relancée à chaque image.
     this.sprite.play(animKey(this.spec.key, moving ? 'walk' : 'idle', dir), true);
     placeShadow(this.shadow, x, y);
-    this.tag.placeAbove(x, y - this.spec.frameHeight);
+    this.tag.placeAbove(x, y - this.spec.height);
     return this.drawn;
   }
 
+  // L'avatar voulu pour cette personne (celui qu'on lui verra une fois assemblé).
   get avatarKey(): string {
-    return this.spec.key;
+    return this.skin.key;
   }
 
   destroy(): void {
+    this.skin.destroy();
     this.sprite.destroy();
     this.shadow.destroy();
     this.tag.destroy();
