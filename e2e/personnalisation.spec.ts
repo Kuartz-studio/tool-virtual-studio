@@ -36,6 +36,7 @@ async function arrive(browser: Browser, name: string, desk: 'needed' | 'given ba
 }
 
 test('le builder : A choisit un autre personnage prêt à jouer, B le voit tout de suite, et A le retrouve après un rechargement', async ({ browser }) => {
+  test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
   const a = await arrive(browser, 'Ambre');
   const b = await arrive(browser, 'Basile');
   await expect.poll(() => avatarsOf(b.page, a.id), { timeout: WALK_TIMEOUT }).toBe(1);
@@ -66,6 +67,7 @@ test('le builder : A choisit un autre personnage prêt à jouer, B le voit tout 
 });
 
 test('le builder : « Créer le mien » assemble un personnage pièce par pièce, que B voit', async ({ browser }) => {
+  test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
   const a = await arrive(browser, 'Alix');
   const b = await arrive(browser, 'Bruno');
   await expect.poll(() => avatarsOf(b.page, a.id), { timeout: WALK_TIMEOUT }).toBe(1);
