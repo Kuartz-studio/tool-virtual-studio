@@ -96,6 +96,21 @@ describe('l\'état de la lumière', () => {
     expect(await changed).toMatchObject({ on: false });
   });
 
+  test('la grande carte du bureau (office) : l\'interrupteur du couloir, case (32, 10), s\'actionne depuis le couloir et pas depuis l\'accueil', async () => {
+    const srv = await startTestServer({ env: { MAP_KEY: 'office', E2E: '1' } });
+    expect(srv.map.switches).toEqual([{ x: 32 * 32 + 16, y: 10 * 32 + 16 }]);
+    const a = await person(srv, 'a@x.fr');   // à l'accueil, à l'autre bout de la carte
+    const seen = record(a.socket);
+    a.socket.emit('lights:set', { on: false });
+    await sleep(150);
+    expect(seen.names()).not.toContain('lights:changed');
+
+    await teleport(srv, a, { x: 31 * 32 + 16, y: 12 * 32 + 16 });   // le couloir, 2 cases au sud-ouest de la plaque
+    const changed = nextEvent(a.socket, 'lights:changed');
+    a.socket.emit('lights:set', { on: false });
+    expect(await changed).toMatchObject({ on: false, by: { id: a.id } });
+  });
+
   test('une carte sans interrupteur (la carte de développement) : la lumière ne se change pas', async () => {
     const srv = await startTestServer({ env: { E2E: '1' } });
     const a = await person(srv, 'a@x.fr');

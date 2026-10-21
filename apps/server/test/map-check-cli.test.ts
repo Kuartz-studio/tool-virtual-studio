@@ -48,6 +48,7 @@ test('map:check sur la carte de développement : résumé en français (zones pa
   expect(run.stdout).toMatch(/^\s+private : 1$/m);
   expect(run.stdout).toMatch(/^\s+desk : 3$/m);
   expect(run.stdout).toMatch(/^\s+label : 1$/m);
+  expect(run.stdout).toMatch(/^\s+switch : 0$/m);   // pas d'interrupteur : les tests de bout en bout lisent les pixels de cette carte
   expect(run.stdout).toMatch(/Point d'apparition : x = 80, y = 240 \(case 2, 7\)/);
 }, 60_000);
 
@@ -62,6 +63,7 @@ test('map:check sur la grande carte du bureau : 66 × 47 cases, 6 bureaux avec l
   expect(run.stdout).toMatch(/^\s+door : 6$/m);
   expect(run.stdout).toMatch(/^\s+private : 3$/m);   // la zone détente, la grande salle, la salle de réunion
   expect(run.stdout).toMatch(/^\s+spawn : 1$/m);
+  expect(run.stdout).toMatch(/^\s+switch : 1$/m);   // l'interrupteur de la lumière, dans le couloir
   expect(run.stdout).toMatch(/Point d'apparition : x = 1744, y = 1328 \(case 54, 41\)/);
 }, 60_000);
 

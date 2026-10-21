@@ -16,6 +16,7 @@ import {
   footprintOf,
   isWalkableTile,
   parseOfficeMap,
+  withinSwitchReach,
   zoneAt,
   type OfficeMap,
   type TiledObjectLayer,
@@ -217,3 +218,35 @@ describe('les fontaines à eau', () => {
   });
 });
 
+
+describe('l\'interrupteur de lumière du couloir', () => {
+  const doorOf = (key: string) => OFFICE_DESK_SLOTS.find((slot) => slot.key === key)!.door;
+
+  test('un seul, au centre de la case (32, 10) : la face du mur nord du couloir, à égale distance des portes des bureaux A3 et A4', () => {
+    expect(OFFICE.zones.filter((zone) => zone.type === 'switch')).toEqual([{ type: 'switch', x: 32, y: 10, w: 1, h: 1 }]);
+    expect(map.switches).toEqual([{ x: 32 * 32 + 16, y: 10 * 32 + 16 }]);
+    const [a3, a4] = [doorOf('A3'), doorOf('A4')];
+    const [lastWallBeforeLeftDoor, firstWallAfterRightDoor] = [a3.x + a3.w, a4.x - 1];
+    expect(lastWallBeforeLeftDoor).toBeLessThan(32);
+    expect(firstWallAfterRightDoor).toBeGreaterThan(32);
+    expect(32 - lastWallBeforeLeftDoor).toBe(firstWallAfterRightDoor - 32);
+  });
+
+  test('sur un mur : la rangée qu\'on voit du couloir (y 11 à 13), dont le sol est libre juste dessous', () => {
+    const [lightSwitch] = map.switches;
+    expect(tileOf(lightSwitch!.y)).toBe(10);
+    expect(isWalkableTile(map, 32, 10)).toBe(false);
+    for (const y of [11, 12, 13]) expect(isWalkableTile(map, 32, y), `case 32, ${y}`).toBe(true);
+    // Ce n'est ni une pièce ni un bureau : personne n'y est « dans » une zone.
+    expect(zoneAt(map, lightSwitch!.x, lightSwitch!.y)).toBeNull();
+  });
+
+  test('on l\'atteint depuis le couloir, à 3 cases au plus ; pas depuis le reste de la carte (l\'accueil, la place centrale)', () => {
+    const feetAt = (tx: number, ty: number) => ({ x: tx * 32 + 16, y: ty * 32 + 16 });
+    expect(withinSwitchReach(feetAt(32, 13), map.switches)).toBe(true);
+    expect(withinSwitchReach(feetAt(30, 12), map.switches)).toBe(true);
+    expect(withinSwitchReach(feetAt(36, 12), map.switches)).toBe(false);
+    expect(withinSwitchReach(feetAt(32, 15), map.switches)).toBe(false);
+    expect(withinSwitchReach(map.spawn, map.switches)).toBe(false);
+  });
+});

@@ -59,10 +59,10 @@ interface SfxDeps {
 }
 
 // Branche les effets sur ce qui se passe : les clics de l'interface, les arrivées et départs, les messages, les toc toc, la conversation
-// qui commence ou finit, l'arrivée au bureau, la connexion qui tombe, un bureau ou un personnage enregistré. Renvoie la fonction qui
-// débranche tout.
+// qui commence ou finit, l'arrivée au bureau, la connexion qui tombe, un bureau ou un personnage enregistré, la lumière qu'on allume ou
+// qu'on éteint. Renvoie la fonction qui débranche tout.
 //
-// En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc) ne sonne pas.
+// En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc, la lumière) ne sonne pas.
 export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDeps): () => void {
   const state = () => store.getState();
   const quiet = () => state().self?.status === 'dnd';
@@ -90,6 +90,11 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDe
       if (!quiet()) engine.playSfx('arrive', { rate: 0.8, level: 0.6 });
     }),
     listenOnBus(bus, 'local:knock', knock),
+    // La lumière du bureau change : le bruit d'un interrupteur, qui s'éteint (`toggle-off`) ou se rallume (`toggle-on`). Celui d'un autre ne
+    // sonne pas en « Ne pas déranger » ; le sien, toujours.
+    listenOnBus(bus, 'lights:changed', ({ on, by }) => {
+      if (by?.id === state().selfId || !quiet()) engine.playSfx(on ? 'toggle-on' : 'toggle-off');
+    }),
     listenOnBus(bus, 'net:profile', ({ id }) => {
       if (id === state().selfId) engine.playSfx('success');
     }),

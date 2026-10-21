@@ -23,6 +23,7 @@ import { DecorLayer } from '../decor-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
 import { bindKeyboard, bindZoomKeys, DirectionInput } from '../input';
+import { LightSwitch } from '../light-switch';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { MoveSender } from '../move-sender';
 import { LocalPlayer } from '../objects/LocalPlayer';
@@ -44,7 +45,9 @@ const clock = () => performance.now();
 // Le jeu ne démarre qu'après le premier `init` du serveur (OfficePage) : la scène lit au magasin où le serveur l'a placée et qui est
 // là, puis suit le bus (office-connection.ts) : positions des autres, arrivées, départs, statuts, profils, corrections, et un nouvel
 // `init` à chaque reconnexion. Elle envoie l'état de l'avatar local sur le bus (`local:move`), au rythme de MoveSender. Qui parle dans
-// la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette.
+// la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette. L'interrupteur de la lumière (une
+// plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
+// il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière).
 export class Office extends Scene {
   private officeMap: OfficeMap;
   private tilemap: Phaser.Tilemaps.Tilemap;
@@ -58,6 +61,8 @@ export class Office extends Scene {
   private rings: SpeakingRings;
   private deskLayer: DeskLayer;
   private decorLayer: DecorLayer;
+  // Les interrupteurs de lumière de la carte (un seul sur la grande carte, aucun sur celle de développement).
+  private switches: LightSwitch[] = [];
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
   private editingRoom: Zone | null = null;
@@ -128,6 +133,16 @@ export class Office extends Scene {
     this.decorEditor.sync(useOfficeStore.getState().decorEditor);
     this.rings = new SpeakingRings((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
 
+    // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit. La portée est celle des pieds de l'avatar, relue à
+    // chaque appui (la touche E, ou un clic sur la plaque).
+    this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, () => this.useLights(), () => this.feet()));
+    const showLights = () => {
+      const { on } = useOfficeStore.getState().lights;
+      for (const lightSwitch of this.switches) lightSwitch.setOn(on);
+    };
+    showLights();
+    for (const lightSwitch of this.switches) lightSwitch.setZoom(this.cameras.main.zoom);
+
     // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
     // qui n'existait pas encore, n'a pas reçu).
     const now = clock();
@@ -171,6 +186,7 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'media:speaking', (ids) => this.rings.update(ids)),
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
+        if (state.lights !== previous.lights) showLights();
         if (state.decorEditor !== previous.decorEditor) this.decorEditor.sync(state.decorEditor);
         if (state.zoomLevel !== previous.zoomLevel) this.layoutCamera();
       }),
@@ -187,6 +203,7 @@ export class Office extends Scene {
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
+      for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
       this.deskLayer.destroy();
       this.decorEditor.destroy();
       this.decorLayer.destroy();
@@ -223,7 +240,10 @@ export class Office extends Scene {
   // vraiment, et les autres le verraient s'arrêter 2 ou 3 px trop tôt.
   private afterPhysics(): void {
     this.sendLocalState(clock());
-    if (this.debug.self) Object.assign(this.debug.self, this.feet());
+    const feet = this.feet();
+    if (this.debug.self) Object.assign(this.debug.self, feet);
+    // L'étiquette de l'interrupteur se montre à portée (3 cases) : d'après les pieds de cette image.
+    for (const lightSwitch of this.switches) lightSwitch.updateReach(feet);
   }
 
   private feet(): { x: number; y: number } {
@@ -252,6 +272,12 @@ export class Office extends Scene {
     camera.pan(this.player.x, this.player.y - this.player.displayHeight / 2, 350, 'Sine.easeInOut', true, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
       if (progress === 1 && this.editingRoom === null) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
     });
+  }
+
+  // L'interrupteur est actionné de près (E, ou un clic sur la plaque) : on demande l'état contraire de celui qu'on voit. La lumière ne change qu'à
+  // l'annonce du serveur ; sans réponse (un autre vient de l'actionner, la connexion est coupée), rien ne bouge.
+  private useLights(): void {
+    emitOnBus(EventBus, 'local:lights', { on: !useOfficeStore.getState().lights.on });
   }
 
   // L'avatar bute contre la porte fermée d'un bureau : on dit à qui il appartient, et comment toquer (ou qu'on n'y est plus le bienvenu).
@@ -405,5 +431,6 @@ export class Office extends Scene {
     // À la création, layoutCamera passe avant les avatars.
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);
+    for (const lightSwitch of this.switches) lightSwitch.setZoom(zoom);
   };
 }

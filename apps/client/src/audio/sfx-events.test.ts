@@ -255,10 +255,35 @@ describe('ce qui se passe au bureau', () => {
     expect(ids()).toEqual(['success']);
   });
 
+  test('la lumière qui change : le bruit d\'un interrupteur, à l\'extinction et à l\'allumage, de qui que ce soit', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'lights:changed', { on: false, by: { id: 'a', name: 'A' }, at: 1 });
+    emitOnBus(bus, 'lights:changed', { on: true, by: { id: 'moi', name: 'MOI' }, at: 2 });
+    emitOnBus(bus, 'lights:changed', { on: false, by: { id: 'moi', name: 'MOI' }, at: 3 });
+    expect(played).toEqual([['toggle-off'], ['toggle-on'], ['toggle-off']]);
+  });
+
+  test('l\'état de la lumière à l\'arrivée (l\'init) n\'est pas un changement : aucun bruit', () => {
+    store.getState().applyInit({ ...init(player('moi'), [player('a')]), lights: { on: false, by: { id: 'a', name: 'A' }, at: 1 } });
+    store.getState().setLights({ on: true, by: { id: 'a', name: 'A' }, at: 2 });
+    expect(ids()).toEqual(['welcome']);
+  });
+
+  test('« Ne pas déranger » : la lumière qu\'un autre change ne sonne pas, celle qu\'on change soi-même si', () => {
+    store.getState().applyInit(init(player('moi', { status: 'dnd' }), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'lights:changed', { on: false, by: { id: 'a', name: 'A' }, at: 1 });
+    expect(ids()).toEqual([]);
+    emitOnBus(bus, 'lights:changed', { on: true, by: { id: 'moi', name: 'MOI' }, at: 2 });
+    expect(ids()).toEqual(['toggle-on']);
+  });
+
   test('débrancher : plus rien ne sonne', () => {
     unbind();
     click('<button type="button">Chat</button>');
     emitOnBus(bus, 'net:joined', player('a'));
+    emitOnBus(bus, 'lights:changed', { on: false, by: null, at: 1 });
     store.getState().applyInit(init(player('moi')));
     expect(ids()).toEqual([]);
   });

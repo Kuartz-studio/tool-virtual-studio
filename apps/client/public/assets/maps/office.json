@@ -2187,6 +2187,17 @@
           "width": 448,
           "x": 1504,
           "y": 1408
+        },
+        {
+          "height": 32,
+          "id": 23,
+          "name": "",
+          "rotation": 0,
+          "type": "switch",
+          "visible": true,
+          "width": 32,
+          "x": 1024,
+          "y": 320
         }
       ],
       "opacity": 1,

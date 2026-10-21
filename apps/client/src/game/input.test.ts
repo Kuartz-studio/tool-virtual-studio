@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { bindKeyboard, bindZoomKeys, DirectionInput } from './input';
+import { bindKeyboard, bindUseKey, bindZoomKeys, DirectionInput } from './input';
 
 describe('DirectionInput', () => {
   test('la dernière touche enfoncée gagne', () => {
@@ -372,5 +372,97 @@ describe('bindZoomKeys', () => {
     unbind();
     press('+');
     expect(steps).toEqual([]);
+  });
+});
+
+// La touche « utiliser » (E), qui actionne ce qui est à portée (l'interrupteur de la lumière).
+describe('bindUseKey', () => {
+  let uses: number;
+  let unbind: () => void;
+  const press = (init: KeyboardEventInit, target: EventTarget = window) =>
+    target.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, ...init }));
+
+  beforeEach(() => {
+    uses = 0;
+    unbind = bindUseKey(() => uses++);
+  });
+  afterEach(() => {
+    unbind();
+    document.body.replaceChildren();
+  });
+
+  test('E : une utilisation, par la lettre comme par la position de la touche (QWERTY, AZERTY ou une autre disposition)', () => {
+    press({ key: 'e', code: 'KeyE' });
+    press({ key: 'E', code: 'KeyE', shiftKey: true });   // Maj (la course) ne gêne pas
+    press({ key: 'e' });   // la lettre seule
+    press({ key: 'у', code: 'KeyE' });   // la position seule : la touche E d'un clavier qui porte une autre lettre
+    expect(uses).toBe(4);
+  });
+
+  test('une autre touche ne fait rien, ni les touches de déplacement', () => {
+    for (const init of [{ key: 'r', code: 'KeyR' }, { key: 'd', code: 'KeyD' }, { key: 'ArrowUp', code: 'ArrowUp' }, { key: 'Enter', code: 'Enter' }, { key: ' ', code: 'Space' }]) press(init);
+    expect(uses).toBe(0);
+  });
+
+  test('Ctrl, ⌘ et Alt sont aux raccourcis du navigateur (ou à AltGr) : rien', () => {
+    press({ key: 'e', code: 'KeyE', ctrlKey: true });
+    press({ key: 'e', code: 'KeyE', metaKey: true });
+    press({ key: '€', code: 'KeyE', altKey: true, ctrlKey: true });
+    expect(uses).toBe(0);
+  });
+
+  test('la répétition d\'une touche maintenue ne fait qu\'une utilisation', () => {
+    press({ key: 'e', code: 'KeyE' });
+    press({ key: 'e', code: 'KeyE', repeat: true });
+    press({ key: 'e', code: 'KeyE', repeat: true });
+    expect(uses).toBe(1);
+  });
+
+  test('dans un champ de saisie, on écrit : rien (ni <input>, ni <textarea>, ni texte modifiable)', () => {
+    const field = document.body.appendChild(document.createElement('input'));
+    field.focus();
+    press({ key: 'e', code: 'KeyE' }, field);
+    const area = document.body.appendChild(document.createElement('textarea'));
+    area.focus();
+    press({ key: 'e', code: 'KeyE' }, area);
+    const editable = document.body.appendChild(document.createElement('div'));
+    editable.setAttribute('contenteditable', 'true');
+    editable.focus();
+    press({ key: 'e', code: 'KeyE' }, editable);
+    expect(uses).toBe(0);
+  });
+
+  test('le focus, et non seulement la cible : un champ qui a le focus ignore une touche envoyée à la fenêtre ; sorti du champ, E marche de nouveau', () => {
+    const field = document.body.appendChild(document.createElement('input'));
+    field.focus();
+    press({ key: 'e', code: 'KeyE' });
+    expect(uses).toBe(0);
+    field.blur();
+    press({ key: 'e', code: 'KeyE' });
+    expect(uses).toBe(1);
+  });
+
+  test('un bouton qui a le focus (après un clic sur la barre) n\'est pas un champ de saisie : E marche', () => {
+    const button = document.body.appendChild(document.createElement('button'));
+    button.focus();
+    press({ key: 'e', code: 'KeyE' }, button);
+    expect(uses).toBe(1);
+  });
+
+  test('un appui déjà traité par un autre (preventDefault) n\'est pas pour nous', () => {
+    const taken = (event: Event) => event.preventDefault();
+    document.addEventListener('keydown', taken);
+    try {
+      press({ key: 'e', code: 'KeyE' }, document.body);
+    } finally {
+      document.removeEventListener('keydown', taken);
+    }
+    expect(uses).toBe(0);
+  });
+
+  test('le débranchement retire l\'écouteur', () => {
+    unbind();
+    press({ key: 'e', code: 'KeyE' });
+    expect(uses).toBe(0);
   });
 });

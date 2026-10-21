@@ -18,20 +18,21 @@ export function displayName(name: string): string {
 }
 
 // Le texte : blanc, sur une pastille sombre. Sa taille est en pixels de la carte ; resolution suit le zoom de la caméra (setZoom) :
-// le texte est alors dessiné à la taille où on le voit, net, et pas agrandi pixel par pixel comme la carte.
-const TEXT_STYLE = {
+// le texte est alors dessiné à la taille où on le voit, net, et pas agrandi pixel par pixel comme la carte. Ce que le jeu pose d'autre en
+// étiquette (la touche de l'interrupteur, LightSwitch) prend le même style.
+export const TAG_TEXT_STYLE = {
   fontFamily: 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
   fontSize: '10px',
   color: '#ffffff',
 };
-const PAD_X = 3;
-const PAD_Y = 1;
+export const TAG_PAD_X = 3;
+export const TAG_PAD_Y = 1;
+export const TAG_BACKGROUND = { color: 0x1d2030, alpha: 0.75 };
 const DOT_RADIUS = 2.5;
 const DOT_GAP = 3;
 // L'anneau de la parole, autour du point.
 const RING_RADIUS = DOT_RADIUS + 1.5;
 const RING_COLOR = 0xffffff;
-const BACKGROUND = { color: 0x1d2030, alpha: 0.75 };
 // L'espace entre le haut de l'image de l'avatar et le bas de l'étiquette.
 const GAP_ABOVE_HEAD = 1;
 
@@ -50,10 +51,10 @@ export class NameTag {
   constructor(scene: Scene, name: string, status: Status, zoom: number, activity: ActivityState | null = null) {
     this.status = status;
     this.activity = activity;
-    this.background = snapToPixels(scene.add.rectangle(0, 0, 1, 1, BACKGROUND.color, BACKGROUND.alpha).setOrigin(0, 0));
+    this.background = snapToPixels(scene.add.rectangle(0, 0, 1, 1, TAG_BACKGROUND.color, TAG_BACKGROUND.alpha).setOrigin(0, 0));
     this.ring = snapToPixels(scene.add.circle(0, 0, RING_RADIUS).setStrokeStyle(1, RING_COLOR).setVisible(false));
     this.dot = snapToPixels(scene.add.circle(0, 0, DOT_RADIUS, indicatorRgb(status, activity)));
-    this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TEXT_STYLE, resolution: Math.max(1, zoom) }).setOrigin(0, 0.5));
+    this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TAG_TEXT_STYLE, resolution: Math.max(1, zoom) }).setOrigin(0, 0.5));
     this.container = scene.add.container(0, 0, [this.background, this.ring, this.dot, this.label]).setDepth(DEPTH.nameTags);
     this.layout();
   }
@@ -109,14 +110,14 @@ export class NameTag {
 
   // La pastille, centrée sur x, son bas sur l'origine du conteneur : l'anneau et le point, puis le nom.
   private layout(): void {
-    const width = PAD_X + 2 * DOT_RADIUS + DOT_GAP + this.label.width + PAD_X;
-    const height = Math.max(this.label.height, 2 * RING_RADIUS) + 2 * PAD_Y;
+    const width = TAG_PAD_X + 2 * DOT_RADIUS + DOT_GAP + this.label.width + TAG_PAD_X;
+    const height = Math.max(this.label.height, 2 * RING_RADIUS) + 2 * TAG_PAD_Y;
     const left = -Math.round(width / 2);
     this.background.setPosition(left, -height).setSize(width, height);
     const middle = -height / 2;
-    this.dot.setPosition(left + PAD_X + DOT_RADIUS, middle);
-    this.ring.setPosition(left + PAD_X + DOT_RADIUS, middle);
-    this.label.setPosition(left + PAD_X + 2 * DOT_RADIUS + DOT_GAP, middle);
+    this.dot.setPosition(left + TAG_PAD_X + DOT_RADIUS, middle);
+    this.ring.setPosition(left + TAG_PAD_X + DOT_RADIUS, middle);
+    this.label.setPosition(left + TAG_PAD_X + 2 * DOT_RADIUS + DOT_GAP, middle);
   }
 }
 

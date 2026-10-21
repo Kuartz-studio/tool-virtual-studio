@@ -140,6 +140,9 @@ export function buildOffice(): OfficeBuild {
   c.zone({ type: 'label', text: 'ZONE DÉTENTE', x: 22, y: 43, w: 14, h: 1 });
   c.zone({ type: 'label', text: 'CAFÉ', x: 18, y: 24, w: 12, h: 1 });
   c.zone({ type: 'label', text: 'ACCUEIL', x: 47, y: 44, w: 14, h: 1 });
+  // L'interrupteur de la lumière : sur la face du mur nord du couloir (la rangée y 10, que l'on voit du couloir), au milieu de l'espace entre les
+  // portes des bureaux A3 et A4 (cases 26-27 et 37-38). Le client y pose la plaque. En dernier : les numéros des autres zones ne changent pas.
+  c.zone({ type: 'switch', x: 32, y: 10, w: 1, h: 1 });
 
   return { canvas: c, ascii: c.ascii(), zones: c.zones };
 }

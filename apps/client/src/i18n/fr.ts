@@ -233,6 +233,17 @@ export const fr = {
     reset: 'Rétablir le zoom (100 %)',
     level: '{percent} %',
   },
+  // La lumière du bureau : une pour tout le monde, que l'interrupteur du couloir allume ou éteint (touche E ou clic, de près). `off` et `on` sont
+  // le message que voient les autres, `selfOff` et `selfOn` celui de qui a appuyé ; `use` et `useOn` ce que dit l'étiquette de l'interrupteur
+  // (« [E] Éteindre » quand c'est allumé, « [E] Allumer » quand c'est éteint).
+  lights: {
+    off: '{name} a éteint la lumière',
+    on: '{name} a rallumé la lumière',
+    selfOff: 'Tu as éteint la lumière',
+    selfOn: 'Tu as rallumé la lumière',
+    use: 'Éteindre',
+    useOn: 'Allumer',
+  },
   // Le son : la musique d'ambiance (celle de l'endroit où l'on est, ou celle qu'on choisit) et les effets sonores (clics, arrivées, messages,
   // toc toc…), que l'on coupe et règle chacun de son côté. La voix des autres n'en fait pas partie : elle suit le micro et la sortie du système.
   sound: {

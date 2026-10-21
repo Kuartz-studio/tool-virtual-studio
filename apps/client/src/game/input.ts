@@ -131,3 +131,18 @@ export function bindZoomKeys(onZoom: (step: 1 | -1 | 0) => void): () => void {
   window.addEventListener('keydown', onKeyDown);
   return () => window.removeEventListener('keydown', onKeyDown);
 }
+
+// La touche « utiliser » (E) : elle actionne ce qui est à portée (l'interrupteur de la lumière). On la reconnaît à sa lettre (le libellé dit
+// « [E] ») comme à sa position (la touche E d'un QWERTY ou d'un AZERTY, quand le clavier porte une autre lettre à cet endroit). Elle laisse
+// tranquilles les raccourcis du navigateur (Ctrl, Alt et ⌘ enfoncés), la répétition d'une touche maintenue (une utilisation par appui), un
+// appui qu'un autre écouteur a déjà pris, et tout ce qu'on tape dans un champ de saisie. Renvoie la fonction qui débranche.
+export function bindUseKey(onUse: () => void): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.defaultPrevented || event.repeat || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (event.code !== 'KeyE' && event.key.toLowerCase() !== 'e') return;
+    if (isTypingField(event.target) || isTypingField(document.activeElement)) return;
+    onUse();
+  };
+  window.addEventListener('keydown', onKeyDown);
+  return () => window.removeEventListener('keydown', onKeyDown);
+}

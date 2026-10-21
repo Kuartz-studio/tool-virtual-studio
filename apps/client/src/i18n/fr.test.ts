@@ -82,3 +82,13 @@ test('la page « Rejoindre » ne dit pas que le lien est reçu par e-mail', () =
   expect(t(fr.admin.invite.validity, { days: 7 })).toContain('« Nouveau lien »');
   expect(fr.admin.invite.validity).not.toContain('Renvoyer');
 });
+
+// La lumière du bureau : ce que disent les messages passagers et l'étiquette de l'interrupteur, mot pour mot.
+test('la lumière : les messages de ceux qui changent l\'état, le tien et celui des autres, et l\'étiquette de l\'interrupteur', () => {
+  expect(t(fr.lights.off, { name: 'Léa' })).toBe('Léa a éteint la lumière');
+  expect(t(fr.lights.on, { name: 'Léa' })).toBe('Léa a rallumé la lumière');
+  expect(fr.lights.selfOff).toBe('Tu as éteint la lumière');
+  expect(fr.lights.selfOn).toBe('Tu as rallumé la lumière');
+  expect(fr.lights.use).toBe('Éteindre');
+  expect(fr.lights.useOn).toBe('Allumer');
+});
