@@ -36,6 +36,13 @@
       "when": 1792588696452,
       "tag": "0004_office_lights",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792593697459,
+      "tag": "0005_activity_icon",
+      "breakpoints": true
     }
   ]
 }

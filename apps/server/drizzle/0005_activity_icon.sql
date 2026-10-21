@@ -1,0 +1,1 @@
+ALTER TABLE "activity_state" ADD COLUMN "icon" text;

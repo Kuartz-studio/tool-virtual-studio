@@ -7,7 +7,8 @@ import type { ActivityService } from './activity-service';
 
 // Les états d'activité de la personne connectée, sous /api/me/states : GET (la liste), POST (en créer un), PUT /:id (le remplacer) et
 // DELETE /:id. Ils ne sont jamais ceux de quelqu'un d'autre : un identifiant étranger répond 404, comme un inconnu. Le corps passe par
-// activityInputSchema (nom de 1 à 24 caractères, couleur #rrggbb, trois interrupteurs) ; au plus 12 états par personne (409 `limit`).
+// activityInputSchema (nom de 1 à 24 caractères, couleur #rrggbb, icône facultative parmi ACTIVITY_ICONS, trois interrupteurs) ; au plus 12 états
+// par personne (409 `limit`). PUT remplace l'état en entier : sans `icon`, il n'a plus d'icône.
 // Un état modifié ou supprimé est dit au temps réel (activity:edited) : s'il est celui que la personne a pris, tout le bureau le voit changer.
 export function activityRoutes({ auth, activities, events }: { auth: Auth; activities: ActivityService; events: ServerEvents }): Router {
   const router = Router();

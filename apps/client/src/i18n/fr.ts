@@ -1,4 +1,4 @@
-import type { Status } from '@bureau/shared';
+import type { ActivityIcon, Status } from '@bureau/shared';
 
 // Tous les textes de l'interface. Un texte variable porte des {clés}, que t() remplace.
 export const fr = {
@@ -141,14 +141,19 @@ export const fr = {
       forbiddenOrigin: 'Le bureau refuse la connexion depuis cette page : ouvre l\'appli à son adresse habituelle.',
     },
   },
-  // Les états d'activité qu'on crée soi-même : un nom, une couleur, et ce qu'ils changent (entrée au bureau, entendre, être entendu).
+  // Les états d'activité (les « modes ») qu'on crée soi-même : un nom, une couleur, une icône, et ce qu'ils changent (entrée au bureau,
+  // entendre, être entendu).
   states: {
     toggle: 'Mes états',
     title: 'Mes états d\'activité',
     close: 'Fermer le panneau Mes états d\'activité',
-    intro: 'Crée tes états : un nom, la couleur de ton point, et ce que chacun change pour toi. Tu les choisis ensuite dans le menu de ton profil, sous « Mode ».',
+    intro: 'Crée tes états : un nom, une icône ou la couleur de ton point, et ce que chacun change pour toi. Tu les choisis ensuite dans le menu de ton profil, sous « Mode ».',
     listTitle: 'Mes états',
-    empty: 'Aucun état pour l\'instant. Crée le premier ci-dessous.',
+    empty: 'Aucun état pour l\'instant. Prends une suggestion, ou crée le tien ci-dessous.',
+    // Trois états tout prêts, pour qui n'en a aucun : un clic les crée.
+    suggestionsLabel: 'Suggestions',
+    suggestionLabel: 'Créer l\'état {label}',
+    suggestions: { focus: 'Concentration', meeting: 'Réunion', break: 'Pause' },
     take: 'Prendre',
     takeLabel: 'Prendre l\'état {label}',
     edit: 'Modifier',
@@ -160,6 +165,23 @@ export const fr = {
     formEdit: 'Modifier l\'état',
     label: 'Nom de l\'état',
     labelHint: '24 caractères au plus',
+    // L'icône, facultative : douze, dont le nom (pour les lecteurs d'écran et l'infobulle) est celui de la liste partagée.
+    icon: 'Icône',
+    iconHint: 'Facultative : sans icône, c\'est le point de la couleur. Clique de nouveau sur l\'icône choisie pour la retirer.',
+    icons: {
+      headphones: 'Casque',
+      users: 'Personnes',
+      coffee: 'Café',
+      utensils: 'Repas',
+      phone: 'Téléphone',
+      'pen-tool': 'Plume',
+      code: 'Code',
+      'book-open': 'Livre',
+      moon: 'Lune',
+      plane: 'Avion',
+      dumbbell: 'Haltère',
+      music: 'Musique',
+    } satisfies Record<ActivityIcon, string>,
     color: 'Couleur du point',
     colorCustom: 'Autre couleur',
     colorPick: 'Couleur {color}',

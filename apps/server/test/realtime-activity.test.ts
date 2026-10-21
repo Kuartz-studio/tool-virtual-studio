@@ -37,6 +37,20 @@ describe('prendre un état d\'activité', () => {
     expect(c.init.players.find((p) => p.id === a.id)?.activity).toEqual(state);
   });
 
+  test('l\'icône de l\'état est dite à tout le bureau avec lui, et un arrivant la voit dans l\'init', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    const state = await stateOf(srv, a.id, { ...focus, icon: 'headphones' });
+    expect(state.icon).toBe('headphones');
+
+    const seenByB = nextEvent(b.socket, 'activity:changed');
+    a.socket.emit('state:set', state.id);
+    expect((await seenByB).activity?.icon).toBe('headphones');
+    const c = await person(srv, 'c@x.fr');
+    expect(c.init.players.find((p) => p.id === a.id)?.activity?.icon).toBe('headphones');
+  });
+
   test('un état qui n\'est pas le sien (celui d\'un autre, ou inconnu) : ignoré, sans rien dire à personne', async () => {
     const srv = await startOffice();
     const a = await person(srv, 'a@x.fr');

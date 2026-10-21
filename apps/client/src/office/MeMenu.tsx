@@ -4,6 +4,7 @@ import { useAudioStore } from '../audio/audio-store';
 import { fr } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
+import { ActivityMark } from './ActivityMark';
 import { DeskIcon, LogOutIcon, PlusIcon, ShirtIcon, VolumeIcon } from './icons';
 import type { PanelControls, PanelId } from './panels';
 import { StatusDot } from './StatusDot';
@@ -33,7 +34,8 @@ export interface MeMenuProps {
 // Le menu « Moi » (spec §10 pour le statut), qui s'ouvre au-dessus de la puce :
 // - en haut, ton portrait, ton nom, ton e-mail et « Changer d'apparence » (le panneau du personnage) ;
 // - « Statut » : les quatre statuts, choisis à la main ; ce que le serveur confirme (`status:changed`) est ce que la puce affiche ;
-// - « Mode » : les états d'activité que tu as créés, « Aucun » (retour au statut), et « + » qui ouvre leur panneau ;
+// - « Mode » : les états d'activité que tu as créés (chacun avec son icône, ou le point de sa couleur), « Aucun » (retour au statut), et « + »
+//   qui ouvre leur panneau ;
 // - Mon bureau, Son et musique, et Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu.
 //
 // Le menu suit le motif « menu » : le focus va, à l'ouverture, à ce qui est choisi (le mode en cours, sinon le statut) ; ↓ → et ↑ ← passent d'une
@@ -207,7 +209,7 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
           <div className="mode-chips">
             {myStates.map((state) => (
               <button key={state.id} type="button" role="menuitemradio" aria-checked={activity?.id === state.id} tabIndex={-1} className="mode-chip" disabled={!enabled} onClick={() => chooseMode(state)}>
-                <StatusDot status={null} activity={state} />
+                <ActivityMark activity={state} />
                 <span>{state.label}</span>
               </button>
             ))}

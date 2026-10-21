@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { avatarsOf, chooseStatus, enterOffice, joinOffice, meChip, officeBar, selfAt, waitForOffice, WALK_TIMEOUT } from './helpers';
+import { avatarsOf, chooseStatus, enterOffice, joinOffice, meChip, officeBar, openMeMenu, selfAt, waitForOffice, WALK_TIMEOUT } from './helpers';
 
 // La présence dans l'interface : le menu « Moi » (le statut), le panneau Personnes et l'écran « Ouvert dans un autre onglet ».
 // Chaque personne a son navigateur (un contexte : ses cookies, donc sa session). Tous les tests partagent le serveur, et donc ses
@@ -221,4 +221,39 @@ test('le clavier : le menu « Moi » garde ses flèches ; fermé, l\'avatar marc
   await page.keyboard.down('ArrowDown');
   await expect.poll(async () => (await selfAt(page)).y, { timeout: WALK_TIMEOUT }).toBeGreaterThan(start.y);
   await page.keyboard.up('ArrowDown');
+});
+
+// Les modes (états d'activité) : « + » du menu « Moi » ouvre leur panneau, où une suggestion en crée un d'un clic, avec son icône. Elle est
+// gardée par le serveur (colonne `icon`) : après un rechargement, la pastille du menu la montre encore. Pris, le mode passe avant le statut
+// sur la puce, avec son icône ; « Aucun » rend le statut.
+test('un mode : la suggestion « Concentration » crée l\'état avec son icône, qu\'on prend depuis le menu « Moi », puis qu\'on quitte par « Aucun »', async ({ browser }) => {
+  const a = await arrive(browser, 'Aurore');
+  const page = a.page;
+  await expectStatus(page, 'Disponible');
+
+  await (await openMeMenu(page)).getByRole('menuitem', { name: 'Mes états d\'activité…' }).click();
+  const panel = page.getByRole('complementary', { name: 'Mes états d\'activité' });
+  await expect(panel).toBeVisible();
+  await panel.getByRole('button', { name: 'Créer l\'état Concentration' }).click();
+  const row = panel.getByRole('listitem').filter({ hasText: 'Concentration' });
+  await expect(row.locator('svg.lucide-headphones')).toBeVisible();
+  await expect(panel.getByRole('group', { name: 'Suggestions' })).toHaveCount(0);
+
+  // Le serveur garde l'icône : lue de nouveau à l'arrivée, elle est sur la pastille du menu.
+  await page.reload();
+  await enterOffice(page);
+  await waitForOffice(page);
+  const chip = (await openMeMenu(page)).getByRole('menuitemradio', { name: 'Concentration' });
+  await expect(chip.locator('svg.lucide-headphones')).toBeVisible();
+
+  // Le prendre : la puce montre l'icône et le nom du mode, à la place du statut.
+  await chip.click();
+  await expect(meChip(page)).toContainText('Concentration');
+  await expect(meChip(page).locator('svg.lucide-headphones')).toBeVisible();
+  await expect(meChip(page)).not.toContainText('Disponible');
+
+  // « Aucun » : le statut est de retour, sans icône.
+  await (await openMeMenu(page)).getByRole('menuitemradio', { name: 'Aucun' }).click();
+  await expectStatus(page, 'Disponible');
+  await expect(meChip(page).locator('svg.lucide-headphones')).toHaveCount(0);
 });

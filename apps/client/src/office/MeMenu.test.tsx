@@ -386,6 +386,35 @@ describe('la section « Mode »', () => {
   });
 });
 
+describe('les icônes des modes', () => {
+  const withIcon: ActivityState = { ...focus, icon: 'headphones' };
+
+  test('la puce montre l\'icône du mode en cours à la place de son point, avec son nom', () => {
+    renderChip({ status: 'busy', activity: withIcon, states: [withIcon] });
+    const line = trigger().querySelector('.me-mode') as HTMLElement;
+    expect(line.querySelector('svg.lucide-headphones')).toBeTruthy();
+    expect(line.querySelector('.status-dot')).toBeNull();
+    expect(line.textContent).toBe('En focus');
+  });
+
+  test('les pastilles du menu : l\'icône du mode, sans point ; un mode sans icône garde le point de sa couleur', async () => {
+    const user = userEvent.setup();
+    renderChip({ states: [withIcon, lunch] });
+    await user.click(trigger());
+    expect(mode('En focus').querySelector('svg.lucide-headphones')).toBeTruthy();
+    expect(mode('En focus').querySelector('.status-dot')).toBeNull();
+    expect(mode('À table').querySelector('svg')).toBeNull();
+    expect((mode('À table').querySelector('.status-dot') as HTMLElement).style.backgroundColor).toBeTruthy();
+  });
+
+  test('l\'icône est décorative : le nom d\'une pastille reste celui du mode', async () => {
+    const user = userEvent.setup();
+    renderChip({ states: [withIcon] });
+    await user.click(trigger());
+    expect(screen.getByRole('menuitemradio', { name: 'En focus' })).toBe(mode('En focus'));
+  });
+});
+
 describe('au clavier', () => {
   test('Entrée ouvre le menu, le focus va au statut en cours', async () => {
     const user = userEvent.setup();

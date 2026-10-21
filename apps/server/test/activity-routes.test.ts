@@ -33,6 +33,9 @@ describe('/api/me/states', () => {
     ['un nom trop long', { ...body, label: 'x'.repeat(25) }],
     ['une couleur qui n\'est pas #rrggbb', { ...body, color: 'rouge' }],
     ['une couleur courte', { ...body, color: '#fff' }],
+    ['une icône qui n\'existe pas', { ...body, icon: 'banane' }],
+    ['une icône vide', { ...body, icon: '' }],
+    ['une icône nulle', { ...body, icon: null }],
     ['un interrupteur qui manque', { label: 'x', color: '#000000', allowEntry: true, hear: true }],
     ['un interrupteur qui n\'est pas un booléen', { ...body, hear: 'oui' }],
     ['rien du tout', undefined],
@@ -42,6 +45,35 @@ describe('/api/me/states', () => {
     const res = await post(t, lea.cookie, payload);
     expect(res.status).toBe(400);
     expect(res.body).toEqual({ error: 'invalid' });
+  });
+
+  test('l\'icône : créée, rendue à l\'aller-retour (liste, temps réel), changée, enlevée ; sans icône, pas de champ', async () => {
+    const t = await createTestApp();
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    const edited: Array<{ state: ActivityState | null }> = [];
+    t.events.on('activity:edited', (change) => edited.push(change));
+
+    const created = await post(t, lea.cookie, { ...body, icon: 'coffee' });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ label: 'En focus', icon: 'coffee' });
+    const plain = await post(t, lea.cookie, { ...body, label: 'Sans icône' });
+    expect('icon' in plain.body).toBe(false);
+    const list = await request(t.app).get('/api/me/states').set('Cookie', lea.cookie);
+    expect(list.body).toHaveLength(2);
+    expect(list.body).toContainEqual(created.body);
+    expect(list.body).toContainEqual(plain.body);
+
+    const changed = await request(t.app).put(`/api/me/states/${created.body.id}`).set('Cookie', lea.cookie).send({ ...body, icon: 'plane' });
+    expect(changed.status).toBe(200);
+    expect(changed.body).toMatchObject({ id: created.body.id, icon: 'plane' });
+    const cleared = await request(t.app).put(`/api/me/states/${created.body.id}`).set('Cookie', lea.cookie).send(body);
+    expect(cleared.status).toBe(200);
+    expect('icon' in cleared.body).toBe(false);
+    expect(edited.map((change) => change.state?.icon)).toEqual(['plane', undefined]);
+
+    // Une icône qui n'existe pas n'efface rien : 400, et l'état reste tel qu'il était.
+    expect((await request(t.app).put(`/api/me/states/${created.body.id}`).set('Cookie', lea.cookie).send({ ...body, icon: 'banane' })).status).toBe(400);
+    expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toContainEqual(cleared.body);
   });
 
   test('au plus ACTIVITY_MAX_PER_USER : le suivant répond 409 limit', async () => {

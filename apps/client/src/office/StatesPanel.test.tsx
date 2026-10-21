@@ -1,4 +1,4 @@
-import { ACTIVITY_MAX_PER_USER, type ActivityInput, type ActivityState } from '@bureau/shared';
+import { ACTIVITY_ICONS, ACTIVITY_MAX_PER_USER, type ActivityInput, type ActivityState } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -43,6 +43,9 @@ function setup(states: ActivityState[] = [], current: ActivityState | null = nul
 
 const labelInput = () => screen.getByLabelText(fr.states.label) as HTMLInputElement;
 const switchOf = (name: string) => screen.getByRole('switch', { name }) as HTMLInputElement;
+// La grille des icônes du formulaire, et l'une de ses icônes par son nom français.
+const iconGrid = () => screen.getByRole('group', { name: fr.states.icon });
+const iconButton = (name: string) => within(iconGrid()).getByRole('button', { name }) as HTMLButtonElement;
 
 describe('la liste', () => {
   test('sans état : on le dit ; avec, chacun a son nom, un résumé de ce qu\'il change et ses trois boutons', () => {
@@ -63,6 +66,15 @@ describe('la liste', () => {
       expect(screen.getByRole('button', { name: t(fr.states.editLabel, { label }) })).toBeTruthy();
       expect(screen.getByRole('button', { name: t(fr.states.removeLabel, { label }) })).toBeTruthy();
     }
+  });
+
+  test('chaque état montre son icône à la place de son point ; sans icône, le point de sa couleur', () => {
+    setup([{ ...focus, icon: 'headphones' }, lunch]);
+    const rows = screen.getAllByRole('listitem');
+    expect(rows[0]!.querySelector('svg.lucide-headphones')).toBeTruthy();
+    expect(rows[0]!.querySelector('.status-dot')).toBeNull();
+    expect(rows[1]!.querySelector('svg')).toBeNull();
+    expect((rows[1]!.querySelector('.status-dot') as HTMLElement).style.backgroundColor).toMatch(/^(#f59e0b|rgb\(245, 158, 11\))$/i);
   });
 
   test('« Prendre » envoie state:set, retient le choix, et oublie le statut choisi ; l\'état en cours n\'a plus de bouton Prendre', async () => {
@@ -139,6 +151,141 @@ describe('créer un état', () => {
     setup(Array.from({ length: ACTIVITY_MAX_PER_USER }, (_, i) => ({ ...focus, id: `s${i}`, label: `État ${i}` })));
     expect((screen.getByRole('button', { name: fr.states.create }) as HTMLButtonElement).disabled).toBe(true);
     expect(screen.getByText(t(fr.states.errors.limit, { max: ACTIVITY_MAX_PER_USER }))).toBeTruthy();
+  });
+});
+
+describe('l\'icône d\'un état', () => {
+  test('une grille de douze icônes, dans l\'ordre de la liste partagée, chacune avec son nom ; aucune n\'est choisie au départ', () => {
+    setup([]);
+    const buttons = within(iconGrid()).getAllByRole('button');
+    expect(buttons).toHaveLength(12);
+    expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual(ACTIVITY_ICONS.map((name) => fr.states.icons[name]));
+    expect(buttons.every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true);
+    expect(buttons[0]!.querySelector('svg.lucide-headphones')).toBeTruthy();
+    expect(screen.getByText(fr.states.iconHint)).toBeTruthy();
+  });
+
+  test('en choisir une la marque, et elle part à l\'API avec l\'état', async () => {
+    const user = userEvent.setup();
+    setup([focus]);
+    const created: ActivityState = { id: 'nouveau', label: 'Pause', color: '#6d28d9', icon: 'coffee', allowEntry: true, hear: true, heard: true };
+    api.createActivityState.mockResolvedValue(created);
+
+    await user.type(labelInput(), 'Pause');
+    await user.click(iconButton('Café'));
+    expect(iconButton('Café').getAttribute('aria-pressed')).toBe('true');
+    await user.click(iconButton('Lune'));
+    expect(iconButton('Café').getAttribute('aria-pressed')).toBe('false');
+    expect(iconButton('Lune').getAttribute('aria-pressed')).toBe('true');
+    await user.click(iconButton('Café'));
+    await user.click(screen.getByRole('button', { name: fr.states.create }));
+
+    expect(api.createActivityState).toHaveBeenCalledExactlyOnceWith({ label: 'Pause', color: '#6d28d9', icon: 'coffee', allowEntry: true, hear: true, heard: true } satisfies ActivityInput);
+    expect(useOfficeStore.getState().myStates.at(-1)).toEqual(created);
+    // Le formulaire se vide : plus d'icône choisie.
+    expect(within(iconGrid()).getAllByRole('button').every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true);
+  });
+
+  test('recliquer sur l\'icône choisie la retire : l\'état part sans icône', async () => {
+    const user = userEvent.setup();
+    setup([]);
+    api.createActivityState.mockResolvedValue({ id: 'nouveau', label: 'Pause', color: '#6d28d9', allowEntry: true, hear: true, heard: true });
+    await user.type(labelInput(), 'Pause');
+    await user.click(iconButton('Casque'));
+    await user.click(iconButton('Casque'));
+    expect(iconButton('Casque').getAttribute('aria-pressed')).toBe('false');
+    await user.click(screen.getByRole('button', { name: fr.states.create }));
+    const sent = api.createActivityState.mock.calls[0]![0];
+    expect(sent).toEqual({ label: 'Pause', color: '#6d28d9', allowEntry: true, hear: true, heard: true });
+    expect('icon' in sent).toBe(false);
+  });
+
+  test('modifier un état qui a une icône : elle est choisie ; en prendre une autre la remplace (PUT), la retirer l\'envoie sans icône', async () => {
+    const user = userEvent.setup();
+    const withIcon: ActivityState = { ...focus, icon: 'headphones' };
+    setup([withIcon]);
+    await user.click(screen.getByRole('button', { name: t(fr.states.editLabel, { label: 'En focus' }) }));
+    expect(iconButton('Casque').getAttribute('aria-pressed')).toBe('true');
+
+    api.updateActivityState.mockResolvedValueOnce({ ...withIcon, icon: 'moon' });
+    await user.click(iconButton('Lune'));
+    await user.click(screen.getByRole('button', { name: fr.states.save }));
+    expect(api.updateActivityState).toHaveBeenLastCalledWith('s1', { label: 'En focus', color: '#6d28d9', icon: 'moon', allowEntry: false, hear: true, heard: false });
+
+    await user.click(screen.getByRole('button', { name: t(fr.states.editLabel, { label: 'En focus' }) }));
+    expect(iconButton('Lune').getAttribute('aria-pressed')).toBe('true');
+    api.updateActivityState.mockResolvedValueOnce(focus);
+    await user.click(iconButton('Lune'));
+    await user.click(screen.getByRole('button', { name: fr.states.save }));
+    const sent = api.updateActivityState.mock.calls.at(-1)![1];
+    expect('icon' in sent).toBe(false);
+    expect(useOfficeStore.getState().myStates).toEqual([focus]);
+  });
+
+  test('modifier un état sans icône : rien n\'est choisi, et enregistrer n\'en invente pas', async () => {
+    const user = userEvent.setup();
+    setup([focus]);
+    await user.click(screen.getByRole('button', { name: t(fr.states.editLabel, { label: 'En focus' }) }));
+    expect(within(iconGrid()).getAllByRole('button').every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true);
+  });
+});
+
+describe('les suggestions', () => {
+  const suggestions = () => screen.queryByRole('group', { name: fr.states.suggestionsLabel });
+  const suggestion = (label: string) => within(suggestions()!).getByRole('button', { name: t(fr.states.suggestionLabel, { label }) }) as HTMLButtonElement;
+
+  test('sans aucun état : Concentration (casque), Réunion (personnes) et Pause (café), en un clic', () => {
+    setup([]);
+    expect(within(suggestions()!).getAllByRole('button').map((button) => button.textContent)).toEqual(['Concentration', 'Réunion', 'Pause']);
+    expect(suggestion('Concentration').querySelector('svg.lucide-headphones')).toBeTruthy();
+    expect(suggestion('Réunion').querySelector('svg.lucide-users')).toBeTruthy();
+    expect(suggestion('Pause').querySelector('svg.lucide-coffee')).toBeTruthy();
+    expect(screen.getByText(fr.states.empty)).toBeTruthy();
+  });
+
+  test('avec des états, plus de suggestions', () => {
+    setup([focus]);
+    expect(suggestions()).toBeNull();
+  });
+
+  test.each([
+    ['Concentration', { label: 'Concentration', color: '#6d28d9', icon: 'headphones', allowEntry: false, hear: false, heard: false }],
+    ['Réunion', { label: 'Réunion', color: '#ef4444', icon: 'users', allowEntry: false, hear: true, heard: true }],
+    ['Pause', { label: 'Pause', color: '#f59e0b', icon: 'coffee', allowEntry: true, hear: true, heard: true }],
+  ] as const)('« %s » crée l\'état d\'un clic, avec son icône, et il entre dans la liste', async (label, input) => {
+    const user = userEvent.setup();
+    setup([]);
+    const created: ActivityState = { id: 'nouveau', ...input };
+    api.createActivityState.mockResolvedValue(created);
+    await user.click(suggestion(label));
+    expect(api.createActivityState).toHaveBeenCalledExactlyOnceWith(input satisfies ActivityInput);
+    expect(useOfficeStore.getState().myStates).toEqual([created]);
+    expect(screen.getByText(fr.states.saved)).toBeTruthy();
+    // L'état existe : la liste le montre avec son icône, et les suggestions s'en vont.
+    expect(screen.getAllByRole('listitem')[0]!.querySelector(`svg.lucide-${input.icon}`)).toBeTruthy();
+    expect(suggestions()).toBeNull();
+  });
+
+  test('le serveur refuse : le message dit pourquoi, rien n\'est ajouté, et les suggestions restent', async () => {
+    const user = userEvent.setup();
+    setup([]);
+    api.createActivityState.mockRejectedValueOnce(new ApiError(0, 'network'));
+    await user.click(suggestion('Pause'));
+    expect((await screen.findByRole('alert')).textContent).toBe(fr.states.errors.generic);
+    expect(useOfficeStore.getState().myStates).toEqual([]);
+    expect(suggestion('Pause').disabled).toBe(false);
+  });
+
+  test('pendant la création, les suggestions sont inactives : un double clic ne crée qu\'un état', async () => {
+    const user = userEvent.setup();
+    setup([]);
+    let finish: (state: ActivityState) => void = () => {};
+    api.createActivityState.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+    await user.click(suggestion('Réunion'));
+    expect(suggestion('Pause').disabled).toBe(true);
+    await user.click(suggestion('Pause'));
+    expect(api.createActivityState).toHaveBeenCalledOnce();
+    await act(async () => finish({ id: 'nouveau', label: 'Réunion', color: '#ef4444', icon: 'users', allowEntry: false, hear: true, heard: true }));
   });
 });
 

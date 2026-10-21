@@ -35,7 +35,8 @@ import {
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 
-// Le seul point d'import des icônes : celles de Lucide (licence ISC, voir public/assets/CREDITS.txt), sous le nom de leur usage. Elles sont
+// Le point d'import des icônes des boutons et des menus : celles de Lucide (licence ISC, voir public/assets/CREDITS.txt), sous le nom de leur
+// usage (celles des états d'activité sont dans activity-icons.ts, où elles portent le nom que le serveur garde). Elles sont
 // décoratives (le nom du bouton dit tout) : Lucide les cache aux lecteurs d'écran, et elles n'ont pas de texte. Leur taille et leur trait
 // viennent du CSS (`svg.lucide`, styles.css), qui les ajuste là où il le faut (menus, petits boutons).
 // Un nom qui a un état (`off`) choisit entre deux icônes : le micro et son barré, par exemple.

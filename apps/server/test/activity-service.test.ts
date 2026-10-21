@@ -51,6 +51,44 @@ describe('créer, lire', () => {
   });
 });
 
+describe('l\'icône', () => {
+  test('créer avec une icône : elle est rendue par la création, la lecture et la liste ; sans icône, le champ n\'existe pas', async () => {
+    const { service } = await setup();
+    const withIcon = await service.create('ana', { ...focus, icon: 'headphones' });
+    const without = await service.create('ana', { label: 'À table', color: '#f59e0b', allowEntry: true, hear: false, heard: false });
+    if (!withIcon.ok || !without.ok) throw new Error('création refusée');
+    expect(withIcon.state).toMatchObject({ label: 'En focus', icon: 'headphones' });
+    expect(await service.get('ana', withIcon.state.id)).toEqual(withIcon.state);
+    // Deux créations dans la même milliseconde n'ont pas d'ordre sûr : la liste est lue sans le supposer.
+    const listed = await service.list('ana');
+    expect(listed).toHaveLength(2);
+    expect(listed).toContainEqual(withIcon.state);
+    expect(listed).toContainEqual(without.state);
+    expect('icon' in without.state).toBe(false);
+    expect('icon' in listed.find((state) => state.id === without.state.id)!).toBe(false);
+  });
+
+  test('update remplace l\'icône, ou l\'enlève quand elle n\'est plus dite', async () => {
+    const { service } = await setup();
+    const created = await service.create('ana', { ...focus, icon: 'coffee' });
+    if (!created.ok) throw new Error('création refusée');
+    const changed = await service.update('ana', created.state.id, { ...focus, icon: 'moon' });
+    expect(changed).toMatchObject({ id: created.state.id, icon: 'moon' });
+    const cleared = await service.update('ana', created.state.id, focus);
+    expect(cleared).toEqual({ id: created.state.id, ...focus });
+    expect('icon' in cleared!).toBe(false);
+    expect(await service.get('ana', created.state.id)).toEqual(cleared);
+  });
+
+  test('un nom d\'icône que la table garde et que l\'appli ne connaît plus n\'est pas montré', async () => {
+    const { db, service } = await setup();
+    const created = await service.create('ana', { ...focus, icon: 'coffee' });
+    if (!created.ok) throw new Error('création refusée');
+    await db.update(activityState).set({ icon: 'ancienne-icone' }).where(eq(activityState.id, created.state.id));
+    expect(await service.get('ana', created.state.id)).toEqual({ id: created.state.id, ...focus });
+  });
+});
+
 describe('modifier, supprimer', () => {
   test('update remplace tout, et garde l\'identifiant', async () => {
     const { service } = await setup();

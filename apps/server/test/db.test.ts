@@ -179,3 +179,13 @@ test('les migrations du dépôt créent les tables de Better Auth, des invitatio
   expect(rows.some((row) => /^rate_?limit$/i.test(row.table_name))).toBe(true);
   await close();
 });
+
+test('les migrations du dépôt donnent aux états d\'activité une icône facultative (colonne texte, sans valeur par défaut)', async () => {
+  const { db, close } = await createDb('memory://');
+  await runMigrations(db);
+  const { rows } = await db.execute<{ data_type: string; is_nullable: string; column_default: string | null }>(
+    sql`select data_type, is_nullable, column_default from information_schema.columns where table_name = 'activity_state' and column_name = 'icon'`,
+  );
+  expect(rows).toEqual([{ data_type: 'text', is_nullable: 'YES', column_default: null }]);
+  await close();
+});

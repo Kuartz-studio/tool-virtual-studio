@@ -2,10 +2,10 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { fr, t } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
+import { ActivityMark } from './ActivityMark';
 import { ChevronUpIcon } from './icons';
 import { MeMenu } from './MeMenu';
 import type { PanelControls } from './panels';
-import { StatusDot } from './StatusDot';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 
 interface MeChipProps {
@@ -20,9 +20,9 @@ interface MeChipProps {
   signingOut: boolean;
 }
 
-// La puce « Moi », en bas à gauche : ton portrait avec la pastille de ton statut, ton nom, et dessous ton mode en cours (le nom et la couleur
-// de l'état d'activité) ou, sans mode, ton statut. Un seul bouton, nommé « Mon profil », qui ouvre le menu (MeMenu) vers le haut. Un lecteur
-// d'écran entend le nom, le statut et le mode en description du bouton, et un changement de statut confirmé par le serveur.
+// La puce « Moi », en bas à gauche : ton portrait avec la pastille de ton statut, ton nom, et dessous ton mode en cours (l'icône, ou le point de
+// la couleur, et le nom de l'état d'activité) ou, sans mode, ton statut. Un seul bouton, nommé « Mon profil », qui ouvre le menu (MeMenu) vers
+// le haut. Un lecteur d'écran entend le nom, le statut et le mode en description du bouton, et un changement de statut confirmé par le serveur.
 //
 // Ce qui est affiché est ce que le serveur a confirmé (`status:changed`, `activity:changed`), lu au magasin : pas de changement affiché que le
 // serveur n'a pas pris. Avant son `init`, la puce montre le nom de la session, et ni point ni statut. Elle marche alors quand même : le menu
@@ -72,7 +72,7 @@ export function MeChip({ name, email, socket, panels, onSignOut, signingOut }: M
           </span>{' '}
           {label !== null && (
             <span className="me-mode" title={label}>
-              {activity && <StatusDot status={null} activity={activity} />}
+              {activity && <ActivityMark activity={activity} />}
               <span>{label}</span>
             </span>
           )}

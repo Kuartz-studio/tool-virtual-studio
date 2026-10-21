@@ -48,7 +48,14 @@ export const deskCommandSchema = z.discriminatedUnion('type', [
   }),
 ]);
 
-// Un état d'activité qu'une personne crée : un nom, la couleur de son point, et trois interrupteurs, ceux de ce qu'il change pour elle :
+// Les icônes qu'un état d'activité peut porter, sous le nom qu'elles ont chez Lucide (le client les dessine : office/activity-icons.ts). Dans
+// cet ordre, qui est celui de la grille du formulaire.
+export const ACTIVITY_ICONS = ['headphones', 'users', 'coffee', 'utensils', 'phone', 'pen-tool', 'code', 'book-open', 'moon', 'plane', 'dumbbell', 'music'] as const;
+export type ActivityIcon = (typeof ACTIVITY_ICONS)[number];
+export const activityIconSchema = z.enum(ACTIVITY_ICONS);
+
+// Un état d'activité (un « mode ») qu'une personne crée : un nom, la couleur de son point, une icône (facultative : sans elle, on montre le point
+// de sa couleur), et trois interrupteurs, ceux de ce qu'il change pour elle :
 // - allowEntry : on peut entrer dans son bureau (sinon la porte est fermée, comme verrouillée) ;
 // - hear : elle entend les autres (sinon elle n'entend rien) ;
 // - heard : les autres l'entendent (sinon son micro ne publie rien).
@@ -59,6 +66,7 @@ export const activityInputSchema = z.object({
     .string()
     .regex(/^#[0-9a-fA-F]{6}$/)
     .transform((color) => color.toLowerCase()),
+  icon: activityIconSchema.optional(),
   allowEntry: z.boolean(),
   hear: z.boolean(),
   heard: z.boolean(),
