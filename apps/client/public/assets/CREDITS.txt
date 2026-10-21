@@ -1,0 +1,10 @@
+Illustrations : LimeZu (https://limezu.itch.io)
+  - Modern Interiors : meubles, sols, murs, personnages (Character Generator)
+  - Modern Office    : mobilier de bureau
+
+Les images de ce dossier (characters/, decor/, tiles/) sont tirées de ces packs, rognées et rangées par
+apps/client/scripts/assets (`pnpm --filter @bureau/client gen:assets`).
+
+Licence des packs : usage libre dans un projet, commercial ou non ; il est interdit de revendre ou de
+redistribuer les images, seules ou modifiées. Crédit à LimeZu (limezu.itch.io) obligatoire pour Modern Interiors,
+apprécié pour Modern Office. Ces fichiers ne doivent donc pas se retrouver dans un dépôt public.
