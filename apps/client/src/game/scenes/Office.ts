@@ -23,7 +23,9 @@ import { DecorLayer } from '../decor-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
 import { bindKeyboard, bindZoomKeys, DirectionInput } from '../input';
+import { sourcesFromItems } from '../light-sources';
 import { LightSwitch } from '../light-switch';
+import { LightingLayer } from '../lighting';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { MoveSender } from '../move-sender';
 import { LocalPlayer } from '../objects/LocalPlayer';
@@ -47,7 +49,8 @@ const clock = () => performance.now();
 // `init` à chaque reconnexion. Elle envoie l'état de l'avatar local sur le bus (`local:move`), au rythme de MoveSender. Qui parle dans
 // la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette. L'interrupteur de la lumière (une
 // plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
-// il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière).
+// il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). Lumière éteinte, c'est la nuit (LightingLayer) :
+// l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne.
 export class Office extends Scene {
   private officeMap: OfficeMap;
   private tilemap: Phaser.Tilemaps.Tilemap;
@@ -63,6 +66,7 @@ export class Office extends Scene {
   private decorLayer: DecorLayer;
   // Les interrupteurs de lumière de la carte (un seul sur la grande carte, aucun sur celle de développement).
   private switches: LightSwitch[] = [];
+  private lighting: LightingLayer;
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
   private editingRoom: Zone | null = null;
@@ -91,6 +95,7 @@ export class Office extends Scene {
       },
       editorRoom: () => (this.editingRoom ? { x: this.editingRoom.x, y: this.editingRoom.y } : null),
       zoom: () => this.cameras.main.zoom,
+      nightLevel: () => this.lighting?.level ?? 0,
     };
     exposeDebug(this.debug);
 
@@ -125,9 +130,13 @@ export class Office extends Scene {
     });
     this.deskLayer.collideWith(this.player);
     this.decorLayer.collideWith(this.player);
+    // La nuit : la couche est là dès le départ, invisible tant que la lumière est allumée. Chacun porte son halo, au milieu de son avatar.
+    this.lighting = new LightingLayer(this);
+    this.lighting.track(this.selfId, () => ({ x: this.player.x, y: this.player.y - this.player.displayHeight / 2 }));
     const showDesks = () => {
       this.deskLayer.update(useOfficeStore.getState().desks, useOfficeStore.getState().closedDesks);
       this.decorLayer.setDesks(useOfficeStore.getState().desks);
+      this.showLightSources();
     };
     showDesks();
     this.decorEditor.sync(useOfficeStore.getState().decorEditor);
@@ -136,11 +145,13 @@ export class Office extends Scene {
     // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit. La portée est celle des pieds de l'avatar, relue à
     // chaque appui (la touche E, ou un clic sur la plaque).
     this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, () => this.useLights(), () => this.feet()));
-    const showLights = () => {
+    const showLights = (instant = false) => {
       const { on } = useOfficeStore.getState().lights;
       for (const lightSwitch of this.switches) lightSwitch.setOn(on);
+      this.lighting.setOn(on, { instant });
     };
-    showLights();
+    // On arrive dans le noir : la nuit tout de suite, sans fondu ni éclair de jour.
+    showLights(true);
     for (const lightSwitch of this.switches) lightSwitch.setZoom(this.cameras.main.zoom);
 
     // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
@@ -187,7 +198,11 @@ export class Office extends Scene {
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
         if (state.lights !== previous.lights) showLights();
-        if (state.decorEditor !== previous.decorEditor) this.decorEditor.sync(state.decorEditor);
+        if (state.decorEditor !== previous.decorEditor) {
+          this.decorEditor.sync(state.decorEditor);
+          // Le brouillon de l'éditeur montre peut-être une lampe de plus, ou de moins.
+          this.showLightSources();
+        }
         if (state.zoomLevel !== previous.zoomLevel) this.layoutCamera();
       }),
     ];
@@ -204,6 +219,7 @@ export class Office extends Scene {
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
+      this.lighting.destroy();
       this.deskLayer.destroy();
       this.decorEditor.destroy();
       this.decorLayer.destroy();
@@ -244,6 +260,13 @@ export class Office extends Scene {
     if (this.debug.self) Object.assign(this.debug.self, feet);
     // L'étiquette de l'interrupteur se montre à portée (3 cases) : d'après les pieds de cette image.
     for (const lightSwitch of this.switches) lightSwitch.updateReach(feet);
+    // La nuit, d'après les avatars à leur place de cette image.
+    this.lighting.update();
+  }
+
+  // Les lumières de la nuit : les lampes, le feu et les écrans posés, ceux de la carte et ceux des bureaux tels qu'on les voit.
+  private showLightSources(): void {
+    this.lighting.setStatic(sourcesFromItems(this.decorLayer.placedImages()));
   }
 
   private feet(): { x: number; y: number } {
@@ -378,6 +401,7 @@ export class Office extends Scene {
     if (isSimBot(p.id)) this.simDrag?.attach(remote);
     remote.setSpeaking(this.rings.isSpeaking(p.id));
     this.remotes.set(p.id, remote);
+    this.lighting.track(p.id, () => remote.lightPoint());
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };
   }
 
@@ -385,6 +409,7 @@ export class Office extends Scene {
     this.simDrag?.clear(id);
     this.remotes.get(id)?.destroy();
     this.remotes.delete(id);
+    this.lighting.untrack(id);
     delete this.debug.players[id];
   }
 

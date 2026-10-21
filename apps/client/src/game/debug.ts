@@ -33,6 +33,9 @@ export interface OfficeDebug {
   editorRoom(): { x: number; y: number } | null;
   // Le zoom de la caméra en ce moment (celui de la vue de départ, multiplié par le niveau choisi).
   zoom(): number;
+  // La nuit en ce moment, de 0 (la lumière est allumée : la couche de nuit n'est pas à l'écran) à 1 (pleine nuit) ; entre les deux pendant le
+  // fondu ou le clignotement.
+  nightLevel(): number;
 }
 
 // Ce que les tests de bout en bout lisent du son : window.__audio, dans le même build. Le son démarre avant le jeu (dès la page de connexion) :

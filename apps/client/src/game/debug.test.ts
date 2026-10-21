@@ -13,6 +13,7 @@ const debug = (): OfficeDebug => ({
   toScreen: (x, y) => ({ x, y }),
   editorRoom: () => null,
   zoom: () => 2,
+  nightLevel: () => 0,
 });
 
 afterEach(() => {

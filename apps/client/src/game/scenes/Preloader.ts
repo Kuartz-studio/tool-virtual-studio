@@ -4,6 +4,7 @@ import { fr } from '../../i18n/fr';
 import { resolveAvatarKey } from '../avatars';
 import { decorAtlasImages, decorAtlasesLoaded, registerDecorFrames } from '../decor-textures';
 import { addSwitchTextures } from '../light-switch';
+import { createLightTextures } from '../light-textures';
 import { tilesetImages } from '../map-layers';
 import { avatarLibraryOf } from '../objects/avatar-skin';
 import { useOfficeStore } from '../../state/office-store';
@@ -70,8 +71,10 @@ export class Preloader extends Scene {
       return;
     }
     registerDecorFrames(this.textures);
-    // La plaque de l'interrupteur de lumière : un dessin de quelques pixels, fait ici une fois (pas de fichier à charger).
+    // La plaque de l'interrupteur de lumière : un dessin de quelques pixels, fait ici une fois (pas de fichier à charger). De même, les disques
+    // de lumière de la nuit.
     addSwitchTextures(this.textures);
+    createLightTextures(this.textures);
     // Ceux qui sont là au moment d'entrer : on attend (au plus quelques secondes) que leurs personnages soient assemblés.
     const { self, players } = useOfficeStore.getState();
     const keys = [self, ...Object.values(players)].filter((p) => p != null).map((p) => resolveAvatarKey(p.id, p.avatarKey));

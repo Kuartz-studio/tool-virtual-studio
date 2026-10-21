@@ -44,6 +44,7 @@ function drawAll(scene: Phaser.Scene, drawn: readonly Drawn[]): GameObjects.Imag
 export class DecorLayer {
   private readonly rooms = new Map<string, Room>();
   private readonly previews = new Map<string, DeskDecor>();
+  private readonly staticDrawn: Drawn[];
   private readonly staticSprites: GameObjects.Image[];
   private player: Phaser.GameObjects.GameObject | null = null;
   private desks: readonly DeskInfo[] = [];
@@ -59,7 +60,8 @@ export class DecorLayer {
     const placed: PlacedAt[] = objects.flatMap((object) =>
       object.name && decorItem(object.name) ? [{ id: object.name, x: Math.round((object.x ?? 0) / TILE_SIZE), y: Math.round((object.y ?? 0) / TILE_SIZE) }] : [],
     );
-    this.staticSprites = drawAll(scene, layoutDecor(placed));
+    this.staticDrawn = layoutDecor(placed);
+    this.staticSprites = drawAll(scene, this.staticDrawn);
 
     // Les pièces de bureau de la taille des pièces du jeu : une carte aux bureaux d'une autre taille (la carte de développement) n'a pas de déco.
     for (const zone of map.zones.filter((z) => z.type === 'desk')) {
@@ -97,6 +99,18 @@ export class DecorLayer {
 
   zoneOf(key: string): Zone | undefined {
     return this.rooms.get(key)?.zone;
+  }
+
+  // Tout ce qui est dessiné, meubles de la carte et éléments des bureaux (brouillons de l'éditeur compris) : la clé de chaque élément et le
+  // rectangle de son image, en pixels de la carte. Pour les lumières de la nuit (sourcesFromItems).
+  placedImages(): Array<{ id: string; x: number; y: number; w: number; h: number }> {
+    return [this.staticDrawn, ...[...this.rooms.values()].map((room) => room.drawn)].flat().map(({ item, left, bottom }) => ({
+      id: item.id,
+      x: left,
+      y: bottom - item.h * TILE_SIZE,
+      w: item.w * TILE_SIZE,
+      h: item.h * TILE_SIZE,
+    }));
   }
 
   destroy(): void {

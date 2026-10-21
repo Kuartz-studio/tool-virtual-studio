@@ -117,6 +117,11 @@ export class RemotePlayer {
     return this.drawn;
   }
 
+  // Le milieu de l'avatar tel qu'il est dessiné à cette image (avec son retard), pour son halo la nuit ; null quand il est caché.
+  lightPoint(): { x: number; y: number } | null {
+    return this.sprite.visible ? { x: this.sprite.x, y: this.sprite.y - this.sprite.displayHeight / 2 } : null;
+  }
+
   // L'avatar voulu pour cette personne (celui qu'on lui verra une fois assemblé).
   get avatarKey(): string {
     return this.skin.key;

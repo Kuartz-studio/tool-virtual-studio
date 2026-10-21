@@ -4,8 +4,8 @@ import { DEPTH, tilesetImages, tilesetTextureKey } from './map-layers';
 
 const devMap = (image: string): TiledMapJson => buildTiledMap({ ...DEV_OFFICE, tileset: { name: 'dev', image } });
 
-test('profondeurs : le sol, les murs et les meubles bas sous les avatars (profondeur = y des pieds), le dessus et les noms au-dessus', () => {
-  expect(DEPTH).toEqual({ sol: 0, murs: 1, meublesBas: 2, dessus: 1_000_000, nameTags: 1_000_001 });
+test('profondeurs : le sol, les murs et les meubles bas sous les avatars (profondeur = y des pieds), le dessus, la nuit et les noms au-dessus', () => {
+  expect(DEPTH).toEqual({ sol: 0, murs: 1, meublesBas: 2, dessus: 1_000_000, night: 1_000_000.5, nameTags: 1_000_001 });
 });
 
 describe('tilesetImages', () => {

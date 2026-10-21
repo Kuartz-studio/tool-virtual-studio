@@ -3,8 +3,9 @@ import { snapToPixels } from './pixel-snap';
 
 // Les profondeurs d'affichage. Les calques de tuiles ont les leurs ; un avatar ou un objet a pour profondeur le y de ses pieds
 // (plus il est bas dans la carte, plus il est devant), donc toujours entre `meublesBas` et `dessus`. Le calque `dessus` et les
-// noms passent devant tout le monde.
-export const DEPTH = { sol: 0, murs: 1, meublesBas: 2, dessus: 1_000_000, nameTags: 1_000_001 } as const;
+// noms passent devant tout le monde. L'obscurité de la nuit (LightingLayer) couvre la carte, le calque `dessus` compris, mais pas les noms,
+// qui restent lisibles.
+export const DEPTH = { sol: 0, murs: 1, meublesBas: 2, dessus: 1_000_000, night: 1_000_000.5, nameTags: 1_000_001 } as const;
 
 // La clé de texture de l'image d'un tileset. Le Preloader charge l'image sous cette clé, et buildMapLayers retrouve la texture
 // par le nom du tileset dans la carte.
