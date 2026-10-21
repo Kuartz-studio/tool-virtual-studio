@@ -14,6 +14,7 @@ import {
   floorTheme,
   isFloorTheme,
   isWallTheme,
+  overlappingItems,
   type DeskDecor,
   type PlacedItem,
 } from '../src';
@@ -114,5 +115,31 @@ describe('checkDecor', () => {
     const blocked = Array.from({ length: DESK_ROOM.width }, (_, x) => ({ id: 'of-0-8', x, y: 3 }));
     expect(checkDecor(decor(blocked))).toEqual({ ok: true });
     expect(checkDecor(decor([{ id: 'cf-0-8', x: 0, y: 3 }]))).toEqual({ ok: true });
+  });
+});
+
+describe('overlappingItems', () => {
+  const desk = { id: 'of-7-28', x: 0, y: 0 };
+  const onTop = { id: 'of-14-12', x: 1, y: 0 };
+
+  test('les éléments de la même sorte dont l\'empreinte touche celle-ci, par leur rang', () => {
+    expect(overlappingItems([desk, onTop], 'of-7-28', { x: 2, y: 1 })).toEqual([0]);
+    expect(overlappingItems([onTop, desk], 'of-7-28', { x: 2, y: 1 })).toEqual([1]);
+  });
+
+  test('une autre sorte ne gêne pas : un objet posé sur un meuble, un meuble sous un objet posé', () => {
+    expect(overlappingItems([desk], 'of-14-12', { x: 1, y: 0 })).toEqual([]);
+    expect(overlappingItems([onTop], 'of-7-28', { x: 0, y: 0 })).toEqual([]);
+  });
+
+  test('rien dans le voisinage, ou un élément inconnu : aucun', () => {
+    expect(overlappingItems([desk], 'of-7-28', { x: 5, y: 3 })).toEqual([]);
+    expect(overlappingItems([desk], 'nope', { x: 0, y: 0 })).toEqual([]);
+  });
+
+  test('ce que checkDecor refuse pour chevauchement est exactement ce que cette fonction trouve', () => {
+    const items = [desk, { id: 'of-7-28', x: 2, y: 1 }];
+    expect(checkDecor(decor(items))).toMatchObject({ ok: false, error: 'overlap' });
+    expect(overlappingItems([desk], 'of-7-28', { x: 2, y: 1 })).toHaveLength(1);
   });
 });

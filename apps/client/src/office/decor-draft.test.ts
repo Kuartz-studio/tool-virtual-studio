@@ -1,6 +1,6 @@
 import { DEFAULT_DESK_DECOR, DESK_ROOM, checkDecor, type DeskDecor } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { anchorFor, removeAt, sameDecor, tryPlace } from './decor-draft';
+import { anchorFor, planPlace, removeAt, sameDecor, tryPlace } from './decor-draft';
 
 const empty: DeskDecor = { floor: 'sable', wall: 'creme', items: [] };
 
@@ -53,4 +53,39 @@ test('sameDecor : mêmes thèmes et mêmes éléments, dans le même ordre', () 
   expect(sameDecor(DEFAULT_DESK_DECOR, { ...DEFAULT_DESK_DECOR, items: [...DEFAULT_DESK_DECOR.items] })).toBe(true);
   expect(sameDecor(DEFAULT_DESK_DECOR, { ...DEFAULT_DESK_DECOR, floor: 'sable' })).toBe(false);
   expect(sameDecor(DEFAULT_DESK_DECOR, removeAt(DEFAULT_DESK_DECOR, 2))).toBe(false);
+});
+
+describe('planPlace : poser, remplacer ou refuser', () => {
+  const withDesk: DeskDecor = { ...empty, items: [{ id: 'of-7-28', x: 2, y: 1 }, { id: 'of-14-12', x: 3, y: 1 }] };
+
+  test('sur du vide : on pose', () => {
+    expect(planPlace(empty, 'of-7-28', { x: 2, y: 1 })).toEqual({ kind: 'place', decor: { ...empty, items: [{ id: 'of-7-28', x: 2, y: 1 }] } });
+  });
+
+  test('sur un élément de la même sorte : remplacer, avec le rang de ce qui part et la pièce qu\'on aurait', () => {
+    const plan = planPlace(withDesk, 'of-6-10', { x: 3, y: 2 });
+    expect(plan).toEqual({ kind: 'replace', replacing: [0], decor: { ...empty, items: [{ id: 'of-14-12', x: 3, y: 1 }, { id: 'of-6-10', x: 3, y: 2 }] } });
+    // La pièce qu'on aurait est valable pour le serveur aussi.
+    if (plan.kind !== 'replace') throw new Error('attendu : remplacer');
+    expect(checkDecor(plan.decor)).toEqual({ ok: true });
+  });
+
+  test('un objet posé sur un meuble : on pose, on ne remplace pas (autre sorte)', () => {
+    expect(planPlace({ ...empty, items: [{ id: 'of-7-28', x: 2, y: 1 }] }, 'of-14-12', { x: 3, y: 1 })).toMatchObject({ kind: 'place' });
+  });
+
+  test('un remplacement qui rendrait la pièce invalide est refusé, avec la raison', () => {
+    const door = { x: DESK_ROOM.doorX, y: DESK_ROOM.height - 1 };
+    expect(planPlace({ ...empty, items: [{ id: 'of-6-10', ...door }] }, 'of-7-28', { x: door.x - 1, y: door.y - 1 })).toEqual({ kind: 'refused', error: 'blocks_door' });
+  });
+
+  test('hors de la pièce : refusé, même sans rien à remplacer', () => {
+    expect(planPlace(empty, 'of-7-28', { x: 8, y: 1 })).toEqual({ kind: 'refused', error: 'out_of_room' });
+  });
+
+  test('remplacer plusieurs éléments à la fois : tous ceux que l\'empreinte touche partent', () => {
+    const two: DeskDecor = { ...empty, items: [{ id: 'of-6-10', x: 2, y: 2 }, { id: 'of-6-10', x: 4, y: 2 }, { id: 'of-6-10', x: 6, y: 4 }] };
+    const plan = planPlace(two, 'of-7-28', { x: 2, y: 1 });
+    expect(plan).toMatchObject({ kind: 'replace', replacing: [0, 1] });
+  });
 });

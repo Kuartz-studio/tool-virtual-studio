@@ -167,9 +167,27 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   const target = (await spot())!;
   await a.page.mouse.click(target.x, target.y);
   await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
-  // Un deuxième clic au même endroit ne pose rien de plus : il y a déjà quelque chose.
+  // Un deuxième clic au même endroit ne pose rien de plus : il y a déjà quelque chose, et la personne doit confirmer le remplacement.
   await a.page.mouse.click(target.x, target.y);
-  await expect(panel.getByText('Il y a déjà quelque chose ici.')).toBeVisible();
+  const dialog = a.page.getByRole('alertdialog', { name: 'Remplacer cet élément ?' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('Voulez-vous vraiment le remplacer par cet élément ?')).toBeVisible();
+  await dialog.getByRole('button', { name: 'Annuler' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
+  // Confirmé, le nouvel élément prend la place de l'ancien : toujours 13 éléments.
+  await a.page.mouse.click(target.x, target.y);
+  await dialog.getByRole('button', { name: 'Remplacer' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
+
+  // La gomme efface l'élément visé : on repasse à 12, puis on le repose.
+  await panel.getByRole('button', { name: 'Gomme' }).click();
+  await expect(panel.getByText('Gomme : clique sur un élément de la pièce pour l\'effacer.')).toBeVisible();
+  await a.page.mouse.click(target.x, target.y);
+  await expect(panel.getByText('12 / 80 éléments')).toBeVisible();
+  await panel.getByRole('button', { name: 'Plante en pot', exact: true }).click();
+  await a.page.mouse.click(target.x, target.y);
   await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
 
   await panel.getByRole('button', { name: 'Enregistrer' }).click();

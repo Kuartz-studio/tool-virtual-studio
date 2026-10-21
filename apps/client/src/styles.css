@@ -2056,3 +2056,29 @@ a {
 .character-save {
   justify-content: center;
 }
+
+/* La gomme, au-dessus de la recherche : enfoncée, un clic sur un élément de la pièce l'efface. */
+.decor-tools {
+  display: flex;
+  gap: 8px;
+}
+
+.decor-tools .bar-button[aria-pressed='true'] {
+  color: var(--error-text);
+  background: var(--error-background);
+  border-color: var(--error-text);
+}
+
+/* La confirmation d'un remplacement : l'élément qui part, une flèche, celui qui arrive. */
+.replace-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin: 0 0 16px;
+}
+
+.replace-arrow {
+  font-size: 1.4rem;
+  color: var(--text-muted);
+}

@@ -16,13 +16,16 @@ import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { sameDecor } from './decor-draft';
+import { EraserIcon } from './icons';
 import { deskErrorText } from './desks';
+import { ReplaceDialog } from './ReplaceDialog';
 import { DecorThumb, FloorSwatch, WallSwatch } from './sprites';
 
 // Le panneau Décorer mon bureau : la banque d'éléments (9 catégories, le poste de travail d'abord), et les murs et le sol. Il pilote le
 // brouillon de l'éditeur (le magasin) que le jeu montre dans la pièce : on choisit un élément, on le pose en cliquant dans la pièce
 // (DecorEditorView). « Enregistrer » envoie toute la déco d'un bloc ; le serveur la valide à son tour et la diffuse à tout le bureau.
-// Ouvrir le panneau ouvre l'éditeur sur son bureau ; le fermer le ferme. Échap lâche l'élément tenu, puis ferme.
+// Ouvrir le panneau ouvre l'éditeur sur son bureau ; le fermer le ferme. La gomme efface d'un clic l'élément qu'on vise ; poser sur un autre
+// élément le remplace, après la confirmation de ReplaceDialog. Échap lâche l'élément tenu (ou quitte la gomme), puis ferme.
 type Tab = 'items' | 'themes';
 
 export function DecorPanel({ id, socket, onClose }: { id?: string; socket: OfficeSocket | null; onClose(): void }) {
@@ -86,6 +89,7 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
     event.preventDefault();
     event.stopPropagation();
     if (editor?.held) store().holdDecorItem(null);
+    else if (editor?.tool === 'erase') store().setDecorTool('place');
     else onClose();
   }
 
@@ -119,6 +123,17 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
           <div className="people-lists decor-body">
             {tab === 'items' ? (
               <>
+                <div className="decor-tools" role="group" aria-label={fr.decor.tools}>
+                  <button
+                    type="button"
+                    className="bar-button"
+                    aria-pressed={editor?.tool === 'erase'}
+                    onClick={() => store().setDecorTool(editor?.tool === 'erase' ? 'place' : 'erase')}
+                  >
+                    <EraserIcon />
+                    {fr.decor.erase}
+                  </button>
+                </div>
                 <div className="decor-search">
                   <label className="visually-hidden" htmlFor={`${titleId}-search`}>
                     {fr.decor.searchLabel}
@@ -211,6 +226,8 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
                     {fr.decor.drop}
                   </button>
                 </>
+              ) : editor?.tool === 'erase' ? (
+                fr.decor.eraseHelp
               ) : (
                 (refused ?? fr.decor.help)
               )}
@@ -244,6 +261,14 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
             </div>
             <p className="desk-hint credits">{fr.decor.credits}</p>
           </footer>
+          {editor?.replace && (
+            <ReplaceDialog
+              replacing={editor.replace.replacing.map((index) => editor.draft.items[index]?.id).filter((id): id is string => id !== undefined)}
+              incoming={editor.replace.id}
+              onConfirm={() => store().confirmReplace()}
+              onCancel={() => store().cancelReplace()}
+            />
+          )}
         </>
       )}
     </aside>

@@ -59,3 +59,13 @@ export function ScreenIcon() {
     </Icon>
   );
 }
+
+export function EraserIcon() {
+  return (
+    <Icon>
+      <path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l9.6-9.6a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L13 21" />
+      <path d="M22 21H7" />
+      <path d="m5 11 9 9" />
+    </Icon>
+  );
+}

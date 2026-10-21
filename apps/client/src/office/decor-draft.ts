@@ -1,4 +1,4 @@
-import { DESK_ROOM, checkDecor, decorItem, type DecorError, type DeskDecor, type PlacedItem } from '@bureau/shared';
+import { DESK_ROOM, checkDecor, decorItem, overlappingItems, type DecorError, type DeskDecor, type PlacedItem } from '@bureau/shared';
 
 // Le brouillon de la déco d'un bureau, que l'éditeur modifie geste après geste avant l'enregistrement : des fonctions pures, que le jeu (la
 // souris sur la pièce) et le panneau (les boutons) partagent.
@@ -20,6 +20,24 @@ export function tryPlace(decor: DeskDecor, id: string, at: { x: number; y: numbe
   const next: DeskDecor = { ...decor, items: [...decor.items, { id, x: at.x, y: at.y }] };
   const check = checkDecor(next);
   return check.ok ? { ok: true, decor: next } : { ok: false, error: check.error };
+}
+
+// Ce que donnerait poser cet élément là : poser tout simplement (`place`), poser en remplaçant ce qui est déjà sur ces cases (`replace` : leur
+// rang dans le brouillon actuel, et le brouillon qu'on aurait), ou refuser (`refused` : la pièce ne serait plus valable, même une fois ce
+// qui gêne retiré). Remplacer demande confirmation : c'est l'interface qui la pose, avant d'appliquer.
+export type PlacePlan =
+  | { kind: 'place'; decor: DeskDecor }
+  | { kind: 'replace'; decor: DeskDecor; replacing: number[] }
+  | { kind: 'refused'; error: DecorError };
+
+export function planPlace(decor: DeskDecor, id: string, at: { x: number; y: number }): PlacePlan {
+  const direct = tryPlace(decor, id, at);
+  if (direct.ok) return { kind: 'place', decor: direct.decor };
+  const replacing = overlappingItems(decor.items, id, at);
+  if (replacing.length === 0) return { kind: 'refused', error: direct.error };
+  const without: DeskDecor = { ...decor, items: decor.items.filter((_, index) => !replacing.includes(index)) };
+  const after = tryPlace(without, id, at);
+  return after.ok ? { kind: 'replace', decor: after.decor, replacing } : { kind: 'refused', error: after.error };
 }
 
 export function removeAt(decor: DeskDecor, index: number): DeskDecor {

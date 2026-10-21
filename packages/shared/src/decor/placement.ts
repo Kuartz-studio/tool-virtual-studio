@@ -36,6 +36,18 @@ export function footprintOf(item: DecorItem, at: { x: number; y: number }): Foot
 
 const apart = (a: Footprint, b: Footprint): boolean => a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
 
+// Les éléments déjà posés qui gênent celui-ci posé là : ceux de la même sorte dont l'empreinte touche la sienne (checkDecor refuse ce
+// chevauchement). Leur rang dans `items`. C'est ce qu'un remplacement retire.
+export function overlappingItems(items: readonly PlacedItem[], id: string, at: { x: number; y: number }): number[] {
+  const item = decorItem(id);
+  if (!item) return [];
+  const target = footprintOf(item, at);
+  return items.flatMap((placed, index) => {
+    const other = decorItem(placed.id);
+    return other && other.kind === item.kind && !apart(footprintOf(other, placed), target) ? [index] : [];
+  });
+}
+
 // Les cases de la pièce que les éléments bloquent (numéro de case = y × largeur + x).
 export function blockedCells(items: readonly PlacedItem[], width: number = DESK_ROOM.width): Set<number> {
   const blocked = new Set<number>();

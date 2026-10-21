@@ -16,7 +16,7 @@ import {
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { clampZoomLevel, DEFAULT_ZOOM_LEVEL, stepZoomLevel } from '../game/zoom';
-import { anchorFor, removeAt, tryPlace } from '../office/decor-draft';
+import { anchorFor, planPlace, removeAt } from '../office/decor-draft';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
 // dernière consigne audio/vidéo, et les messages du chat. Le serveur le dit à chaque (re)connexion (`init`), puis par événements
@@ -40,6 +40,19 @@ export interface DecorEditor {
   draft: DeskDecor;
   held: string | null;
   error: DecorError | null;
+  // L'outil : poser ce qu'on tient (`place`), ou la gomme (`erase`) : un clic sur un élément de la pièce l'efface.
+  tool: DecorTool;
+  // Un remplacement qui attend la réponse de la personne (la fenêtre « voulez-vous vraiment le remplacer ? ») : l'élément qu'on voulait poser,
+  // où, et le rang (dans le brouillon) de ceux qu'il remplacerait. Rien d'autre ne change tant qu'elle n'a pas répondu.
+  replace: PendingReplace | null;
+}
+
+export type DecorTool = 'place' | 'erase';
+
+export interface PendingReplace {
+  id: string;
+  at: { x: number; y: number };
+  replacing: number[];
 }
 
 export interface OfficeState {
@@ -120,7 +133,13 @@ export interface OfficeState {
   closeDecorEditor(): void;
   patchDecorTheme(patch: Partial<Pick<DeskDecor, 'floor' | 'wall'>>): void;
   holdDecorItem(id: string | null): void;
+  // La gomme, ou de nouveau la pose (on ne tient plus rien dans les deux cas : en changeant d'outil, la main se vide).
+  setDecorTool(tool: DecorTool): void;
+  // Poser l'élément tenu : sur du vide, c'est fait ; sur un élément de la même sorte, la personne doit confirmer (confirmReplace) ou renoncer
+  // (cancelReplace) ; si la pièce ne serait plus valable, `error` dit pourquoi.
   placeHeld(cell: { x: number; y: number }): void;
+  confirmReplace(): void;
+  cancelReplace(): void;
   pickDecorItem(index: number): void;
   removeDecorItem(index: number): void;
   setDecorDraft(draft: DeskDecor): void;
@@ -324,30 +343,47 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
 
       openDecorEditor: (desk) => {
         const saved: DeskDecor = { floor: desk.floor, wall: desk.wall, items: desk.items };
-        set({ decorEditor: { deskKey: desk.key, saved, draft: saved, held: null, error: null } });
+        set({ decorEditor: { deskKey: desk.key, saved, draft: saved, held: null, error: null, tool: 'place', replace: null } });
       },
       closeDecorEditor: () => set({ decorEditor: null }),
       patchDecorTheme: (patch) =>
         set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft: { ...state.decorEditor.draft, ...patch }, error: null } } : state)),
-      holdDecorItem: (held) => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, held, error: null } } : state)),
+      // Prendre un élément en main, c'est reprendre la pose ; le lâcher laisse l'outil où il est.
+      holdDecorItem: (held) =>
+        set((state) =>
+          state.decorEditor ? { decorEditor: { ...state.decorEditor, held, tool: held === null ? state.decorEditor.tool : 'place', error: null, replace: null } } : state,
+        ),
+      setDecorTool: (tool) => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, tool, held: null, error: null, replace: null } } : state)),
       placeHeld: (cell) =>
         set((state) => {
           const editor = state.decorEditor;
-          if (!editor || editor.held === null) return state;
+          if (!editor || editor.held === null || editor.replace !== null) return state;
           const at = anchorFor(editor.held, cell);
           if (!at) return state;
-          const result = tryPlace(editor.draft, editor.held, at);
-          return { decorEditor: result.ok ? { ...editor, draft: result.decor, error: null } : { ...editor, error: result.error } };
+          const plan = planPlace(editor.draft, editor.held, at);
+          if (plan.kind === 'place') return { decorEditor: { ...editor, draft: plan.decor, error: null } };
+          if (plan.kind === 'replace') return { decorEditor: { ...editor, error: null, replace: { id: editor.held, at, replacing: plan.replacing } } };
+          return { decorEditor: { ...editor, error: plan.error } };
         }),
+      confirmReplace: () =>
+        set((state) => {
+          const editor = state.decorEditor;
+          if (!editor?.replace) return state;
+          // Le brouillon est recalculé : c'est celui d'aujourd'hui qui compte, et la pièce doit encore être valable.
+          const plan = planPlace(editor.draft, editor.replace.id, editor.replace.at);
+          if (plan.kind === 'refused') return { decorEditor: { ...editor, error: plan.error, replace: null } };
+          return { decorEditor: { ...editor, draft: plan.decor, error: null, replace: null } };
+        }),
+      cancelReplace: () => set((state) => (state.decorEditor?.replace ? { decorEditor: { ...state.decorEditor, replace: null } } : state)),
       pickDecorItem: (index) =>
         set((state) => {
           const editor = state.decorEditor;
           const item = editor?.draft.items[index];
-          return editor && item ? { decorEditor: { ...editor, draft: removeAt(editor.draft, index), held: item.id, error: null } } : state;
+          return editor && item ? { decorEditor: { ...editor, draft: removeAt(editor.draft, index), held: item.id, tool: 'place', error: null, replace: null } } : state;
         }),
       removeDecorItem: (index) =>
-        set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft: removeAt(state.decorEditor.draft, index), error: null } } : state)),
-      setDecorDraft: (draft) => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft, held: null, error: null } } : state)),
+        set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft: removeAt(state.decorEditor.draft, index), error: null, replace: null } } : state)),
+      setDecorDraft: (draft) => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, draft, held: null, error: null, replace: null } } : state)),
       markDecorSaved: () => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, saved: state.decorEditor.draft } } : state)),
 
       setActivity: (id, activity) => updatePlayer(id, (p) => ({ ...p, activity })),

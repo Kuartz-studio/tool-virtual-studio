@@ -1,4 +1,4 @@
-import { DECOR_CATEGORIES, DEFAULT_DESK_DECOR, decorItemsOf, type DeskAck, type DeskInfo, type PublicPlayer } from '@bureau/shared';
+import { DECOR_CATEGORIES, DEFAULT_DESK_DECOR, decorItem, decorItemsOf, type DeskAck, type DeskInfo, type PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test } from 'vitest';
@@ -157,5 +157,105 @@ describe('avec un bureau', () => {
     expect(closed()).toBe(0);
     await user.keyboard('{Escape}');
     expect(closed()).toBe(1);
+  });
+
+  test('la gomme : un bouton enfoncé qui vide la main ; prendre un élément reprend la pose ; Échap quitte la gomme avant de fermer', async () => {
+    const user = userEvent.setup();
+    const { closed } = setup();
+    await user.click(screen.getByRole('button', { name: 'Écran bleu (face)' }));
+    const eraser = screen.getByRole('button', { name: fr.decor.erase });
+    expect(eraser.getAttribute('aria-pressed')).toBe('false');
+
+    await user.click(eraser);
+    expect(eraser.getAttribute('aria-pressed')).toBe('true');
+    expect(useOfficeStore.getState().decorEditor).toMatchObject({ tool: 'erase', held: null });
+    expect(screen.getByRole('status').textContent).toBe(fr.decor.eraseHelp);
+
+    // Prendre un élément reprend la pose.
+    await user.click(screen.getByRole('button', { name: 'Écran bleu (face)' }));
+    expect(eraser.getAttribute('aria-pressed')).toBe('false');
+
+    await user.click(eraser);
+    await user.keyboard('{Escape}');
+    expect(useOfficeStore.getState().decorEditor!.tool).toBe('place');
+    expect(closed()).toBe(0);
+    await user.keyboard('{Escape}');
+    expect(closed()).toBe(1);
+  });
+
+  describe('remplacer un élément posé', () => {
+    // Le bureau a déjà un meuble à (3, 2) ; on tient une plante et on la pose dessus : la confirmation s'ouvre.
+    function askToReplace() {
+      act(() => {
+        const store = useOfficeStore.getState();
+        store.openDecorEditor({ ...desk('A2', 'moi'), items: [{ id: 'of-7-28', x: 3, y: 2 }] });
+        store.holdDecorItem('of-6-10');
+        store.placeHeld({ x: 4, y: 3 });
+      });
+    }
+
+    test('la fenêtre demande « voulez-vous vraiment le remplacer ? » avec l\'élément qui part et celui qui arrive, sans rien changer encore', () => {
+      setup();
+      askToReplace();
+      const dialog = screen.getByRole('alertdialog', { name: fr.decor.replace.titleOne });
+      expect(within(dialog).getByText(fr.decor.replace.bodyOne, { exact: false })).toBeTruthy();
+      expect(dialog.textContent).toContain(t(fr.decor.replace.detail, { old: decorItem('of-7-28')!.name, new: decorItem('of-6-10')!.name }));
+      expect(useOfficeStore.getState().decorEditor!.draft.items).toEqual([{ id: 'of-7-28', x: 3, y: 2 }]);
+      // Le focus est sur le geste sûr.
+      expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: fr.decor.replace.cancel }));
+    });
+
+    test('« Remplacer » remplace, la fenêtre se ferme', async () => {
+      const user = userEvent.setup();
+      setup();
+      askToReplace();
+      await user.click(screen.getByRole('button', { name: fr.decor.replace.confirm }));
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(useOfficeStore.getState().decorEditor!.draft.items).toEqual([{ id: 'of-6-10', x: 4, y: 3 }]);
+    });
+
+    test('« Annuler » renonce, et Échap aussi, sans fermer le panneau', async () => {
+      const user = userEvent.setup();
+      const { closed } = setup();
+      askToReplace();
+      await user.click(screen.getByRole('button', { name: fr.decor.replace.cancel }));
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(useOfficeStore.getState().decorEditor!.draft.items).toEqual([{ id: 'of-7-28', x: 3, y: 2 }]);
+
+      act(() => {
+        useOfficeStore.getState().placeHeld({ x: 4, y: 3 });
+      });
+      expect(screen.getByRole('alertdialog')).toBeTruthy();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(closed()).toBe(0);
+      expect(useOfficeStore.getState().decorEditor!.draft.items).toEqual([{ id: 'of-7-28', x: 3, y: 2 }]);
+    });
+
+    test('Tab boucle entre les deux boutons', async () => {
+      const user = userEvent.setup();
+      setup();
+      askToReplace();
+      const cancel = screen.getByRole('button', { name: fr.decor.replace.cancel });
+      const confirm = screen.getByRole('button', { name: fr.decor.replace.confirm });
+      expect(document.activeElement).toBe(cancel);
+      await user.tab();
+      expect(document.activeElement).toBe(confirm);
+      await user.tab();
+      expect(document.activeElement).toBe(cancel);
+      await user.tab({ shift: true });
+      expect(document.activeElement).toBe(confirm);
+    });
+
+    test('plusieurs éléments à remplacer : la fenêtre le dit au pluriel', () => {
+      setup();
+      act(() => {
+        const store = useOfficeStore.getState();
+        store.openDecorEditor({ ...desk('A2', 'moi'), items: [{ id: 'of-6-10', x: 2, y: 2 }, { id: 'of-6-10', x: 4, y: 2 }] });
+        store.holdDecorItem('of-7-28');
+        store.placeHeld({ x: 3, y: 2 });
+      });
+      expect(screen.getByRole('alertdialog', { name: fr.decor.replace.titleMany })).toBeTruthy();
+    });
   });
 });
