@@ -105,7 +105,7 @@ async function chooseInMoreMenu(user: User, name: string) {
   await user.click(moreButton());
   await user.click(screen.getByRole('menuitem', { name }));
 }
-// Ce que choisit une ligne du menu de la puce « Moi » : l'apparence, Mon bureau, Son et musique, Se déconnecter.
+// Ce que choisit une ligne du menu de la puce « Moi » : l'apparence, les modes, Se déconnecter.
 async function chooseInMeMenu(user: User, name: string) {
   await user.click(meChip());
   await user.click(screen.getByRole('menuitem', { name }));
@@ -146,10 +146,10 @@ describe('la mise en page', () => {
     expect(within(tiles).getByRole('button', { name: new RegExp(`^${t(fr.media.tiles.camera, { name: 'Bob' })}`) })).toBeTruthy();
   });
 
-  test('la barre du bas : la puce « Moi », micro, caméra et partage d\'écran, le zoom, puis Chat, Personnes et Plus ; le nom et le statut sont dans la puce', () => {
+  test('la barre du bas : la puce « Moi », micro, caméra, partage d\'écran et musique, le zoom, puis Chat, Personnes et Plus ; le nom et le statut sont dans la puce', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
     expect(within(meChip()).getByText('Léa')).toBeTruthy();
     expect(within(meChip()).getByText(fr.status.available)).toBeTruthy();
   });
@@ -375,60 +375,66 @@ describe('le panneau Personnes', () => {
   });
 });
 
-describe('le panneau Son', () => {
-  const soundPanel = () => screen.getByRole('complementary', { name: fr.sound.title });
-  const soundEntry = () => screen.getByRole('menuitem', { name: fr.sound.toggle }) as HTMLButtonElement;
+describe('le juke-box', () => {
+  const music = () => within(bar()).getByRole('button', { name: fr.sound.toggle }) as HTMLButtonElement;
+  const jukebox = () => screen.getByRole('dialog', { name: fr.sound.toggle });
 
   beforeEach(() => {
     localStorage.clear();
     useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, status: 'locked', playing: null, place: 'lobby' });
   });
 
-  test('fermé au départ ; la ligne « Son et musique » du menu « Moi » l\'ouvre, et le menu se referme', async () => {
-    const user = userEvent.setup();
-    renderShell();
-    expect(screen.queryByRole('complementary')).toBeNull();
-    await user.click(meChip());
-    await user.click(soundEntry());
-    expect(soundPanel().id).not.toBe('');
-    expect(screen.queryByRole('menu')).toBeNull();
-    // La puce n'est pas celle du panneau : elle dit seulement que son menu est fermé.
-    expect(meChip().getAttribute('aria-expanded')).toBe('false');
-  });
-
-  test('il s\'ouvre à droite, par-dessus le jeu ; le focus va au titre, Échap le ferme et rend le focus à la puce « Moi »', async () => {
+  test('fermé au départ ; le bouton du dock l\'ouvre au-dessus de lui, et ce n\'est pas un panneau de droite', async () => {
     const user = userEvent.setup();
     const { container } = renderShell();
-    await chooseInMeMenu(user, fr.sound.toggle);
-    expect(container.querySelector('.office-ui .office-side')?.contains(soundPanel())).toBe(true);
-    expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.sound.title }));
-    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(music());
+    expect(container.querySelector('.office-ui')?.contains(jukebox())).toBe(true);
+    expect(container.querySelector('.office-side')?.contains(jukebox())).toBe(false);
     expect(screen.queryByRole('complementary')).toBeNull();
-    expect(document.activeElement).toBe(meChip());
   });
 
-  test('le bouton Fermer du panneau le ferme aussi, focus rendu à la puce « Moi »', async () => {
-    const user = userEvent.setup();
-    renderShell();
-    await chooseInMeMenu(user, fr.sound.toggle);
-    await user.click(screen.getByRole('button', { name: fr.sound.close }));
-    expect(screen.queryByRole('complementary')).toBeNull();
-    expect(document.activeElement).toBe(meChip());
-  });
-
-  test('la ligne marche avant l\'init : le son ne dépend pas du serveur', async () => {
+  test('il marche avant l\'init : le son ne dépend pas du serveur', async () => {
     renderShell({ init: false });
-    await userEvent.click(meChip());
-    expect(soundEntry().disabled).toBe(false);
+    expect(music().disabled).toBe(false);
+    await userEvent.click(music());
+    expect(jukebox()).toBeTruthy();
   });
 
-  test('un seul panneau à la fois : Son, puis Personnes, puis Chat laissent le dernier seul', async () => {
+  test('il laisse le panneau de droite en place : Personnes et le juke-box sont ouverts ensemble', async () => {
     const user = userEvent.setup();
     renderShell();
-    await chooseInMeMenu(user, fr.sound.toggle);
     await user.click(toggle());
-    expect(screen.getAllByRole('complementary').map((panel) => panel.getAttribute('aria-labelledby') ?? panel.getAttribute('aria-label'))).toHaveLength(1);
-    expect(screen.queryByRole('complementary', { name: fr.sound.title })).toBeNull();
+    await user.click(music());
+    expect(screen.getByRole('complementary', { name: fr.office.people.title })).toBeTruthy();
+    expect(jukebox()).toBeTruthy();
+  });
+
+  test('Échap le ferme et rend le focus à son bouton', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(music());
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(music());
+  });
+
+  test('choisir une ambiance y change la musique voulue, et le bouton se barre quand la musique est coupée', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(music());
+    await user.click(screen.getByRole('radio', { name: new RegExp(`^${fr.sound.scenes.drift.title}`) }));
+    expect(useAudioStore.getState().prefs.scene).toBe('drift');
+    await user.click(screen.getByRole('switch', { name: fr.sound.music.label }));
+    expect(useAudioStore.getState().prefs.musicOn).toBe(false);
+    expect(music().classList.contains('is-muted')).toBe(true);
+  });
+
+  test('un seul panneau à la fois : Personnes, puis Chat laissent le dernier seul', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    await user.click(toggle());
+    expect(screen.getAllByRole('complementary')).toHaveLength(1);
     await user.click(chatToggle());
     expect(screen.getAllByRole('complementary')).toHaveLength(1);
     expect(chatPanel()).toBeTruthy();

@@ -1,7 +1,7 @@
 import type { DeskInfo, OfficeMap, Zone } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { fr } from '../i18n/fr';
-import { placeAt } from './where';
+import { deskKeyAt, placeAt } from './where';
 
 // Une carte réduite à ses zones (en pixels).
 const zone = (id: string, type: Zone['type'], x: number, y: number, width: number, height: number, extra: Partial<Zone> = {}): Zone => ({
@@ -65,5 +65,20 @@ describe('le nom du lieu', () => {
     expect(placeAt(map, [desk({ ownerName: 'Léa' })], 40, 40)).toBe('Bureau de Léa');
     expect(placeAt(map, [desk({ ownerName: 'Léa', name: 'Le QG' })], 40, 40)).toBe('Le QG');
     expect(placeAt(map, [], 40, 40)).toBe('Place A1');
+  });
+});
+
+describe('la clé du bureau où l\'on est', () => {
+  test('celle de la pièce qui contient le point ; ailleurs, ou sans carte, rien', () => {
+    expect(deskKeyAt(map, 40, 40)).toBe('A1');
+    // Une pièce contient son bord haut et gauche, pas son bord bas et droit.
+    expect(deskKeyAt(map, 0, 0)).toBe('A1');
+    expect(deskKeyAt(map, 160, 40)).toBeNull();
+    expect(deskKeyAt(map, 600, 500)).toBeNull();
+    expect(deskKeyAt(null, 40, 40)).toBeNull();
+  });
+
+  test('la porte d\'un bureau n\'est pas sa pièce', () => {
+    expect(deskKeyAt(map, 70, 140)).toBeNull();
   });
 });

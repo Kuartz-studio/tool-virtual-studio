@@ -1,8 +1,10 @@
-import type { MediaJoinPayload, PublicPlayer } from '@bureau/shared';
+import type { DeskInfo, MediaJoinPayload, PublicPlayer } from '@bureau/shared';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useSyncExternalStore } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { useAudioStore } from '../audio/audio-store';
+import { DEFAULT_AUDIO_PREFS } from '../audio/prefs';
 import { fr, t } from '../i18n/fr';
 import { FakeMediaClient } from '../media/fake-media-client';
 import type { MediaPrefs } from '../media/media-client';
@@ -170,15 +172,79 @@ describe('micro, caméra et partage d\'écran', () => {
   });
 });
 
+describe('la musique et le bureau', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, status: 'running', playing: null, place: 'lobby' });
+  });
+
+  const music = () => button(fr.sound.toggle);
+
+  test('le dock du milieu : micro, caméra, partage, puis la musique ; le bouton du bureau n\'y est que si l\'on a un bureau', () => {
+    renderBar();
+    const dock = () => within(bar()).getByRole('group', { name: fr.media.controls.label });
+    const names = () => within(dock()).getAllByRole('button').map((b) => b.getAttribute('aria-label'));
+    expect(names()).toEqual(['Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances']);
+    act(() => useOfficeStore.getState().setDesk({ key: 'A1', ownerId: 'moi', ownerName: 'Léa', name: null, locked: false, closedByState: false, floor: '', wall: '', items: [] } as DeskInfo));
+    expect(names()).toEqual(['Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Aller à mon bureau']);
+  });
+
+  test('« Musique et ambiances » ouvre le juke-box au-dessus du bouton, et le ferme ; le bouton est enfoncé tant qu\'il est ouvert', async () => {
+    const user = userEvent.setup();
+    renderBar();
+    expect(music().getAttribute('aria-pressed')).toBe('false');
+    expect(music().getAttribute('aria-haspopup')).toBe('dialog');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    await user.click(music());
+    const jukebox = screen.getByRole('dialog', { name: fr.sound.toggle });
+    expect(music().getAttribute('aria-pressed')).toBe('true');
+    expect(music().getAttribute('aria-controls')).toBe(jukebox.id);
+    await user.click(music());
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(music().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('Échap ferme le juke-box et rend le focus au bouton ; un clic ailleurs le ferme aussi', async () => {
+    const user = userEvent.setup();
+    renderBar();
+    await user.click(music());
+    expect(screen.getByRole('dialog')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(music());
+    await user.click(music());
+    await user.click(button(fr.me.chip));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  test('musique coupée : le bouton est en retrait (is-muted) et sa note barrée ; elle revient avec le réglage', () => {
+    renderBar();
+    expect(music().classList.contains('is-muted')).toBe(false);
+    expect(music().querySelector('.icon-struck')).toBeNull();
+    act(() => useAudioStore.getState().setPrefs({ musicOn: false }));
+    expect(music().classList.contains('is-muted')).toBe(true);
+    expect(music().querySelector('.icon-struck')).not.toBeNull();
+    act(() => useAudioStore.getState().setPrefs({ musicOn: true }));
+    expect(music().classList.contains('is-muted')).toBe(false);
+  });
+
+  test('chaque ouverture et fermeture du juke-box a le bruit d\'un panneau (et non d\'un interrupteur)', async () => {
+    renderBar();
+    expect(music().getAttribute('data-sfx')).toBe('panel-open');
+    await userEvent.click(music());
+    expect(music().getAttribute('data-sfx')).toBe('panel-close');
+  });
+});
+
 describe('la barre', () => {
-  test('dans l\'ordre : la puce « Moi », micro, caméra, partage d\'écran, le zoom, puis Chat, Personnes et Plus ; le nom est dans la puce ; pas de réactions', () => {
+  test('dans l\'ordre : la puce « Moi », micro, caméra, partage d\'écran, musique, le zoom, puis Chat, Personnes et Plus ; le nom est dans la puce ; pas de réactions', () => {
     renderBar();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
     expect(within(button(fr.me.chip)).getByText('Léa').getAttribute('title')).toBe('Léa');
   });
 
-  test('chaque dock est un groupe : le micro et la caméra, le zoom', () => {
+  test('chaque dock est un groupe : le micro, la caméra, la musique, le zoom', () => {
     renderBar();
     expect(within(bar()).getByRole('group', { name: fr.media.controls.label })).toBeTruthy();
     expect(within(bar()).getByRole('group', { name: fr.zoom.group })).toBeTruthy();
@@ -255,13 +321,11 @@ describe('la barre', () => {
     expect((screen.getByRole('menuitem', { name: fr.office.signingOut }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test('la puce « Moi » ouvre l\'apparence, Mon bureau, Son et musique et les modes, depuis son bouton ; le menu « Plus » n\'en a aucun', async () => {
+  test('la puce « Moi » ouvre l\'apparence et les modes, depuis son bouton ; le menu « Plus » n\'en a aucun', async () => {
     const user = userEvent.setup();
     const { panels } = renderBar();
     for (const [name, id] of [
       [fr.character.toggle, 'character'],
-      [fr.desk.toggle, 'desk'],
-      [fr.sound.toggle, 'sound'],
       [fr.me.modeManage, 'states'],
     ] as const) {
       await user.click(button(fr.me.chip));

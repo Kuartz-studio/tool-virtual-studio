@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { buildOfficeTiledMap, GRAND_HALL, isWalkableTile, LOUNGE, LOUNGE_MUSIC_X, LOUNGE_TERRACE_WIDTH, MEETING_ROOM, OFFICE_DESK_SLOTS, parseOfficeMap, PLAZA } from '../packages/shared/src/index';
-import { joinOffice, openPanel, selfAt } from './helpers';
+import { deskSettingsButton, goToDeskButton, joinOffice, openDeskPanel, openJukebox, selfAt } from './helpers';
 
 // La musique d'ambiance par endroit, sur la vraie carte (le second serveur des tests : playwright.config.ts) : en marchant d'un endroit à
 // l'autre, l'ambiance change, avec les vrais fichiers décodés par Chromium. Les règles sont dans apps/client/src/audio/scene-at.ts.
@@ -28,15 +28,23 @@ function spotNear(column: number, row: number): { x: number; y: number } {
 const playing = (page: Page) => page.evaluate(() => window.__audio?.playing() ?? null);
 
 // Il n'y a que six bureaux sur cette carte, et le serveur en donne un à chaque arrivant : ce test n'a pas besoin du sien, il le rend tout de
-// suite, pour que les tests de personnalisation, qui tournent en même temps sur ce serveur, en trouvent un de libre.
+// suite, pour que les tests de personnalisation, qui tournent en même temps sur ce serveur, en trouvent un de libre. Le panneau « Mon bureau » est
+// derrière le bouton du dock, que l'avatar atteint en marchant jusqu'à son bureau (l'accueil en est loin : une dizaine de secondes) ; le bureau
+// rendu, il revient où il était (l'accueil, dont la musique est celle qu'on attend d'abord).
 async function giveDeskBack(page: Page): Promise<void> {
-  const panel = await openPanel(page, 'Mon bureau');
+  // Sans bureau, le dock n'a ni « Aller à mon bureau » ni « Réglages du bureau » : il n'y a rien à rendre.
+  if (!(await goToDeskButton(page).or(deskSettingsButton(page)).isVisible())) return;
+  const { x, y } = await selfAt(page);
+  const panel = await openDeskPanel(page);
   const giveBack = panel.getByRole('button', { name: 'Rendre mon bureau' });
-  await expect(giveBack.or(panel.getByText('Tu n\'as pas de bureau.'))).toBeVisible();
-  if (await giveBack.isVisible()) await giveBack.click();
+  await expect(giveBack).toBeVisible();
+  await giveBack.click();
   await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
   await panel.getByRole('button', { name: 'Fermer le panneau Mon bureau' }).click();
   await expect(panel).toHaveCount(0);
+  // Rendu, il n'y a plus de bouton du bureau dans le dock.
+  await expect(goToDeskButton(page).or(deskSettingsButton(page))).toHaveCount(0);
+  await teleport(page, { x, y });
 }
 
 // Place l'avatar sur cette case (window.__office.teleport, que le serveur n'accepte qu'avec E2E=1), arrêté.
@@ -75,8 +83,8 @@ test('l\'ambiance choisie à la main prime sur l\'endroit, et « Selon l\'endroi
   await giveDeskBack(page);
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('lobby');
 
-  const panel = await openPanel(page, 'Son');
-  await panel.getByRole('radio', { name: /^Expédition/ }).check();
+  const jukebox = await openJukebox(page);
+  await jukebox.getByRole('radio', { name: /^Expédition/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('quest');
 
   // Ailleurs sur la carte, elle continue.
@@ -85,6 +93,6 @@ test('l\'ambiance choisie à la main prime sur l\'endroit, et « Selon l\'endroi
   expect(await playing(page)).toBe('quest');
 
   // « Selon l'endroit » : la grande salle, où l'on est.
-  await panel.getByRole('radio', { name: /^Selon l'endroit/ }).check();
+  await jukebox.getByRole('radio', { name: /^Selon l'endroit/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('drift');
 });

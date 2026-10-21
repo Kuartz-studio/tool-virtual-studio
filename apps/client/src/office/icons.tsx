@@ -1,11 +1,11 @@
 import {
   ChevronUp,
   DoorClosed,
+  DoorOpen,
   Ellipsis,
   Eraser,
   FlaskConical,
   Focus,
-  LampDesk,
   Lightbulb,
   LightbulbOff,
   LogOut,
@@ -18,14 +18,15 @@ import {
   Minus,
   MonitorUp,
   Music,
+  Play,
   Plus,
   SendHorizontal,
   Settings2,
   ShieldCheck,
   Shirt,
   Slash,
+  SlidersHorizontal,
   Sofa,
-  Sparkles,
   Users,
   Video,
   VideoOff,
@@ -94,11 +95,6 @@ export function ShirtIcon() {
   return <Shirt />;
 }
 
-// Une lampe de bureau : son bureau.
-export function DeskIcon() {
-  return <LampDesk />;
-}
-
 // Un haut-parleur : avec des ondes quand le son est là, barré quand il est coupé.
 export function VolumeIcon({ off = false }: { off?: boolean }) {
   return off ? <VolumeX /> : <Volume2 />;
@@ -146,6 +142,21 @@ export function DoorIcon() {
   return <DoorClosed />;
 }
 
+// Une porte ouverte : y aller (« Aller à mon bureau »).
+export function DoorOpenIcon() {
+  return <DoorOpen />;
+}
+
+// Des curseurs : les réglages du bureau, une fois dedans.
+export function SlidersIcon() {
+  return <SlidersHorizontal />;
+}
+
+// Un triangle de lecture : écouter un exemple d'effet sonore.
+export function PlayIcon() {
+  return <Play />;
+}
+
 // Les quatre coins qui s'écartent (plein écran), ou qui se resserrent (en sortir).
 export function FullscreenIcon({ exit = false }: { exit?: boolean }) {
   return exit ? <Minimize /> : <Maximize />;
@@ -155,7 +166,7 @@ export function EraserIcon() {
   return <Eraser />;
 }
 
-// Lucide n'a pas de version barrée de la note et des étincelles : un trait de Lucide la barre (`icon-struck`, styles.css).
+// Lucide n'a pas de version barrée de la note de musique : un trait de Lucide la barre (`icon-struck`, styles.css).
 function Struck({ children, off }: { children: ReactNode; off: boolean }) {
   if (!off) return children;
   return (
@@ -171,15 +182,6 @@ export function MusicIcon({ off = false }: { off?: boolean }) {
   return (
     <Struck off={off}>
       <Music />
-    </Struck>
-  );
-}
-
-// Des étincelles : les effets sonores, barrées quand ils sont coupés.
-export function SparklesIcon({ off = false }: { off?: boolean }) {
-  return (
-    <Struck off={off}>
-      <Sparkles />
     </Struck>
   );
 }

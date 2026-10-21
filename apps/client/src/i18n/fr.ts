@@ -235,6 +235,8 @@ export const fr = {
     openHint: 'Ouverte, tout le monde peut entrer, sauf ceux que tu as exclus.',
     closedByState: 'Ta porte est fermée par ton état d\'activité du moment.',
     goto: 'Aller à mon bureau',
+    // Le bouton du dock quand on est dans son bureau : il ouvre le panneau du bureau (`title`).
+    settings: 'Réglages du bureau',
     release: 'Rendre mon bureau',
     insideTitle: 'Dans ton bureau',
     insideEmpty: 'Personne d\'autre pour l\'instant.',
@@ -285,27 +287,28 @@ export const fr = {
     useOn: 'Allumer',
   },
   // Le son : la musique d'ambiance (celle de l'endroit où l'on est, ou celle qu'on choisit) et les effets sonores (clics, arrivées, messages,
-  // toc toc…), que l'on coupe et règle chacun de son côté. La voix des autres n'en fait pas partie : elle suit le micro et la sortie du système.
+  // toc toc…), que l'on coupe et règle chacun de son côté, depuis le juke-box du dock du milieu. La voix des autres n'en fait pas partie : elle
+  // suit le micro et la sortie du système.
   sound: {
-    // La ligne du menu « Moi » qui ouvre ce panneau (le panneau, lui, s'appelle `title`).
-    toggle: 'Son et musique',
-    title: 'Son',
-    close: 'Fermer le panneau Son',
+    // Le bouton du dock (une note de musique) et sa fenêtre, le juke-box : le même nom, qui est aussi l'infobulle.
+    toggle: 'Musique et ambiances',
     music: {
       label: 'Musique',
-      hint: 'L\'ambiance de fond. Elle baisse quand quelqu\'un parle.',
       volume: 'Volume de la musique',
     },
     effects: {
       label: 'Effets sonores',
-      hint: 'Les clics, les arrivées, les messages, les toc toc.',
       volume: 'Volume des effets sonores',
       test: 'Écouter un effet',
     },
     ambiance: {
+      // Le nom du groupe des cartes, pour les lecteurs d'écran.
       label: 'Ambiance',
       auto: 'Selon l\'endroit',
+      // L'infobulle de « Selon l'endroit », et son sous-titre : l'ambiance du lieu où l'on est.
       autoHint: 'La musique change avec l\'endroit où tu es.',
+      autoHere: 'Ici : {scene}',
+      // Dite aux lecteurs d'écran pour l'ambiance qu'on entend (l'égaliseur de sa carte est décoratif).
       playing: 'En cours',
     },
     // Les six ambiances : leur nom, ce qu'elles évoquent, et où elles jouent d'elles-mêmes.

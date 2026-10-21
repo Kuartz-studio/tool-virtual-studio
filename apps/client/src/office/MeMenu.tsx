@@ -1,11 +1,10 @@
 import { STATUSES, type ActivityState, type Status } from '@bureau/shared';
 import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from 'react';
-import { useAudioStore } from '../audio/audio-store';
 import { fr } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
 import { ActivityMark } from './ActivityMark';
-import { DeskIcon, LogOutIcon, PlusIcon, ShirtIcon, VolumeIcon } from './icons';
+import { LogOutIcon, PlusIcon, ShirtIcon } from './icons';
 import type { PanelControls, PanelId } from './panels';
 import { StatusDot } from './StatusDot';
 import { AvatarPortrait } from './ui/AvatarPortrait';
@@ -25,7 +24,7 @@ export interface MeMenuProps {
   email: string;
   // La connexion au bureau, null avant que la page l'ouvre.
   socket: OfficeSocket | null;
-  // Comment ouvrir un panneau (l'apparence, le bureau, le son, les modes) : le focus reviendra à la puce quand il se fermera.
+  // Comment ouvrir un panneau (l'apparence, les modes) : le focus reviendra à la puce quand il se fermera.
   panels: PanelControls;
   onSignOut(): void;
   signingOut: boolean;
@@ -36,7 +35,8 @@ export interface MeMenuProps {
 // - « Statut » : les quatre statuts, choisis à la main ; ce que le serveur confirme (`status:changed`) est ce que la puce affiche ;
 // - « Mode » : les états d'activité que tu as créés (chacun avec son icône, ou le point de sa couleur), « Aucun » (retour au statut), et « + »
 //   qui ouvre leur panneau ;
-// - Mon bureau, Son et musique, et Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu.
+// - Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu. Le bureau et le son sont dans le dock du
+//   milieu (MediaDock) : ce menu ne parle que de toi.
 //
 // Le menu suit le motif « menu » : le focus va, à l'ouverture, à ce qui est choisi (le mode en cours, sinon le statut) ; ↓ → et ↑ ← passent d'une
 // ligne à l'autre, Début et Fin vont aux extrémités, Entrée ou Espace choisit, Échap ferme et rend le focus à la puce, Tab aussi (la touche
@@ -56,8 +56,6 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
   const activity = useOfficeStore((state) => state.self?.activity ?? null);
   const myStates = useOfficeStore((state) => state.myStates);
   const ready = useOfficeStore((state) => state.ready);
-  // Le haut-parleur du Son est barré quand ni la musique ni les effets ne sonnent.
-  const silent = useAudioStore((state) => !state.prefs.musicOn && !state.prefs.sfxOn);
   const enabled = socket !== null && ready && current !== null;
 
   const list = useRef<HTMLDivElement>(null);
@@ -231,15 +229,6 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
           </div>
         </div>
 
-        <div className="menu-rule" role="separator" />
-        <button type="button" role="menuitem" tabIndex={-1} className="menu-item" disabled={!panels.ready} onClick={() => openPanel('desk')}>
-          <DeskIcon />
-          <span>{fr.desk.toggle}</span>
-        </button>
-        <button type="button" role="menuitem" tabIndex={-1} className="menu-item" onClick={() => openPanel('sound')}>
-          <VolumeIcon off={silent} />
-          <span>{fr.sound.toggle}</span>
-        </button>
         <div className="menu-rule" role="separator" />
         <button type="button" role="menuitem" tabIndex={-1} className="menu-item" disabled={signingOut} onClick={signOut}>
           <LogOutIcon />

@@ -1,5 +1,5 @@
 // Les panneaux latéraux du bureau : un seul est ouvert à la fois (`panel: PanelId | null` dans OfficeShell). Ouvrir l'un ferme l'autre.
-export type PanelId = 'chat' | 'people' | 'character' | 'desk' | 'decor' | 'states' | 'sound' | 'admin' | 'sim';
+export type PanelId = 'chat' | 'people' | 'character' | 'desk' | 'decor' | 'states' | 'admin' | 'sim';
 
 // Ce que la coque donne à la barre du bas pour ouvrir et fermer les panneaux.
 export interface PanelControls {
@@ -11,7 +11,7 @@ export interface PanelControls {
   show(id: PanelId, opener: HTMLElement | null): void;
   // L'identifiant du panneau, pour `aria-controls`.
   idOf(id: PanelId): string;
-  // Le serveur a dit qui est là : avant, Chat, Personnes, Mon bureau, Personnage et Décorer n'ont rien à montrer.
+  // Le serveur a dit qui est là : avant, Chat, Personnes, le bureau, Personnage et Décorer n'ont rien à montrer.
   ready: boolean;
   // Les messages « Tout le monde » des autres que le panneau Chat, fermé, n'a pas montrés (la pastille du bouton).
   unread: number;

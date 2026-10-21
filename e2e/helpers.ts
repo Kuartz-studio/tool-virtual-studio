@@ -26,7 +26,7 @@ export async function lastMail(request: APIRequestContext, to: string): Promise<
 }
 
 // La barre du bas du bureau (le groupe « Barre du bureau »), faite de docks : à gauche la puce « Moi » (le portrait, le nom, et le mode ou le
-// statut de la personne) ; au milieu micro, caméra et partage d'écran ; à droite le zoom, Chat, Personnes et « Plus ».
+// statut de la personne) ; au milieu micro, caméra et partage d'écran, puis la musique et le bureau ; à droite le zoom, Chat, Personnes et « Plus ».
 export function officeBar(page: Page): Locator {
   return page.getByRole('group', { name: 'Barre du bureau' });
 }
@@ -36,7 +36,7 @@ export function meChip(page: Page): Locator {
   return officeBar(page).getByRole('button', { name: 'Mon profil', exact: true });
 }
 
-// Ouvre le menu de la puce « Moi » de cette page, et le renvoie : le statut, le mode, l'apparence, Mon bureau, Son et musique et Se déconnecter.
+// Ouvre le menu de la puce « Moi » de cette page, et le renvoie : le statut, le mode, l'apparence et Se déconnecter.
 export async function openMeMenu(page: Page): Promise<Locator> {
   await meChip(page).click();
   const menu = page.getByRole('menu', { name: 'Menu de mon profil' });
@@ -74,20 +74,64 @@ export async function moreMenuEntry(page: Page, name: string): Promise<Locator> 
 }
 
 // Les panneaux qu'on peut ouvrir, et le nom que porte chacun (celui de son `complementary`) quand il n'est pas le même.
-export type PanelName = 'Chat' | 'Personnes' | 'Mon bureau' | 'Personnage' | 'Son' | 'Décorer' | 'Admin';
+export type PanelName = 'Chat' | 'Personnes' | 'Mon bureau' | 'Personnage' | 'Décorer' | 'Admin';
 const PANEL_TITLES: Partial<Record<PanelName, string>> = { Personnage: 'Mon personnage', Décorer: 'Décorer mon bureau' };
-// Ceux qu'ouvre une ligne du menu « Moi », et le nom de cette ligne : « Personnage » y est « Changer d'apparence », et « Son », « Son et musique ».
-const ME_MENU_ENTRIES: Partial<Record<PanelName, string>> = { 'Mon bureau': 'Mon bureau', Personnage: 'Changer d\'apparence', Son: 'Son et musique' };
+// Celui qu'ouvre une ligne du menu « Moi », et le nom de cette ligne : « Personnage » y est « Changer d'apparence ».
+const ME_MENU_ENTRIES: Partial<Record<PanelName, string>> = { Personnage: 'Changer d\'apparence' };
 
 // Ouvre ce panneau et le renvoie, une fois visible. Un seul est ouvert à la fois : il prend la place du précédent. Chat et Personnes ont leur
-// bouton dans la barre ; Mon bureau, Personnage et Son sont des lignes du menu « Moi », Décorer et Admin du menu « Plus ».
+// bouton dans la barre ; Personnage est une ligne du menu « Moi », Décorer et Admin du menu « Plus », et Mon bureau a son bouton dans le dock du
+// milieu (openDeskPanel).
 export async function openPanel(page: Page, name: PanelName): Promise<Locator> {
   const meEntry = ME_MENU_ENTRIES[name];
+  if (name === 'Mon bureau') return openDeskPanel(page);
   if (name === 'Chat') await chatToggle(page).click();
   else if (name === 'Personnes') await officeBar(page).getByRole('button', { name: 'Personnes', exact: true }).click();
   else if (meEntry) await (await meMenuEntry(page, meEntry)).click();
   else await (await moreMenuEntry(page, name)).click();
   const panel = page.getByRole('complementary', { name: PANEL_TITLES[name] ?? name, exact: true });
+  await expect(panel).toBeVisible();
+  return panel;
+}
+
+// Le bouton « Musique et ambiances » du dock du milieu.
+export function musicButton(page: Page): Locator {
+  return officeBar(page).getByRole('button', { name: 'Musique et ambiances', exact: true });
+}
+
+// Ouvre le juke-box (la fenêtre « Musique et ambiances », au-dessus du bouton du dock), et le renvoie : la musique, son volume, les ambiances et les
+// effets sonores. Ses cartes d'ambiance sont des boutons radio, que le nom de l'ambiance (« Crépuscule ») ou « Selon l'endroit » désigne.
+export async function openJukebox(page: Page): Promise<Locator> {
+  await musicButton(page).click();
+  const jukebox = page.getByRole('dialog', { name: 'Musique et ambiances', exact: true });
+  await expect(jukebox).toBeVisible();
+  return jukebox;
+}
+
+// Le bureau d'une personne n'a plus de ligne dans un menu : son bouton est dans le dock du milieu, et change selon l'endroit. Dehors,
+// « Aller à mon bureau » fait marcher l'avatar jusqu'à sa place ; dedans, « Réglages du bureau » ouvre le panneau « Mon bureau ». Sans bureau (les
+// six places sont prises), il n'y a aucun des deux.
+export function goToDeskButton(page: Page): Locator {
+  return officeBar(page).getByRole('button', { name: 'Aller à mon bureau', exact: true });
+}
+
+export function deskSettingsButton(page: Page): Locator {
+  return officeBar(page).getByRole('button', { name: 'Réglages du bureau', exact: true });
+}
+
+// Le temps qu'on laisse à l'avatar pour marcher de l'accueil de la grande carte à son bureau (65 cases à 160 px/s : 13 s, plus sur une machine chargée).
+const DESK_WALK_TIMEOUT = 60_000;
+
+// Ouvre le panneau « Mon bureau » de cette page, et le renvoie : si l'on n'est pas dans son bureau, on y marche d'abord (« Aller à mon bureau », le
+// vrai bouton, jusqu'à ce que « Réglages du bureau » le remplace).
+export async function openDeskPanel(page: Page): Promise<Locator> {
+  const settings = deskSettingsButton(page);
+  if (!(await settings.isVisible())) {
+    await goToDeskButton(page).click();
+    await expect(settings).toBeVisible({ timeout: DESK_WALK_TIMEOUT });
+  }
+  await settings.click();
+  const panel = page.getByRole('complementary', { name: 'Mon bureau', exact: true });
   await expect(panel).toBeVisible();
   return panel;
 }

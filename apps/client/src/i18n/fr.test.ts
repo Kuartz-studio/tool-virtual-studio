@@ -53,15 +53,33 @@ test('la puce « Moi » : son nom, celui de son menu, ses sections, et les ligne
   expect(fr.me.mode).toBe('Mode');
   expect(fr.me.modeNone).toBe('Aucun');
   expect(fr.me.modeManage).toBe('Mes états d\'activité…');
-  // Les lignes du menu portent le nom du panneau qu'elles ouvrent, ou celui de l'action : « Personnage » est devenu « Changer d'apparence »,
-  // et « Son », « Son et musique ».
+  // Les lignes du menu portent le nom du panneau qu'elles ouvrent, ou celui de l'action : « Personnage » est devenu « Changer d'apparence ». Le
+  // bureau et le son n'y sont plus : ils sont dans le dock du milieu (test suivant).
   expect(fr.character.toggle).toBe('Changer d\'apparence');
-  expect(fr.desk.toggle).toBe('Mon bureau');
-  expect(fr.sound.toggle).toBe('Son et musique');
   expect(fr.office.signOut).toBe('Se déconnecter');
   // Les panneaux gardent leur titre.
   expect(fr.character.title).toBe('Mon personnage');
-  expect(fr.sound.title).toBe('Son');
+});
+
+// Le dock du milieu : la musique (le juke-box) et le bureau, que lisent les tests de bout en bout (e2e/helpers.ts, son.spec.ts, musique-lieux.spec.ts).
+test('le juke-box : le nom du bouton et de sa fenêtre, ses interrupteurs et ses ambiances', () => {
+  expect(fr.sound.toggle).toBe('Musique et ambiances');
+  expect(fr.sound.music.label).toBe('Musique');
+  expect(fr.sound.music.volume).toBe('Volume de la musique');
+  expect(fr.sound.effects.label).toBe('Effets sonores');
+  expect(fr.sound.effects.volume).toBe('Volume des effets sonores');
+  expect(fr.sound.effects.test).toBe('Écouter un effet');
+  expect(fr.sound.ambiance.auto).toBe('Selon l\'endroit');
+  expect(t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes.lobby.title })).toBe('Ici : Salle d\'attente');
+  expect(Object.values(fr.sound.scenes).map((scene) => scene.title)).toEqual(['Salle d\'attente', 'Concentration', 'Soleil', 'Crépuscule', 'Dérive', 'Expédition']);
+});
+
+test('le bouton du bureau : « Aller à mon bureau » dehors, « Réglages du bureau » dedans', () => {
+  expect(fr.desk.goto).toBe('Aller à mon bureau');
+  expect(fr.desk.settings).toBe('Réglages du bureau');
+  // Le panneau garde son nom : c'est celui qu'il porte, et ce que son bouton de fermeture dit.
+  expect(fr.desk.toggle).toBe('Mon bureau');
+  expect(fr.desk.title).toBe('Mon bureau');
 });
 
 test('le lieu : « Couloir » faute de zone, et combien sont ici', () => {

@@ -17,7 +17,6 @@ import { ControlBar } from './ControlBar';
 import { DeskPanel } from './DeskPanel';
 import type { PanelControls, PanelId } from './panels';
 import { PeoplePanel } from './PeoplePanel';
-import { SoundPanel } from './SoundPanel';
 import { StatesPanel } from './StatesPanel';
 import { ReplacedScreen } from './ReplacedScreen';
 import { Toasts } from './Toasts';
@@ -67,8 +66,9 @@ interface OfficeShellProps {
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
 // - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), et en haut au milieu les vignettes de la conversation (VideoStrip) ;
 // - sous elles, les messages passagers (Toasts) : un toc toc à la porte de son bureau, une porte fermée ;
-// - à droite, un seul panneau à la fois (Personnes, Chat, Son, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
-// - en bas, la barre (ControlBar) : des docks à icônes (la puce « Moi » avec ton statut, le micro et la caméra, le zoom, le chat et les personnes).
+// - à droite, un seul panneau à la fois (Personnes, Chat, Mon bureau, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
+// - en bas, la barre (ControlBar) : des docks à icônes (la puce « Moi » avec ton statut, le micro, la caméra, la musique et le bureau, le zoom, le
+//   chat et les personnes).
 //   Une seule lumière pour tout le bureau : éteinte, la couche prend les couleurs de la nuit (`data-theme`, `data-lights`).
 // Rien de cela ne prend de place au jeu : les éléments sont posés sur lui, et ouvrir un panneau ne redimensionne pas le canevas (ni
 // ne change le zoom de la caméra).
@@ -197,7 +197,6 @@ export function OfficeShell({
           {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
           {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}
           {panel === 'states' && <StatesPanel id={idOf('states')} socket={socket} onClose={close} />}
-          {panel === 'sound' && <SoundPanel id={idOf('sound')} onClose={close} />}
           {isAdmin && panel === 'admin' && <AdminPanel id={idOf('admin')} selfId={user.id} mail={mail} onClose={close} />}
           {__SIM__ && panel === 'sim' && <SimPanel id={idOf('sim')} onClose={close} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont

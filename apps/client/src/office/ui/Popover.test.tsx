@@ -2,9 +2,9 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRef } from 'react';
 import { expect, test, vi } from 'vitest';
-import { Popover } from './Popover';
+import { Popover, placeOver, type PopoverPlacement } from './Popover';
 
-function Harness({ open = true, onClose, placement }: { open?: boolean; onClose: () => void; placement?: 'top-start' | 'top-end' }) {
+function Harness({ open = true, onClose, placement }: { open?: boolean; onClose: () => void; placement?: PopoverPlacement }) {
   const anchor = useRef<HTMLButtonElement>(null);
   return (
     <>
@@ -66,4 +66,35 @@ test('fermé, il n\'écoute plus rien : ni Échap, ni les clics', async () => {
   await user.keyboard('{Escape}');
   await user.click(screen.getByText('Ailleurs'));
   expect(onClose).not.toHaveBeenCalled();
+});
+
+// Les coordonnées de la page : 1000 × 800, et une ancre de 40 px de large dont le haut est à 700.
+const VIEWPORT = { width: 1000, height: 800 };
+const anchorAt = (left: number) => ({ left, right: left + 40, top: 700, width: 40 });
+
+test('placeOver : alignée à gauche ou à droite de l\'ancre, ou centrée sur elle', () => {
+  expect(placeOver(anchorAt(300), VIEWPORT, 'top-start', 320)).toEqual({ bottom: 114, left: 300 });
+  expect(placeOver(anchorAt(300), VIEWPORT, 'top-end', 320)).toEqual({ bottom: 114, right: 660 });
+  // Centrée : le milieu de l'ancre (320), que le CSS ramène à la moitié de la fenêtre.
+  expect(placeOver(anchorAt(300), VIEWPORT, 'top', 320)).toEqual({ bottom: 114, left: 320 });
+});
+
+test('placeOver : centrée, la fenêtre ne sort pas de la page', () => {
+  // Près du bord gauche : sa moitié (160) et 16 px de marge.
+  expect(placeOver(anchorAt(10), VIEWPORT, 'top', 320).left).toBe(176);
+  // Près du bord droit : de même.
+  expect(placeOver(anchorAt(950), VIEWPORT, 'top', 320).left).toBe(824);
+});
+
+test('centrée (`top`), elle dit sa place, et se pose sur le milieu de l\'ancre', () => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(anchorAt(300) as DOMRect);
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320);
+  Object.defineProperty(document.documentElement, 'clientWidth', { value: VIEWPORT.width, configurable: true });
+  Object.defineProperty(document.documentElement, 'clientHeight', { value: VIEWPORT.height, configurable: true });
+  render(<Harness onClose={() => {}} placement="top" />);
+  const menu = screen.getByRole('menu');
+  expect(menu.getAttribute('data-placement')).toBe('top');
+  expect(menu.style.left).toBe('320px');
+  expect(menu.style.bottom).toBe('114px');
+  vi.restoreAllMocks();
 });

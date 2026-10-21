@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { chooseStatus, joinOffice, officeBar, openChat, openPanel, playerSeenBy, say, selfAt } from './helpers';
+import { chooseStatus, joinOffice, musicButton, officeBar, openChat, openJukebox, playerSeenBy, say, selfAt } from './helpers';
 
 // Le son, avec les vrais fichiers décodés par Chromium (Playwright coupe son haut-parleur : on lit ce que le moteur dit, window.__audio,
 // apps/client/src/game/debug.ts). La musique d'ambiance par endroit est dans musique-lieux.spec.ts, sur la grande carte.
@@ -83,32 +83,50 @@ test('au bureau : le jingle d\'arrivée, l\'ambiance de la petite carte, et les 
   await expect.poll(() => sinceThen(page, from)).toEqual(['panel-open', 'panel-close', 'toggle-off', 'toggle-on']);
 });
 
-test('le panneau Son : choisir une ambiance la joue partout, « Selon l\'endroit » rend la main, couper la musique la fait taire', async ({ browser }) => {
+test('le juke-box : choisir une ambiance la joue partout, « Selon l\'endroit » rend la main, couper la musique la fait taire', async ({ browser }) => {
   test.slow();
   const { page } = await arrive(browser, 'Blandine');
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('focus');
 
-  const panel = await openPanel(page, 'Son');
-  await expect(panel.getByRole('radio', { name: /^Selon l'endroit/ })).toBeChecked();
-  // L'ambiance qui joue est marquée.
-  await expect(panel.getByText('En cours')).toBeVisible();
+  // Le bouton du dock : enfoncé tant que la fenêtre est ouverte, et le bruit d'un panneau qui s'ouvre (pas celui d'un interrupteur).
+  const button = musicButton(page);
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  const fromOpen = (await requested(page)).length;
+  const jukebox = await openJukebox(page);
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => sinceThen(page, fromOpen)).toEqual(['panel-open']);
 
-  await panel.getByRole('radio', { name: /^Crépuscule/ }).check();
+  await expect(jukebox.getByRole('radio', { name: /^Selon l'endroit/ })).toBeChecked();
+  // « Selon l'endroit » dit l'ambiance d'ici : la petite carte n'a que la concentration.
+  await expect(jukebox.locator('.juke-auto')).toContainText('Ici : Concentration');
+  // L'ambiance qui joue a son égaliseur.
+  await expect(jukebox.locator('[data-playing="true"]')).toContainText('Concentration');
+
+  await jukebox.getByRole('radio', { name: /^Crépuscule/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('dusk');
-  await panel.getByRole('radio', { name: /^Selon l'endroit/ }).check();
+  await expect(jukebox.locator('[data-playing="true"]')).toContainText('Crépuscule');
+  await jukebox.getByRole('radio', { name: /^Selon l'endroit/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('focus');
 
-  await panel.getByRole('switch', { name: 'Musique' }).uncheck();
+  await jukebox.getByRole('switch', { name: 'Musique' }).uncheck();
   await expect.poll(() => playing(page)).toBeNull();
-  // Le volume et le choix de l'ambiance sont éteints avec la musique ; les effets ne le sont pas.
-  await expect(panel.getByRole('slider', { name: 'Volume de la musique' })).toBeDisabled();
-  await expect(panel.getByRole('slider', { name: 'Volume des effets sonores' })).toBeEnabled();
+  // Le volume est éteint avec la musique, les effets ne le sont pas ; la grille reste utilisable, en retrait ; le bouton du dock est barré.
+  await expect(jukebox.getByRole('slider', { name: 'Volume de la musique' })).toBeDisabled();
+  await expect(jukebox.getByRole('slider', { name: 'Volume des effets sonores' })).toBeEnabled();
+  await expect(jukebox.getByRole('radio', { name: /^Crépuscule/ })).toBeEnabled();
+  await expect(button).toHaveClass(/is-muted/);
 
   // Un exemple d'effet pour régler son volume : il sonne, mais son bouton n'a pas de clic à lui.
   const from = (await requested(page)).length;
-  await panel.getByRole('button', { name: 'Écouter un effet' }).click();
+  await jukebox.getByRole('button', { name: 'Écouter un effet' }).click();
   await expect.poll(() => sinceThen(page, from)).toEqual([]);
   await expect.poll(async () => (await requested(page)).slice(from)).toContain('message');
+
+  // Échap ferme la fenêtre et rend le focus au bouton.
+  await page.keyboard.press('Escape');
+  await expect(jukebox).toBeHidden();
+  await expect(button).toBeFocused();
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
 
   // Les réglages sont gardés : au rechargement, la musique reste coupée.
   await page.reload();
@@ -116,6 +134,7 @@ test('le panneau Son : choisir une ambiance la joue partout, « Selon l\'endroit
   await expect(officeBar(page)).toBeVisible();
   await expect.poll(() => status(page), { timeout: DECODE_TIMEOUT }).toBe('running');
   expect(await playing(page)).toBeNull();
+  await expect(musicButton(page)).toHaveClass(/is-muted/);
 });
 
 test('chez les autres : une arrivée sonne, un message sonne ; en « Ne pas déranger », plus rien ne sonne', async ({ browser }) => {

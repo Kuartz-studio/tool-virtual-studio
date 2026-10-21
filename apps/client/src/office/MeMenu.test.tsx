@@ -169,20 +169,23 @@ describe('le menu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  test('Mon bureau, Son et musique et « + » ouvrent leur panneau depuis la puce', async () => {
+  test('« + » ouvre le panneau des états depuis la puce', async () => {
     const user = userEvent.setup();
     const { panels } = renderChip();
-    for (const [name, id] of [
-      [fr.desk.toggle, 'desk'],
-      [fr.sound.toggle, 'sound'],
-      [fr.me.modeManage, 'states'],
-    ] as const) {
-      await user.click(trigger());
-      await user.click(entry(name));
-      expect(panels.show).toHaveBeenLastCalledWith(id, trigger());
-      expect(screen.queryByRole('menu')).toBeNull();
-    }
-    expect(panels.show).toHaveBeenCalledTimes(3);
+    await user.click(trigger());
+    await user.click(entry(fr.me.modeManage));
+    expect(panels.show).toHaveBeenCalledExactlyOnceWith('states', trigger());
+    expect(screen.queryByRole('menu')).toBeNull();
+  });
+
+  test('le menu ne parle que de soi : le bureau et la musique sont dans le dock du milieu, pas ici', async () => {
+    const user = userEvent.setup();
+    renderChip();
+    await user.click(trigger());
+    expect(screen.queryByRole('menuitem', { name: fr.desk.toggle })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: fr.desk.goto })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: fr.sound.toggle })).toBeNull();
+    expect(screen.queryByRole('menuitem', { name: /musique|son/i })).toBeNull();
   });
 
   test('« Se déconnecter » appelle onSignOut et ferme le menu ; pendant la déconnexion : « Déconnexion… », inactif', async () => {
@@ -199,7 +202,7 @@ describe('le menu', () => {
     expect(entry(fr.office.signingOut).disabled).toBe(true);
   });
 
-  test('le menu a, dans l\'ordre, l\'apparence, les statuts, les modes, le bureau, le son et la déconnexion', async () => {
+  test('le menu a, dans l\'ordre, l\'apparence, les statuts, les modes et la déconnexion', async () => {
     const user = userEvent.setup();
     renderChip({ states: [focus, lunch] });
     await user.click(trigger());
@@ -213,8 +216,6 @@ describe('le menu', () => {
       'À table',
       'Aucun',
       fr.me.modeManage,
-      'Mon bureau',
-      'Son et musique',
       'Se déconnecter',
     ]);
   });
@@ -522,17 +523,18 @@ describe('au clavier', () => {
 
   test('les lignes inactives sont sautées', async () => {
     const user = userEvent.setup();
-    // Le serveur n'a pas encore dit qui est là : le bureau et l'apparence attendent (panels.ready), et les statuts aussi.
+    // Le serveur n'a pas encore dit qui est là : l'apparence attend (panels.ready), et les statuts aussi. Reste « Se déconnecter » : le focus y va,
+    // et les flèches n'en bougent pas.
     const socket = new FakeSocket();
     socket.serverAccepts();
     render(<MeChip name="Léa" email="lea@exemple.fr" socket={socket.asSocket()} panels={fakePanels({ ready: false })} onSignOut={() => {}} signingOut={false} />);
     await user.tab();
     await user.keyboard('{Enter}');
-    expect(document.activeElement).toBe(entry(fr.sound.toggle));
-    await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(entry(fr.office.signOut));
     await user.keyboard('{ArrowDown}');
-    expect(document.activeElement).toBe(entry(fr.sound.toggle));
+    expect(document.activeElement).toBe(entry(fr.office.signOut));
+    await user.keyboard('{ArrowUp}');
+    expect(document.activeElement).toBe(entry(fr.office.signOut));
   });
 
   test('Entrée sur un statut le choisit', async () => {
@@ -682,11 +684,10 @@ describe('quand on ne peut pas changer de statut', () => {
     expect((item('busy') as HTMLButtonElement).disabled).toBe(true);
     expect((mode('Aucun') as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
-    expect(entry(fr.sound.toggle).disabled).toBe(false);
     expect(entry(fr.office.signOut).disabled).toBe(false);
   });
 
-  test('avant l\'init du serveur (on ne sait pas encore son statut) : inactif, sauf le son et la déconnexion', async () => {
+  test('avant l\'init du serveur (on ne sait pas encore son statut) : inactif, sauf la déconnexion', async () => {
     const user = userEvent.setup();
     const socket = new FakeSocket();
     socket.serverAccepts();
@@ -696,20 +697,17 @@ describe('quand on ne peut pas changer de statut', () => {
     expect((mode('Aucun') as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
     expect(entry(fr.character.toggle).disabled).toBe(true);
-    expect(entry(fr.desk.toggle).disabled).toBe(true);
-    expect(entry(fr.sound.toggle).disabled).toBe(false);
     expect(entry(fr.office.signOut).disabled).toBe(false);
     // Aucun statut n'est coché : on ne sait pas lequel est le sien.
     expect(within(group(fr.me.status)).queryByRole('menuitemradio', { checked: true })).toBeNull();
   });
 
-  test('l\'apparence et le bureau attendent aussi que la coque ait dit qui est là (panels.ready)', async () => {
+  test('l\'apparence attend aussi que la coque ait dit qui est là (panels.ready)', async () => {
     const user = userEvent.setup();
     renderChip({ panels: fakePanels({ ready: false }) });
     await user.click(trigger());
     expect(entry(fr.character.toggle).disabled).toBe(true);
-    expect(entry(fr.desk.toggle).disabled).toBe(true);
-    expect(entry(fr.sound.toggle).disabled).toBe(false);
+    expect(entry(fr.office.signOut).disabled).toBe(false);
   });
 
   test('connexion coupée (le magasin n\'est plus « prêt ») : les statuts s\'éteignent', async () => {

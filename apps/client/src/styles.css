@@ -781,6 +781,11 @@ svg.lucide.icon-s {
   background: var(--danger-soft);
 }
 
+/* En retrait : la musique coupée (sa note est barrée). Ouverte, elle prend l'accent comme les autres. */
+.icon-btn.is-muted:not(.is-accent) {
+  color: var(--text-muted);
+}
+
 .icon-btn.is-accent:hover:not(:disabled),
 .icon-btn[aria-expanded='true']:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
@@ -895,6 +900,12 @@ svg.lucide.icon-s {
   visibility: visible;
   transform: translate(-50%, 0);
   transition-delay: 0s;
+}
+
+/* Un bouton dont la fenêtre est ouverte (menu, juke-box) n'a plus d'infobulle : elle tomberait sur la fenêtre. */
+.icon-btn[aria-haspopup]:is([aria-expanded='true'], [aria-pressed='true']) .icon-tip {
+  opacity: 0;
+  visibility: hidden;
 }
 
 @media (hover: hover) {
@@ -1456,6 +1467,15 @@ svg.lucide.icon-s {
 
 .dock-media {
   justify-self: center;
+}
+
+/* Le trait qui sépare le micro, la caméra et le partage de la musique et du bureau. */
+.dock-rule {
+  align-self: stretch;
+  flex: none;
+  width: 1px;
+  margin: 8px 4px;
+  background: var(--border);
 }
 
 .office-bar-end {
@@ -2188,48 +2208,306 @@ svg.lucide.icon-s {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   Le panneau Son : deux sections, la musique (avec le choix de l'ambiance) et les effets, chacune avec son interrupteur et son volume.
+   Le juke-box (SoundPopover) : une fenêtre de 320 px au-dessus du bouton « Musique et ambiances », centrée sur lui. En haut la musique (son
+   interrupteur et son volume), puis le choix de l'ambiance : « Selon l'endroit », une carte large, et six cartes à pochette en pixel art ; en
+   bas les effets sonores, et les crédits. Les boutons radio sont de vrais boutons, invisibles, qui couvrent leur carte.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
-.sound-body {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+.popover[data-placement='top'] {
+  translate: -50% 0;
+  transform-origin: bottom center;
 }
 
-.sound-status {
-  margin: 0;
-  padding: 10px 14px;
+.juke {
+  display: grid;
+  gap: 12px;
+  width: min(304px, calc(100vw - 48px));
+  padding: 4px 0 0;
+}
+
+.juke-status {
+  margin: 0 4px;
+  padding: 8px 12px;
   font-size: var(--text-s);
   color: var(--warning-text);
   background: var(--warning-background);
   border-radius: var(--radius-m);
 }
 
-.sound-section {
-  padding: 14px 16px 16px;
-  background: var(--surface-soft);
-  border-radius: var(--radius-l);
+.juke-head {
+  display: grid;
+  gap: 2px;
+  padding: 0 10px;
 }
 
-.sound-row {
+.juke-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.sound-row h3 {
+.juke-title {
   display: flex;
   align-items: center;
   gap: 10px;
   margin: 0;
-  font-size: var(--text-m);
-  font-weight: 600;
+  font-size: 0.9375rem;
+  font-weight: var(--weight-semibold);
+  letter-spacing: -0.005em;
 }
 
-.sound-hint {
-  margin: 4px 0 10px;
+.juke-title svg.lucide {
+  width: 18px;
+  height: 18px;
+  color: var(--text-soft);
+}
+
+/* Le volume de la musique : un haut-parleur, le curseur, et son pourcentage. */
+.juke-volume {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-soft);
+}
+
+.juke-volume > .volume {
+  flex: 1;
+  min-width: 0;
+}
+
+.juke-volume > svg.lucide {
+  width: 18px;
+  height: 18px;
+}
+
+/* Le choix de l'ambiance. Musique coupée, il reste utilisable, mais en retrait. */
+.juke-scenes {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0 4px;
+  border: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.juke-scenes.is-off {
+  opacity: 0.5;
+}
+
+/* Le vrai bouton radio : invisible, sur toute la carte, et par-dessus ce qu'elle contient (un clic le choisit, les flèches passent d'une carte à
+   l'autre). */
+.juke-radio {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.juke-card,
+.juke-auto {
+  position: relative;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
+}
+
+/* La carte choisie : l'anneau de l'accent, et son fond. Celle qui a le focus du clavier a le contour de partout. */
+.juke-card:has(.juke-radio:checked),
+.juke-auto:has(.juke-radio:checked) {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.juke-card:has(.juke-radio:focus-visible),
+.juke-auto:has(.juke-radio:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* « Selon l'endroit » : l'épingle du lieu, son titre, l'ambiance d'ici en dessous, et à droite sa pochette. */
+.juke-auto {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 12px;
+  background: var(--surface-soft);
+}
+
+.juke-auto:hover:not(:has(.juke-radio:checked)) {
+  background: var(--surface-sunk);
+}
+
+.juke-auto > svg.lucide {
+  width: 18px;
+  height: 18px;
+  color: var(--text-soft);
+}
+
+.juke-auto-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 1px;
+}
+
+.juke-auto-text .juke-name {
+  text-align: left;
+}
+
+.juke-auto-text small {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.juke-auto .juke-art {
+  width: 48px;
+  height: 30px;
+  border-radius: 6px;
+}
+
+/* Les six cartes : trois par ligne. */
+.juke-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.juke-card {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 6px;
+  padding: 6px 3px 8px;
+}
+
+.juke-card:hover:not(:has(.juke-radio:checked)) {
+  background: var(--surface-soft);
+}
+
+/* Une pochette : 16 × 10 pixels agrandis ×5, sans lissage. L'égaliseur de l'ambiance qu'on entend est dessus, en bas à droite. */
+.juke-art {
+  position: relative;
+  display: block;
+  flex: none;
+  width: 80px;
+  height: 50px;
+  overflow: hidden;
+  background: var(--surface-sunk);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--text) 10%, transparent);
+}
+
+.juke-cover {
+  display: block;
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+}
+
+.juke-name {
+  max-width: 100%;
   font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  line-height: 1.25;
+  text-align: center;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+/* Trois barres de 3 px, de hauteurs qui alternent (un cycle de 900 ms), sur un fond sombre qui les détache de la pochette, jour comme nuit. Le
+   mouvement réduit les fige à des hauteurs différentes. */
+.juke-eq {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 13px;
+  padding: 2px 3px;
+  background: rgb(0 0 0 / 50%);
+  border-radius: 4px;
+}
+
+.juke-eq i {
+  width: 3px;
+  height: 100%;
+  background: #ffffff;
+  border-radius: 1px;
+  transform-origin: bottom;
+  animation: juke-eq 900ms ease-in-out infinite;
+}
+
+.juke-eq i:nth-child(2) {
+  animation-delay: -300ms;
+}
+
+.juke-eq i:nth-child(3) {
+  animation-delay: -600ms;
+}
+
+@keyframes juke-eq {
+  0%,
+  100% {
+    transform: scaleY(0.3);
+  }
+
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .juke-eq i {
+    animation: none;
+  }
+
+  .juke-eq i:nth-child(1) {
+    transform: scaleY(0.55);
+  }
+
+  .juke-eq i:nth-child(3) {
+    transform: scaleY(0.75);
+  }
+}
+
+/* Les effets sonores : le nom, l'interrupteur, un curseur sans pourcentage, et le bouton qui joue un exemple. */
+.juke-fx {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.juke-fx-label {
+  flex: none;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+}
+
+.juke-fx > .volume {
+  flex: 1;
+  min-width: 0;
+}
+
+.juke-fx > .volume .volume-slider {
+  min-width: 0;
+}
+
+.juke-credits {
+  margin: 0;
+  padding: 0 10px 6px;
+  font-size: 11px;
+  line-height: 1.4;
   color: var(--text-muted);
 }
 
@@ -2315,111 +2593,6 @@ svg.lucide.icon-s {
   text-align: right;
   color: var(--text-soft);
   font-variant-numeric: tabular-nums;
-}
-
-/* Le choix de l'ambiance : « Selon l'endroit », puis les six, chacune une ligne qui dit ce qu'elle évoque et où elle joue. */
-.sound-scenes {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  margin: 14px 0 0;
-  padding: 0;
-  border: 0;
-}
-
-.sound-scenes legend {
-  margin: 0 0 6px;
-  padding: 0;
-  font-size: var(--text-s);
-  font-weight: 600;
-  color: var(--text-soft);
-}
-
-.sound-scenes:disabled {
-  opacity: 0.5;
-}
-
-.sound-scene {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 10px 12px;
-  background: var(--surface);
-  border-radius: var(--radius-m);
-  box-shadow: inset 0 0 0 1px var(--border);
-  cursor: pointer;
-  transition: box-shadow 0.12s, background 0.12s;
-}
-
-.sound-scenes:disabled .sound-scene {
-  cursor: not-allowed;
-}
-
-.sound-scene:hover {
-  box-shadow: inset 0 0 0 1px var(--border-strong);
-}
-
-.sound-scene:has(input:checked) {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-
-.sound-scene:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.sound-scene input {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin: 2px 0 0;
-  accent-color: var(--accent);
-}
-
-.sound-scene-text {
-  display: grid;
-  min-width: 0;
-  gap: 1px;
-}
-
-.sound-scene-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: var(--text-m);
-  font-weight: 600;
-}
-
-.sound-scene-now {
-  padding: 0 7px;
-  font-size: 0.7rem;
-  font-weight: 600;
-  line-height: 1.6;
-  color: var(--accent-ink);
-  background: #ffffff;
-  border-radius: var(--radius-pill);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.sound-scene-mood {
-  font-size: var(--text-s);
-  color: var(--text-soft);
-}
-
-.sound-scene-where {
-  font-size: 0.75rem;
-  color: var(--text-muted);
-}
-
-.sound-test {
-  margin-top: 12px;
-}
-
-.sound-credits {
-  margin: 0;
-  font-size: 0.75rem;
-  color: var(--text-muted);
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
