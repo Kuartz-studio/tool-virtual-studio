@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { describe, expect, test } from 'vitest';
 import { runGameConformance } from '../conformance';
 import { pickIndex, type Rng } from '../rng';

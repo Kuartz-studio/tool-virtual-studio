@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { describe, expect, test } from 'vitest';
 import { deepFreeze } from '../conformance';
 import { pickIndex, rngFromDice, scriptedRng, seededRng, type Rng } from '../rng';
