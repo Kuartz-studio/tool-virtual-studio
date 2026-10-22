@@ -127,8 +127,18 @@ const DESK_WALK_TIMEOUT = 60_000;
 export async function openDeskPanel(page: Page): Promise<Locator> {
   const settings = deskSettingsButton(page);
   if (!(await settings.isVisible())) {
-    await goToDeskButton(page).click();
-    await expect(settings).toBeVisible({ timeout: DESK_WALK_TIMEOUT });
+    // La marche automatique peut s'arrêter en route (une correction du serveur, un onglet qui passe un instant en arrière-plan, une machine surchargée où le jeu tourne au ralenti) : tant qu'on n'est
+    // pas arrivé, on la relance dès qu'elle ne marche plus. Elle repart de là où l'avatar est.
+    await expect
+      .poll(
+        async () => {
+          if (await settings.isVisible()) return true;
+          if (!(await page.evaluate(() => window.__office?.autoWalking() ?? false))) await goToDeskButton(page).click({ timeout: 2000 }).catch(() => undefined);
+          return false;
+        },
+        { timeout: DESK_WALK_TIMEOUT, intervals: [500, 1000] },
+      )
+      .toBe(true);
   }
   await settings.click();
   const panel = page.getByRole('complementary', { name: 'Mon bureau', exact: true });

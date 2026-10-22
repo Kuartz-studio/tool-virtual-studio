@@ -727,12 +727,14 @@ Un agent par jeu, chacun dans **son worktree** (`isolation: "worktree"`, `model:
 | G6 | Petits chevaux | 2 à 4 | `…/games/ludo/` (idem) |
 
 Chaque agent :
-- [ ] écrit d'abord les tests de règles de la liste de G1 (échecs : perft ; autres : cas limites nommés et parties au hasard), puis le moteur ;
-- [ ] écrit l'interface (plateau, coups légaux, dernier coup, dés, fin de partie, revanche, spectateur, clavier et lecteur d'écran, mouvement réduit) et ses textes dans un fichier à lui (`games/<jeu>/fr.ts`) ;
-- [ ] chasse les bugs : 10 000 parties au hasard sans état illégal et toutes finies, partie rejouée depuis sa liste de coups, reprise après reconnexion ;
-- [ ] valide l'intégration : e2e à deux navigateurs (jouer jusqu'au bout, abandon, revanche), classement mis à jour une fois ;
-- [ ] ajoute **une seule ligne** au registre (`games/registry.ts`) : c'est moi qui fusionne ces quatre lignes, pour qu'aucun conflit ne tombe sur les agents ;
-- [ ] rend un rapport court : ce qui marche, ce qui n'est pas vérifié, les règles qu'il a tranchées en plus.
+- [x] écrit d'abord les tests de règles de la liste de G1 (échecs : perft ; autres : cas limites nommés et parties au hasard), puis le moteur ;
+- [x] écrit l'interface (plateau, coups légaux, dernier coup, dés, fin de partie, revanche, spectateur, clavier et lecteur d'écran, mouvement réduit) et ses textes dans un fichier à lui (`games/<jeu>/fr.ts`) ;
+- [x] chasse les bugs : 10 000 parties au hasard sans état illégal et toutes finies, partie rejouée depuis sa liste de coups, reprise après reconnexion ;
+- [x] valide l'intégration : e2e à deux navigateurs (jouer jusqu'au bout, abandon, revanche), classement mis à jour une fois ;
+- [x] ajoute **une seule ligne** au registre (`games/registry.ts`) : c'est moi qui fusionne ces quatre lignes, pour qu'aucun conflit ne tombe sur les agents ;
+- [x] rend un rapport court : ce qui marche, ce qui n'est pas vérifié, les règles qu'il a tranchées en plus.
+
+**Tel que livré** (22 oct. 2026) : les quatre agents Sonnet (effort max) ont travaillé en deux phases, par message au même agent : le **moteur** d'abord, dès le noyau commité (phase A), puis l'**interface et le test de bout en bout** une fois la plateforme commitée (phase B). Échecs : règles écrites à la main (pas de `chess.js`), 37 cas nommés et 32 cas ajoutés, tous les perft publiés (détail compris), des parties célèbres rejouées par leur notation, 10 000 parties en 584 s, 74 mutations tuées. Backgammon : 27 cas nommés, un oracle naïf (`reference.ts`) qui donne la même chose que le moteur sur 20 000 positions, 10 000 parties en 201 s, 71 mutations. Puissance 4 : 15 cas nommés, 10 000 parties en 7 s, 73 mutations. Petits chevaux : 24 cas nommés et 24 cas ajoutés, 10 000 parties à 2, 3 et 4 joueurs en 85 s, 107 mutations. Interfaces : 189, 156, 123 et 170 tests, 65, 47, 70 et 110 règles d'interface cassées à la main et vues échouer ; e2e de 3, 1 (long : une seule partie, du salon à l'abandon), 10 et 6 tests, chacun sur ses deux ports. Les défauts de plateforme qu'ils ont vus sont corrigés dans la plateforme, avec leurs tests : le `tsconfig` du paquet sans types de Node, « Proposer la nulle » actif trop tôt, les sons d'un doublet écartés par le moteur audio, le joueur sorti qui garde « Abandonner », le message d'échec de `waitForTable` figé. L'historique des échecs est plafonné à 600 demi-coups (R8, voir `docs/decisions.md`).
 
 ### Tâche G7 : intégration des jeux (P0, M) — session principale
 

@@ -70,7 +70,9 @@ test('Alice s\'assoit aux échecs et invite Bastien, resté à l\'accueil : il a
     expect(view.chairs.map((chair) => chair?.ready)).toEqual([true, true]);
   } else {
     expect(view.match?.status).toBe('playing');
-    await expect(gamePanel(bastien, 'chess').getByRole('grid').or(gamePanel(bastien, 'chess').locator('.game-board *').first())).toBeVisible();
+    // Le plateau du jeu est monté dans son cadre (et non « Bientôt disponible ») : le cadre est `.game-board`, dont le contenu est celui du jeu.
+    await expect(gamePanel(bastien, 'chess').locator('.game-board > *').first()).toBeVisible();
+    await expect(gamePanel(bastien, 'chess').getByText('Bientôt disponible')).toHaveCount(0);
   }
 });
 
