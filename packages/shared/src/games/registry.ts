@@ -3,3 +3,4 @@
 export { backgammon } from './backgammon';
 export { chess } from './chess';
 export { connect4 } from './connect4';
+export { ludo } from './ludo';
