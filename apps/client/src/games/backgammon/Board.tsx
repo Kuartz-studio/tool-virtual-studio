@@ -178,9 +178,9 @@ export function Board({ state, mySeat, players, events, canAct, onMove, reducedM
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cells, sources.join(), selected, targets.join(), movedPoints]);
 
-  // Les dés montrés : ceux du tour en cours, ou — un instant — ceux d'un tour passé. Jamais dans l'aperçu ni une fois la partie finie.
+  // Les dés montrés : ceux du tour en cours, ou — un instant — ceux d'un tour passé. Jamais dans l'aperçu, ni une fois la partie finie (sa phase n'est plus `move`).
   const diceView: DiceProps | null = useMemo(() => {
-    if (preview || state.phase === 'over') return null;
+    if (preview) return null;
     let seat: 0 | 1;
     let values: [number, number];
     // Les dés d'un tour passé n'ont rien donné : ils s'estompent comme des dés joués.

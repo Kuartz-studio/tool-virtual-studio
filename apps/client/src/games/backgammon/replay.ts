@@ -52,7 +52,7 @@ function undoStepEvent(position: BgPosition, event: StepEvent): BgPosition {
   return next;
 }
 
-// La position d'avant ces étapes, retrouvée depuis celle d'après : on défait la dernière d'abord.
+// La position d'avant ces étapes, retrouvée depuis celle d'après. Chaque étape ne fait que retirer et poser des pions, d'après ce qu'elle dit : l'ordre où on les défait n'y change rien.
 export function undoStepEvents(position: BgPosition, steps: readonly StepEvent[]): BgPosition {
-  return [...steps].reverse().reduce(undoStepEvent, position);
+  return steps.reduce(undoStepEvent, position);
 }

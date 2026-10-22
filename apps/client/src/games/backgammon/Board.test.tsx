@@ -427,6 +427,36 @@ describe('ni à moi de jouer, ni aperçu : rien ne se joue', () => {
     expect(props.onMove).toHaveBeenCalledTimes(1);
   });
 
+  test('un tour complet, puis la main m\'est retirée (`canAct` faux, sans que j\'aie rien envoyé) : « Valider » et « Annuler » ne marchent plus', () => {
+    const { props, rerender } = mount();
+    for (const name of [/^Point 8 : 3 pions blancs, jouable/, /^Point 5 : vide, arrivée possible/, /^Point 6 : 5 pions blancs, jouable/, /^Point 5 : 1 pion blanc, (jouable, )?arrivée possible/]) click(name);
+    expect((button('Valider') as HTMLButtonElement).disabled).toBe(false);
+    rerender(<Board {...props} canAct={false} />);
+    expect((button('Valider') as HTMLButtonElement).disabled).toBe(true);
+    expect((button('Annuler') as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(button('Valider'));
+    fireEvent.click(button('Annuler'));
+    expect(props.onMove).not.toHaveBeenCalled();
+    expect(screen.getByText('Ton tour : 8→5, 6→5')).toBeTruthy();
+    // La main revient : le tour posé est toujours là, et se valide.
+    rerender(<Board {...props} canAct />);
+    click('Valider');
+    expect(props.onMove).toHaveBeenCalledTimes(1);
+  });
+
+  test('un nouveau tour à moi (autres dés, un tour de plus de joué) : les étapes de l\'ancien ne reviennent pas', () => {
+    const { props, rerender } = mount();
+    click('Point 8 : 3 pions blancs, jouable');
+    click('Point 5 : vide, arrivée possible');
+    expect(screen.getByText('Ton tour : 8→5')).toBeTruthy();
+    // Le serveur a répondu et c'est de nouveau à moi, avec d'autres dés : une autre position, le même siège.
+    const next = position({ white: STARTING_LAYOUT, red: STARTING_LAYOUT, dice: [6, 2], turns: 2 });
+    rerender(<Board {...props} state={next} />);
+    expect(screen.queryByText(/^Ton tour : /)).toBeNull();
+    expect(screen.getByText('Choisis un pion jouable, puis son arrivée.')).toBeTruthy();
+    expect(button('Point 8 : 3 pions blancs, jouable')).toBeTruthy();
+  });
+
   test('le serveur répond (nouvel état) : les étapes posées sont oubliées, le tour de l\'autre commence', () => {
     const { props, rerender } = mount();
     click('Point 8 : 3 pions blancs, jouable');
