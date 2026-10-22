@@ -33,7 +33,8 @@ export function describeResult(result: GameResult, names: string[], _state: Conn
 // Ce qu'entend le lecteur d'écran d'un coup : qui joue, dans quelle colonne (de 1 à 7), et la fin de la partie quand ce jeton l'a finie. Rien sans jeton (un saut d'état, un abandon : la
 // plateforme dit elle-même ce qu'il y a à dire).
 export function announce(events: Connect4Event[], state: Connect4State, names: string[]): string | null {
-  const dropped = events.filter(isDrop).at(-1);
+  // Un coup n'a qu'un jeton.
+  const dropped = events.find(isDrop);
   if (!dropped) return null;
   const sentence = t(connect4Fr.announce.drop, { name: names[dropped.seat] ?? '', n: dropped.col + 1 });
   const ended = events.some((event) => event.type === 'end') && state.result !== null;

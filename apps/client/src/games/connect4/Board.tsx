@@ -94,8 +94,8 @@ export function Board({ state, mySeat, events, canAct, onMove, reducedMotion, pr
     onMove({ col });
   }
 
+  // Le focus fait le reste : la colonne qui le reçoit devient celle de l'ordre de tabulation (onFocus).
   function focusColumn(col: number): void {
-    setActive(col);
     buttons.current[col]?.focus();
   }
 
@@ -108,11 +108,12 @@ export function Board({ state, mySeat, events, canAct, onMove, reducedMotion, pr
       focusColumn(target);
       return;
     }
+    // Entrée et Espace lâchent le jeton dans la colonne qui a le focus, un chiffre dans la sienne.
     const digit = digitColumn(event);
     if (event.key === 'Enter' || event.key === ' ' || digit !== null) {
       take(event);
       // Une touche maintenue se répète : un seul jeton par appui.
-      if (!event.repeat) play(event.key === 'Enter' || event.key === ' ' ? col : digit!);
+      if (!event.repeat) play(digit ?? col);
     }
   }
 
@@ -126,7 +127,7 @@ export function Board({ state, mySeat, events, canAct, onMove, reducedMotion, pr
   const mine = mySeat === 1 ? LAYERS.yellow : LAYERS.red;
 
   return (
-    <div ref={root} className="game-connect4" data-preview={preview || undefined} data-over={over || undefined} style={style}>
+    <div ref={root} className="game-connect4" data-preview={preview || undefined} style={style}>
       <div className="game-connect4-frame">
         <div className="game-connect4-plate" aria-hidden="true" />
         <div role="group" aria-label={connect4Fr.columns} className="game-connect4-columns">
