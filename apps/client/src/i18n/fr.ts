@@ -392,11 +392,12 @@ export const fr = {
       expired: '{name} n\'a pas répondu à ton invitation.',
       gone: '{name} a quitté le bureau.',
     },
-    // Les joueurs, d'une ligne à l'autre : le tour, le compte à rebours, la connexion.
+    // Les joueurs, d'une ligne à l'autre : le tour, le compte à rebours, la connexion, la sortie (une partie à plusieurs qui continue sans celui qui a abandonné).
     you: 'toi',
     turn: 'au trait',
     countdown: 'Il reste {time}',
     reconnect: 'déconnecté, encore {time}',
+    out: 'sorti',
     timeWarning: 'Il reste moins d\'une minute pour jouer.',
     // La ligne d'état.
     status: {
@@ -405,6 +406,7 @@ export const fr = {
       waiting: 'En attente de la partie',
       watching: 'Tu regardes la partie.',
       thinking: 'Coup en cours…',
+      out: 'Tu as quitté la partie : elle continue sans toi.',
     },
     // Ce qui se passe quand une partie finit pour une raison que la plateforme écrit (celle d'un jeu est écrite par son module).
     end: {

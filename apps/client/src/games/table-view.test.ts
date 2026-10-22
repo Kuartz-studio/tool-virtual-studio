@@ -5,7 +5,7 @@ import { chairOf, countdownVisible, endText, formatClock, formatDelta, ratingLin
 const match = (userIds: string[], over: Partial<GameMatchView> = {}): GameMatchView => ({
   id: 'm',
   status: 'playing',
-  players: userIds.map((userId) => ({ userId, name: userId.toUpperCase(), avatarKey: null, connected: true, reconnectMs: null })),
+  players: userIds.map((userId) => ({ userId, name: userId.toUpperCase(), avatarKey: null, connected: true, reconnectMs: null, out: false })),
   first: 0,
   state: {},
   events: [],

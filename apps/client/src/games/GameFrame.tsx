@@ -217,6 +217,8 @@ function MatchView({ game, table, socket, module, selfId }: { game: GameId; tabl
   const lines = match?.status === 'ended' ? ratingLines(match) : [];
   const spectators = table.spectators;
   const offer = match?.drawOffer ?? null;
+  // Sorti de la partie (elle continue sans moi : plus de deux joueurs) : plus d'abandon ni de nulle à proposer, le serveur répondrait que je ne suis plus assis.
+  const iAmOut = playing && match !== null && mySeat !== null && match.players[mySeat]?.out === true;
   // Le serveur refuse la nulle (`too_early`) tant que chaque camp n'a pas joué un coup : le bouton le dit avant, au lieu de laisser cliquer pour recevoir une erreur.
   const drawTooEarly = def && match ? def.countedMoves(match.state) < GAME_DRAW_OFFER_MIN_MOVES : false;
 
@@ -243,7 +245,8 @@ function MatchView({ game, table, socket, module, selfId }: { game: GameId; tabl
                 </span>
                 {hasTurn && <span className="game-turn">{fr.games.turn}</span>}
                 {hasTurn && countdownVisible(turnLeft) && <span className="game-clock">{t(fr.games.countdown, { time: formatClock(turnLeft!) })}</span>}
-                {!player.connected && <span className="game-clock">{reconnectLeft === null ? fr.games.lobby.disconnected : t(fr.games.reconnect, { time: formatClock(reconnectLeft) })}</span>}
+                {player.out && <span className="game-clock">{fr.games.out}</span>}
+                {!player.out && !player.connected && <span className="game-clock">{reconnectLeft === null ? fr.games.lobby.disconnected : t(fr.games.reconnect, { time: formatClock(reconnectLeft) })}</span>}
               </li>
             );
           })}
@@ -282,7 +285,8 @@ function MatchView({ game, table, socket, module, selfId }: { game: GameId; tabl
         </div>
       )}
 
-      {playing && mySeat !== null && (
+      {iAmOut && <p className="desk-hint">{fr.games.status.out}</p>}
+      {playing && mySeat !== null && !iAmOut && (
         <div className="game-actions">
           {def?.drawOffers && offer === null && (
             <button

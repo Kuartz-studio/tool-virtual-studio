@@ -55,13 +55,15 @@ export interface GameChairView {
   connected: boolean;
 }
 
-// Un joueur d'une partie. `reconnectMs` : ce qu'il reste avant sa défaite à un joueur déconnecté, sinon null.
+// Un joueur d'une partie. `reconnectMs` : ce qu'il reste avant sa défaite à un joueur déconnecté, sinon null. `out` : il est sorti de la partie (abandon, délai, départ) ; elle continue sans lui
+// quand il restait plus de deux joueurs (les petits chevaux), sinon elle est finie.
 export interface GameMatchPlayer {
   userId: string;
   name: string;
   avatarKey: string | null;
   connected: boolean;
   reconnectMs: number | null;
+  out: boolean;
 }
 
 export interface GameMatchView {

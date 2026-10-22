@@ -335,6 +335,41 @@ describe('abandonner', () => {
   });
 });
 
+describe('un joueur sorti d\'une partie qui continue sans lui', () => {
+  // Les petits chevaux : celui qui a abandonné est « sorti ». Son panneau ne lui propose plus d'abandonner (le serveur répondrait qu'il n'est plus assis) ni de proposer la nulle, et lui dit que la partie continue.
+  const outAt = (seats: number[], version: number) => {
+    const base = match([SELF, BASTIEN], morpion([4]));
+    return playing([4], version, { players: base.players.map((player, seat) => ({ ...player, out: seats.includes(seat) })) });
+  };
+
+  test('moi sorti : ni « Abandonner » ni nulle, et la partie qui continue est dite', async () => {
+    open(outAt([0], 8));
+    await screen.findByRole('grid', { name: 'Plateau de morpion' });
+    expect(screen.queryByRole('button', { name: fr.games.actions.resign })).toBeNull();
+    expect(screen.queryByRole('button', { name: fr.games.draw.offer })).toBeNull();
+    expect(screen.getByText(fr.games.status.out)).toBeTruthy();
+  });
+
+  test('un autre sorti : il est dit sorti dans la liste des joueurs, et mes actions restent', async () => {
+    open(outAt([1], 8));
+    await screen.findByRole('grid', { name: 'Plateau de morpion' });
+    const bastien = document.querySelector('.game-player[data-seat="1"]') as HTMLElement;
+    expect(within(bastien).getByText(fr.games.out)).toBeTruthy();
+    expect(within(document.querySelector('.game-player[data-seat="0"]') as HTMLElement).queryByText(fr.games.out)).toBeNull();
+    expect(screen.getByRole('button', { name: fr.games.actions.resign })).toBeTruthy();
+    expect(screen.queryByText(fr.games.status.out)).toBeNull();
+  });
+
+  test('sorti et déconnecté : « sorti », pas un compte à rebours de reconnexion', async () => {
+    const base = match([SELF, BASTIEN], morpion([4]));
+    open(playing([4], 8, { players: base.players.map((player, seat) => (seat === 1 ? { ...player, out: true, connected: false } : player)) }));
+    await screen.findByRole('grid', { name: 'Plateau de morpion' });
+    const bastien = document.querySelector('.game-player[data-seat="1"]') as HTMLElement;
+    expect(within(bastien).getByText(fr.games.out)).toBeTruthy();
+    expect(within(bastien).queryByText(fr.games.lobby.disconnected)).toBeNull();
+  });
+});
+
 describe('la nulle par accord', () => {
   test('« Proposer la nulle » : envoie `draw offer` ; l\'offre faite est dite, sans bouton', async () => {
     open(playing([0, 3], 9));

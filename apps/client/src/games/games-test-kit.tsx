@@ -34,7 +34,7 @@ export function match(userIds: string[], state: TicTacToeState | unknown, over: 
   return {
     id: 'm1',
     status: 'playing',
-    players: userIds.map((userId) => ({ userId, name: userId[0]!.toUpperCase() + userId.slice(1), avatarKey: null, connected: true, reconnectMs: null })),
+    players: userIds.map((userId) => ({ userId, name: userId[0]!.toUpperCase() + userId.slice(1), avatarKey: null, connected: true, reconnectMs: null, out: false })),
     first: 0,
     state,
     events: [],

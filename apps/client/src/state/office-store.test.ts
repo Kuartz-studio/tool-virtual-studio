@@ -664,7 +664,7 @@ describe('les jeux', () => {
   const match = (id: string, userIds: string[], status: 'playing' | 'ended' = 'playing'): GameMatchView => ({
     id,
     status,
-    players: userIds.map((userId) => ({ userId, name: userId, avatarKey: null, connected: true, reconnectMs: null })),
+    players: userIds.map((userId) => ({ userId, name: userId, avatarKey: null, connected: true, reconnectMs: null, out: false })),
     first: 0,
     state: {},
     events: [],

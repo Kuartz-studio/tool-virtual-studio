@@ -1,4 +1,5 @@
 import { GAME_RECONNECT_MS, GAME_TURN_TIMEOUT_MS, rngFromDice, rollDie, type GameDefinition, type GameResult } from '@bureau/shared';
+import { ludo } from '@bureau/shared/games/ludo';
 import { replayMatch } from '@bureau/shared/games/testing';
 import { z } from 'zod';
 import { describe, expect, test } from 'vitest';
@@ -503,5 +504,33 @@ describe('le débogage des tests de bout en bout', () => {
     const { service, view } = gamesSetup();
     await service.debugSet('connect4', { cells: [], next: 0, moves: 0, result: null });
     expect(view().version).toBe(0);
+  });
+});
+
+describe('une partie à plusieurs : un joueur qui sort', () => {
+  // Trois joueurs aux petits chevaux : le premier qui abandonne sort, la partie continue à deux. La vue le dit (`out`), pour que son panneau ne lui propose plus d'abandonner.
+  async function threeAtLudo() {
+    const context = gamesSetup({ games: { ludo: ludo as never } });
+    for (const who of [ALICE, BASTIEN, CLAIRE]) await context.sit(who, 'ludo');
+    for (const who of [ALICE, BASTIEN, CLAIRE]) await context.ready(who, 'ludo');
+    return context;
+  }
+
+  test('personne n\'est sorti au début ; après son abandon, la vue dit qui est sorti, la partie continue', async () => {
+    const context = await threeAtLudo();
+    expect(context.view('ludo').match!.players.map((player) => player.out)).toEqual([false, false, false]);
+    expect(await context.service.run(CLAIRE, { type: 'resign', game: 'ludo' })).toEqual({ ok: true });
+    const after = context.view('ludo').match!;
+    expect(after.status).toBe('playing');
+    expect(after.players.map((player) => player.out)).toEqual([false, false, true]);
+  });
+
+  test('à deux joueurs, un abandon finit la partie : celui qui a abandonné est dit sorti dans la vue de la fin', async () => {
+    const context = gamesSetup();
+    await context.startMatch();
+    await context.service.run(ALICE, { type: 'resign', game: 'connect4' });
+    const ended = context.view().match!;
+    expect(ended.status).toBe('ended');
+    expect(ended.players.map((player) => player.out)).toEqual([true, false]);
   });
 });

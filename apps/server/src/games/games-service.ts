@@ -221,6 +221,7 @@ export class GamesService {
           avatarKey: player.avatarKey,
           connected: playing ? since === null : chair?.connected === true,
           reconnectMs: playing && since !== null && !match.out[seat] ? Math.max(0, GAME_RECONNECT_MS - (now - since)) : null,
+          out: match.out[seat] === true,
         };
       }),
       first: match.first,
