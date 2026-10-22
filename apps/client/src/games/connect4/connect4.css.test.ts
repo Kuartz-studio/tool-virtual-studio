@@ -198,12 +198,22 @@ describe('la chute, la pulsation et le contour de la ligne gagnante', () => {
     expect(pulse!.selectors.join(' ')).not.toMatch(/data-falling/);
   });
 
-  test('les autres jetons s\'effacent quand une ligne est gagnée (data-dim), sans disparaître', () => {
+  test('les autres jetons s\'assombrissent quand une ligne est gagnée (data-dim), sans disparaître ni se mêler au bleu du plateau (pas de transparence)', () => {
     const dim = rule(/token\[data-dim\]/);
     expect(dim).toBeDefined();
-    const opacity = Number(dim!.declarations.get('opacity'));
-    expect(opacity).toBeGreaterThan(0.3);
-    expect(opacity).toBeLessThan(1);
+    const brightness = Number(/brightness\(([\d.]+)\)/.exec(dim!.declarations.get('filter') ?? '')?.[1]);
+    expect(brightness).toBeGreaterThan(0.3);
+    expect(brightness).toBeLessThan(1);
+    expect(dim!.declarations.get('opacity')).toBeUndefined();
+  });
+
+  test('le survol d\'une colonne la voile sans la cacher : un fond translucide, jamais un jeton de la plateforme opaque (il recouvrirait le plateau)', () => {
+    const hover = rule(/column:not\(\[aria-disabled=['"]?true['"]?\]\):hover$/);
+    expect(hover).toBeDefined();
+    expect(hover!.declarations.get('background')).toBe('var(--game-connect4-hover)');
+    const veil = root?.declarations.get('--game-connect4-hover') ?? '';
+    expect(veil).toMatch(/^rgb\(\d+ \d+ \d+ \/ \d+%\)$/);
+    expect(Number(/\/ (\d+)%/.exec(veil)?.[1])).toBeLessThan(50);
   });
 
   test('le fantôme est caché tant qu\'on ne survole pas, ni ne vise la colonne au clavier, et jamais sur une colonne qu\'on ne peut pas jouer', () => {

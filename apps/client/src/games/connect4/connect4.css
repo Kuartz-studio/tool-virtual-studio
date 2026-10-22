@@ -13,6 +13,8 @@
   --game-connect4-radius: 8px;
   /* Le cerclage du dernier jeton et de la ligne gagnante : blanc, qui se détache du plateau comme des deux couleurs de jeton. */
   --game-connect4-marker: #ffffff;
+  /* Le survol d'une colonne : un voile clair, qui éclaircit le plateau sans le cacher (le fond de la colonne passe derrière les trous et les jetons). */
+  --game-connect4-hover: rgb(255 255 255 / 18%);
   /* La chute d'un jeton (environ 250 ms, avec un petit rebond) et la pulsation de la ligne gagnante. */
   --game-connect4-fall-duration: 250ms;
   --game-connect4-pulse-duration: 900ms;
@@ -74,7 +76,7 @@
 }
 
 .game-connect4-column:not([aria-disabled='true']):hover {
-  background: var(--accent-soft);
+  background: var(--game-connect4-hover);
 }
 
 /* La rangée du fantôme, au-dessus du plateau, et la pile des six cases. */
@@ -145,9 +147,9 @@
   }
 }
 
-/* Quand une ligne est gagnée, les autres jetons s'effacent sans disparaître. */
+/* Quand une ligne est gagnée, les autres jetons s'assombrissent sans disparaître (une transparence les ferait virer au vert et au violet sur le bleu du plateau). */
 .game-connect4-token[data-dim] {
-  opacity: 0.45;
+  filter: brightness(0.55);
 }
 
 /* La ligne gagnante : un contour blanc épais et fixe, qui reste quand on demande moins de mouvement, et une pulsation en plus. */
