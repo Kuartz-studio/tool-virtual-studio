@@ -9,8 +9,9 @@ import { backgammon, checkersAt, DIE_SIDES, POINT_COUNT, type BackgammonMove, ty
 // refusé ou donne la position d'un coup légal, et le journal de chaque partie, rejoué, redonne son état final.
 // `JEUX_FUZZ=10000` en joue dix mille (commande à part, plusieurs minutes) ; `pnpm test` en joue 300.
 const GAMES = Number(process.env.JEUX_FUZZ ?? 300);
-// Le délai de ce test est celui de la plateforme (120 s) pour les 300 parties de tous les jours, et grandit avec le nombre de parties demandées.
-const TIMEOUT_MS = Math.max(120_000, GAMES * 900);
+// Le délai de ce test est celui de la plateforme (120 s) pour les 300 parties de tous les jours, plus 100 ms par partie au-delà : dix mille parties prennent environ
+// 200 s sur une machine au repos, le délai leur en laisse largement plus quand elle est occupée.
+const TIMEOUT_MS = 120_000 + Math.max(0, GAMES - 300) * 100;
 
 // Un coup sans doute illégal, fabriqué à partir de l'état : un tour légal dont on a mélangé, raccourci ou faussé les étapes, ou des étapes tirées au hasard. La
 // plupart sont refusées ; celles qui ne le sont pas (le même tour joué dans un autre ordre) doivent donner la position d'un coup légal.

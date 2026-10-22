@@ -42,6 +42,9 @@ export interface BackgammonState extends BgPosition {
   result: GameResult | null;
 }
 
+// Ce qu'une action a provoqué, pour que le client l'anime : `opening` (le lancer d'ouverture, égalités comprises), `dice` (un lancer), `step` (un pion déplacé, avec
+// `hit` s'il en a frappé un), `pass` (rien à jouer : le tour est perdu), `end` (les quinze pions sortis, avec le gammon ou le backgammon) et `forfeit` (un abandon, une
+// inactivité ou un départ : défaite simple, sans événement `end`).
 export type BackgammonEvent =
   | { type: 'opening'; rolls: Array<[number, number]>; first: 0 | 1 }
   | { type: 'dice'; seat: 0 | 1; values: [number, number] }
