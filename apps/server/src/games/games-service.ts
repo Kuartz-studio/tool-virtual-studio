@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   GAME_CHAIR_IDLE_MS,
+  GAME_DRAW_OFFER_MIN_MOVES,
   GAME_INVITES_PER_USER,
   GAME_INVITE_TTL_MS,
   GAME_MIN_RANKED_MOVES,
@@ -575,7 +576,7 @@ export class GamesService {
     if (seat === -1 || match.out[seat]) return refuse('not_seated');
 
     if (action === 'offer') {
-      if (match.def.countedMoves(match.state) < 2) return refuse('too_early');
+      if (match.def.countedMoves(match.state) < GAME_DRAW_OFFER_MIN_MOVES) return refuse('too_early');
       if (match.drawOffer !== null) return refuse('already_offered');
       if (!match.canOffer[seat]) return refuse('too_early');
       match.drawOffer = seat;

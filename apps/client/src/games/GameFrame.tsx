@@ -1,6 +1,7 @@
-import { GAME_TURN_WARNING_MS, seededRng, type GameId, type GameMatchView, type GameTableView } from '@bureau/shared';
+import { GAME_DRAW_OFFER_MIN_MOVES, GAME_TURN_WARNING_MS, seededRng, type GameId, type GameMatchView, type GameTableView } from '@bureau/shared';
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { audioEngine } from '../audio/audio';
+import type { SfxId } from '../audio/catalog';
 import { prefersReducedMotion } from '../game/reduced-motion';
 import { fr, t } from '../i18n/fr';
 import { sendGameCommand } from '../net/game-commands';
@@ -15,6 +16,9 @@ import { ResignDialog } from './ResignDialog';
 import { chairOf, countdownVisible, endText, formatClock, formatDelta, ratingLines, seatOf, soleWinner } from './table-view';
 import type { GamePlayerView } from './types';
 import type { GameModuleState } from './use-game-module';
+
+// L'espace entre deux sons d'un même lot (un doublet : quatre pions posés l'un après l'autre) : le moteur audio écarte un même effet rejoué avant son délai (120 ms pour un pion).
+export const GAME_SOUND_GAP_MS = 200;
 
 export interface GameFrameProps {
   game: GameId;
@@ -134,11 +138,17 @@ function MatchView({ game, table, socket, module, selfId }: { game: GameId; tabl
     setPending(false);
   }, [table.version]);
 
-  // Les sons du lot d'événements (le panneau ouvert, et seulement un changement qui suit le précédent), et celui de la victoire.
+  // Les sons du lot d'événements (le panneau ouvert, et seulement un changement qui suit le précédent), et celui de la victoire après eux : à la suite les uns des autres, espacés de
+  // GAME_SOUND_GAP_MS. Une nouvelle version coupe ce qu'il en reste.
   useEffect(() => {
     if (!consecutive || !match || !ui) return;
-    for (const effect of ui.sounds(match.events as never[], mySeat)) audioEngine.playSfx(effect);
-    if (match.status === 'ended' && mySeat !== null && soleWinner(match.result) === mySeat) audioEngine.playSfx('win');
+    const effects: SfxId[] = ui.sounds(match.events as never[], mySeat);
+    if (match.status === 'ended' && mySeat !== null && soleWinner(match.result) === mySeat) effects.push('win');
+    // Le premier tout de suite, les autres à la suite.
+    const [first, ...later] = effects;
+    if (first !== undefined) audioEngine.playSfx(first);
+    const timers = later.map((effect, index) => setTimeout(() => audioEngine.playSfx(effect), (index + 1) * GAME_SOUND_GAP_MS));
+    return () => timers.forEach(clearTimeout);
     // Seulement à chaque nouvelle version : le reste est la même partie.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table.version]);
@@ -207,6 +217,8 @@ function MatchView({ game, table, socket, module, selfId }: { game: GameId; tabl
   const lines = match?.status === 'ended' ? ratingLines(match) : [];
   const spectators = table.spectators;
   const offer = match?.drawOffer ?? null;
+  // Le serveur refuse la nulle (`too_early`) tant que chaque camp n'a pas joué un coup : le bouton le dit avant, au lieu de laisser cliquer pour recevoir une erreur.
+  const drawTooEarly = def && match ? def.countedMoves(match.state) < GAME_DRAW_OFFER_MIN_MOVES : false;
 
   return (
     <div className="game-match">
@@ -273,7 +285,13 @@ function MatchView({ game, table, socket, module, selfId }: { game: GameId; tabl
       {playing && mySeat !== null && (
         <div className="game-actions">
           {def?.drawOffers && offer === null && (
-            <button type="button" className="bar-button" onClick={() => void send({ type: 'draw', game, action: 'offer' })}>
+            <button
+              type="button"
+              className="bar-button"
+              disabled={drawTooEarly}
+              title={drawTooEarly ? fr.games.errors.too_early : undefined}
+              onClick={() => void send({ type: 'draw', game, action: 'offer' })}
+            >
               {fr.games.draw.offer}
             </button>
           )}

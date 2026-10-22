@@ -6,6 +6,7 @@ import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
 import { BASTIEN, CLAIRE, SELF, applyWorld, chair, match, morpion, table } from './games-test-kit';
+import { GAME_SOUND_GAP_MS } from './GameFrame';
 import { GamePanel } from './GamePanel';
 
 // Le panneau d'une table avec un faux jeu complet (le morpion) : le module du jeu est celui de games-test-kit.tsx. Le son est espionné.
@@ -183,6 +184,37 @@ describe('les événements, les sons et les annonces', () => {
     expect(await screen.findByText(/Moi joue la case 5\./)).toBeTruthy();
   });
 
+  // Le moteur audio écarte un même effet rejoué avant son délai (un pion : 120 ms) : les quatre pions d'un doublet joués d'un coup ne feraient qu'un bruit.
+  test('plusieurs sons d\'un même lot sont joués à la suite, espacés de GAME_SOUND_GAP_MS', async () => {
+    const playedAt: Array<[string, number]> = [];
+    vi.mocked(audioEngine.playSfx).mockImplementation((id) => void playedAt.push([id, performance.now()]));
+    open(playing([], 7));
+    await screen.findByRole('grid', { name: 'Plateau de morpion' });
+    const placed = (cell: number) => ({ type: 'placed' as const, seat: 0, cell });
+    update(playing([4], 8, { events: [placed(4), placed(0), placed(8)] }));
+    await vi.waitFor(() => expect(playedAt).toHaveLength(3), { timeout: 3000 });
+    expect(playedAt.map(([id]) => id)).toEqual(['piece', 'piece', 'piece']);
+    const gaps = [playedAt[1]![1] - playedAt[0]![1], playedAt[2]![1] - playedAt[1]![1]];
+    for (const gap of gaps) {
+      expect(gap).toBeGreaterThanOrEqual(GAME_SOUND_GAP_MS - 40);
+      expect(gap).toBeLessThan(GAME_SOUND_GAP_MS * 3);
+    }
+    vi.mocked(audioEngine.playSfx).mockReset();
+  });
+
+  test('une nouvelle version coupe les sons du lot d\'avant qui n\'ont pas encore joué', async () => {
+    vi.mocked(audioEngine.playSfx).mockReset();
+    open(playing([], 7));
+    await screen.findByRole('grid', { name: 'Plateau de morpion' });
+    const placed = (cell: number) => ({ type: 'placed' as const, seat: 0, cell });
+    update(playing([4], 8, { events: [placed(4), placed(0), placed(8)] }));
+    await vi.waitFor(() => expect(audioEngine.playSfx).toHaveBeenCalledTimes(1));
+    // Une version qui saute : ni événement ni son, et les deux pions qui restaient à jouer ne sonnent plus.
+    update(playing([4, 0, 8, 1], 10));
+    await new Promise((resolve) => setTimeout(resolve, GAME_SOUND_GAP_MS * 3));
+    expect(audioEngine.playSfx).toHaveBeenCalledTimes(1);
+  });
+
   test('une version qui saute (le panneau s\'ouvre, la connexion revient, un message manqué) : aucun événement, aucun son', async () => {
     open(playing([4], 8, { events: [{ type: 'placed', seat: 0, cell: 4 }] }));
     await screen.findByRole('grid', { name: 'Plateau de morpion' });
@@ -219,8 +251,8 @@ describe('la fin d\'une partie', () => {
     expect(screen.getByText('Moi : 1200 → 1216 (+16)')).toBeTruthy();
     expect(screen.getByText('Bastien : 1200 → 1184 (−16)')).toBeTruthy();
     expect(screen.getByRole('button', { name: fr.games.actions.rematch })).toBeTruthy();
-    // Je suis seul en tête : le son de la victoire.
-    expect(audioEngine.playSfx).toHaveBeenCalledWith('win');
+    // Je suis seul en tête : le son de la victoire, après celui du dernier pion.
+    await vi.waitFor(() => expect(vi.mocked(audioEngine.playSfx).mock.calls.map(([id]) => id)).toEqual(['piece', 'win']), { timeout: 3000 });
   });
 
   test('une défaite : pas de son de victoire', async () => {
@@ -228,6 +260,9 @@ describe('la fin d\'une partie', () => {
     await screen.findByRole('grid', { name: 'Plateau de morpion' });
     update(ended([0, 3, 1, 4, 8, 5], 12, { result: { ranking: [[1], [0]], reason: 'line' }, ranked: true, events: [{ type: 'placed', seat: 1, cell: 5 }] }));
     await screen.findAllByText('Ligne de trois : Bastien gagne.');
+    // Le son de la victoire, s'il y en avait un, viendrait GAME_SOUND_GAP_MS après le dernier pion : on attend plus longtemps que cela.
+    await new Promise((resolve) => setTimeout(resolve, GAME_SOUND_GAP_MS * 2));
+    expect(audioEngine.playSfx).toHaveBeenCalledWith('piece');
     expect(audioEngine.playSfx).not.toHaveBeenCalledWith('win');
   });
 
@@ -311,6 +346,20 @@ describe('la nulle par accord', () => {
     // Sa propre offre n'a ni « Accepter » ni « Refuser » : c'est à l'autre de répondre.
     expect(screen.queryByRole('button', { name: fr.games.draw.accept })).toBeNull();
     expect(screen.queryByRole('button', { name: fr.games.draw.decline })).toBeNull();
+  });
+
+  // Le serveur refuse (`too_early`) tant que chaque camp n'a pas joué un coup (`countedMoves` < 2) : le bouton le dit avant, au lieu de laisser cliquer pour recevoir une erreur.
+  test('avant un coup de chaque camp, « Proposer la nulle » est inactif et dit pourquoi ; au deuxième coup, il s\'active', async () => {
+    open(playing([4], 8));
+    const button = await screen.findByRole('button', { name: fr.games.draw.offer });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute('title')).toBe(fr.games.errors.too_early);
+    await userEvent.click(button);
+    expect(sentCommands().some((command) => (command as { type: string }).type === 'draw')).toBe(false);
+    update(playing([4, 0], 9));
+    const active = await screen.findByRole('button', { name: fr.games.draw.offer });
+    expect((active as HTMLButtonElement).disabled).toBe(false);
+    expect(active.getAttribute('title')).toBeNull();
   });
 
   test('une offre de l\'autre : « Accepter la nulle » et « Refuser » envoient `accept` et `decline`', async () => {

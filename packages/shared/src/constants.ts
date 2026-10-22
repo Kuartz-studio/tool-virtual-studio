@@ -113,6 +113,7 @@ export const MUSIC_RATE_MS = 800;
 // - GAME_CHAIR_IDLE_MS : une chaise occupée sans partie se libère après ce temps, compté depuis le dernier geste (s'asseoir, la fin d'une partie, « prêt »).
 // - GAME_SWEEP_MS : la période du balayage des délais ci-dessus.
 // - GAME_MIN_RANKED_MOVES : une partie compte pour le classement à partir de ce nombre de coups (les coups du jeu : un lancer de dés n'en est pas un).
+// - GAME_DRAW_OFFER_MIN_MOVES : une nulle ne se propose qu'à partir de ce nombre de coups (un de chaque camp) ; le serveur refuse avant (`too_early`), le bouton le dit avant.
 // - GAME_RATE : les commandes d'une socket (`game:do`) ; GAME_INVITE_RATE : les invitations d'un compte ; GAME_LADDER_RATE : les lectures du classement.
 // - GAME_LADDER_TOP : le nombre de lignes du classement.
 // - GAME_ARRIVAL_RING_TILES : l'anneau autour de la table où l'on pose qui accepte une invitation ; GAME_TABLE_REACH_TILES : la portée de la touche E autour d'une table.
@@ -123,6 +124,7 @@ export const GAME_INVITE_TTL_MS = 60_000;
 export const GAME_CHAIR_IDLE_MS = 600_000;
 export const GAME_SWEEP_MS = 1_000;
 export const GAME_MIN_RANKED_MOVES = 2;
+export const GAME_DRAW_OFFER_MIN_MOVES = 2;
 export const GAME_INVITES_PER_USER = 3;
 export const GAME_RATE = { max: 20, windowMs: 2_000 };
 export const GAME_INVITE_RATE = { max: 6, windowMs: 60_000 };

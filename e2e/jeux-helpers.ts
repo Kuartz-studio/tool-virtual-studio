@@ -56,15 +56,20 @@ export function gameTable(page: Page, game: GameId): Promise<TableView | null> {
 // Attend que la table de cette page réponde à cette condition (relue sur la vue du magasin).
 export async function waitForTable(page: Page, game: GameId, check: (view: TableView) => boolean, timeout = 15_000): Promise<TableView> {
   let last: TableView | null = null;
-  await expect
-    .poll(
-      async () => {
-        last = await gameTable(page, game);
-        return last !== null && check(last);
-      },
-      { timeout, message: `La table de ${game} n'a pas pris l'état attendu : ${JSON.stringify(last)}` },
-    )
-    .toBe(true);
+  try {
+    await expect
+      .poll(
+        async () => {
+          last = await gameTable(page, game);
+          return last !== null && check(last);
+        },
+        { timeout },
+      )
+      .toBe(true);
+  } catch (error) {
+    // Le message se construit ici, une fois l'attente finie : dans les options du sondage, il aurait été figé avant la première lecture (« null »).
+    throw new Error(`La table de ${game} n'a pas pris l'état attendu : ${JSON.stringify(last)}`, { cause: error });
+  }
   return last!;
 }
 
