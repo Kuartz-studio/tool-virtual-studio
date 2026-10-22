@@ -112,7 +112,12 @@ describe('petits chevaux : créer la partie', () => {
       last: null,
       result: null,
     });
-    for (const seats of [2, 3, 4]) expect(ludo.create({ seats, first: 0 }, noDice()).state.colors).toEqual([...LUDO_COLORS[seats as 2 | 3 | 4]]);
+    for (const seats of [2, 3, 4]) {
+      const { colors } = ludo.create({ seats, first: 0 }, noDice()).state;
+      expect(colors).toEqual([...LUDO_COLORS[seats as 2 | 3 | 4]]);
+      // L'état a sa propre liste : le geler (le harnais le fait) ne gèle pas la constante du plateau, que tous les états partagent.
+      expect(colors).not.toBe(LUDO_COLORS[seats as 2 | 3 | 4]);
+    }
   });
 
   test('C46 : une partie qui n\'est pas de 2 à 4 joueurs, ou dont le premier n\'est pas un siège, est une erreur de la plateforme : create lève', () => {
@@ -236,6 +241,22 @@ describe('petits chevaux : sortir, le 6, les essais', () => {
     expect(miss.events).toEqual([dice(0, 1), pass(0, 'retry')]);
     expect(six.events).toEqual([dice(0, 6)]);
     expect(ludo.legalMoves(six.state, 0)).toEqual([{ type: 'move', horse: 0 }]);
+  });
+
+  test('C48 : les essais ne comptent que les lancers faits sans cheval en jeu : un 6 amène le seul cheval en jeu à l\'arrivée, puis le joueur a ses trois essais complets', () => {
+    const start = fab({ horses: [[56, 56, -1, 50], STABLE] });
+    const six = roll(start, 6);
+    // Un cheval est en jeu : ce lancer n'est pas un essai.
+    expect(six.state).toMatchObject({ phase: 'move', tries: 0, sixes: 1 });
+    expect(ludo.legalMoves(six.state, 0)).toEqual([{ type: 'move', horse: 2 }, { type: 'move', horse: 3 }]);
+    const arrived = play(six.state, 3);
+    expect(arrived.state.horses[0]).toEqual([56, 56, -1, 56]);
+    expect(arrived.state).toMatchObject({ turn: 0, phase: 'roll', sixes: 1, tries: 0 });
+    // Plus aucun cheval en jeu, un à l'écurie : trois essais pour refaire un 6, comme en début de partie.
+    const [first, second, third] = rolls(arrived.state, [1, 2, 3]) as [Step, Step, Step];
+    expect(first.events).toEqual([dice(0, 1), pass(0, 'retry')]);
+    expect(second.events).toEqual([dice(0, 2), pass(0, 'retry')]);
+    expect(third.events).toEqual([dice(0, 3), pass(0, 'no-move'), turnTo(1)]);
   });
 
   test('C36 : un état fabriqué à trois essais déjà faits reste légal après un lancer, même sans cheval en jeu', () => {
@@ -408,6 +429,9 @@ describe('petits chevaux : avancer, prendre, passer par-dessus', () => {
     expect(landingOf(state, 0, 0, 3)).toEqual({ from: 10, to: 13, captured: null });
     expect(landingOf(state, 0, 1, 6)).toEqual({ from: -1, to: 0, captured: null });
     expect(landingOf(state, 1, 1, 6)).toEqual({ from: -1, to: 0, captured: null });
+    // Jamais un de ses propres chevaux : un coup qui finirait sur l'un d'eux est illégal, mais l'aperçu ne le « prend » pas pour autant.
+    const own = fab({ horses: [[5, 8, -1, -1], STABLE] });
+    expect(landingOf(own, 0, 0, 3)).toEqual({ from: 5, to: 8, captured: null });
   });
 });
 
@@ -678,7 +702,18 @@ describe('petits chevaux : les états', () => {
       expect(problems.some((problem) => expected.test(problem)), `${name} : ${problems.join(' / ')}`).toBe(true);
     }
     // Du n'importe quoi ne fait pas lever : une phrase au moins.
-    for (const junk of [null, undefined, 0, 'x', [], {}, { ...ok, horses: 'x' }, { ...ok, colors: null }, { ...ok, out: [null] }, { ...ok, last: 3 }, { ...ok, result: 'fini' }]) {
+    const junks = [
+      null, undefined, 0, 'x', [], {},
+      { ...ok, horses: 'x' }, { ...ok, horses: [[1, 'a', 3, 4], [1, 2, 3, 4], STABLE] }, { ...ok, colors: null }, { ...ok, colors: [0, 'x', 2] },
+      { ...ok, turn: 'x' }, { ...ok, turn: 0.5 }, { ...ok, phase: 'dancing' }, { ...ok, die: 'x' }, { ...ok, die: 2.5 }, { ...ok, sixes: 1.5 }, { ...ok, sixes: undefined },
+      { ...ok, tries: null }, { ...ok, moves: '3' }, { ...ok, out: [null] }, { ...ok, out: 'x' }, { ...ok, out: [{ seat: 1, reason: 'fatigue' }] }, { ...ok, out: [{ seat: 'x', reason: 'resign' }] },
+      { ...ok, last: 3 }, { ...ok, last: { seat: 0, horse: 0, from: 1 } }, { ...ok, result: 'fini' }, { ...ok, result: { ranking: 'x', reason: 'finished' } }, { ...ok, result: { ranking: [], reason: 3 } },
+      // Fautifs par leur seule forme : en phase move, un dé absurde ; en phase over, un résultat absurde ; un nombre de sièges qui n'est pas de 2 à 4.
+      { ...ok, phase: 'move', die: 'x' }, { ...ok, phase: 'move', die: 2.5 },
+      { ...ok, phase: 'over', result: 'fini' }, { ...ok, phase: 'over', result: { ranking: 'x', reason: 'finished' } }, { ...ok, phase: 'over', result: { ranking: [], reason: 3 } },
+      { ...ok, horses: [STABLE], colors: [0] }, { ...ok, horses: [STABLE, STABLE, STABLE, STABLE, STABLE], colors: [0, 1, 2, 3, 0] },
+    ];
+    for (const junk of junks) {
       expect(ludo.invariants(junk as never).length).toBeGreaterThan(0);
     }
   });
