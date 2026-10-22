@@ -107,6 +107,9 @@ const setNight = (page: Page, night: boolean) =>
 
 test('Alice s\'assoit et invite Bastien : il accepte, arrive près de la table, assis, et la partie commence quand les deux sont prêts', async () => {
   test.setTimeout(TEST_TIMEOUT_MS);
+  // La table est libre : un spec qui a passé avant (la plateforme : une Alice s'y assoit pour essayer l'invitation) l'a peut-être laissée, et la chaise ne se libère que quelques secondes
+  // après le départ de celle qui l'occupait.
+  await waitForTable(alice, 'connect4', (view) => view.match === null && view.chairs.every((chair) => chair === null), 45_000);
   await goToChair(alice, 'connect4', 0);
   await openTableWithKey(alice, 'connect4');
   await sitAt(alice, 'connect4', 0);
