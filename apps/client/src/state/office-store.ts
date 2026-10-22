@@ -108,6 +108,10 @@ export interface OfficeState {
   // La lumière du bureau, la même pour tout le monde : allumée tant que le serveur n'a rien dit, puis celle du dernier `init` ou de
   // `lights:changed`. Le jeu l'obscurcit quand elle est éteinte ; `by` et `at` disent qui l'a changée en dernier, et quand.
   lights: LightsState;
+  // Jusqu'à quand chaque personne a un café, en ms sur l'horloge de la page (performance.now) : le serveur dit ce qu'il lui reste (`coffee:changed`, ou
+  // `boost` dans l'`init`), le magasin en fait une échéance. Qui n'a pas de ligne n'a pas de café. Le jeu y lit ceux dont la tasse se montre (et si
+  // l'avatar local va à la vitesse du café), la pastille ce qu'il reste à soi-même.
+  coffee: Record<string, number>;
   // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
   // null avant le jeu, et en dehors de lui.
   officeMap: OfficeMap | null;
@@ -128,6 +132,9 @@ export interface OfficeState {
   setOfficeMap(map: OfficeMap | null): void;
   // La lumière du bureau, telle que le serveur l'annonce (`lights:changed`) : le serveur fait foi, rien n'est changé avant son annonce.
   setLights(lights: LightsState): void;
+  // Le café de cette personne, tel que le serveur l'annonce (`coffee:changed`) : `ms` ms à partir de maintenant, qui remplacent ce qui restait ; 0 : fini,
+  // l'échéance disparaît.
+  setCoffee(id: string, ms: number): void;
   setDeskNotice(text: string | null): void;
   // Le zoom : un pourcentage donné (ramené aux bornes et au cran de 5 % le plus proche), des crans de `size` % plus près (positifs) ou plus
   // loin (négatifs ; 5 % par cran si `size` n'est pas dit), la vue de départ.
@@ -206,6 +213,7 @@ type Data = Pick<
   | 'deskKnocks'
   | 'deskNotice'
   | 'lights'
+  | 'coffee'
   | 'officeMap'
   | 'decorEditor'
   | 'zoomPercent'
@@ -235,6 +243,7 @@ const initialData = (): Data => ({
   deskKnocks: [],
   deskNotice: null,
   lights: LIGHTS_ON,
+  coffee: {},
   officeMap: null,
   decorEditor: null,
   zoomPercent: ZOOM_DEFAULT_PERCENT,
@@ -242,6 +251,27 @@ const initialData = (): Data => ({
 });
 
 const positionOf = (p: PlayerPosition): PlayerPosition => ({ x: p.x, y: p.y, dir: p.dir, moving: p.moving });
+
+// Ce même enregistrement sans la clé `id` : une copie.
+function without<T>(record: Record<string, T>, id: string): Record<string, T> {
+  const rest = { ...record };
+  delete rest[id];
+  return rest;
+}
+
+// Les échéances de café que dit un `init` : celles de ceux qui en ont un (leur `boost`, ce qu'il leur reste), à partir de maintenant.
+function coffeeDeadlines(players: readonly PublicPlayer[]): Record<string, number> {
+  const now = performance.now();
+  return Object.fromEntries(players.flatMap((p) => (p.boost !== undefined && p.boost > 0 ? [[p.id, now + p.boost] as const] : [])));
+}
+
+// Un joueur tel que le magasin le garde : sans `boost`, qui n'est que ce qu'il restait de café à l'instant de l'`init` (l'échéance, elle, est dans `coffee`).
+function withoutBoost(p: PublicPlayer): PublicPlayer {
+  if (p.boost === undefined) return p;
+  const rest = { ...p };
+  delete rest.boost;
+  return rest;
+}
 
 // Les messages sans doublon d'`id` : le premier exemplaire reste.
 function uniqueById(messages: readonly ChatMessage[]): ChatMessage[] {
@@ -294,9 +324,9 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
         const history = lastMessages(uniqueById(p.chatHistory));
         set((state) => ({
           selfId: p.self.id,
-          self: p.self,
+          self: withoutBoost(p.self),
           mapKey: p.mapKey,
-          players: Object.fromEntries(others.map((player) => [player.id, player])),
+          players: Object.fromEntries(others.map((player) => [player.id, withoutBoost(player)])),
           positions: new Map(others.map((player) => [player.id, positionOf(player)])),
           // Un init n'arrive qu'à un onglet connecté : s'il avait été remplacé, il a repris la main.
           replaced: false,
@@ -310,8 +340,10 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           deskBans: p.deskBans,
           // Les toc toc d'avant la coupure sont périmés : la personne n'est peut-être plus là pour les entendre.
           deskKnocks: [],
-          // La lumière du moment : celle que l'on croyait avant une coupure n'a plus cours.
+          // La lumière du moment : celle que l'on croyait avant une coupure n'a plus cours. Les cafés non plus : ceux d'avant la coupure ont fini, ou
+          // été remis, sans que personne nous le dise.
           lights: p.lights ?? LIGHTS_ON,
+          coffee: coffeeDeadlines([p.self, ...others]),
         }));
       },
 
@@ -324,10 +356,10 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       removePlayer: (id) => {
         get().positions.delete(id);
         set((state) => {
-          if (!Object.hasOwn(state.players, id)) return state;
-          const players = { ...state.players };
-          delete players[id];
-          return { players };
+          const players = Object.hasOwn(state.players, id) ? without(state.players, id) : state.players;
+          // Son café part avec lui : plus personne ne dira qu'il est fini.
+          const coffee = Object.hasOwn(state.coffee, id) ? without(state.coffee, id) : state.coffee;
+          return players === state.players && coffee === state.coffee ? state : { players, coffee };
         });
       },
 
@@ -353,6 +385,11 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
       setOfficeMap: (officeMap) => set({ officeMap }),
       setLights: (lights) => set({ lights }),
+      setCoffee: (id, ms) =>
+        set((state) => {
+          if (ms > 0) return { coffee: { ...state.coffee, [id]: performance.now() + ms } };
+          return Object.hasOwn(state.coffee, id) ? { coffee: without(state.coffee, id) } : state;
+        }),
       setDeskNotice: (deskNotice) => set({ deskNotice }),
       setZoomPercent: (percent) => set({ zoomPercent: clampZoomPercent(percent) }),
       stepZoom: (steps, size = ZOOM_WHEEL_STEP) => set((state) => ({ zoomPercent: stepZoomPercent(state.zoomPercent, steps, size) })),

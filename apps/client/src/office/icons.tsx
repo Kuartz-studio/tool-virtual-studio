@@ -2,6 +2,7 @@ import {
   AudioLines,
   ChevronRight,
   ChevronUp,
+  Coffee,
   DoorClosed,
   DoorOpen,
   Ellipsis,
@@ -85,6 +86,11 @@ export function ZoomResetIcon() {
 // L'épingle : un lieu.
 export function PlaceIcon() {
   return <MapPin />;
+}
+
+// Une tasse fumante : le café qu'on a pris.
+export function CoffeeIcon() {
+  return <Coffee />;
 }
 
 // Un chevron vers la droite : un groupe replié (il pivote quand on le déplie).

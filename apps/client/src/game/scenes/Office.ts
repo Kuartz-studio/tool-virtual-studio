@@ -19,6 +19,7 @@ import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { selectDeskOf, useOfficeStore } from '../../state/office-store';
 import { AutoWalk, cancelOnMoveKey, planDeskWalk } from '../auto-walk';
 import { avatarObjectName } from '../avatars';
+import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
@@ -57,7 +58,10 @@ const clock = () => performance.now();
 // la conversation (`media:speaking`, de l'audio et de la vidéo), ou dans le bureau (`net:speaking`, même loin de soi), fait paraître une bulle de
 // parole au-dessus de son étiquette (SpeakingBubbles). L'interrupteur de la lumière (une
 // plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
-// il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). Lumière éteinte, c'est la nuit (LightingLayer) :
+// il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). La machine à café (une cible de la touche E devant le bar) demande
+// un café (`local:coffee`) ; il commence à l'annonce du serveur (`coffee:changed`) : le magasin en tient l'échéance de chacun, l'avatar local en prend la vitesse
+// du café, et chacun, soi compris, a une tasse fumante au-dessus de la tête et de la poussière derrière lui quand il court. La machine s'agite 1 s quand quelqu'un
+// se sert. Lumière éteinte, c'est la nuit (LightingLayer) :
 // l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. Ce qu'on actionne
 // de près (la touche E, ou un clic) passe par un seul gestionnaire (Interactions), qui retient la cible la plus proche et dont l'étiquette
 // « [E] … » est unique. « Aller à mon
@@ -71,8 +75,6 @@ export class Office extends Scene {
   private directions: DirectionInput;
   // « Aller à mon bureau » : la marche automatique, qui prend la place du clavier tant qu'elle dure.
   private autoWalk: AutoWalk;
-  // Jusqu'à quand l'avatar local a un café (ms, horloge du jeu) : 0, il n'en a pas.
-  private boostedUntil = 0;
   private moveSender: MoveSender;
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
@@ -86,6 +88,9 @@ export class Office extends Scene {
   // Ce qu'on actionne de près (touche E, ou un clic) : un seul gestionnaire, et l'étiquette « [E] … » unique qu'il commande.
   private interactions: Interactions;
   private prompt: InteractionPrompt;
+  // La machine à café s'agite jusqu'à cette heure (ms, horloge du jeu) ; la vitesse de son animation, telle qu'on l'a réglée.
+  private machineExcitedUntil = 0;
+  private machineScale = 1;
   private lighting: LightingLayer;
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
@@ -114,6 +119,8 @@ export class Office extends Scene {
       speed: () => this.player?.currentSpeed() ?? 0,
       showOthers: (visible) => this.showOthers(visible),
       bubbles: () => this.bubbles?.ids() ?? [],
+      cups: () => [...(this.player?.coffeeShown() ? [this.selfId] : []), ...[...this.remotes].filter(([, remote]) => remote.coffeeShown()).map(([id]) => id)],
+      machineExcited: () => clock() < this.machineExcitedUntil,
       avatarsOf: (id) => this.children.list.filter((object) => object.name === avatarObjectName(id)).length,
       selfAvatar: () => (this.player ? { wanted: this.player.avatarWanted, shown: this.player.avatarShown } : null),
       toScreen: (x, y) => {
@@ -185,6 +192,7 @@ export class Office extends Scene {
     this.prompt.setZoom(this.cameras.main.zoom);
     // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit.
     this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, this.interactions, () => this.useLights()));
+    const unbindCoffee = this.bindCoffeeMachines();
     const showLights = (instant = false) => {
       const { on } = useOfficeStore.getState().lights;
       for (const lightSwitch of this.switches) lightSwitch.setOn(on);
@@ -197,6 +205,8 @@ export class Office extends Scene {
     // qui n'existait pas encore, n'a pas reçu).
     const now = clock();
     for (const player of Object.values(players)) this.addRemote({ ...player, ...positions.get(player.id) }, now);
+    // Ceux qui ont un café en arrivant (le magasin le sait), soi compris.
+    this.showCoffee();
 
     this.directions = new DirectionInput();
     const unbindKeyboard = bindKeyboard(this.directions);
@@ -236,11 +246,16 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:speaking', ({ id, speaking }) => {
         if (id !== this.selfId) this.bubbles.setServer(id, speaking);
       }),
+      // Quelqu'un se sert (le café vient d'être annoncé) : la machine s'agite un instant. La fin d'un café (`ms` 0) ne la touche pas.
+      listenOnBus(EventBus, 'coffee:changed', ({ ms }) => {
+        if (ms > 0) this.machineExcitedUntil = clock() + MACHINE_EXCITED_MS;
+      }),
       listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
       listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
         if (state.lights !== previous.lights) showLights();
+        if (state.coffee !== previous.coffee) this.showCoffee();
         if (state.decorEditor !== previous.decorEditor) {
           this.decorEditor.sync(state.decorEditor);
           // Le brouillon de l'éditeur montre peut-être une lampe de plus, ou de moins.
@@ -266,6 +281,7 @@ export class Office extends Scene {
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
+      unbindCoffee();
       this.prompt.destroy();
       this.lighting.destroy();
       this.deskLayer.destroy();
@@ -294,6 +310,7 @@ export class Office extends Scene {
     if (autoDirection !== null) this.player.step(autoDirection);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     this.player.tick(now);
+    this.shakeMachine(now);
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];
@@ -476,6 +493,7 @@ export class Office extends Scene {
     remote.setVisible(this.othersVisible);
     if (isSimBot(p.id)) this.simDrag?.attach(remote);
     remote.setSpeaking(this.bubbles.isSpeaking(p.id));
+    remote.setCoffeeUntil(useOfficeStore.getState().coffee[p.id] ?? 0);
     this.remotes.set(p.id, remote);
     this.lighting.track(p.id, () => remote.lightPoint());
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };
@@ -501,15 +519,48 @@ export class Office extends Scene {
     this.sendLocalState(clock());
   }
 
-  // Un café (window.__office.boost, pour les tests ; la machine à café le fera aussi) : l'avatar local va à la vitesse du café pendant `ms` ms, et
-  // la connexion le dit au serveur (`debug:boost`), qui relève sa limite de vitesse.
+  // Un café (window.__office.boost, pour les tests ; la machine à café en donne un aussi) : l'avatar local va à la vitesse du café pendant `ms` ms, et la
+  // connexion le dit au serveur (`debug:boost`), qui relève sa limite de vitesse et l'annonce à tout le bureau. L'échéance est au magasin dès maintenant :
+  // le test n'attend pas la réponse du serveur.
   private boost(ms: number): void {
-    this.boostedUntil = ms > 0 ? clock() + ms : 0;
+    useOfficeStore.getState().setCoffee(this.selfId, ms);
     emitOnBus(EventBus, 'local:boost', { ms });
   }
 
+  // L'avatar local a-t-il un café ? Le magasin en tient l'échéance (ce que dit le serveur : la machine, ou `debug:boost`).
   private boosted(): boolean {
-    return clock() < this.boostedUntil;
+    return clock() < (useOfficeStore.getState().coffee[this.selfId] ?? 0);
+  }
+
+  // Le café de chacun, d'après le magasin : la tasse et la poussière de soi et de ceux qu'on voit, jusqu'à leur échéance.
+  private showCoffee(): void {
+    const { coffee } = useOfficeStore.getState();
+    this.player.setCoffeeUntil(coffee[this.selfId] ?? 0);
+    for (const [id, remote] of this.remotes) remote.setCoffeeUntil(coffee[id] ?? 0);
+  }
+
+  // Les machines à café de la carte : une cible de la touche E devant chacune (« [E] Prendre un café »), qui demande un café ; un clic sur la machine
+  // fait de même, de près. Rend la fonction qui les retire.
+  private bindCoffeeMachines(): () => void {
+    const targets = this.officeMap.coffees.map((position) => coffeeTarget(position, () => emitOnBus(EventBus, 'local:coffee')));
+    const unregister = targets.map((target) => this.interactions.register(target));
+    for (const sprite of this.propLayer.byKey('coffee')) {
+      // La cible de cette machine : la case de service la plus proche d'elle, en largeur.
+      const middle = sprite.x + sprite.displayWidth / 2;
+      const target = targets.reduce<(typeof targets)[number] | undefined>((best, next) => (best === undefined || Math.abs(next.pos.x - middle) < Math.abs(best.pos.x - middle) ? next : best), undefined);
+      if (target) sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.interactions.useTarget(target));
+    }
+    return () => {
+      for (const off of unregister) off();
+    };
+  }
+
+  // La machine à café tourne plus vite pendant MACHINE_EXCITED_MS après qu'on s'est servi : on ne retouche son animation que quand sa vitesse change.
+  private shakeMachine(now: number): void {
+    const scale = machineTimeScale(now, this.machineExcitedUntil);
+    if (scale === this.machineScale) return;
+    this.machineScale = scale;
+    for (const sprite of this.propLayer.byKey('coffee')) sprite.anims.timeScale = scale;
   }
 
   private showOthers(visible: boolean): void {

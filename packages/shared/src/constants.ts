@@ -96,6 +96,12 @@ export const DESK_KNOCK_COOLDOWN_MS = 5_000;
 // (withinSwitchReach, la même règle pour le serveur et pour le client).
 export const LIGHTS_RATE_MS = 800;
 export const LIGHT_SWITCH_REACH_TILES = 3;
+// Le café : une prise à la machine donne COFFEE_DURATION_MS de vitesse doublée (COFFEE_SPEED_FACTOR). On la prend de près, à COFFEE_REACH_TILES
+// cases ou moins de la case de service que la carte déclare (withinCoffeeReach, la même règle pour le serveur et pour le client), et une
+// personne n'en prend pas plus d'une par COFFEE_RATE_MS : un café de plus, passé ce délai, remet le compte à COFFEE_DURATION_MS.
+export const COFFEE_DURATION_MS = 30_000;
+export const COFFEE_REACH_TILES = 2;
+export const COFFEE_RATE_MS = 2_000;
 export const SESSION_TTL_S = 30 * 24 * 3600;
 export const LIVEKIT_TOKEN_TTL_S = 600;
 export const OFFICE_ROOM = 'office';

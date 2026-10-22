@@ -3,6 +3,7 @@ import type { Server as HttpServer } from 'node:http';
 import { join } from 'node:path';
 import {
   CHAT_RATE,
+  COFFEE_RATE_MS,
   DISCONNECT_GRACE_MS,
   GROUPS_TICK_MS,
   LIGHTS_RATE_MS,
@@ -234,6 +235,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   // à toutes ses sockets, sur l'horloge du temps réel.
   const lights = d.lights ?? new LightsService(d.db);
   const lightsLimiter = createRateLimiter({ max: 1, windowMs: LIGHTS_RATE_MS, now });
+  // La limite de débit des cafés : une prise par COFFEE_RATE_MS et par compte, comme les changements de lumière.
+  const coffeeLimiter = createRateLimiter({ max: 1, windowMs: COFFEE_RATE_MS, now });
 
   const presence = createPresence({
     io,
@@ -311,6 +314,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       lights,
       lightsLimiter,
       switches: d.map.switches,
+      coffeeLimiter,
+      coffees: d.map.coffees,
     });
   });
   // Un membre retiré : sa place est libre pour les autres.

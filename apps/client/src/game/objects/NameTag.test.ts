@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { BUBBLE_HEIGHT, bubbleScale, DOT_STEP_MS } from './SpeechBubble';
 import { displayName, NAME_MAX_LENGTH, NameTag, SpeakingBubbles } from './NameTag';
+import { CUP_HEIGHT, CUP_WIDTH, cupScale, steamAt } from './SteamCup';
 
 test('un nom de 20 caractères au plus est affiché tel quel', () => {
   expect(NAME_MAX_LENGTH).toBe(20);
@@ -133,6 +134,7 @@ class FakeShape {
   scaleX = 1;
   depth = 0;
   originY = 0;
+  alpha = 1;
   fill: number | undefined;
   text = '';
   resolution = 1;
@@ -157,6 +159,7 @@ class FakeShape {
   setSize(width: number, height: number) { this.width = width; this.height = height; return this; }
   setScale(x: number) { this.scaleX = x; return this; }
   setDepth(depth: number) { this.depth = depth; return this; }
+  setAlpha(alpha: number) { this.alpha = alpha; return this; }
   setFillStyle(fill: number) { this.fill = fill; return this; }
   setVertexRoundMode() { return this; }
   setText(text: string) { this.text = text; this.width = 6 * text.length; return this; }
@@ -195,9 +198,10 @@ describe('NameTag : la bulle de parole', () => {
     const tag = new NameTag(scene, 'Alice', 'available', zoom);
     const container = made.find((shape) => shape.kind === 'container')!;
     const background = made.find((shape) => shape.kind === 'rectangle' && shape.children.length === 0 && container.children.includes(shape))!;
-    const bubbleImage = made.find((shape) => shape.kind === 'image')!;
-    const dots = made.filter((shape) => shape.kind === 'rectangle' && shape !== background);
-    return { tag, container, background, bubbleImage, dots };
+    // La bulle (son image, puis ses trois points) est créée avant la tasse, que les autres tests regardent.
+    const [bubbleImage] = made.filter((shape) => shape.kind === 'image');
+    const dots = made.filter((shape) => shape.kind === 'rectangle' && shape !== background).slice(0, 3);
+    return { tag, container, background, bubbleImage: bubbleImage!, dots };
   }
 
   test('la bulle est dans le conteneur de l\'étiquette, cachée tant que la personne ne parle pas', () => {
@@ -253,5 +257,71 @@ describe('NameTag : la bulle de parole', () => {
   test('plus d\'anneau autour du point de statut : le point est un simple disque, sans second cercle', () => {
     const { container } = setup();
     expect(container.children.filter((shape) => shape.kind === 'circle')).toHaveLength(1);
+  });
+});
+
+// La tasse de café, à droite de la pastille : pour tout le monde, tant qu'on a un café. La pastille, elle, ne bouge pas quand la tasse paraît.
+describe('NameTag : la tasse de café', () => {
+  function setup(zoom = 1.5) {
+    const { scene, made } = tagScene();
+    const tag = new NameTag(scene, 'Alice', 'available', zoom);
+    const container = made.find((shape) => shape.kind === 'container')!;
+    const background = made.find((shape) => shape.kind === 'rectangle' && shape.children.length === 0 && container.children.includes(shape))!;
+    const [, cupImage] = made.filter((shape) => shape.kind === 'image');
+    const steam = made.filter((shape) => shape.kind === 'rectangle' && shape !== background).slice(3);
+    return { tag, container, background, cupImage: cupImage!, steam };
+  }
+
+  test('la tasse et sa vapeur sont dans le conteneur de l\'étiquette, cachées tant qu\'on n\'a pas de café', () => {
+    const { tag, container, cupImage, steam } = setup();
+    expect(steam).toHaveLength(3);
+    expect(container.children).toContain(cupImage);
+    for (const puff of steam) expect(container.children).toContain(puff);
+    expect([cupImage, ...steam].every((shape) => !shape.visible)).toBe(true);
+    expect(tag.coffeeShown()).toBe(false);
+  });
+
+  test('setCoffee(true) montre la tasse et sa vapeur, false les cache', () => {
+    const { tag, cupImage, steam } = setup();
+    tag.setCoffee(true);
+    expect([cupImage, ...steam].every((shape) => shape.visible)).toBe(true);
+    expect(tag.coffeeShown()).toBe(true);
+    tag.setCoffee(false);
+    expect([cupImage, ...steam].every((shape) => !shape.visible)).toBe(true);
+    expect(tag.coffeeShown()).toBe(false);
+  });
+
+  test('elle est posée à droite de la pastille du nom, son bas à celui de la pastille, sans la décaler', () => {
+    const { tag, background, cupImage } = setup();
+    const left = background.x;
+    tag.setCoffee(true);
+    expect(background.x).toBe(left);
+    expect(cupImage.x).toBeGreaterThan(background.x + background.width);
+    expect(cupImage.y).toBe(0);
+    expect(cupImage.originY).toBe(1);
+    // Un nom plus long élargit la pastille : la tasse suit son bord droit.
+    const right = cupImage.x;
+    tag.setName('Alice-Marie Dupont');
+    expect(cupImage.x).toBeGreaterThan(right);
+  });
+
+  test('la vapeur monte avec le temps tant que la tasse est là', () => {
+    const { tag, steam } = setup();
+    tag.setCoffee(true);
+    tag.tick(0);
+    const first = steam.map((puff) => puff.y);
+    tag.tick(400);
+    expect(steam.map((puff) => puff.y)).not.toEqual(first);
+    steam.forEach((puff, index) => expect(puff.alpha).toBe(steamAt(400, index).alpha));
+  });
+
+  test('dézoomée, la tasse grossit comme la bulle : jamais sous 12 px à l\'écran', () => {
+    const { tag, cupImage } = setup(1.5);
+    expect(cupImage.scaleX).toBe(1);
+    tag.setZoom(0.375);
+    expect(cupImage.scaleX).toBe(cupScale(0.375));
+    expect(CUP_WIDTH * cupImage.scaleX * 0.375).toBeGreaterThanOrEqual(12);
+    expect(CUP_HEIGHT).toBe(7);
+    expect(setup(0.375).cupImage.scaleX).toBe(cupScale(0.375));
   });
 });

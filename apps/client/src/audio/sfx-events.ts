@@ -52,6 +52,8 @@ function arrivedIn(next: readonly ChatMessage[], previous: readonly ChatMessage[
 export const LOST_AFTER_MS = 1500;
 // Le temps entre les deux coups d'un « toc toc ».
 const KNOCK_GAP_MS = 220;
+// Le café qu'on se sert : le bruit de la machine (`coffee`, 1 s), puis le coup de fouet du café (`boost`) à la fin de la gorgée.
+export const COFFEE_BOOST_DELAY_MS = 850;
 
 interface SfxDeps {
   bus: OfficeBus;
@@ -61,7 +63,7 @@ interface SfxDeps {
 
 // Branche les effets sur ce qui se passe : les clics de l'interface, les arrivées et départs, les messages, les toc toc, la conversation
 // qui commence ou finit, l'arrivée au bureau, la connexion qui tombe, un bureau ou un personnage enregistré, la lumière qu'on allume ou
-// qu'on éteint. Renvoie la fonction qui débranche tout.
+// qu'on éteint, le café qu'on se sert. Renvoie la fonction qui débranche tout.
 //
 // En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc, la lumière) ne sonne pas.
 export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDeps): () => void {
@@ -102,6 +104,13 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDe
     // sonne pas en « Ne pas déranger » ; le sien, toujours.
     listenOnBus(bus, 'lights:changed', ({ on, by }) => {
       if (by?.id === state().selfId || !quiet()) engine.playSfx(on ? 'toggle-on' : 'toggle-off');
+    }),
+    // On se sert un café : le bruit de la machine, puis le coup de fouet du café un instant après, même en « Ne pas déranger » (c'est sa propre action). Le
+    // café des autres, et la fin du sien, ne sonnent pas.
+    listenOnBus(bus, 'coffee:changed', ({ id, ms }) => {
+      if (id !== state().selfId || ms <= 0) return;
+      engine.playSfx('coffee');
+      engine.playSfx('boost', { delayMs: COFFEE_BOOST_DELAY_MS });
     }),
     listenOnBus(bus, 'net:profile', ({ id }) => {
       if (id === state().selfId) engine.playSfx('success');

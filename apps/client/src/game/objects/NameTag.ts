@@ -5,6 +5,7 @@ import { DEPTH } from '../map-layers';
 import { snapToPixels } from '../pixel-snap';
 import { textResolution } from '../zoom';
 import { SpeechBubble } from './SpeechBubble';
+import { SteamCup } from './SteamCup';
 
 // Le nom affiché au-dessus d'une tête : 20 caractères au plus, puis « … ».
 export const NAME_MAX_LENGTH = 20;
@@ -35,16 +36,20 @@ const DOT_GAP = 3;
 // L'espace entre le haut de l'image de l'avatar et le bas de l'étiquette, et entre le haut de l'étiquette et le bas de la bulle de parole.
 const GAP_ABOVE_HEAD = 1;
 const GAP_ABOVE_TAG = 1;
+// L'espace entre le bord droit de la pastille et la tasse de café.
+const GAP_BESIDE_TAG = 2;
 
 // L'étiquette au-dessus de la tête d'un avatar : un point de statut (de la couleur de l'état d'activité, ou du statut, STATUS_COLORS : celle du menu des
-// statuts et du panneau Personnes aussi) et son nom, surmontés d'une bulle de parole quand la personne parle (SpeechBubble). Elle passe devant tout
-// le reste (DEPTH.nameTags). Elle n'importe de Phaser que des types : la scène lui donne de quoi dessiner.
+// statuts et du panneau Personnes aussi) et son nom, surmontés d'une bulle de parole quand la personne parle (SpeechBubble), et suivis d'une tasse de café
+// fumante quand elle en a un (SteamCup, à droite de la pastille : elle ne la décale pas). Elle passe devant tout le reste (DEPTH.nameTags). Elle n'importe
+// de Phaser que des types : la scène lui donne de quoi dessiner.
 export class NameTag {
   private readonly container: GameObjects.Container;
   private readonly background: GameObjects.Rectangle;
   private readonly label: GameObjects.Text;
   private readonly dot: GameObjects.Arc;
   private readonly bubble: SpeechBubble;
+  private readonly cup: SteamCup;
   private status: Status;
   private activity: ActivityState | null = null;
 
@@ -56,7 +61,9 @@ export class NameTag {
     this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TAG_TEXT_STYLE, resolution: textResolution(zoom) }).setOrigin(0, 0.5));
     this.bubble = new SpeechBubble(scene);
     this.bubble.setZoom(zoom);
-    this.container = scene.add.container(0, 0, [this.background, this.dot, this.label, ...this.bubble.objects]).setDepth(DEPTH.nameTags);
+    this.cup = new SteamCup(scene);
+    this.cup.setZoom(zoom);
+    this.container = scene.add.container(0, 0, [this.background, this.dot, this.label, ...this.bubble.objects, ...this.cup.objects]).setDepth(DEPTH.nameTags);
     this.layout();
   }
 
@@ -87,15 +94,26 @@ export class NameTag {
     this.bubble.setSpeaking(speaking);
   }
 
-  // À chaque image : les points de la bulle montent l'un après l'autre.
-  tick(now: number): void {
-    this.bubble.tick(now);
+  // La tasse de café à droite de la pastille : montrée tant que la personne a un café.
+  setCoffee(on: boolean): void {
+    this.cup.setActive(on);
   }
 
-  // Le zoom de la caméra a changé : la bulle grossit de loin (jamais sous 16 px à l'écran), et le texte est redessiné à la nouvelle taille, mais seulement
-  // quand sa résolution change (au quart de zoom au-dessus, jamais en dessous de 1 : textResolution), pas à chaque image d'un glissement.
+  coffeeShown(): boolean {
+    return this.cup.visible;
+  }
+
+  // À chaque image : les points de la bulle montent l'un après l'autre, et la vapeur de la tasse monte.
+  tick(now: number): void {
+    this.bubble.tick(now);
+    this.cup.tick(now);
+  }
+
+  // Le zoom de la caméra a changé : la bulle et la tasse grossissent de loin (jamais sous 16 et 12 px à l'écran), et le texte est redessiné à la nouvelle
+  // taille, mais seulement quand sa résolution change (au quart de zoom au-dessus, jamais en dessous de 1 : textResolution), pas à chaque image d'un glissement.
   setZoom(zoom: number): void {
     this.bubble.setZoom(zoom);
+    this.cup.setZoom(zoom);
     const resolution = textResolution(zoom);
     if (this.label.style.resolution === resolution) return;
     this.label.setResolution(resolution);
@@ -116,7 +134,8 @@ export class NameTag {
     this.container.destroy();
   }
 
-  // La pastille, centrée sur x, son bas sur l'origine du conteneur : le point, puis le nom ; et la bulle de parole juste au-dessus.
+  // La pastille, centrée sur x, son bas sur l'origine du conteneur : le point, puis le nom ; la bulle de parole juste au-dessus, et la tasse de café à
+  // droite, son bas à celui de la pastille.
   private layout(): void {
     const width = TAG_PAD_X + 2 * DOT_RADIUS + DOT_GAP + this.label.width + TAG_PAD_X;
     const height = this.label.height + 2 * TAG_PAD_Y;
@@ -126,6 +145,7 @@ export class NameTag {
     this.dot.setPosition(left + TAG_PAD_X + DOT_RADIUS, middle);
     this.label.setPosition(left + TAG_PAD_X + 2 * DOT_RADIUS + DOT_GAP, middle);
     this.bubble.placeAbove(0, -height - GAP_ABOVE_TAG);
+    this.cup.placeAt(left + width + GAP_BESIDE_TAG, 0);
   }
 }
 

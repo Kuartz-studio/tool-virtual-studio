@@ -80,7 +80,7 @@ export const activityIdSchema = z.string().min(1).max(64).nullable();
 // croise celle d'un autre, ne change donc rien : le serveur fait foi, et tout le monde finit dans le même état.
 export const lightsSetSchema = z.object({ on: z.boolean() });
 
-// Réservé aux tests de bout en bout (`debug:boost`, seulement avec E2E=1) : donne du café pendant `ms` ms (0 : le retire), comme le fera la machine.
+// Réservé aux tests de bout en bout (`debug:boost`, seulement avec E2E=1) : donne du café pendant `ms` ms (0 : le retire), comme la machine.
 export const debugBoostSchema = z.object({ ms: z.number().int().min(0).max(3_600_000) });
 
 export type MovePayload = z.infer<typeof moveSchema>;
@@ -92,8 +92,9 @@ export type LightsSetPayload = z.infer<typeof lightsSetSchema>;
 
 export interface ActivityState extends ActivityInput { id: string }
 // `activity` : l'état d'activité qu'elle a choisi (absent ou null : un statut ordinaire, `status`). Il passe avant `status` pour le point
-// de couleur et le texte. `speaking` : elle parle en ce moment (absent : non), pour la bulle au-dessus de son avatar.
-export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean }
+// de couleur et le texte. `speaking` : elle parle en ce moment (absent : non), pour la bulle au-dessus de son avatar. `boost` : ce qu'il lui reste
+// de café, en ms (absent : pas de café), pour ceux qui arrivent pendant qu'elle en a un.
+export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean; boost?: number }
 // Entrée du calcul des groupes. `excluded` : hors de toute conversation (un état d'activité sans entendre ni être entendu), comme en Ne pas déranger.
 export interface ProximityPlayer { id: string; x: number; y: number; moving: boolean; status: Status; excluded?: boolean }
 export interface ChatMessage { id: string; channel: ChatChannel; userId: string; name: string; text: string; sentAt: string }
@@ -166,6 +167,7 @@ export interface ServerToClientEvents {
   'desk:bans': (p: DeskBan[]) => void;                    // à un propriétaire : ceux qu'il a exclus
   'desk:knock': (p: DeskKnock) => void;                   // à un propriétaire : quelqu'un toque à sa porte
   'lights:changed': (p: LightsState) => void;             // à tout le bureau : la lumière vient d'être allumée ou éteinte
+  'coffee:changed': (p: { id: string; ms: number }) => void;   // à tout le bureau : quelqu'un prend un café (ms : la durée qui lui reste) ou le sien est fini (0)
   'media:join': (p: MediaJoinPayload) => void;
   'media:leave': () => void;
   'session:replaced': () => void;
@@ -181,6 +183,7 @@ export interface ClientToServerEvents {
   'chat:send': (p: ChatSendPayload, ack: (r: ChatAck) => void) => void;
   'desk:do': (p: DeskCommand, ack: (r: DeskAck) => void) => void;
   'lights:set': (p: LightsSetPayload) => void;   // allumer ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé
+  'coffee:take': () => void;   // prendre un café, de près (2 cases au plus de la machine) ; sans réponse : `coffee:changed` dit ce qui a changé
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
   'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1
 }

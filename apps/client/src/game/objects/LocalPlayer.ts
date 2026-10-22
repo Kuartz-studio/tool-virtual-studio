@@ -5,6 +5,7 @@ import { feetPayload } from '../move-sender';
 import { snapToPixels } from '../pixel-snap';
 import { stepAnimationScale } from '../step-animation';
 import { AvatarSkin, avatarLibraryOf } from './avatar-skin';
+import { DustTrail } from './DustTrail';
 import { NameTag } from './NameTag';
 import { addShadow, placeShadow } from './shadow';
 
@@ -25,12 +26,15 @@ const STILL = { x: 0, y: 0 };
 //   pas s'enchaînent plus vite avec elle, sans suivre toute la vitesse (stepAnimationScale) : step() est appelé à chaque image avec la
 //   direction demandée.
 // - Sa profondeur est le y de ses pieds : plus il est bas dans la carte, plus il est devant. Son ombre est juste derrière, son
-//   étiquette (nom et statut) au-dessus de sa tête.
+//   étiquette (nom et statut) au-dessus de sa tête, avec une tasse de café fumante tant qu'il en a un, et de la poussière derrière lui quand il court.
 export class LocalPlayer extends Physics.Arcade.Sprite {
   private spec: AvatarSpec;
   private readonly skin: AvatarSkin;
   private readonly shadow: GameObjects.Ellipse;
   private readonly tag: NameTag;
+  private readonly dust: DustTrail;
+  // Jusqu'à quand il a un café (ms, horloge de la page ; 0 : pas de café) : la tasse se montre, et ses pas soulèvent de la poussière, tant que l'heure n'y est pas.
+  private coffeeUntil = 0;
   // Vers où il regarde : la dernière direction prise, gardée à l'arrêt.
   private facing: Direction;
   // Une touche de déplacement est enfoncée. Contre un mur, l'avatar marche donc sur place : sa demande est de marcher.
@@ -55,6 +59,7 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
 
     this.shadow = addShadow(scene, p.x, p.y);
     this.tag = new NameTag(scene, p.name, p.status, zoom, p.activity ?? null);
+    this.dust = new DustTrail(scene);
     this.play(animKey(spec.key, 'idle', this.facing));
     this.followFeet();
 
@@ -67,6 +72,7 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
       this.skin.destroy();
       this.shadow.destroy();
       this.tag.destroy();
+      this.dust.destroy();
     });
   }
 
@@ -145,9 +151,23 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
     this.tag.setSpeaking(speaking);
   }
 
-  // À chaque image : les points de la bulle de parole montent l'un après l'autre.
+  // Il a un café jusqu'à cette heure (ms, horloge de la page ; 0 : il n'en a pas). Dit par le jeu, d'après ce que le serveur annonce.
+  setCoffeeUntil(until: number): void {
+    this.coffeeUntil = until;
+  }
+
+  // La tasse de café est-elle montrée au-dessus de sa tête ?
+  coffeeShown(): boolean {
+    return this.tag.coffeeShown();
+  }
+
+  // À chaque image : les points de la bulle de parole montent l'un après l'autre, la tasse se montre ou se cache selon l'heure et sa vapeur monte, et
+  // la poussière se soulève derrière lui quand il court sous café.
   tick(now: number): void {
+    const coffee = now < this.coffeeUntil;
+    this.tag.setCoffee(coffee);
     this.tag.tick(now);
+    this.dust.update(now, { x: this.x, y: this.y }, coffee && this.moving, this.facing);
   }
 
   setZoom(zoom: number): void {

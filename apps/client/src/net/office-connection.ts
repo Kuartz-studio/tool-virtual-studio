@@ -26,6 +26,9 @@ export interface OfficeBusEvents {
   // La lumière du bureau vient d'être allumée ou éteinte, par quelqu'un (soi-même compris) : le serveur l'annonce à tout le bureau. Le magasin
   // la dit déjà à jour quand l'événement part. Pas à l'arrivée : l'état d'un `init` n'est pas un changement.
   'lights:changed': (p: LightsState) => void;
+  // Quelqu'un vient de prendre un café (`ms` : ce qui lui en reste, 30 s tout neuf) ou le sien est fini (`ms` 0), soi-même compris : le serveur l'annonce à
+  // tout le bureau. Le magasin en dit déjà l'échéance à jour quand l'événement part. Pas à l'arrivée : le café d'un `init` n'est pas une prise.
+  'coffee:changed': (p: { id: string; ms: number }) => void;
   'local:move': (p: MovePayload) => void;
   // Le jeu : la personne a cliqué sur la porte fermée de ce bureau, près de elle. La connexion toque pour elle (`desk:do`, knock).
   'local:knock': (p: { key: string }) => void;
@@ -35,6 +38,9 @@ export interface OfficeBusEvents {
   // Le jeu : la personne actionne l'interrupteur de la lumière, de près. La connexion demande l'état voulu au serveur (`lights:set`) ; la
   // lumière ne change qu'à son annonce (`lights:changed`).
   'local:lights': (p: { on: boolean }) => void;
+  // Le jeu : la personne se sert à la machine à café, de près. La connexion le demande au serveur (`coffee:take`) ; le café ne commence qu'à son annonce
+  // (`coffee:changed`).
+  'local:coffee': () => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
   // window.__office.boost (tests de bout en bout seulement) : `debug:boost`, que le serveur n'accepte qu'avec E2E=1.
@@ -88,7 +94,9 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // - la connexion est prête (`ready`, au magasin) une fois l'`init` de cette connexion reçu, et ne l'est plus dès qu'elle est coupée ;
 // - la lumière du bureau (`lights:changed`, et celle de l'`init`) va au magasin, puis au bus (`lights:changed`) : le jeu l'obscurcit, le son
 //   fait son bruit d'interrupteur ;
-// - ce que le jeu produit (`local:move`, `local:teleport`, `local:lights`) part au serveur, mais seulement quand la connexion est prête. Avant, le
+// - le café (`coffee:changed`, et le `boost` de chacun dans l'`init`) va au magasin, qui en tient l'échéance, puis au bus (`coffee:changed`) : le jeu montre la
+//   tasse et donne la vitesse, le son joue la machine, la pastille compte les secondes ;
+// - ce que le jeu produit (`local:move`, `local:teleport`, `local:lights`, `local:coffee`) part au serveur, mais seulement quand la connexion est prête. Avant, le
 //   serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure, Socket.io garderait les messages et les enverrait au
 //   retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
 //
@@ -175,6 +183,11 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setLights(lights);
       emitOnBus(bus, 'lights:changed', lights);
     },
+    // Le café : le magasin d'abord (il en tient l'échéance, que le jeu et la pastille y lisent), puis le bus, pour le jeu et le son.
+    'coffee:changed': (p) => {
+      state().setCoffee(p.id, p.ms);
+      emitOnBus(bus, 'coffee:changed', p);
+    },
     // Le faux live (SIM=1 côté serveur) : qui est dans la room, et leur son. Le serveur n'en envoie jamais autrement.
     'sim:room': (p) => setSimRoom(p),
   };
@@ -202,6 +215,9 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:lights', ({ on }) => {
       if (state().ready) socket.emit('lights:set', { on });
+    }),
+    listenOnBus(bus, 'local:coffee', () => {
+      if (state().ready) socket.emit('coffee:take');
     }),
     listenOnBus(bus, 'local:knock', ({ key }) => {
       if (!state().ready) return;

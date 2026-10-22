@@ -20,7 +20,7 @@ export interface OfficeDebug {
   // `debug:teleport`, que le serveur n'enregistre qu'avec E2E=1 ; refusé, le `move` qui suit est corrigé).
   teleport(x: number, y: number): void;
   // Donne du café à l'avatar local pendant `ms` ms (0 : le retire) : il va à la vitesse du café, et le serveur le sait (événement `debug:boost`, que le
-  // serveur n'enregistre qu'avec E2E=1 : sans lui, sa limite de vitesse refuserait la course).
+  // serveur n'enregistre qu'avec E2E=1 : sans lui, sa limite de vitesse refuserait la course), comme avec la machine.
   boost(ms: number): void;
   // L'avatar local a-t-il un café en ce moment ?
   boosted(): boolean;
@@ -32,6 +32,10 @@ export interface OfficeDebug {
   showOthers(visible: boolean): void;
   // Ceux dont la bulle de parole est allumée en ce moment (identifiants, soi compris).
   bubbles(): string[];
+  // Ceux dont la tasse de café est montrée au-dessus de la tête en ce moment (identifiants, soi compris).
+  cups(): string[];
+  // La machine à café s'agite-t-elle (elle tourne plus vite pendant MACHINE_EXCITED_MS quand quelqu'un se sert) ?
+  machineExcited(): boolean;
   // Le nombre d'avatars que la scène dessine pour ce joueur, local ou distant : 1 s'il est là (jamais de doublon), 0 sinon.
   avatarsOf(id: string): number;
   // L'avatar local : celui qu'il doit avoir (sa clé) et la texture qu'il montre (la même quand son personnage est assemblé, sinon la silhouette).

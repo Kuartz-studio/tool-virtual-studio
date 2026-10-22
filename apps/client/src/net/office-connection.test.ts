@@ -292,6 +292,67 @@ describe('connectOffice', () => {
     });
   });
 
+  describe('le café', () => {
+    beforeEach(() => {
+      vi.spyOn(performance, 'now').mockReturnValue(10_000);
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    test('init : le café en cours de chacun (boost) devient une échéance au magasin', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init([player('a', { boost: 20_000 })]), self: player('moi', { boost: 8_000 }) });
+      expect(store.getState().coffee).toEqual({ moi: 18_000, a: 30_000 });
+    });
+
+    test('coffee:changed : au magasin, puis au jeu, au son et à la pastille (coffee:changed sur le bus), qui y lisent déjà la nouvelle échéance', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init([A]));
+      let seenByGame: number | undefined;
+      bus.on('coffee:changed', () => {
+        seenByGame = store.getState().coffee.a;
+      });
+      socket.receive('coffee:changed', { id: 'a', ms: 30_000 });
+      expect(store.getState().coffee).toEqual({ a: 40_000 });
+      expect(bus.emittedOf('coffee:changed')).toEqual([{ id: 'a', ms: 30_000 }]);
+      expect(seenByGame).toBe(40_000);
+      // Fini (ms: 0) : l'échéance disparaît, et le bus le dit aussi.
+      socket.receive('coffee:changed', { id: 'a', ms: 0 });
+      expect(store.getState().coffee).toEqual({});
+      expect(bus.emittedOf('coffee:changed')).toEqual([{ id: 'a', ms: 30_000 }, { id: 'a', ms: 0 }]);
+    });
+
+    test('local:coffee part au serveur (coffee:take) une fois l\'init reçu ; avant, et pendant une coupure, rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.connect();
+      bus.emit('local:coffee');
+      socket.serverAccepts();
+      bus.emit('local:coffee');
+      expect(socket.sentOf('coffee:take')).toEqual([]);
+
+      socket.receive('init', init());
+      bus.emit('local:coffee');
+      expect(socket.sentOf('coffee:take')).toEqual([undefined]);
+
+      // Pendant une coupure, Socket.io garderait le message pour le rendre au retour, périmé.
+      socket.connectionDrops();
+      bus.emit('local:coffee');
+      socket.serverAccepts();
+      bus.emit('local:coffee');
+      expect(socket.sentOf('coffee:take')).toEqual([undefined]);
+    });
+
+    test('local:coffee n\'est qu\'une demande : le magasin ne change qu\'à la réponse du serveur (coffee:changed)', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      bus.emit('local:coffee');
+      expect(store.getState().coffee).toEqual({});
+      socket.receive('coffee:changed', { id: 'moi', ms: 30_000 });
+      expect(store.getState().coffee).toEqual({ moi: 40_000 });
+    });
+  });
+
   describe('le chat', () => {
     const msg = (id: string, over: Partial<ChatMessage> = {}): ChatMessage => ({
       id,

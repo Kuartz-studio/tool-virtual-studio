@@ -368,6 +368,77 @@ describe('le café : la limite de vitesse du joueur passe de 480 à 960 px/s', (
     join('a');
     expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
   });
+
+  test('boostRemaining : ce qu\'il reste de café en ms, 0 sans café, une fois fini, ou pour un inconnu', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    expect(world.boostRemaining('a')).toBe(0);
+    world.setBoost('a', 30_000);
+    expect(world.boostRemaining('a')).toBe(30_000);
+    clock.t = 12_500;
+    expect(world.boostRemaining('a')).toBe(17_500);
+    clock.t = 30_000;
+    expect(world.boostRemaining('a')).toBe(0);
+    clock.t = 45_000;
+    expect(world.boostRemaining('a')).toBe(0);
+    expect(world.boostRemaining('fantome')).toBe(0);
+  });
+
+  test('expireBoosts rend ceux dont le café vient de finir, une seule fois, et garde la limite du café MOVE_JITTER_MS de plus', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 1_000);
+    world.setBoost('b', 5_000);
+    clock.t = 999;
+    expect(world.expireBoosts()).toEqual([]);
+    clock.t = 1_000;
+    expect(world.expireBoosts()).toEqual(['a']);
+    expect(world.expireBoosts()).toEqual([]);   // une seule fois
+    // Fini pour tout le monde, mais les derniers paquets arrivent en retard : la limite du café tient encore.
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    clock.t = 1_000 + MOVE_JITTER_MS + 1;
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+    expect(world.expireBoosts()).toEqual([]);
+    expect(world.maxSpeedOf('b')).toBe(MAX_SPEED_PX_PER_S);
+    clock.t = 5_000;
+    expect(world.expireBoosts()).toEqual(['b']);
+  });
+
+  test('un nouveau café après la fin s\'éteindra à son tour, et celui qu\'on retire avec null ne se redit pas', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 1_000);
+    clock.t = 1_000;
+    expect(world.expireBoosts()).toEqual(['a']);
+    world.setBoost('a', 1_000);   // un autre café : jusqu'à t = 2 000
+    clock.t = 1_999;
+    expect(world.expireBoosts()).toEqual([]);
+    clock.t = 2_000;
+    expect(world.expireBoosts()).toEqual(['a']);
+    world.setBoost('b', 10_000);
+    world.setBoost('b', null);   // retiré à la main : l'appelant le dit lui-même, expireBoosts n'a rien à ajouter
+    clock.t = 20_000;
+    expect(world.expireBoosts()).toEqual([]);
+  });
+
+  test('get et list disent le café en cours (boost, ce qu\'il en reste en ms) et rien pour les autres', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 30_000);
+    clock.t = 10_000;
+    expect(world.get('a')?.boost).toBe(20_000);
+    expect(world.get('b')).not.toHaveProperty('boost');
+    expect(world.list().map((p) => [p.id, p.boost])).toEqual([['a', 20_000], ['b', undefined]]);
+    clock.t = 30_000;
+    expect(world.get('a')).not.toHaveProperty('boost');
+    // join rend le joueur tel qu'il arrive : jamais avec un café, même si l'identifiant en avait un avant de partir.
+    world.setBoost('b', 30_000);
+    world.leave('b');
+    expect(join('b')).not.toHaveProperty('boost');
+  });
 });
 
 // ---- Statut, médias, profil ------------------------------------------------------------------------------------------------

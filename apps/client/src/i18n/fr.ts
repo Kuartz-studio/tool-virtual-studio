@@ -293,6 +293,13 @@ export const fr = {
     use: 'Éteindre',
     useOn: 'Allumer',
   },
+  // Le café : la machine du bar (« [E] Prendre un café », de près) et la pastille qui compte ce qu'il en reste, sous la puce du lieu.
+  coffee: {
+    take: 'Prendre un café',
+    // La pastille, en secondes ; et son nom pour les lecteurs d'écran.
+    left: '{seconds} s',
+    pill: 'Café : encore {seconds} s',
+  },
   // Le son : la musique d'ambiance (celle de l'endroit où l'on est, ou celle qu'on choisit) et les effets sonores (clics, arrivées, messages,
   // toc toc…), que l'on coupe et règle chacun de son côté, depuis le juke-box du dock du milieu. La voix des autres n'en fait pas partie : elle
   // suit le micro et la sortie du système.

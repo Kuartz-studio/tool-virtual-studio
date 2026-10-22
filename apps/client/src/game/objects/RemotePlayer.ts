@@ -5,6 +5,7 @@ import { snapToPixels } from '../pixel-snap';
 import { SnapshotBuffer, type BodyFits, type Snapshot } from '../snapshot-buffer';
 import { stepAnimationScale } from '../step-animation';
 import { AvatarSkin, avatarLibraryOf } from './avatar-skin';
+import { DustTrail } from './DustTrail';
 import { NameTag } from './NameTag';
 import { addShadow, placeShadow } from './shadow';
 
@@ -22,6 +23,9 @@ export class RemotePlayer {
   private readonly sprite: GameObjects.Sprite;
   private readonly shadow: GameObjects.Ellipse;
   private readonly tag: NameTag;
+  private readonly dust: DustTrail;
+  // Jusqu'à quand il a un café (ms, horloge de la page ; 0 : pas de café) : la tasse se montre, et ses pas soulèvent de la poussière, tant que l'heure n'y est pas.
+  private coffeeUntil = 0;
   // La position dessinée à la dernière image.
   private drawn: Snapshot;
 
@@ -42,6 +46,7 @@ export class RemotePlayer {
     this.skin = new AvatarSkin(library, p.id, p.avatarKey, (next) => this.takeSpec(next));
     this.shadow = addShadow(scene, p.x, p.y);
     this.tag = new NameTag(scene, p.name, p.status, options.zoom, p.activity ?? null);
+    this.dust = new DustTrail(scene);
     this.snapshots.push(now, this.drawn);
     this.render(now);
   }
@@ -90,6 +95,16 @@ export class RemotePlayer {
     this.tag.setSpeaking(speaking);
   }
 
+  // Il a un café jusqu'à cette heure (ms, horloge de la page ; 0 : il n'en a pas). Dit par le jeu, d'après ce que le serveur annonce.
+  setCoffeeUntil(until: number): void {
+    this.coffeeUntil = until;
+  }
+
+  // La tasse de café est-elle montrée au-dessus de sa tête ?
+  coffeeShown(): boolean {
+    return this.tag.coffeeShown();
+  }
+
   // Le glisser-déposer du faux live (VITE_SIM=1) : on attrape l'avatar à la souris, `drag` suit le pointeur, `drop` le lâche, à des
   // coordonnées de la carte (pixels). L'avatar, lui, ne bouge pas : il reste là où le serveur le voit, et marche vers l'endroit lâché.
   makeDraggable(on: { drag(x: number, y: number): void; drop(x: number, y: number): void }): void {
@@ -119,7 +134,11 @@ export class RemotePlayer {
     this.sprite.anims.timeScale = moving ? REMOTE_STEP_SCALE : 1;
     placeShadow(this.shadow, x, y);
     this.tag.placeAbove(x, y - this.spec.height);
+    // La tasse et la poussière suivent l'heure : le serveur le dit fini (setCoffeeUntil 0), ou l'échéance passe.
+    const coffee = now < this.coffeeUntil;
+    this.tag.setCoffee(coffee);
     this.tag.tick(now);
+    this.dust.update(now, { x, y }, coffee && moving, dir);
     return this.drawn;
   }
 
@@ -143,5 +162,6 @@ export class RemotePlayer {
     this.sprite.destroy();
     this.shadow.destroy();
     this.tag.destroy();
+    this.dust.destroy();
   }
 }

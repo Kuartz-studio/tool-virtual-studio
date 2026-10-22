@@ -222,6 +222,7 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
 // Seuls les gros meubles arrêtent : dans la rue nord, un arbuste (20, 14) se traverse, et la fontaine à eau (12, 14) qui le suit arrête. On part à
 // droite de l'arbuste, on marche vers la gauche.
 test('la marche : une petite plante se traverse, un gros meuble arrête', async ({ browser }) => {
+  test.slow();   // l'arrivée marche jusqu'au bureau libre, qui peut être à l'autre bout de la carte : 30 s ne suffisent pas sur une machine chargée
   const a = await arrive(browser, 'Alma');
   await a.page.evaluate(() => window.__office!.teleport(22 * 32 + 16, 14 * 32 + 16));
   await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(22 * 32 + 16);

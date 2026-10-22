@@ -5,7 +5,7 @@ import { emitOnBus } from '../net/office-connection';
 import { createOfficeStore } from '../state/office-store';
 import type { SfxId } from './catalog';
 import type { SfxOptions } from './engine';
-import { bindSfx, LOST_AFTER_MS, uiSoundFor } from './sfx-events';
+import { bindSfx, COFFEE_BOOST_DELAY_MS, LOST_AFTER_MS, uiSoundFor } from './sfx-events';
 
 const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => ({
   id,
@@ -279,11 +279,34 @@ describe('ce qui se passe au bureau', () => {
     expect(ids()).toEqual(['toggle-on']);
   });
 
+  test('le café qu\'on se sert : le bruit de la machine, puis le coup de fouet du café un instant après ; celui des autres, et la fin du sien, ne sonnent pas', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'coffee:changed', { id: 'a', ms: 30_000 });
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 0 });
+    expect(played).toEqual([]);
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 30_000 });
+    expect(played).toEqual([['coffee'], ['boost', { delayMs: COFFEE_BOOST_DELAY_MS }]]);
+  });
+
+  test('le café qu\'on se sert sonne même en « Ne pas déranger » : c\'est sa propre action', () => {
+    store.getState().applyInit(init(player('moi', { status: 'dnd' }), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 30_000 });
+    expect(ids()).toEqual(['coffee', 'boost']);
+  });
+
+  test('le café de l\'init (on arrive pendant qu\'on en a un) n\'est pas une prise : aucun bruit', () => {
+    store.getState().applyInit(init(player('moi', { boost: 12_000 }), [player('a', { boost: 30_000 })]));
+    expect(ids()).toEqual(['welcome']);
+  });
+
   test('débrancher : plus rien ne sonne', () => {
     unbind();
     click('<button type="button">Chat</button>');
     emitOnBus(bus, 'net:joined', player('a'));
     emitOnBus(bus, 'lights:changed', { on: false, by: null, at: 1 });
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 30_000 });
     store.getState().applyInit(init(player('moi')));
     expect(ids()).toEqual([]);
   });

@@ -1,5 +1,5 @@
 import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer } from '@bureau/shared';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ZOOM_BUTTON_STEP, ZOOM_DEFAULT_PERCENT, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
 
@@ -553,5 +553,63 @@ describe('la lumière', () => {
     store.getState().applyInit({ ...init(SELF, [A]), lights: OFF });
     store.getState().reset();
     expect(store.getState().lights).toEqual(LIT);
+  });
+});
+
+// Le café : le serveur dit ce qu'il reste (`coffee:changed`, ou `boost` dans l'init) ; le magasin en garde l'échéance, sur l'horloge de la page.
+describe('le café', () => {
+  const NOW = 5_000;
+  beforeEach(() => {
+    vi.spyOn(performance, 'now').mockReturnValue(NOW);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('avant tout café : personne n\'en a', () => {
+    expect(store.getState().coffee).toEqual({});
+  });
+
+  test('setCoffee : l\'échéance est l\'heure de la page plus ce que dit le serveur ; un nouveau café la remplace ; 0 la retire', () => {
+    store.getState().setCoffee('a', 30_000);
+    expect(store.getState().coffee).toEqual({ a: NOW + 30_000 });
+    vi.mocked(performance.now).mockReturnValue(NOW + 10_000);
+    store.getState().setCoffee('a', 30_000);
+    store.getState().setCoffee('moi', 5_000);
+    expect(store.getState().coffee).toEqual({ a: NOW + 40_000, moi: NOW + 15_000 });
+    store.getState().setCoffee('a', 0);
+    expect(store.getState().coffee).toEqual({ moi: NOW + 15_000 });
+  });
+
+  test('retirer un café qu\'on ne connaît pas ne change rien (l\'état reste le même objet)', () => {
+    store.getState().setCoffee('a', 1_000);
+    const before = store.getState().coffee;
+    store.getState().setCoffee('inconnu', 0);
+    expect(store.getState().coffee).toBe(before);
+  });
+
+  test('init : le café de soi-même et des autres (boost, ce qu\'il en reste) devient une échéance ; le magasin n\'en garde pas la durée', () => {
+    store.getState().applyInit(init(player('moi', { boost: 12_000 }), [player('a', { boost: 30_000 }), player('b')]));
+    expect(store.getState().coffee).toEqual({ moi: NOW + 12_000, a: NOW + 30_000 });
+    expect(store.getState().self).not.toHaveProperty('boost');
+    expect(store.getState().players.a).not.toHaveProperty('boost');
+  });
+
+  test('un nouvel init remplace tous les cafés : celui d\'avant la coupure, fini ou non, n\'a plus cours', () => {
+    store.getState().applyInit(init(SELF, [A], 'dev-office'));
+    store.getState().setCoffee('a', 30_000);
+    store.getState().setCoffee('moi', 30_000);
+    store.getState().applyInit(init(player('moi', { boost: 4_000 }), [A]));
+    expect(store.getState().coffee).toEqual({ moi: NOW + 4_000 });
+  });
+
+  test('quelqu\'un qui part n\'a plus de café ; reset (le bureau quitté) les efface tous', () => {
+    store.getState().applyInit(init(SELF, [A, B]));
+    store.getState().setCoffee('a', 30_000);
+    store.getState().setCoffee('b', 30_000);
+    store.getState().removePlayer('a');
+    expect(store.getState().coffee).toEqual({ b: NOW + 30_000 });
+    store.getState().reset();
+    expect(store.getState().coffee).toEqual({});
   });
 });

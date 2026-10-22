@@ -1477,6 +1477,32 @@ svg.lucide.icon-s {
   color: var(--text-soft);
 }
 
+/* Le café qu'on a pris : une petite pastille sous la puce du lieu, avec ce qu'il en reste en secondes. Elle ne reçoit pas la souris : elle ne fait que dire. */
+.coffee-pill {
+  position: absolute;
+  top: calc(var(--bar-gap) + 40px);
+  left: var(--bar-gap);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--surface);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-dock);
+  pointer-events: none;
+  transition: background-color var(--dur-theme) var(--ease-out), color var(--dur-theme) var(--ease-out), box-shadow var(--dur-theme) var(--ease-out);
+}
+
+.coffee-pill > svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--text-soft);
+}
+
 /* La barre : un groupe sans surface, qui laisse passer la souris entre les docks. Le dock du milieu est au milieu de la page (les deux autres
    colonnes ont la même largeur), quelle que soit la place que prennent ceux des bords. */
 .office-bar {

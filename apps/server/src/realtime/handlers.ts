@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  COFFEE_DURATION_MS,
   EMPTY_GROUPING,
   OPEN_SPACE_GROUPING,
   MEDIA_STATE_RATE,
@@ -18,6 +19,7 @@ import {
   moveSchema,
   speakingSchema,
   statusSchema,
+  withinCoffeeReach,
   withinSwitchReach,
   type ChatAck,
   type ChatMessage,
@@ -62,6 +64,10 @@ export interface HandlerDeps {
   lightsLimiter: RateLimiter;
   /** Les interrupteurs de la carte (leur centre, en pixels) : sans l'un d'eux à portée, la lumière ne se change pas. */
   switches: ReadonlyArray<{ x: number; y: number }>;
+  /** La limite de débit des cafés (une prise par COFFEE_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
+  coffeeLimiter: RateLimiter;
+  /** Les cases de service des machines à café de la carte (leur centre, en pixels) : sans l'une d'elles à portée, on ne se sert pas. */
+  coffees: ReadonlyArray<{ x: number; y: number }>;
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
@@ -236,6 +242,20 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     );
   });
 
+  // Prendre un café, de près : à COFFEE_REACH_TILES cases ou moins d'une machine de la carte, là où le monde voit la personne (jamais là où elle dit
+  // être). Elle a alors COFFEE_DURATION_MS de vitesse doublée, que tout le bureau apprend (`coffee:changed`, émetteur compris : c'est sa confirmation) ;
+  // un café pris pendant un autre remet le compte à zéro. Aucune réponse, quoi qu'il arrive. Une socket qui n'a pas reçu son init, ou dont la personne n'est
+  // pas au monde, est ignorée, comme pour le chat. Puis, dans cet ordre, ce qui ne passe pas est ignoré : 1. trop loin de toute machine ; 2. plus d'un
+  // café par personne et par COFFEE_RATE_MS (la limite est celle du compte, que se reconnecter ne remet pas à zéro). Le statut n'y change rien : se
+  // servir un café en « Ne pas déranger » est permis.
+  socket.on('coffee:take', () => {
+    const me = d.world.get(userId);
+    if (!me || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!withinCoffeeReach(me, d.coffees) || !d.coffeeLimiter.take(userId)) return;
+    d.world.setBoost(userId, COFFEE_DURATION_MS);
+    io.to(OFFICE_ROOM).emit('coffee:changed', { id: userId, ms: COFFEE_DURATION_MS });
+  });
+
   // Réservé aux tests de bout en bout : sans E2E=1 (que loadEnv refuse en production), l'événement n'existe pas. Le joueur est posé
   // là, à l'arrêt, si la case est praticable (World.teleport) ; les autres l'apprennent au prochain tick, comme pour un mouvement.
   if (d.env.E2E === '1') {
@@ -243,11 +263,13 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
       const point = teleportSchema.safeParse(payload);
       if (point.success) d.world.teleport(userId, point.data.x, point.data.y);
     });
-    // Donne du café à la personne (le serveur relève sa limite de vitesse), 0 le retire : de quoi tester la vitesse du café avant que la machine existe,
-    // et sans elle ensuite.
+    // Donne du café à la personne (le serveur relève sa limite de vitesse, et tout le bureau l'apprend, comme avec la machine), 0 le retire : de quoi
+    // tester la vitesse du café sans aller à la machine, ni attendre ses 30 s.
     socket.on('debug:boost', (payload) => {
       const boost = debugBoostSchema.safeParse(payload);
-      if (boost.success && d.world.get(userId)) d.world.setBoost(userId, boost.data.ms === 0 ? null : boost.data.ms);
+      if (!boost.success || !d.world.get(userId)) return;
+      d.world.setBoost(userId, boost.data.ms === 0 ? null : boost.data.ms);
+      io.to(OFFICE_ROOM).emit('coffee:changed', { id: userId, ms: boost.data.ms });
     });
   }
 }
@@ -274,8 +296,9 @@ function every(ms: number, logger: Logger, failure: string, fn: () => void): () 
 // ticks, pas à dire l'heure. Le minuteur ne retient pas le processus ; la fonction rendue l'arrête.
 export function startWorldTicks(io: TypedServer, world: World, tickMs: number, now: () => number, logger: Logger): () => void {
   return every(tickMs, logger, 'Envoi du world:tick impossible', () => {
-    // Une bulle de parole que plus rien ne tient (SPEAKING_TTL_MS sans nouveau « je parle ») s'éteint pour tout le monde.
+    // Une bulle de parole que plus rien ne tient (SPEAKING_TTL_MS sans nouveau « je parle ») s'éteint pour tout le monde, comme un café qui finit.
     for (const id of world.expireSpeaking()) io.to(OFFICE_ROOM).emit('speaking:changed', { id, speaking: false });
+    for (const id of world.expireBoosts()) io.to(OFFICE_ROOM).emit('coffee:changed', { id, ms: 0 });
     const moves = world.drainMoves();
     if (moves.length === 0) return;
     io.to(OFFICE_ROOM).volatile.emit('world:tick', { t: Math.round(now()), moves });

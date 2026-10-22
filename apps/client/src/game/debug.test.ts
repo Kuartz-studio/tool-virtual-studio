@@ -12,6 +12,8 @@ const debug = (): OfficeDebug => ({
   speed: () => 0,
   showOthers: () => {},
   bubbles: () => [],
+  cups: () => [],
+  machineExcited: () => false,
   avatarsOf: () => 0,
   selfAvatar: () => null,
   toScreen: (x, y) => ({ x, y }),

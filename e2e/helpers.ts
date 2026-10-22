@@ -304,3 +304,25 @@ export async function playerSeenBy(page: Page, id: string): Promise<{ x: number;
 export async function avatarsOf(page: Page, id: string): Promise<number> {
   return page.evaluate((playerId) => window.__office?.avatarsOf(playerId) ?? 0, id);
 }
+
+// Place l'avatar sur ce point (window.__office.teleport, que le serveur n'accepte qu'avec E2E=1), et attend qu'il y soit, arrêté.
+export async function teleportTo(page: Page, spot: { x: number; y: number }): Promise<void> {
+  await page.evaluate(({ x, y }) => window.__office!.teleport(x, y), spot);
+  await expect.poll(() => selfAt(page)).toMatchObject(spot);
+}
+
+// Chacun reçoit un bureau en arrivant sur la vraie carte, et les tests de personnalisation en cherchent de libres sur ce serveur : un test qui n'a pas
+// besoin du sien le rend tout de suite. L'avatar y marche, puis revient où il était.
+export async function giveDeskBack(page: Page): Promise<void> {
+  if (!(await goToDeskButton(page).or(deskSettingsButton(page)).isVisible())) return;
+  const { x, y } = await selfAt(page);
+  const panel = await openDeskPanel(page);
+  const giveBack = panel.getByRole('button', { name: 'Rendre mon bureau' });
+  await expect(giveBack).toBeVisible();
+  await giveBack.click();
+  await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
+  await panel.getByRole('button', { name: 'Fermer le panneau Mon bureau' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(goToDeskButton(page).or(deskSettingsButton(page))).toHaveCount(0);
+  await teleportTo(page, { x, y });
+}
