@@ -15,6 +15,8 @@ export const DEFAULT_WIDTH = 408;
 export const SPRITE_MARGIN = 2;
 // La colonne où le focus entre au clavier la première fois : celle du milieu.
 export const START_COLUMN = 3;
+// La rangée du fantôme, au-dessus de la première rangée de la grille : un jeton qui tombe en part, il parcourt donc une rangée de plus que celles qui le séparent du haut.
+export const LANE_ROWS = 1;
 
 // La case que ce conteneur permet : sept colonnes tiennent dans sa largeur, entre 24 et 58 px. Une largeur qui n'en est pas une (zéro, négative, NaN) donne la plus petite.
 export function cellSize(width: number): number {

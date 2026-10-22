@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { DEFAULT_WIDTH, MAX_CELL, MIN_CELL, SPRITE_MARGIN, cellSize, digitColumn, nextColumn, screenRow, spriteScale } from './layout';
+import { DEFAULT_WIDTH, LANE_ROWS, MAX_CELL, MIN_CELL, SPRITE_MARGIN, cellSize, digitColumn, nextColumn, screenRow, spriteScale } from './layout';
 import { SPRITE_SIZE } from './sprites';
 
 // Les mesures du plateau : la taille d'une case d'après la largeur du conteneur, l'échelle entière des jetons, le passage de la rangée de l'état à celle de l'écran, et les touches
@@ -77,6 +77,14 @@ describe('le passage de la rangée de l\'état à celle de l\'écran', () => {
       expect(screenRow(screenRow(row)), `rangée ${row}`).toBe(row);
       expect(screenRow(row)).toBe(5 - row);
     }
+  });
+});
+
+describe('la chute part de la rangée du fantôme', () => {
+  test('une rangée de plus que celles du jeton au haut de la grille : 6 rangées de chute pour le fond, 1 pour le haut', () => {
+    expect(LANE_ROWS).toBe(1);
+    expect(screenRow(0) + LANE_ROWS).toBe(6);
+    expect(screenRow(5) + LANE_ROWS).toBe(1);
   });
 });
 

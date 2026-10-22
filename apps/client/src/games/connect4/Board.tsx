@@ -2,7 +2,7 @@ import { CONNECT4_COLUMNS, CONNECT4_ROWS, cellIndex, dropRow, lastDrop, type Con
 import { useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import type { GameBoardProps } from '../types';
 import { columnLabel, connect4Fr } from './fr';
-import { DEFAULT_WIDTH, START_COLUMN, cellSize, digitColumn, nextColumn, screenRow, spriteScale } from './layout';
+import { DEFAULT_WIDTH, LANE_ROWS, START_COLUMN, cellSize, digitColumn, nextColumn, screenRow, spriteScale } from './layout';
 import { DISC_ROWS, SLOT_PALETTE, SPRITE_SIZE, TOKEN_PALETTES, spriteLayers, type PathLayer } from './sprites';
 
 // Le plateau du Puissance 4 : sept colonnes, dont chacune est un seul bouton qui va du fantôme, au-dessus, jusqu'au fond ; six rangées de trous, dessinés en code (sprites.ts), derrière les jetons.
@@ -182,7 +182,7 @@ export function Board({ state, mySeat, events, canAct, onMove, reducedMotion, pr
                             data-win={isWinning || undefined}
                             data-dim={(winners.size > 0 && !isWinning) || undefined}
                             data-falling={isFalling || undefined}
-                            style={isFalling ? ({ '--game-connect4-fall-rows': screenRow(row) + 1 } as CSSProperties) : undefined}
+                            style={isFalling ? ({ '--game-connect4-fall-rows': screenRow(row) + LANE_ROWS } as CSSProperties) : undefined}
                           >
                             <Sprite layers={seat === 1 ? (isLast ? LAYERS.yellowLast : LAYERS.yellow) : isLast ? LAYERS.redLast : LAYERS.red} size={size} className="game-connect4-disc" />
                           </span>
