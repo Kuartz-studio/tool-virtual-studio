@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import type { GameBoardProps } from '../types';
 import { LudoBoard } from './Board';
-import { DICE_ROLL_MS, STEP_MS } from './frames';
+import { CAPTURE_MS, DICE_ROLL_MS, STEP_MS } from './frames';
 
 // Le plateau des petits chevaux, monté seul (sans le panneau) : ce que la plateforme lui donne (`GameBoardProps`), et ce qu'il dessine et envoie. Les points du § 9.5 du document des
 // jeux sont numérotés dans les titres. Le dessin lui-même est jugé sur des captures (e2e/jeux-ludo.spec.ts) ; ici, sa structure, ses états et ce qui est cliquable.
@@ -205,6 +205,63 @@ describe('§ 9.5.3 le clavier : la liste des coups est le chemin du clavier ; le
   });
 });
 
+describe('le focus ne se perd pas quand le bouton actionné disparaît', () => {
+  const rolling = fabricateLudo({ horses: [[10, -1, -1, -1], [5, -1, -1, -1]] });
+  const moving = fabricateLudo({ horses: [[10, 20, -1, -1], [5, -1, -1, -1]], die: 3 });
+
+  test('« Lancer le dé » actionné au clavier, puis remplacé par la liste des coups : le focus passe au premier coup', () => {
+    const { container, update } = mount(rolling);
+    const roll = container.querySelector<HTMLButtonElement>('.ludo-roll')!;
+    act(() => roll.focus());
+    expect(document.activeElement).toBe(roll);
+    update({ state: moving });
+    expect(container.querySelector('.ludo-roll')).toBeNull();
+    expect(document.activeElement).toBe(container.querySelector('.ludo-move'));
+  });
+
+  test('un bouton qui reste (la même liste de coups, un nouvel état) garde son focus : rien n\'est déplacé', () => {
+    const { container, update } = mount(moving);
+    const buttons = [...container.querySelectorAll<HTMLButtonElement>('.ludo-move')];
+    act(() => buttons[1]!.focus());
+    update({ state: fabricateLudo({ horses: [[10, 20, -1, -1], [5, -1, -1, -1]], die: 3, moves: 4 }) });
+    expect(document.activeElement).toBe(container.querySelectorAll('.ludo-move')[1]);
+  });
+
+  test('le focus d\'une autre zone du panneau n\'est jamais volé : ni quand il est parti ailleurs, ni quand il n\'a jamais été dans le plateau', () => {
+    const outside = document.createElement('input');
+    document.body.appendChild(outside);
+    try {
+      // Le focus a été au bouton, puis il est allé à un autre champ : le bouton disparaît, le champ garde le focus.
+      const first = mount(rolling);
+      const roll = first.container.querySelector<HTMLButtonElement>('.ludo-roll')!;
+      act(() => roll.focus());
+      act(() => roll.blur());
+      act(() => outside.focus());
+      first.update({ state: moving });
+      expect(document.activeElement).toBe(outside);
+      first.unmount();
+
+      // Le focus n'a jamais été dans le plateau : le plateau ne le prend pas.
+      act(() => outside.focus());
+      const second = mount(rolling);
+      second.update({ state: moving });
+      expect(document.activeElement).toBe(outside);
+    } finally {
+      outside.remove();
+    }
+  });
+
+  test('le focus perdu sans que rien d\'autre le prenne (la page) revient au premier bouton, même si le plateau n\'a plus ni lancer ni coups', () => {
+    const { container, update } = mount(moving);
+    const first = container.querySelector<HTMLButtonElement>('.ludo-move')!;
+    act(() => first.focus());
+    // La partie passe à l'autre : plus aucun bouton, le focus ne peut aller nulle part.
+    update({ state: fabricateLudo({ horses: [[13, 20, -1, -1], [5, -1, -1, -1]], turn: 1 }), mySeat: 0, canAct: false });
+    expect(container.querySelectorAll('button')).toHaveLength(0);
+    expect(document.activeElement === document.body || document.activeElement === null).toBe(true);
+  });
+});
+
 describe('§ 9.5.4 le lecteur d\'écran : un plateau nommé, un équivalent texte, des boutons qui disent le coup', () => {
   test('le plateau est une image nommée, décrite par « Position des chevaux » : par couleur, l\'écurie, les cases, les arrivés', () => {
     const state = fabricateLudo({ horses: [[-1, 10, 52, 56], [0, 33, -1, -1]], turn: 1 });
@@ -323,6 +380,9 @@ describe('§ 9.5.5 le mouvement réduit : l\'état final tout de suite, pour le 
     expect(horse(container, 1, 0).getAttribute('data-sliding')).toBe('true');
     expect(horse(container, 0, 0).getAttribute('data-sliding')).toBeNull();
     expect(horse(container, 1, 0).getAttribute('data-advance')).toBe('-1');
+    // Seul le cheval pris glisse, pendant le temps du retour à l'écurie (300 ms) ; les autres sautent, sans durée.
+    expect(horse(container, 1, 0).style.transitionDuration).toBe(`${CAPTURE_MS}ms`);
+    expect(horse(container, 0, 0).style.transitionDuration).toBe('');
   });
 });
 
@@ -372,6 +432,17 @@ describe('§ 9.5.8 le spectateur : rien n\'est cliquable, le plateau ne tourne p
     const { container } = mount(state, { mySeat: null, canAct: false });
     expect(container.querySelector('.ludo-last')).toBeTruthy();
     expect(screen.getByRole('img', { name: 'Dé : 3' })).toBeTruthy();
+  });
+
+  test('l\'aperçu ne donne ni dé ni commande, même si la plateforme lui donnait un siège et la main', () => {
+    const preview = ludo.create({ seats: 2, first: 0 }, () => 0.5).state;
+    const { container, onMove } = mount(preview, { mySeat: 0, canAct: true, preview: true });
+    expect(container.querySelectorAll('button, .ludo-hit, .ludo-underline, .ludo-die, .ludo-dice-row, .ludo-moves')).toHaveLength(0);
+    expect(onMove).not.toHaveBeenCalled();
+    // Même chose avec un état en phase de coup : la liste des coups, les chevaux soulignés et cliquables n'y sont pas non plus.
+    const moving = mount(fabricateLudo({ horses: [[10, 20, -1, -1], [5, -1, -1, -1]], die: 3 }), { mySeat: 0, canAct: true, preview: true });
+    expect(moving.container.querySelectorAll('button, .ludo-hit, .ludo-underline, .ludo-moves')).toHaveLength(0);
+    expect(moving.onMove).not.toHaveBeenCalled();
   });
 
   test('l\'aperçu d\'avant la première partie : tous les chevaux à l\'écurie, rien n\'est cliquable', () => {
@@ -643,6 +714,27 @@ describe('le dessin : la taille des chevaux, les chevaux arrivés, le dé, le tr
   });
 });
 
+describe('les couleurs qui ne jouent pas, la dernière case de l\'allée', () => {
+  test('à deux joueurs, le vert et le bleu ne jouent pas : leur écurie est effacée, sans places ni nom ; rouge et jaune ont les leurs', () => {
+    const { container } = mount(fabricateLudo({ horses: [[10, -1, -1, -1], [5, -1, -1, -1]] }), { mySeat: null, canAct: false });
+    expect([0, 1, 2, 3].map((color) => yard(container, color).getAttribute('data-unused'))).toEqual([null, 'true', null, 'true']);
+    for (const color of [1, 3]) {
+      expect(yard(container, color).querySelectorAll('.ludo-slot, text')).toHaveLength(0);
+    }
+    for (const color of [0, 2]) {
+      expect(yard(container, color).querySelectorAll('.ludo-slot')).toHaveLength(4);
+      expect(yard(container, color).querySelectorAll('text')).toHaveLength(1);
+    }
+  });
+
+  test('un cheval sur la dernière case de l\'allée (55) n\'est pas encore arrivé : il est dessiné sur sa case, et non compté dans le triangle', () => {
+    const { container } = mount(fabricateLudo({ horses: [[56, 55, -1, -1], STABLE] }), { mySeat: null, canAct: false });
+    expect(container.querySelector('.ludo-arrived')!.getAttribute('data-count')).toBe('1');
+    expect(horse(container, 0, 1).getAttribute('data-advance')).toBe('55');
+    expect(horse(container, 0, 0)).toBeNull();
+  });
+});
+
 describe('un siège sorti, la fin de la partie', () => {
   test('un siège sorti : son écurie est grisée, ses chevaux ne sont plus dessinés', () => {
     const state = fabricateLudo({ horses: [[10, -1, -1, -1], STABLE, [3, -1, -1, -1]], out: [{ seat: 1, reason: 'resign' }] });
@@ -676,9 +768,28 @@ describe('un siège sorti, la fin de la partie', () => {
     expect(rows).toEqual(['1. Alice, rouge : avancée 228 sur 228', '2. Bastien, vert : avancée 43 sur 228', '2. Claire, jaune : avancée 43 sur 228']);
   });
 
+  test('après des ex æquo, le rang saute : 1, 2, 2, puis 4 (un classement à la compétition)', () => {
+    const start = fabricateLudo({ horses: [[56, 56, 56, 55], [20, 21, -1, -1], [42, -1, -1, -1], [5, -1, -1, -1]], die: 1 });
+    const out = ludo.apply(start, 0, { type: 'move', horse: 3 }, () => 0.5);
+    if (!out.ok) throw new Error('coup refusé');
+    mount(out.state, { mySeat: null, canAct: false });
+    const rows = within(screen.getByRole('list', { name: 'Classement de la partie' })).getAllByRole('listitem').map((row) => row.textContent);
+    expect(rows).toEqual([
+      '1. Alice, rouge : avancée 228 sur 228',
+      '2. Bastien, vert : avancée 43 sur 228',
+      '2. Claire, jaune : avancée 43 sur 228',
+      '4. Dan, bleu : avancée 6 sur 228',
+    ]);
+  });
+
   test('pas de classement pendant la partie', () => {
     mount(fabricateLudo({ horses: [[10, -1, -1, -1], [5, -1, -1, -1]] }));
     expect(screen.queryByRole('list', { name: 'Classement de la partie' })).toBeNull();
+  });
+
+  test('un dernier coup qui amène un cheval à l\'arrivée ne marque aucune case : il n\'y en a pas, le cheval est compté dans son triangle', () => {
+    const { container } = mount(fabricateLudo({ horses: [[56, -1, -1, -1], STABLE], turn: 1, last: { seat: 0, horse: 0, from: 54, to: 56 } }), { mySeat: 1, canAct: false });
+    expect(container.querySelector('.ludo-last')).toBeNull();
   });
 
   test('le dernier coup est marqué sur le plateau : la case où le cheval vient d\'arriver', () => {
