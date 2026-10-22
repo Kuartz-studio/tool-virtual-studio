@@ -4,7 +4,7 @@ import { GAMES } from '../index';
 import { chess, chessMoveSchema, MAX_PLIES_KEPT, positionKey, START_FEN, stateFromFen, type ChessState } from './index';
 import { fields, legalTexts, moveOf, noRandom, play, playSan, randomPlayout, startState, stateOf, textOf } from './test-helpers';
 
-// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à A27) : ce que le
+// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à A30) : ce que le
 // document ne nomme pas mais que les règles, le contrat et le SAN exigent aussi. Les coups s'écrivent de+vers(+pièce) : `e2e4`, `a7a8q`.
 
 // Le siège qui a le trait, qui doit exister.
@@ -568,7 +568,7 @@ describe('cas ajoutés par l\'agent (A1 à A21)', () => {
 
 // Des parties réelles, jouées en SAN : chaque coup du texte doit être retrouvé parmi les coups légaux par l'écriture que le moteur lui donne (lettres, prises,
 // désambiguïsation, roque, échec, mat). Ce sont des données que l'agent n'a pas fabriquées : si le moteur ou le SAN se trompent quelque part, un coup manque.
-describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notation (A22 à A25), symétries et bords (A26, A27)', () => {
+describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notation (A22 à A25), symétries et bords (A26 à A30)', () => {
   const sans = (state: ChessState): string[] => state.plies.map((ply) => ply.san);
 
   test('A22 : l\'Opéra de Morphy (Paris, 1858) : 33 demi-coups, un grand roque, Nbd7, et le mat Rd8#', () => {
@@ -620,7 +620,60 @@ describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notati
     expect(fields(play(promotion, 'a2a1n').fen, 1)).toBe('4k3/8/8/8/8/8/8/n3K3');
   });
 
-  test('A27 : un siège qui n\'existe pas ne peut ni abandonner ni jouer', () => {
+  // Après un mat ou un pat, la position n'a plus de coup : refuser est facile. Après un abandon, une nulle ou une nulle automatique, elle en a encore, et c'est le seul
+  // garde du résultat qui interdit de continuer à jouer.
+  test('A27 : une partie finie sur une position qui a encore des coups (abandon, délai, nulle, répétition, 50 coups, matériel) n\'accepte plus aucun coup', () => {
+    const live = play(startState(), 'e2e4 e7e5');
+    const ended: Array<[string, ChessState]> = [
+      ['abandon', chess.forfeit(live, 1, 'resign').state],
+      ['délai écoulé', chess.forfeit(live, 0, 'timeout').state],
+      ['nulle par accord', chess.agreeDraw!(live).state],
+      ['triple répétition', play(startState(), 'g1f3 g8f6 f3g1 f6g8 g1f3 g8f6 f3g1 f6g8')],
+      ['règle des 50 coups', play(stateOf('8/8/8/8/8/8/R7/K6k w - - 99 80'), 'a2b2')],
+      ['matériel insuffisant', play(stateOf('4k3/8/8/8/8/8/5r2/4KB2 w - - 0 1'), 'e1f2')],
+    ];
+    for (const [name, state] of ended) {
+      expect(chess.result(state), name).not.toBeNull();
+      // Le même état, la partie reprise : la position a un coup légal, et c'est celui qu'on essaie de jouer à la fin.
+      const resumed: ChessState = { ...state, result: null };
+      const seat = chess.turn(resumed)!;
+      const move = chess.legalMoves(resumed, seat)[0]!;
+      for (const who of [0, 1]) {
+        const before = structuredClone(state);
+        expect(chess.apply(state, who, move, noRandom), `${name}, siège ${who}`).toEqual({ ok: false, error: 'wrong_phase' });
+        expect(state).toStrictEqual(before);
+      }
+    }
+  });
+
+  test.each<[string, string]>([
+    ['un FEN vide', ''],
+    ['trop peu de champs', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w'],
+    ['trop de champs', `${START_FEN} encore`],
+    ['sept rangées seulement', 'rnbqkbnr/pppppppp/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+    ['une rangée trop longue', 'rnbqkbnrr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+    ['une rangée trop courte', 'rnbqkbn/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+    ['une pièce qui n\'existe pas', 'rnbqkbnx/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+    ['un chiffre qui n\'est pas une case vide', 'rnbqkbnr/pppppppp/9/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+    ['un trait qui n\'est ni w ni b', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR x KQkq - 0 1'],
+    ['des droits de roque en double', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KKkq - 0 1'],
+    ['des droits de roque inconnus', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkx - 0 1'],
+    ['une case de prise en passant hors de l\'échiquier', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq e9 0 1'],
+    ['un compteur qui n\'est pas un entier', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - x 1'],
+    ['un compteur négatif', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - -1 1'],
+    ['pas de roi noir', 'rnbq1bnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'],
+    ['deux rois blancs', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBKKBNR w KQkq - 0 1'],
+  ])('A28 : un FEN illisible lève une erreur qui le dit (%s)', (_name, fen) => {
+    expect(() => positionKey(fen)).toThrow(/FEN illisible/);
+    expect(() => stateFromFen(fen)).toThrow(/FEN illisible/);
+  });
+
+  test('A29 : un FEN à quatre champs est lu (compteurs à 0 et 1) et réécrit à six', () => {
+    expect(stateFromFen('4k3/8/8/8/8/8/8/4K3 w - -').fen).toBe('4k3/8/8/8/8/8/8/4K3 w - - 0 1');
+    expect(stateFromFen('4k3/8/8/8/8/8/8/4K3 w - - 7').fen).toBe('4k3/8/8/8/8/8/8/4K3 w - - 7 1');
+  });
+
+  test('A30 : un siège qui n\'existe pas ne peut ni abandonner ni jouer', () => {
     const state = play(startState(), 'e2e4');
     expect(chess.forfeit(state, 5, 'resign')).toEqual({ state, events: [] });
     expect(chess.forfeit(state, -1, 'timeout')).toEqual({ state, events: [] });
