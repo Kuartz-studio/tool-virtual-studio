@@ -78,6 +78,9 @@ export const activityIdSchema = z.string().min(1).max(64).nullable();
 // croise celle d'un autre, ne change donc rien : le serveur fait foi, et tout le monde finit dans le même état.
 export const lightsSetSchema = z.object({ on: z.boolean() });
 
+// Réservé aux tests de bout en bout (`debug:boost`, seulement avec E2E=1) : donne du café pendant `ms` ms (0 : le retire), comme le fera la machine.
+export const debugBoostSchema = z.object({ ms: z.number().int().min(0).max(3_600_000) });
+
 export type MovePayload = z.infer<typeof moveSchema>;
 export type ActivityInput = z.infer<typeof activityInputSchema>;
 export type DeskCommand = z.infer<typeof deskCommandSchema>;
@@ -128,7 +131,9 @@ export interface InitPayload {
   // La lumière du bureau. Absente : allumée.
   lights?: LightsState;
 }
-export interface WorldTick { t: number; moves: Array<{ id: string } & MovePayload> }
+// Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
+// le voient sauter à sa nouvelle place au lieu de glisser jusqu'à elle à travers les murs.
+export interface WorldTick { t: number; moves: Array<{ id: string; tp?: true } & MovePayload> }
 export interface MediaJoinPayload { url: string; room: string; token: string }
 // La réponse du serveur à `chat:send` : `invalid` (charge utile refusée), `rate_limited` (trop de messages), `no_group` (« À proximité »
 // sans personne autour), `unavailable` (le serveur n'a pas pu enregistrer le message : la base est en panne ; le message n'est pas parti).
@@ -173,4 +178,5 @@ export interface ClientToServerEvents {
   'desk:do': (p: DeskCommand, ack: (r: DeskAck) => void) => void;
   'lights:set': (p: LightsSetPayload) => void;   // allumer ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
+  'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1
 }

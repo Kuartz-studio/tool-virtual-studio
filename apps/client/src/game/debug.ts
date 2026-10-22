@@ -19,6 +19,14 @@ export interface OfficeDebug {
   // Place l'avatar local à cet endroit (en pixels) et le dit au serveur, qui l'accepte si la case est praticable (événement
   // `debug:teleport`, que le serveur n'enregistre qu'avec E2E=1 ; refusé, le `move` qui suit est corrigé).
   teleport(x: number, y: number): void;
+  // Donne du café à l'avatar local pendant `ms` ms (0 : le retire) : il va à la vitesse du café, et le serveur le sait (événement `debug:boost`, que le
+  // serveur n'enregistre qu'avec E2E=1 : sans lui, sa limite de vitesse refuserait la course).
+  boost(ms: number): void;
+  // L'avatar local a-t-il un café en ce moment ?
+  boosted(): boolean;
+  // La vitesse que la physique donne à l'avatar local en ce moment, en px/s (0 à l'arrêt) : exacte, quelle que soit la charge de la machine,
+  // contrairement à une vitesse mesurée sur le temps que prend le navigateur à dessiner.
+  speed(): number;
   // Montre ou cache les autres joueurs (ils restent dans `players`). Les tests qui regardent l'avatar local à l'écran cachent ceux
   // des autres tests, qui tournent en même temps sur le même serveur.
   showOthers(visible: boolean): void;

@@ -18,12 +18,14 @@ export interface Snapshot {
 interface Timed {
   at: number;
   s: Snapshot;
+  // Le serveur a téléporté la personne jusqu'ici (`tp` du tick) : on y saute, quelle que soit la distance.
+  jump?: boolean;
 }
 
 const copy = (s: Snapshot): Snapshot => ({ x: s.x, y: s.y, dir: s.dir, moving: s.moving });
 
-// La vitesse de la marche et celle de la course, en px/ms, et le sens de chaque direction (y augmente vers le bas). Sans vitesse à lire,
-// on suppose la marche ; une vitesse lue peut aller jusqu'à la course (Maj enfoncée).
+// La vitesse de la marche et la plus grande qu'on puisse lire (la course sous café), en px/ms, et le sens de chaque direction (y augmente vers le
+// bas). Sans vitesse à lire, on suppose la marche.
 const WALK_PX_PER_MS = WALK_SPEED_PX_PER_S / 1000;
 const MAX_PX_PER_MS = MAX_SPEED_PX_PER_S / 1000;
 const HEADING: Record<Direction, { x: number; y: number }> = {
@@ -42,15 +44,17 @@ export type BodyFits = (x: number, y: number) => boolean;
 const BODY_STEP_PX = 1;
 const EDGE_PRECISION_PX = 0.001;
 
-// Un saut : la part du déplacement de `a` à `b` que la marche n'explique pas dépasse TELEPORT_SNAP_PX, soit
+// Un saut : un instantané que le serveur a marqué `tp` (une téléportation : un mode, une table de jeu), ou, à défaut, la part du déplacement de `a` à `b`
+// que la marche n'explique pas dépasse TELEPORT_SNAP_PX, soit
 //
 //   distance(a, b) > TELEPORT_SNAP_PX + MAX_SPEED_PX_PER_S × (b.at − a.at) / 1000
 //
-// (distance en ligne droite, en pixels ; b.at − a.at en ms). À la limite exacte, l'avatar glisse encore ; un pixel de plus, il saute.
-// Entre deux ticks (100 ms), la course fait 48 px : 144 px glissent, 145 px sautent (le test du brief : 100 px glissent, 200 px
-// sautent ; TELEPORT_SNAP_PX seul, 96 px, ferait sauter les 100 px). push() ne crée jamais de segment plus long que
-// REMOTE_RENDER_DELAY_MS : une longue attente n'élargit pas la limite (72 px de course au plus à 150 ms).
+// (distance en ligne droite, en pixels ; b.at − a.at en ms). À la limite exacte, l'avatar glisse encore ; un pixel de plus, il saute. Entre deux
+// ticks (100 ms), le café fait 96 px : 352 px glissent, 353 sautent (TELEPORT_SNAP_PX seul, 256 px, ferait sauter les 300 px qu'un tick manqué
+// laisse parcourir sous café). push() ne crée jamais de segment plus long que REMOTE_RENDER_DELAY_MS : une longue attente n'élargit pas la
+// limite (144 px de café au plus à 150 ms).
 function isJump(a: Timed, b: Timed): boolean {
+  if (b.jump) return true;
   const walkable = (MAX_SPEED_PX_PER_S * (b.at - a.at)) / 1000;
   return Math.hypot(b.s.x - a.s.x, b.s.y - a.s.y) > TELEPORT_SNAP_PX + walkable;
 }
@@ -66,13 +70,13 @@ function isJump(a: Timed, b: Timed): boolean {
 //   plan). L'avatar continue à la vitesse des deux derniers instantanés, plafonnée à MAX_SPEED_PX_PER_S, la course (ou, sans vitesse
 //   à lire, dans sa direction à WALK_SPEED_PX_PER_S), pendant EXTRAPOLATION_MAX_MS au plus, puis attend au point atteint. Arrêté, il
 //   reste au dernier. C'est ce qui couvre les 50 ms sans position que laisse un tick vide (voir EXTRAPOLATION_MAX_MS). Le prix : une
-//   personne qui s'arrête juste après sa dernière position reçue peut être dessinée plus loin, jusqu'à la position suivante : 9,6 px
-//   à la marche, 28,8 px à la course. Avec la carte (`bodyFits`), l'extrapolation ne fait jamais entrer la zone de collision de l'avatar dans une case
+//   personne qui s'arrête juste après sa dernière position reçue peut être dessinée plus loin, jusqu'à la position suivante : 19,2 px
+//   à la marche, 28,8 px à la course, 57,6 px sous café. Avec la carte (`bodyFits`), l'extrapolation ne fait jamais entrer la zone de collision de l'avatar dans une case
 //   bloquante : elle avance le long de son segment pas à pas, comme la vérification des mouvements du serveur, et s'arrête au bord
 //   du premier obstacle (cherché par dichotomie), pas avant. Sans cela, une personne qui garde une touche enfoncée contre un mur
 //   (elle n'envoie plus rien : sa position ne change plus) serait dessinée 10 px dans le mur.
-// - Un saut de plus de TELEPORT_SNAP_PX entre deux instantanés consécutifs (une téléportation, un retour au point d'apparition) ne
-//   se fait pas en glissant : on passe directement au second. Le saut est ce que la marche n'explique pas (isJump).
+// - Un saut entre deux instantanés consécutifs (une téléportation annoncée par le serveur, ou un déplacement de plus de TELEPORT_SNAP_PX que la
+//   vitesse n'explique pas) ne se fait pas en glissant : on passe directement au second (isJump).
 // - Au plus `capacity` instantanés sont gardés, les plus récents : un onglet en arrière-plan pendant des heures, qui reçoit les
 //   ticks sans rien dessiner, ne fait pas enfler la mémoire.
 //
@@ -89,13 +93,14 @@ export class SnapshotBuffer {
     private readonly bodyFits?: BodyFits,
   ) {}
 
-  push(at: number, s: Snapshot): void {
+  // `jump` : le serveur a téléporté la personne jusqu'à cette position (`tp`) : on ne glisse pas jusqu'à elle, on y saute.
+  push(at: number, s: Snapshot, jump = false): void {
     const last = this.items.at(-1);
     // Le temps ne recule pas : un instantané daté d'avant le dernier est rangé à son heure.
     const when = last ? Math.max(at, last.at) : at;
     const renderAtArrival = when - REMOTE_RENDER_DELAY_MS;
     if (last && renderAtArrival > last.at) this.items.push({ at: renderAtArrival, s: this.sample(renderAtArrival)! });
-    this.items.push({ at: when, s: copy(s) });
+    this.items.push({ at: when, s: copy(s), ...(jump ? { jump: true } : {}) });
     if (this.items.length > this.capacity) this.items.splice(0, this.items.length - this.capacity);
   }
 

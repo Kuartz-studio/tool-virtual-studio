@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { DEV_OFFICE, buildTiledMap, parseOfficeMap, validateMove } from '../src';
+import { DEV_OFFICE, MAX_SPEED_PX_PER_S, NORMAL_MAX_SPEED_PX_PER_S, buildTiledMap, parseOfficeMap, validateMove } from '../src';
 
 // La carte de développement : 24 × 16 cases de 32 px, soit 768 × 512 px. Les lignes qui servent ici :
 //  - ligne 5 (y de 160 à 191) : un mur, percé de portes aux colonnes 3, 10 et 18 ;
@@ -154,5 +154,34 @@ describe('le segment entier, échantillonné tous les 8 px, est praticable', () 
   test('un bord de case est dans la case de droite ou du bas : y = 288 est déjà la ligne des bureaux', () => {
     expect(validateMove(map, pt(144, 280, 0), pt(144, 287, 100))).toEqual({ ok: true });
     expect(validateMove(map, pt(144, 280, 0), pt(144, 288, 100))).toEqual({ ok: false, reason: 'blocked' });
+  });
+});
+
+// ---- Le café : la limite passe de 480 à 960 px/s ---------------------------------------------------------------------------------
+
+describe('le café : maxSpeed relève la limite, par défaut c\'est celle de la course', () => {
+  // De (40, 240) vers la droite, tout est du sol : seule la vitesse décide.
+  test('sans café, 640 px en 400 ms sont refusés (468 px au plus)', () => {
+    expect(validateMove(map, pt(40, 240, 0), pt(680, 240, 400))).toEqual({ ok: false, reason: 'too_fast' });
+  });
+
+  test('avec le café, les mêmes 640 px passent', () => {
+    expect(validateMove(map, pt(40, 240, 0), pt(680, 240, 400), MAX_SPEED_PX_PER_S)).toEqual({ ok: true });
+  });
+
+  test('la limite du café est 960 × (dt + 250 ms) / 1000 × 1,5 : à 100 ms, 504 px passent, 505 non', () => {
+    expect(validateMove(map, pt(80, 240, 0), pt(80 + 504, 240, 100), MAX_SPEED_PX_PER_S)).toEqual({ ok: true });
+    expect(validateMove(map, pt(80, 240, 0), pt(80 + 505, 240, 100), MAX_SPEED_PX_PER_S)).toEqual({ ok: false, reason: 'too_fast' });
+  });
+
+  test('sans maxSpeed, la limite est celle de NORMAL_MAX_SPEED_PX_PER_S : 252 px en 100 ms passent, 253 non', () => {
+    expect(validateMove(map, pt(80, 240, 0), pt(80 + 252, 240, 100), NORMAL_MAX_SPEED_PX_PER_S)).toEqual(validateMove(map, pt(80, 240, 0), pt(80 + 252, 240, 100)));
+    expect(validateMove(map, pt(80, 240, 0), pt(80 + 253, 240, 100), NORMAL_MAX_SPEED_PX_PER_S)).toEqual({ ok: false, reason: 'too_fast' });
+  });
+
+  test('avec le café, un mur et un bureau restent des obstacles : seule la vitesse change', () => {
+    expect(validateMove(map, pt(700, 240, 0), pt(736, 240, 400), MAX_SPEED_PX_PER_S)).toEqual({ ok: false, reason: 'blocked' });
+    expect(validateMove(map, pt(144, 280, 0), pt(144, 330, 400), MAX_SPEED_PX_PER_S)).toEqual({ ok: false, reason: 'blocked' });
+    expect(validateMove(map, pt(700, 240, 0), pt(800, 240, 400), MAX_SPEED_PX_PER_S)).toEqual({ ok: false, reason: 'out_of_bounds' });
   });
 });

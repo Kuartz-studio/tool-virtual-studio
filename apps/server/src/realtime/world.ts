@@ -1,4 +1,7 @@
 import {
+  MAX_SPEED_PX_PER_S,
+  MOVE_JITTER_MS,
+  NORMAL_MAX_SPEED_PX_PER_S,
   isWalkablePoint,
   validateMove,
   type ActivityState,
@@ -45,6 +48,8 @@ export class World {
   private readonly activities = new Map<string, ActivityState | null>();
   // Le dernier mouvement accepté de chaque joueur depuis le dernier drainMoves, dans l'ordre du premier mouvement de la fenêtre.
   private readonly pendingMoves = new Map<string, Move>();
+  // Jusqu'à quelle heure (ms, horloge du monde) chaque personne a un café : sa limite de vitesse est alors celle du café (maxSpeedOf).
+  private readonly boosts = new Map<string, number>();
   private entryGuard: EntryGuard = () => true;
 
   constructor(
@@ -87,6 +92,7 @@ export class World {
     if (!entry) return undefined;
     this.entries.delete(id);
     this.pendingMoves.delete(id);
+    this.boosts.delete(id);
     return copy(entry.player);
   }
 
@@ -109,7 +115,7 @@ export class World {
 
     const p = entry.player;
     const at = this.now();
-    if (!validateMove(this.map, { x: p.x, y: p.y, at: entry.at }, { x: m.x, y: m.y, at }).ok || !this.entryGuard(id, p, m)) {
+    if (!validateMove(this.map, { x: p.x, y: p.y, at: entry.at }, { x: m.x, y: m.y, at }, this.maxSpeedOf(id)).ok || !this.entryGuard(id, p, m)) {
       return { ok: false, correct: { x: p.x, y: p.y } };
     }
     p.x = m.x;
@@ -117,7 +123,10 @@ export class World {
     p.dir = m.dir;
     p.moving = m.moving;
     entry.at = at;
-    this.pendingMoves.set(id, { id, x: m.x, y: m.y, dir: m.dir, moving: m.moving });
+    // Une téléportation de la même fenêtre (pas encore diffusée) reste une téléportation pour les autres : ce mouvement la remplace dans le tick,
+    // mais l'avatar n'a pas glissé jusqu'à sa nouvelle place.
+    const teleported = this.pendingMoves.get(id)?.tp === true;
+    this.pendingMoves.set(id, { id, x: m.x, y: m.y, dir: m.dir, moving: m.moving, ...(teleported ? { tp: true as const } : {}) });
     return { ok: true };
   }
 
@@ -132,8 +141,23 @@ export class World {
     p.y = y;
     p.moving = false;
     entry.at = this.now();
-    this.pendingMoves.set(id, { id, x, y, dir: p.dir, moving: false });
+    this.pendingMoves.set(id, { id, x, y, dir: p.dir, moving: false, tp: true });
     return true;
+  }
+
+  // Donne `ms` de café à une personne présente, à partir de maintenant (un nouveau café remet le compte à zéro) ; null le retire tout de suite. Un
+  // identifiant qui n'est pas dans le monde est ignoré. Le café ne survit pas au départ de la personne (leave).
+  setBoost(id: string, ms: number | null): void {
+    if (!this.entries.has(id)) return;
+    if (ms === null) this.boosts.delete(id);
+    else this.boosts.set(id, this.now() + ms);
+  }
+
+  // La plus grande vitesse que le serveur accepte de cette personne : celle du café jusqu'à MOVE_JITTER_MS après sa fin (les derniers paquets
+  // arrivent en retard, leur heure de réception est celle d'après), sinon celle de la course. Un inconnu n'a pas de café.
+  maxSpeedOf(id: string): number {
+    const until = this.boosts.get(id);
+    return until !== undefined && this.now() <= until + MOVE_JITTER_MS ? MAX_SPEED_PX_PER_S : NORMAL_MAX_SPEED_PX_PER_S;
   }
 
   // Le statut d'un joueur présent, retenu aussi pour son prochain retour. Un identifiant qui n'est pas dans le monde est ignoré.

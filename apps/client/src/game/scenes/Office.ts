@@ -67,6 +67,8 @@ export class Office extends Scene {
   private directions: DirectionInput;
   // « Aller à mon bureau » : la marche automatique, qui prend la place du clavier tant qu'elle dure.
   private autoWalk: AutoWalk;
+  // Jusqu'à quand l'avatar local a un café (ms, horloge du jeu) : 0, il n'en a pas.
+  private boostedUntil = 0;
   private moveSender: MoveSender;
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
@@ -99,6 +101,9 @@ export class Office extends Scene {
       players: {},
       media: mediaDebug,
       teleport: (x, y) => this.teleport(x, y),
+      boost: (ms) => this.boost(ms),
+      boosted: () => this.boosted(),
+      speed: () => this.player?.currentSpeed() ?? 0,
       showOthers: (visible) => this.showOthers(visible),
       avatarsOf: (id) => this.children.list.filter((object) => object.name === avatarObjectName(id)).length,
       selfAvatar: () => (this.player ? { wanted: this.player.avatarWanted, shown: this.player.avatarShown } : null),
@@ -271,7 +276,7 @@ export class Office extends Scene {
     const now = clock();
     const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
     if (autoDirection !== null) this.player.step(autoDirection);
-    else this.player.step(this.directions.current(), this.directions.sprinting());
+    else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];
@@ -387,7 +392,7 @@ export class Office extends Scene {
   private onTick({ moves }: WorldTick): void {
     const at = clock();
     for (const move of moves) {
-      if (move.id !== this.selfId) this.remotes.get(move.id)?.push(at, move);
+      if (move.id !== this.selfId) this.remotes.get(move.id)?.push(at, move, move.tp === true);
     }
   }
 
@@ -469,6 +474,17 @@ export class Office extends Scene {
     emitOnBus(EventBus, 'local:teleport', { x: tx, y: ty });
     this.moveSender.reset();
     this.sendLocalState(clock());
+  }
+
+  // Un café (window.__office.boost, pour les tests ; la machine à café le fera aussi) : l'avatar local va à la vitesse du café pendant `ms` ms, et
+  // la connexion le dit au serveur (`debug:boost`), qui relève sa limite de vitesse.
+  private boost(ms: number): void {
+    this.boostedUntil = ms > 0 ? clock() + ms : 0;
+    emitOnBus(EventBus, 'local:boost', { ms });
+  }
+
+  private boosted(): boolean {
+    return clock() < this.boostedUntil;
   }
 
   private showOthers(visible: boolean): void {

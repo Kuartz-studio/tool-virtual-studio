@@ -199,25 +199,25 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   - Tests existants qui citent 160 ou 3 : `auto-walk.test.ts`, `snapshot-buffer.test.ts`, `packages/shared/test/*`, `apps/server/test/world.test.ts`, `e2e/world.spec.ts`.
 
 **Interfaces**
-- Produit :
+- Produit, tel que livré :
   ```ts
+  // shared/constants.ts : WALK_SPEED_PX_PER_S 320 · SPRINT_FACTOR 1,5 · COFFEE_SPEED_FACTOR 2 · NORMAL_MAX_SPEED_PX_PER_S 480 · MAX_SPEED_PX_PER_S 960 · TELEPORT_SNAP_PX 256
   export function speedOf(sprint: boolean, boosted: boolean): number;            // 320 · 480 · 640 · 960
   export function validateMove(m: OfficeMap, from: Timed, to: Timed, maxSpeed?: number): MoveResult;   // défaut : NORMAL_MAX_SPEED_PX_PER_S
-  // World
-  setBoost(id: string, untilMs: number | null): void;
-  maxSpeedOf(id: string): number;          // MAX_SPEED_PX_PER_S jusqu'à `until + MOVE_JITTER_MS`, sinon NORMAL
+  // WorldTick.moves[i] : { id, x, y, dir, moving, tp?: true } ; ClientToServer : 'debug:boost': { ms } (E2E=1 seulement, schéma debugBoostSchema)
+  // World (serveur)
+  setBoost(id: string, ms: number | null): void;   // `ms` de café À PARTIR DE MAINTENANT (la plan disait « untilMs » : voir le registre) ; null le retire ; un inconnu est ignoré
+  maxSpeedOf(id: string): number;                  // 960 jusqu'à `fin + MOVE_JITTER_MS`, sinon 480 ; leave() efface le café
+  // client : SnapshotBuffer.push(at, s, jump = false) · RemotePlayer.push(at, s, jump = false) · stepAnimationScale(speed) (game/step-animation.ts)
+  //          LocalPlayer.step(dir, sprint = false, boosted = false), currentSpeed() · window.__office.boost(ms) / boosted() / speed()
   ```
 
-**Étapes**
-- [ ] Tests, qui échouent :
-  - `speed.test.ts` : « speedOf rend 320, 480, 640 et 960 » ;
-  - `validate-move.test.ts` : « 700 px/s est refusé sans café (`too_fast`) et accepté avec `maxSpeed = MAX` » ;
-  - `world.test.ts` : « sous café, on peut aller à 960 px/s » ; « la limite normale revient `MOVE_JITTER_MS` après la fin du café » ; « `teleport` marque le mouvement `tp` » ;
-  - `snapshot-buffer.test.ts` : « un avatar à 960 px/s glisse sans saut de plus de 20 px par image » ; « un mouvement `tp` saute tout de suite » ; « l'extrapolation à 960 px/s n'entre pas dans un mur (`bodyFits`) ».
-- [ ] Implémenter ; relire tout ce qui dépend de `MAX_SPEED_PX_PER_S` (`validate-move`, `snapshot-buffer`, `move-sender`).
-- [ ] E2E (`world.spec.ts`) : « avec `debug:boost`, on court à 640 px/s et on ne traverse pas un mur d'une case, même images lentes (throttling CPU de Chromium) ».
-- [ ] `pnpm typecheck && pnpm test` passent.
-- [ ] Commit : `feat: la marche va deux fois plus vite, et le serveur connaît la vitesse du café`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `speed.test.ts` (5), `validate-move.test.ts` (+5), `world.test.ts` du serveur (+9 : le café, `tp`), `realtime-world.test.ts` (+11 : `debug:boost`, dont un test de mutation vérifié), `snapshot-buffer.test.ts` (+4 ; les tests existants qui encodaient 160 px/s et 480 px/s sont réécrits à partir des constantes), `step-animation.test.ts` (4).
+- [x] Implémenté ; tout ce qui dépendait de `MAX_SPEED_PX_PER_S` relu (`validate-move`, `snapshot-buffer`) ; `move-sender` n'a pas changé. Ajouts au brief : la cadence des pas suit la vitesse (`stepAnimationScale`), la physique Arcade à 120 Hz (`physics.arcade.fps`, option vérifiée dans Phaser 4.2.1 : pas fixe, boucle sans plafond de pas).
+- [x] E2E (`world.spec.ts`, 20 tests) : la marche et la course lisent la vitesse exacte de la physique (`window.__office.speed()`), au lieu d'une mesure sur le temps de la machine ; le café : 640, puis 960 avec Maj, et le mur de droite arrête l'avatar à x ≤ 726 avec le processeur ralenti 4 fois.
+- [x] `pnpm typecheck` vert ; `pnpm test` : 140 fichiers, 2 511 tests (les 2 453 d'avant, dont quelques-uns réécrits, et 58 nouveaux).
+- [x] Commit : `feat: la marche va deux fois plus vite, et le serveur connaît la vitesse du café`.
 
 ### Tâche 3 : zoom au pas de 5 % (P0, M)
 

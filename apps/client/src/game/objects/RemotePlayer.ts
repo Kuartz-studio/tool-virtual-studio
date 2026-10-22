@@ -1,11 +1,15 @@
-import { REMOTE_RENDER_DELAY_MS, type ActivityState, type PublicPlayer, type Status } from '@bureau/shared';
+import { REMOTE_RENDER_DELAY_MS, WALK_SPEED_PX_PER_S, type ActivityState, type PublicPlayer, type Status } from '@bureau/shared';
 import type { GameObjects, Input, Scene } from 'phaser';
 import { animKey, avatarObjectName, resolveAvatarKey, type AvatarSpec } from '../avatars';
 import { snapToPixels } from '../pixel-snap';
 import { SnapshotBuffer, type BodyFits, type Snapshot } from '../snapshot-buffer';
+import { stepAnimationScale } from '../step-animation';
 import { AvatarSkin, avatarLibraryOf } from './avatar-skin';
 import { NameTag } from './NameTag';
 import { addShadow, placeShadow } from './shadow';
+
+// La cadence des pas d'un autre avatar qui marche : celle de la marche (on ne lit pas s'il court, ni s'il a un café).
+const REMOTE_STEP_SCALE = stepAnimationScale(WALK_SPEED_PX_PER_S);
 
 // L'avatar d'un autre joueur : un sprite sans physique (sa position vient du serveur), son ombre et son étiquette. Les positions
 // reçues (push) sont dessinées avec REMOTE_RENDER_DELAY_MS de retard, en glissant de l'une à l'autre (SnapshotBuffer) ; render() est
@@ -42,9 +46,9 @@ export class RemotePlayer {
     this.render(now);
   }
 
-  // Une position reçue (world:tick), datée de sa réception.
-  push(at: number, s: Snapshot): void {
-    this.snapshots.push(at, s);
+  // Une position reçue (world:tick), datée de sa réception. `jump` : le serveur a téléporté la personne jusqu'ici : on y saute, on ne glisse pas.
+  push(at: number, s: Snapshot, jump = false): void {
+    this.snapshots.push(at, s, jump);
   }
 
   // L'état que donne un nouvel init (reconnexion, redémarrage du serveur) : il remplace tout, sans glisser depuis l'ancien.
@@ -112,6 +116,7 @@ export class RemotePlayer {
     this.sprite.setPosition(x, y).setDepth(y);
     // `true` : une animation déjà en cours n'est pas relancée à chaque image.
     this.sprite.play(animKey(this.spec.key, moving ? 'walk' : 'idle', dir), true);
+    this.sprite.anims.timeScale = moving ? REMOTE_STEP_SCALE : 1;
     placeShadow(this.shadow, x, y);
     this.tag.placeAbove(x, y - this.spec.height);
     return this.drawn;

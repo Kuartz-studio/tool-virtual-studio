@@ -9,6 +9,7 @@ export * from './map/find-path';
 export * from './map/build-tiled';
 export * from './map/dev-office';
 export * from './map/office';
+export * from './movement/speed';
 export * from './movement/validate-move';
 export * from './proximity/audio-gain';
 export * from './proximity/compute-groups';

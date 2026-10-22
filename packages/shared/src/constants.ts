@@ -5,11 +5,15 @@ export const TILE_SIZE = 32;
 // de la physique Arcade (feetBody, dans le client), et l'extrapolation des autres avatars ne la fait pas entrer dans un mur
 // (avatarBodyFits).
 export const AVATAR_BODY = { width: 20, height: 12, belowFeet: 1 } as const;
-// La marche, et la course (Maj enfoncée) : trois fois plus vite. Le serveur n'a pas à savoir laquelle des deux on fait ; il refuse ce qui
-// dépasse la course (MAX_SPEED_PX_PER_S), la plus grande vitesse qu'une personne puisse avoir.
-export const WALK_SPEED_PX_PER_S = 160;
-export const SPRINT_FACTOR = 3;
-export const MAX_SPEED_PX_PER_S = WALK_SPEED_PX_PER_S * SPRINT_FACTOR;
+// La marche, la course (Maj enfoncée) et le café. La marche fait 320 px/s ; Maj la multiplie par 1,5 (480 px/s, la vitesse qu'avait la course avant la
+// mise à jour : elle n'a pas doublé, elle irait sinon plus vite que le café) ; un café la multiplie par 2 (640 px/s, soit quatre fois la marche
+// d'avant), et Maj en plus donne 960 px/s. Le serveur ne sait pas si l'on court : il refuse ce qui dépasse NORMAL_MAX_SPEED_PX_PER_S (la course),
+// ou MAX_SPEED_PX_PER_S (la course sous café) tant que la personne a un café, ce qu'il sait puisque c'est lui qui le donne (World.maxSpeedOf).
+export const WALK_SPEED_PX_PER_S = 320;
+export const SPRINT_FACTOR = 1.5;
+export const COFFEE_SPEED_FACTOR = 2;
+export const NORMAL_MAX_SPEED_PX_PER_S = WALK_SPEED_PX_PER_S * SPRINT_FACTOR;
+export const MAX_SPEED_PX_PER_S = NORMAL_MAX_SPEED_PX_PER_S * COFFEE_SPEED_FACTOR;
 export const MOVE_TOLERANCE = 1.5;
 export const MOVE_JITTER_MS = 250;
 export const MOVE_SEGMENT_STEP_PX = 8;
@@ -27,7 +31,11 @@ export const REMOTE_RENDER_DELAY_MS = 150;
 // tick vide avec 150 ms de retard (deux positions à 200 ms d'écart), sans dépasser de plus de 9,6 px (60 ms de marche) le point où
 // la personne s'est peut-être arrêtée. WorkAdventure extrapole de même, jusqu'à 100 ms.
 export const EXTRAPOLATION_MAX_MS = 60;
-export const TELEPORT_SNAP_PX = 3 * TILE_SIZE;
+// Un autre avatar saute au lieu de glisser quand la distance entre deux positions reçues dépasse de TELEPORT_SNAP_PX ce que la plus grande vitesse
+// (MAX_SPEED_PX_PER_S, le café) explique en ce temps-là. Le serveur annonce ses téléportations (`tp` dans le tick) : ce seuil ne sert plus qu'au
+// reste (un retour au point d'apparition, une position venue d'une autre version de la carte). 8 cases : assez large pour qu'un tick manqué
+// sous café ne fasse pas sauter, assez court pour qu'un vrai saut se voie.
+export const TELEPORT_SNAP_PX = 8 * TILE_SIZE;
 export const GROUPS_TICK_MS = 100;
 // Le son des espaces ouverts s'éteint avec la distance : à 100 % dans un grand rayon autour de soi (AUDIO_FULL_DISTANCE_PX), puis de plus
 // en plus faible jusqu'au silence (AUDIO_SILENT_DISTANCE_PX). Dans une zone (un bureau, une salle), rien de tel : tout le monde s'entend

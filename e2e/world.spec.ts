@@ -321,9 +321,9 @@ test('marcher à droite : ArrowRight enfoncée 500 ms fait avancer l\'avatar, qu
 
   const walked = await restingAt(page);
   expect(walked.x - x0).toBeGreaterThan(40);
-  // 160 px/s (WALK_SPEED_PX_PER_S) : une demi-seconde fait 80 px. Jamais plus vite que la marche sans Maj, pendant le temps qu'a
+  // 320 px/s (WALK_SPEED_PX_PER_S) : une demi-seconde fait 160 px. Jamais plus vite que la marche sans Maj, pendant le temps qu'a
   // duré l'appui (à quelques pixels près : l'image qui suit le relâchement).
-  expect(walked.x - x0).toBeLessThanOrEqual(160 * heldSeconds + 12);
+  expect(walked.x - x0).toBeLessThanOrEqual(320 * heldSeconds + 24);
   // Une seule direction à la fois : il n'a pas bougé en y.
   expect(walked.y).toBe(240);
 
@@ -332,39 +332,63 @@ test('marcher à droite : ArrowRight enfoncée 500 ms fait avancer l\'avatar, qu
   expect(await selfAt(page)).toEqual(walked);
 });
 
-test('courir : avec Maj enfoncée, l\'avatar va trois fois plus vite, et le serveur ne le ramène pas en arrière', async ({ page }) => {
+test('courir : avec Maj enfoncée, l\'avatar va une fois et demie plus vite, et le serveur ne le ramène pas en arrière', async ({ page }) => {
   await joinOfficeAlone(page, 'Rosa');
   const x0 = (await selfAt(page)).x;
-  // L'heure est celle de la page : les allers-retours du test n'entrent pas dans la mesure.
-  const sample = () => page.evaluate(() => ({ x: window.__office!.self!.x, t: performance.now() }));
-  // La vitesse, en px/s, entre deux mesures espacées de `ms` : sur une machine chargée, le jeu tourne moins vite que le temps, mais autant
-  // à la marche qu'à la course : c'est le rapport des deux qui compte.
-  const speed = async (ms: number) => {
-    const from = await sample();
-    await page.waitForTimeout(ms);
-    const to = await sample();
-    return ((to.x - from.x) / (to.t - from.t)) * 1000;
-  };
+  // La vitesse que la physique donne à l'avatar : exacte, quelle que soit la charge de la machine (WALK_SPEED_PX_PER_S, puis la course).
+  const speed = () => page.evaluate(() => window.__office!.speed());
 
   await page.keyboard.down('ArrowRight');
   await expect.poll(async () => (await selfAt(page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(x0);
-  const walking = await speed(400);
-  expect(walking, 'marche').toBeGreaterThan(40);
-  expect(walking).toBeLessThanOrEqual(160 + 20);
+  await expect.poll(speed).toBe(320);
+  await page.waitForTimeout(400);
 
-  // Maj enfoncée en marchant : on court.
+  // Maj enfoncée en marchant : on court, à la vitesse qu'avait la course avant la mise à jour (NORMAL_MAX_SPEED_PX_PER_S).
   await page.keyboard.down('Shift');
-  const running = await speed(350);
+  await expect.poll(speed).toBe(480);
+  await page.waitForTimeout(350);
   await page.keyboard.up('Shift');
+  await expect.poll(speed).toBe(320);
   await page.keyboard.up('ArrowRight');
-  expect(running, 'course').toBeGreaterThan(1.8 * walking);
-  // 480 px/s (MAX_SPEED_PX_PER_S) : jamais plus vite, à quelques pixels par seconde près.
-  expect(running).toBeLessThanOrEqual(480 + 40);
+  await expect.poll(speed).toBe(0);
 
   // Le serveur a accepté le trajet : au repos, l'avatar est là où il s'est arrêté, sans retour en arrière (move:correct).
   const stopped = await restingAt(page);
   await page.waitForTimeout(500);
   expect(await selfAt(page)).toEqual(stopped);
+});
+
+test('le café : 640 px/s, 960 avec Maj en plus ; le serveur le laisse faire, et le mur d\'une case l\'arrête, même quand le jeu tourne au ralenti', async ({ page }) => {
+  await joinOfficeAlone(page, 'Rosa');
+  const speed = () => page.evaluate(() => window.__office!.speed());
+  expect(await page.evaluate(() => window.__office!.boosted())).toBe(false);
+  await page.evaluate(() => window.__office!.boost(30_000));
+  expect(await page.evaluate(() => window.__office!.boosted())).toBe(true);
+
+  // Le processeur est ralenti : le jeu dessine bien moins d'images par seconde. La physique avance par pas fixes, elle ne saute pas de mur pour autant.
+  const cpu = await page.context().newCDPSession(page);
+  await cpu.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+  try {
+    const x0 = (await selfAt(page)).x;
+    await page.keyboard.down('ArrowRight');
+    await expect.poll(async () => (await selfAt(page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(x0);
+    await expect.poll(speed).toBe(640);
+    // Maj en plus : 960 px/s, plus que ce que le serveur permet sans café (720 px/s tenus : il recalerait l'avatar).
+    await page.keyboard.down('Shift');
+    await expect.poll(speed).toBe(960);
+    // Le mur de droite de la petite carte commence à x = 736 : la zone de collision (20 px de large) y touche à x = 726. Elle ne va jamais au-delà.
+    await expect.poll(async () => (await selfAt(page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(700);
+    await page.keyboard.up('ArrowRight');
+    await page.keyboard.up('Shift');
+    const stopped = await restingAt(page);
+    expect(stopped.x).toBeLessThanOrEqual(726);
+    expect(stopped.y).toBe(240);
+    // Le serveur a accepté tout le trajet : au repos, l'avatar est où il s'est arrêté, sans retour en arrière (move:correct).
+    await page.waitForTimeout(500);
+    expect(await selfAt(page)).toEqual(stopped);
+  } finally {
+    await cpu.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+  }
 });
 
 test('zoom : la molette, les boutons et les touches, jusqu\'à ×2 plus près et ×4 plus loin que la vue de départ', async ({ page }) => {

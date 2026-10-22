@@ -31,6 +31,8 @@ export interface OfficeBusEvents {
   'local:lights': (p: { on: boolean }) => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
+  // window.__office.boost (tests de bout en bout seulement) : `debug:boost`, que le serveur n'accepte qu'avec E2E=1.
+  'local:boost': (p: { ms: number }) => void;
   // L'interface demande au jeu de faire marcher l'avatar tout seul jusqu'à son bureau (« Aller à mon bureau », game/auto-walk.ts), ou
   // d'arrêter cette marche. Rien ne part au serveur de ces deux-là : l'avatar marche comme au clavier, et ses positions partent par `local:move`.
   'local:walk-to-desk': () => void;
@@ -184,6 +186,9 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:teleport', (p) => {
       if (state().ready) socket.emit('debug:teleport', p);
+    }),
+    listenOnBus(bus, 'local:boost', (p) => {
+      if (state().ready) socket.emit('debug:boost', p);
     }),
     listenOnBus(bus, 'local:lights', ({ on }) => {
       if (state().ready) socket.emit('lights:set', { on });

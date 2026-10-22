@@ -9,6 +9,7 @@ import {
   STATUS_RATE,
   activityIdSchema,
   chatSendSchema,
+  debugBoostSchema,
   deskCommandSchema,
   computeGroups,
   lightsSetSchema,
@@ -223,6 +224,12 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     socket.on('debug:teleport', (payload) => {
       const point = teleportSchema.safeParse(payload);
       if (point.success) d.world.teleport(userId, point.data.x, point.data.y);
+    });
+    // Donne du café à la personne (le serveur relève sa limite de vitesse), 0 le retire : de quoi tester la vitesse du café avant que la machine existe,
+    // et sans elle ensuite.
+    socket.on('debug:boost', (payload) => {
+      const boost = debugBoostSchema.safeParse(payload);
+      if (boost.success && d.world.get(userId)) d.world.setBoost(userId, boost.data.ms === 0 ? null : boost.data.ms);
     });
   }
 }

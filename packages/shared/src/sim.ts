@@ -14,7 +14,7 @@ export function isSimBot(id: string): boolean {
 // n'y a pas de LiveKit derrière.
 export const SIM_MEDIA_URL = 'sim://local';
 
-// La vitesse de marche d'une personne fictive, en pixels par seconde : sous MAX_SPEED_PX_PER_S (160), la vitesse d'une vraie personne
+// La vitesse de marche d'une personne fictive, en pixels par seconde : sous WALK_SPEED_PX_PER_S (320), la vitesse d'une vraie personne
 // au clavier, pour que le serveur accepte ses pas avec de la marge.
 export const SIM_BOT_SPEED_PX_PER_S = 110;
 

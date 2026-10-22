@@ -1,4 +1,4 @@
-import { DEV_OFFICE, buildTiledMap, parseOfficeMap } from '@bureau/shared';
+import { DEV_OFFICE, MAX_SPEED_PX_PER_S, MOVE_JITTER_MS, NORMAL_MAX_SPEED_PX_PER_S, buildTiledMap, parseOfficeMap } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { World } from '../src/realtime/world';
 
@@ -247,7 +247,7 @@ describe('teleport', () => {
     world.drainMoves();
     expect(world.teleport('a', 400, 400)).toBe(true);
     expect(world.get('a')).toMatchObject({ x: 400, y: 400, dir: 'right', moving: false });
-    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false }]);
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false, tp: true }]);
     expect(world.drainMoves()).toEqual([]);
   });
 
@@ -257,7 +257,7 @@ describe('teleport', () => {
     clock.t = 100;
     world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
     world.teleport('a', 400, 400);
-    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false }]);
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false, tp: true }]);
   });
 
   test.each([
@@ -289,6 +289,84 @@ describe('teleport', () => {
     // de join (1 000 ms plus tôt), 900 px seraient permis, et (581, 400) n'est qu'à 181 px.
     expect(world.applyMove('a', { x: 581, y: 400, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 400, y: 400 } });
     expect(world.applyMove('a', { x: 580, y: 400, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+});
+
+describe('teleport : le mouvement est marqué `tp` pour que les autres sautent au lieu de glisser', () => {
+  test('un mouvement ordinaire ne porte pas de `tp`', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true });
+    expect(world.drainMoves()[0]).not.toHaveProperty('tp');
+  });
+
+  test('un mouvement accepté après la téléportation, dans la même fenêtre, la garde : les autres la voient toujours comme une téléportation', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.teleport('a', 400, 400);
+    clock.t = 200;
+    expect(world.applyMove('a', { x: 420, y: 400, dir: 'right', moving: true })).toEqual({ ok: true });
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 420, y: 400, dir: 'right', moving: true, tp: true }]);
+    // La fenêtre suivante repart de zéro : le mouvement d'après est ordinaire.
+    clock.t = 300;
+    world.applyMove('a', { x: 440, y: 400, dir: 'right', moving: true });
+    expect(world.drainMoves()[0]).not.toHaveProperty('tp');
+  });
+});
+
+// ---- Le café -----------------------------------------------------------------------------------------------------------------
+
+describe('le café : la limite de vitesse du joueur passe de 480 à 960 px/s', () => {
+  test('sans café, 500 px en 100 ms sont refusés ; sous café, ils passent (504 px au plus)', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 30_000);
+    clock.t = 100;
+    expect(world.applyMove('b', { x: 580, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+    expect(world.applyMove('a', { x: 580, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+
+  test('maxSpeedOf : 960 sous café, 480 sinon, et un inconnu n\'a pas de café', () => {
+    const { world, join } = setup();
+    join('a');
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+    world.setBoost('a', 30_000);
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    expect(world.maxSpeedOf('fantome')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+  });
+
+  test('la limite normale revient MOVE_JITTER_MS après la fin du café : les derniers paquets en retard passent encore', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    world.setBoost('a', 1_000);   // jusqu'à t = 1 000
+    clock.t = 1_000 + MOVE_JITTER_MS;
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    clock.t = 1_000 + MOVE_JITTER_MS + 1;
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+  });
+
+  test('un nouveau café remet le compte à zéro ; setBoost(id, null) l\'éteint tout de suite', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    world.setBoost('a', 1_000);
+    clock.t = 900;
+    world.setBoost('a', 1_000);   // jusqu'à t = 1 900
+    clock.t = 1_500;
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    world.setBoost('a', null);
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+  });
+
+  test('un joueur qui part perd son café, il ne le retrouve pas en revenant', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setBoost('a', 30_000);
+    world.leave('a');
+    join('a');
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
   });
 });
 
