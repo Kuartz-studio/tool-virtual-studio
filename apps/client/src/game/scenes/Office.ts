@@ -24,12 +24,14 @@ import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
-import { bindKeyboard, bindZoomKeys, DirectionInput } from '../input';
+import { bindKeyboard, bindUseKey, bindZoomKeys, DirectionInput } from '../input';
+import { Interactions } from '../interactions';
 import { sourcesFromItems } from '../light-sources';
 import { LightSwitch } from '../light-switch';
 import { LightingLayer } from '../lighting';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { MoveSender } from '../move-sender';
+import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingRings } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
@@ -52,7 +54,9 @@ const clock = () => performance.now();
 // la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette. L'interrupteur de la lumière (une
 // plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
 // il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). Lumière éteinte, c'est la nuit (LightingLayer) :
-// l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. « Aller à mon
+// l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. Ce qu'on actionne
+// de près (la touche E, ou un clic) passe par un seul gestionnaire (Interactions), qui retient la cible la plus proche et dont l'étiquette
+// « [E] … » est unique. « Aller à mon
 // bureau » (`local:walk-to-desk`) fait marcher l'avatar tout seul jusqu'à sa place (AutoWalk), comme le ferait le clavier ; une touche de
 // déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à l'interface s'il marche.
 export class Office extends Scene {
@@ -72,6 +76,9 @@ export class Office extends Scene {
   private decorLayer: DecorLayer;
   // Les interrupteurs de lumière de la carte (un seul sur la grande carte, aucun sur celle de développement).
   private switches: LightSwitch[] = [];
+  // Ce qu'on actionne de près (touche E, ou un clic) : un seul gestionnaire, et l'étiquette « [E] … » unique qu'il commande.
+  private interactions: Interactions;
+  private prompt: InteractionPrompt;
   private lighting: LightingLayer;
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
@@ -149,9 +156,12 @@ export class Office extends Scene {
     this.decorEditor.sync(useOfficeStore.getState().decorEditor);
     this.rings = new SpeakingRings((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
 
-    // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit. La portée est celle des pieds de l'avatar, relue à
-    // chaque appui (la touche E, ou un clic sur la plaque).
-    this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, () => this.useLights(), () => this.feet()));
+    // Ce qu'on actionne de près : la portée est celle des pieds de l'avatar, relue à chaque appui (la touche E, ou un clic).
+    this.interactions = new Interactions({ feet: () => this.feet() });
+    this.prompt = new InteractionPrompt(this);
+    this.prompt.setZoom(this.cameras.main.zoom);
+    // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit.
+    this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, this.interactions, () => this.useLights()));
     const showLights = (instant = false) => {
       const { on } = useOfficeStore.getState().lights;
       for (const lightSwitch of this.switches) lightSwitch.setOn(on);
@@ -159,7 +169,6 @@ export class Office extends Scene {
     };
     // On arrive dans le noir : la nuit tout de suite, sans fondu ni éclair de jour.
     showLights(true);
-    for (const lightSwitch of this.switches) lightSwitch.setZoom(this.cameras.main.zoom);
 
     // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
     // qui n'existait pas encore, n'a pas reçu).
@@ -168,6 +177,8 @@ export class Office extends Scene {
 
     this.directions = new DirectionInput();
     const unbindKeyboard = bindKeyboard(this.directions);
+    // La touche E actionne la cible la plus proche (une seule, quel que soit le nombre d'objets à portée).
+    const unbindUse = bindUseKey(() => void this.interactions.use());
     // La marche automatique le dit à l'interface (`walk:state`) à chaque départ et à chaque arrêt ; une touche de déplacement l'interrompt.
     this.autoWalk = new AutoWalk((walking) => emitOnBus(EventBus, 'walk:state', { walking }));
     const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
@@ -228,12 +239,14 @@ export class Office extends Scene {
       this.autoWalk.cancel();
       unbindWalkKeys();
       unbindKeyboard();
+      unbindUse();
       unbindZoomKeys();
       canvas.removeEventListener('wheel', onWheel);
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
+      this.prompt.destroy();
       this.lighting.destroy();
       this.deskLayer.destroy();
       this.decorEditor.destroy();
@@ -278,8 +291,8 @@ export class Office extends Scene {
     this.sendLocalState(clock());
     const feet = this.feet();
     if (this.debug.self) Object.assign(this.debug.self, feet);
-    // L'étiquette de l'interrupteur se montre à portée (3 cases) : d'après les pieds de cette image.
-    for (const lightSwitch of this.switches) lightSwitch.updateReach(feet);
+    // La cible qu'on peut actionner de près (l'interrupteur, à 3 cases…) et son étiquette : d'après les pieds de cette image.
+    this.prompt.show(this.interactions.update(feet));
     // La nuit, d'après les avatars à leur place de cette image.
     this.lighting.update();
   }
@@ -493,6 +506,6 @@ export class Office extends Scene {
     // À la création, layoutCamera passe avant les avatars.
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);
-    for (const lightSwitch of this.switches) lightSwitch.setZoom(zoom);
+    this.prompt?.setZoom(zoom);
   };
 }

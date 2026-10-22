@@ -156,29 +156,35 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
 - Modifier : `game/light-switch.ts` (devient une cible : plus de `bindUseKey`, plus d'étiquette à lui), `game/scenes/Office.ts` (un `Interactions`, un seul `bindUseKey`), `game/light-switch.test.ts`.
 
 **Interfaces**
-- Produit :
+- Produit, tel que livré :
   ```ts
+  export interface Point { x: number; y: number }
   export interface Interactable {
     id: string;
-    pos: { x: number; y: number };     // centre, en pixels
-    reachTiles: number;
-    prompt(): string | null;           // « [E] Éteindre la lumière » ; null : rien à faire ici maintenant
+    pos: Point;                        // centre, en pixels
+    reachTiles: number;                // inclusive, en ligne droite depuis les pieds
+    labelAt?: Point;                   // le bas, au milieu de l'étiquette ; `pos` par défaut
+    prompt(): string | null;           // « [E] Éteindre la lumière » ; null : rien à faire ici maintenant, la cible est ignorée
     use(): void;
   }
   export class Interactions {
-    register(target: Interactable): () => void;                       // rend la fonction qui retire la cible
-    update(feet: { x: number; y: number }): Interactable | null;      // la plus proche à portée ; son texte est montré
-    use(feet?: { x: number; y: number }): boolean;                    // faux sans cible
+    constructor(options?: { feet?: () => Point });                 // les pieds de l'instant : update, use et useTarget les relisent quand on n'en donne pas
+    register(target: Interactable): () => void;                    // rend la fonction qui retire la cible
+    update(feet?: Point): Interactable | null;                     // la plus proche à portée ; à égalité, la première enregistrée
+    use(feet?: Point): boolean;                                    // la touche E ; faux sans cible
+    useTarget(target: Interactable, feet?: Point): boolean;        // un clic sur l'objet : lui seul, à portée seulement
     onChange(listener: (current: Interactable | null) => void): () => void;
   }
+  // objects/InteractionPrompt.ts : new InteractionPrompt(scene) ; show(target | null) à chaque image ; setZoom(zoom) ; destroy()
+  // light-switch.ts : new LightSwitch(scene, pos, interactions, onUse) ; la plaque, le témoin, setOn ; plus d'étiquette ni de touche à lui
   ```
 
-**Étapes**
-- [ ] Tests (`interactions.test.ts`), qui échouent : « prend la cible la plus proche à portée » ; « ignore une cible hors de portée » ; « ignore une cible dont prompt() est null » ; « à égalité, la première enregistrée » ; « use() rend faux et ne fait rien sans cible » ; « une cible retirée ne répond plus » ; « onChange ne part que quand la cible change ».
-- [ ] `light-switch.test.ts` : l'interrupteur se comporte comme avant (portée de 3 cases, texte « [E] … », bascule à l'annonce du serveur).
-- [ ] Implémenter `Interactions` (pur, sans Phaser) et `InteractionPrompt` ; brancher `LightSwitch` et `Office.ts`.
-- [ ] `pnpm vitest run apps/client/src/game` passe.
-- [ ] Commit : `feat(client): un seul gestionnaire pour la touche E`.
+**Étapes** (faites le 22 oct. 2026 ; ajouts au brief : `labelAt`, `useTarget` et l'option `feet`, que le clic sur la plaque et la relecture des pieds à chaque appui demandaient)
+- [x] Tests (`interactions.test.ts`, 17), vus échouer puis passer : la cible la plus proche à portée, hors de portée, `prompt()` nul, égalité, `use()` sans cible, cible retirée, `onChange` ; en plus la portée inclusive, `useTarget`, le fournisseur de pieds. `InteractionPrompt.test.ts` : 9 tests.
+- [x] `light-switch.test.ts` (20) : l'interrupteur se comporte comme avant (portée de 3 cases, texte « [E] … », bascule à l'annonce du serveur). Le test de la touche E dans un champ de saisie reste à `input.test.ts` (`bindUseKey`).
+- [x] `Interactions` (pur, sans Phaser) et `InteractionPrompt` ; `LightSwitch` et `Office.ts` branchés (un `Interactions`, un seul `bindUseKey`, une seule étiquette).
+- [x] `pnpm vitest run apps/client/src/game` : 22 fichiers, 366 tests ; projet client entier : 91 fichiers, 1 620 tests ; `pnpm typecheck` vert.
+- [x] Commit : `feat(client): un seul gestionnaire pour la touche E`.
 
 ### Tâche 2 : vitesse × 2, physique, réseau et serveur (P0, M)
 
