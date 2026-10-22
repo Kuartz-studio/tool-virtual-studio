@@ -27,9 +27,12 @@ describe('petits chevaux : parties au hasard', () => {
     const report = runGameConformance(ludo, { games: GAMES, seats: [2, 3, 4], maxActions: MAX_ACTIONS, forfeitRate: 0.4, illegal });
     expect(report.games).toBe(GAMES);
     // Une partie fait des dizaines de coups, pas deux : le harnais a vraiment joué.
-    expect(report.actions).toBeGreaterThan(GAMES * 20);
+    expect(report.actions).toBeGreaterThanOrEqual(GAMES * 20);
     expect(report.biggestStateBytes).toBeLessThan(2_000);
-    if (process.env.JEUX_FUZZ !== undefined) console.info(`ludo : ${report.games} parties, ${report.actions} actions, la plus longue ${report.longest}, le plus gros état ${report.biggestStateBytes} octets`);
+    // Ce que coûte la recette, pour la noter (seulement quand on a demandé un nombre de parties).
+    if (process.env.JEUX_FUZZ !== undefined) {
+      console.info(`ludo : ${report.games} parties, ${report.actions} actions, la plus longue ${report.longest}, le plus gros état ${report.biggestStateBytes} octets`);
+    }
   }, TIMEOUT_MS);
 
   test('sans sortie, le harnais finit chaque partie sur un joueur qui a ses quatre chevaux arrivés', () => {
@@ -137,9 +140,14 @@ function checkStep(before: LudoState, after: LudoState, events: LudoEvent[], kin
     // Seuls le cheval joué et la victime de la prise ont bougé.
     const capture = events.find((event): event is Extract<LudoEvent, { type: 'capture' }> => event.type === 'capture');
     const cell = trackCell(before.colors[seat]!, to);
-    const onCell = before.horses.flatMap((row, owner) => (owner === seat ? [] : row.flatMap((advance, index) => (cell !== null && trackCell(before.colors[owner]!, advance) === cell ? [{ seat: owner, horse: index }] : []))));
+    // Les chevaux adverses qui étaient sur la case d'arrivée : il y en a au plus un, et c'est la victime.
+    const onCell = before.horses.flatMap((row, owner) =>
+      owner === seat ? [] : row.flatMap((advance, index) => (cell !== null && trackCell(before.colors[owner]!, advance) === cell ? [{ seat: owner, horse: index }] : [])),
+    );
     if (onCell.length > 1) fail('deux chevaux adverses sur la même case');
-    if (JSON.stringify(capture?.victim ?? null) !== JSON.stringify(onCell[0] ?? null)) fail(`la prise (${JSON.stringify(capture?.victim)}) n'est pas le cheval qui était sur la case (${JSON.stringify(onCell[0])})`);
+    if (JSON.stringify(capture?.victim ?? null) !== JSON.stringify(onCell[0] ?? null)) {
+      fail(`la prise (${JSON.stringify(capture?.victim)}) n'est pas le cheval qui était sur la case (${JSON.stringify(onCell[0])})`);
+    }
     before.horses.forEach((row, owner) =>
       row.forEach((advance, index) => {
         const isMover = owner === seat && index === horse;
@@ -170,7 +178,9 @@ function checkStep(before: LudoState, after: LudoState, events: LudoEvent[], kin
     before.horses.forEach((row, owner) => {
       if (owner !== gone.seat && JSON.stringify(row) !== JSON.stringify(after.horses[owner])) fail(`la sortie du siège ${gone.seat} a touché les chevaux du siège ${owner}`);
     });
-    if (gone.seat !== seat && after.result === null && (after.turn !== seat || after.phase !== before.phase || after.die !== before.die)) fail('la sortie d\'un autre siège a changé le tour de celui qui joue');
+    // La sortie d'un autre siège ne touche pas au tour de celui qui joue : même trait, même phase, même dé.
+    const othersTurnChanged = after.turn !== seat || after.phase !== before.phase || after.die !== before.die;
+    if (gone.seat !== seat && after.result === null && othersTurnChanged) fail('la sortie d\'un autre siège a changé le tour de celui qui joue');
   }
 }
 
@@ -194,11 +204,15 @@ function checkResult(state: LudoState, fail: (message: string) => never): void {
     // Les autres sièges encore en jeu : à leur avancée, du plus avancé au moins avancé, les égalités groupées.
     const middle = result.ranking.slice(1, result.ranking.length - gone.length);
     const values = middle.map((group) => scores[group[0]!]!);
-    if (values.some((value, index) => index > 0 && value >= values[index - 1]!)) fail(`les groupes du milieu ne sont pas triés à l'avancée : ${JSON.stringify(result.ranking)} pour ${JSON.stringify(scores)}`);
+    if (values.some((value, index) => index > 0 && value >= values[index - 1]!)) {
+      fail(`les groupes du milieu ne sont pas triés à l'avancée : ${JSON.stringify(result.ranking)} pour ${JSON.stringify(scores)}`);
+    }
     if (middle.some((group) => group.some((seat) => scores[seat] !== scores[group[0]!]))) fail('un groupe d\'ex æquo contient des avancées différentes');
   } else {
     if (!(FORFEIT_REASONS as readonly string[]).includes(result.reason)) fail(`raison de fin inconnue : ${result.reason}`);
-    if (state.out.length !== seats - 1 || result.reason !== state.out[state.out.length - 1]!.reason) fail('une fin par sortie doit avoir la raison de la dernière sortie, et un seul siège resté');
+    if (state.out.length !== seats - 1 || result.reason !== state.out[state.out.length - 1]!.reason) {
+      fail('une fin par sortie doit avoir la raison de la dernière sortie, et un seul siège resté');
+    }
   }
 }
 

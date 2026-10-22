@@ -33,8 +33,28 @@ const EXPECTED: Array<{
   ranking: number[][];
   scores: number[];
 }> = [
-  { name: 'deux joueurs, jusqu\'au bout', fixture: deux as unknown as Fixture, first: 0, entries: 354, moves: 161, out: [], reason: 'finished', ranking: [[1], [0]], scores: [165, 228] },
-  { name: 'deux joueurs, un abandon', fixture: abandon as unknown as Fixture, first: 1, entries: 92, moves: 44, out: [{ seat: 0, reason: 'timeout' }], reason: 'timeout', ranking: [[1], [0]], scores: [0, 37] },
+  {
+    name: 'deux joueurs, jusqu\'au bout',
+    fixture: deux as unknown as Fixture,
+    first: 0,
+    entries: 354,
+    moves: 161,
+    out: [],
+    reason: 'finished',
+    ranking: [[1], [0]],
+    scores: [165, 228],
+  },
+  {
+    name: 'deux joueurs, un abandon',
+    fixture: abandon as unknown as Fixture,
+    first: 1,
+    entries: 92,
+    moves: 44,
+    out: [{ seat: 0, reason: 'timeout' }],
+    reason: 'timeout',
+    ranking: [[1], [0]],
+    scores: [0, 37],
+  },
   {
     name: 'trois joueurs, une sortie',
     fixture: trois as unknown as Fixture,

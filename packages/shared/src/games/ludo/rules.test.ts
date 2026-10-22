@@ -694,7 +694,11 @@ describe('petits chevaux : les états', () => {
       ['quatre essais', { ...ok, tries: 4 }, /tries/],
       ['une phase over sans résultat', { ...ok, phase: 'over' }, /over/],
       ['un résultat sans phase over', { ...ok, result: { ranking: [[0], [1], [2]], reason: 'finished' } }, /over/],
-      ['un seul siège encore en jeu, partie en cours', { ...ok, horses: [[14, -1, -1, -1], STABLE, STABLE], out: [{ seat: 1, reason: 'resign' }, { seat: 2, reason: 'resign' }] }, /au moins deux/],
+      [
+        'un seul siège encore en jeu, partie en cours',
+        { ...ok, horses: [[14, -1, -1, -1], STABLE, STABLE], out: [{ seat: 1, reason: 'resign' }, { seat: 2, reason: 'resign' }] },
+        /au moins deux/,
+      ],
     ];
     for (const [name, state, expected] of defects) {
       const problems = ludo.invariants(state as LudoState);
@@ -705,12 +709,15 @@ describe('petits chevaux : les états', () => {
     const junks = [
       null, undefined, 0, 'x', [], {},
       { ...ok, horses: 'x' }, { ...ok, horses: [[1, 'a', 3, 4], [1, 2, 3, 4], STABLE] }, { ...ok, colors: null }, { ...ok, colors: [0, 'x', 2] },
-      { ...ok, turn: 'x' }, { ...ok, turn: 0.5 }, { ...ok, phase: 'dancing' }, { ...ok, die: 'x' }, { ...ok, die: 2.5 }, { ...ok, sixes: 1.5 }, { ...ok, sixes: undefined },
-      { ...ok, tries: null }, { ...ok, moves: '3' }, { ...ok, out: [null] }, { ...ok, out: 'x' }, { ...ok, out: [{ seat: 1, reason: 'fatigue' }] }, { ...ok, out: [{ seat: 'x', reason: 'resign' }] },
-      { ...ok, last: 3 }, { ...ok, last: { seat: 0, horse: 0, from: 1 } }, { ...ok, result: 'fini' }, { ...ok, result: { ranking: 'x', reason: 'finished' } }, { ...ok, result: { ranking: [], reason: 3 } },
+      { ...ok, turn: 'x' }, { ...ok, turn: 0.5 }, { ...ok, phase: 'dancing' }, { ...ok, die: 'x' }, { ...ok, die: 2.5 },
+      { ...ok, sixes: 1.5 }, { ...ok, sixes: undefined }, { ...ok, tries: null }, { ...ok, moves: '3' },
+      { ...ok, out: [null] }, { ...ok, out: 'x' }, { ...ok, out: [{ seat: 1, reason: 'fatigue' }] }, { ...ok, out: [{ seat: 'x', reason: 'resign' }] },
+      { ...ok, last: 3 }, { ...ok, last: { seat: 0, horse: 0, from: 1 } },
+      { ...ok, result: 'fini' }, { ...ok, result: { ranking: 'x', reason: 'finished' } }, { ...ok, result: { ranking: [], reason: 3 } },
       // Fautifs par leur seule forme : en phase move, un dé absurde ; en phase over, un résultat absurde ; un nombre de sièges qui n'est pas de 2 à 4.
       { ...ok, phase: 'move', die: 'x' }, { ...ok, phase: 'move', die: 2.5 },
-      { ...ok, phase: 'over', result: 'fini' }, { ...ok, phase: 'over', result: { ranking: 'x', reason: 'finished' } }, { ...ok, phase: 'over', result: { ranking: [], reason: 3 } },
+      { ...ok, phase: 'over', result: 'fini' }, { ...ok, phase: 'over', result: { ranking: 'x', reason: 'finished' } },
+      { ...ok, phase: 'over', result: { ranking: [], reason: 3 } },
       { ...ok, horses: [STABLE], colors: [0] }, { ...ok, horses: [STABLE, STABLE, STABLE, STABLE, STABLE], colors: [0, 1, 2, 3, 0] },
     ];
     for (const junk of junks) {
