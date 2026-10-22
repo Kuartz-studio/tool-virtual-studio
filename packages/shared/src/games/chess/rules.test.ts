@@ -1,10 +1,11 @@
 import { describe, expect, test } from 'vitest';
 import { deepFreeze } from '../conformance';
+import { GAMES } from '../index';
 import { chess, chessMoveSchema, MAX_PLIES_KEPT, positionKey, START_FEN, stateFromFen, type ChessState } from './index';
-import { fields, legalTexts, moveOf, noRandom, play, randomPlayout, startState, stateOf, textOf } from './test-helpers';
+import { fields, legalTexts, moveOf, noRandom, play, playSan, randomPlayout, startState, stateOf, textOf } from './test-helpers';
 
-// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à …). Les coups s'écrivent
-// de+vers(+pièce) : `e2e4`, `a7a8q`.
+// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à A27) : ce que le
+// document ne nomme pas mais que les règles, le contrat et le SAN exigent aussi. Les coups s'écrivent de+vers(+pièce) : `e2e4`, `a7a8q`.
 
 // Le siège qui a le trait, qui doit exister.
 function seatToMove(state: ChessState): number {
@@ -349,7 +350,7 @@ describe('cas nommés du document des jeux (§ 13.5)', () => {
   });
 });
 
-describe('cas ajoutés par l\'agent (A1 à A…)', () => {
+describe('cas ajoutés par l\'agent (A1 à A21)', () => {
   test('A1 : le SAN lève l\'ambiguïté par la colonne, par la rangée, puis par les deux', () => {
     const rooksOnAFile = stateOf('4k3/8/8/8/8/R7/8/R3K3 w - - 0 1');
     expect(lastPly(play(rooksOnAFile, 'a1a2')).san).toBe('R1a2');
@@ -535,7 +536,13 @@ describe('cas ajoutés par l\'agent (A1 à A…)', () => {
     expect(() => chess.create({ seats: 2, first: 2 }, noRandom)).toThrow();
   });
 
-  test('A19 : l\'historique est borné à MAX_PLIES_KEPT demi-coups : le plus ancien s\'en va, et un état de plus de MAX_PLIES_KEPT demi-coups n\'est pas légal', () => {
+  test('A19 : l\'identité du jeu : « chess », « Échecs », deux joueurs, la nulle par accord offerte (avec sa fonction), et il est au registre', () => {
+    expect(chess).toMatchObject({ id: 'chess', label: 'Échecs', minPlayers: 2, maxPlayers: 2, drawOffers: true });
+    expect(typeof chess.agreeDraw).toBe('function');
+    expect(GAMES.chess).toBe(chess);
+  });
+
+  test('A20 : l\'historique est borné à MAX_PLIES_KEPT demi-coups : le plus ancien s\'en va, et un état de plus de MAX_PLIES_KEPT demi-coups n\'est pas légal', () => {
     const base = stateOf('4k3/8/8/8/8/8/8/R3K3 w - - 0 1');
     const old = Array.from({ length: MAX_PLIES_KEPT }, (_, index) => ({ from: 'a1' as const, to: 'a2' as const, san: `ancien ${index + 1}`, piece: 'r' as const }));
     const full: ChessState = deepFreeze({ ...base, plies: old });
@@ -551,11 +558,74 @@ describe('cas ajoutés par l\'agent (A1 à A…)', () => {
     expect(JSON.stringify(packed).length).toBeLessThan(45_000);
   });
 
-  test('A20 : les coups légaux d\'une position fabriquée avec plusieurs dames et promotions se jouent tous sans erreur', () => {
+  test('A21 : les coups légaux d\'une position fabriquée avec plusieurs dames et promotions se jouent tous sans erreur', () => {
     const state = stateOf('r3k2r/1P4P1/8/8/8/8/1p4p1/R3K2R w KQkq - 0 1');
     const moves = chess.legalMoves(state, 0);
     expect(moves.length).toBeGreaterThan(30);
     for (const move of moves) expect(chess.apply(state, 0, move, noRandom).ok).toBe(true);
+  });
+});
+
+// Des parties réelles, jouées en SAN : chaque coup du texte doit être retrouvé parmi les coups légaux par l'écriture que le moteur lui donne (lettres, prises,
+// désambiguïsation, roque, échec, mat). Ce sont des données que l'agent n'a pas fabriquées : si le moteur ou le SAN se trompent quelque part, un coup manque.
+describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notation (A22 à A25), symétries et bords (A26, A27)', () => {
+  const sans = (state: ChessState): string[] => state.plies.map((ply) => ply.san);
+
+  test('A22 : l\'Opéra de Morphy (Paris, 1858) : 33 demi-coups, un grand roque, Nbd7, et le mat Rd8#', () => {
+    const text =
+      'e4 e5 Nf3 d6 d4 Bg4 dxe5 Bxf3 Qxf3 dxe5 Bc4 Nf6 Qb3 Qe7 Nc3 c6 Bg5 b5 Nxb5 cxb5 Bxb5+ Nbd7 O-O-O Rd8 Rxd7 Rxd7 Rd1 Qe6 Bxd7+ Nxd7 Qb8+ Nxb8 Rd8#';
+    const state = playSan(startState(), text);
+    expect(sans(state).join(' ')).toBe(text);
+    expect(state.plies).toHaveLength(33);
+    expect(chess.result(state)).toEqual({ ranking: [[0], [1]], reason: 'checkmate' });
+    expect(state.fen).toBe('1n1Rkb1r/p4ppp/4q3/4p1B1/4P3/8/PPP2PPP/2K5 b k - 1 17');
+  });
+
+  test('A23 : l\'Immortelle (Anderssen, Kieseritzky, 1851) : 45 demi-coups, les deux rois ont bougé, et le mat Be7#', () => {
+    const text =
+      'e4 e5 f4 exf4 Bc4 Qh4+ Kf1 b5 Bxb5 Nf6 Nf3 Qh6 d3 Nh5 Nh4 Qg5 Nf5 c6 g4 Nf6 Rg1 cxb5 h4 Qg6 h5 Qg5 Qf3 Ng8 Bxf4 Qf6 Nc3 Bc5 Nd5 Qxb2 Bd6 Bxg1 e5 Qxa1+ Ke2 Na6 Nxg7+ Kd8 Qf6+ Nxf6 Be7#';
+    const state = playSan(startState(), text);
+    expect(sans(state).join(' ')).toBe(text);
+    expect(state.plies).toHaveLength(45);
+    expect(chess.result(state)).toEqual({ ranking: [[0], [1]], reason: 'checkmate' });
+    // La position finale publiée : le roi blanc a bougé (Kf1, Ke2) et le noir aussi (Kd8), donc plus aucun droit de roque.
+    expect(fields(state.fen, 3)).toBe('r1bk3r/p2pBpNp/n4n2/1p1NP2P/6P1/3P4/P1P1K3/q5b1 b -');
+  });
+
+  test('A24 : la Toujours-verte (Anderssen, Dufresne, 1852) : 47 demi-coups, un petit roque, Nbd2, et le mat Bxe7#', () => {
+    const text =
+      'e4 e5 Nf3 Nc6 Bc4 Bc5 b4 Bxb4 c3 Ba5 d4 exd4 O-O d3 Qb3 Qf6 e5 Qg6 Re1 Nge7 Ba3 b5 Qxb5 Rb8 Qa4 Bb6 Nbd2 Bb7 Ne4 Qf5 Bxd3 Qh5 Nf6+ gxf6 exf6 Rg8 Rad1 Qxf3 Rxe7+ Nxe7 Qxd7+ Kxd7 Bf5+ Ke8 Bd7+ Kf8 Bxe7#';
+    const state = playSan(startState(), text);
+    expect(sans(state).join(' ')).toBe(text);
+    expect(state.plies).toHaveLength(47);
+    expect(chess.result(state)).toEqual({ ranking: [[0], [1]], reason: 'checkmate' });
+  });
+
+  test('A25 : une partie célèbre jouée au siège 1 pour les Blancs donne le même mat, au siège 1', () => {
+    const state = playSan(startState(1), 'e4 e5 Qh5 Nc6 Bc4 Nf6 Qxf7#');
+    expect(chess.result(state)).toEqual({ ranking: [[1], [0]], reason: 'checkmate' });
+  });
+
+  test('A26 : la prise en passant et la promotion des Noirs, symétriques de celles des Blancs', () => {
+    const afterDouble = play(startState(), 'a2a3 e7e5 a3a4 e5e4 d2d4');
+    expect(afterDouble.fen.split(' ')[3]).toBe('d3');
+    expect(legalTexts(afterDouble)).toContain('e4d3');
+    const captured = play(afterDouble, 'e4d3');
+    expect(lastPly(captured)).toMatchObject({ from: 'e4', to: 'd3', piece: 'p', captured: 'p', enPassant: true, san: 'exd3' });
+    expect(fields(captured.fen, 1)).toBe('rnbqkbnr/pppp1ppp/8/8/P7/3p4/1PP1PPPP/RNBQKBNR');
+    const promotion = stateOf('4k3/8/8/8/8/8/p7/4K3 b - - 0 1');
+    expect(legalTexts(promotion)).toHaveLength(9);
+    expect(lastPly(play(promotion, 'a2a1q')).san).toBe('a1=Q+');
+    expect(lastPly(play(promotion, 'a2a1n')).san).toBe('a1=N');
+    expect(fields(play(promotion, 'a2a1n').fen, 1)).toBe('4k3/8/8/8/8/8/8/n3K3');
+  });
+
+  test('A27 : un siège qui n\'existe pas ne peut ni abandonner ni jouer', () => {
+    const state = play(startState(), 'e2e4');
+    expect(chess.forfeit(state, 5, 'resign')).toEqual({ state, events: [] });
+    expect(chess.forfeit(state, -1, 'timeout')).toEqual({ state, events: [] });
+    expect(chess.legalMoves(state, 7)).toEqual([]);
+    expect(chess.apply(state, 7, moveOf('e7e5'), noRandom).ok).toBe(false);
   });
 });
 

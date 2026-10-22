@@ -53,6 +53,27 @@ export function play(state: ChessState, moves: string): ChessState {
   return current;
 }
 
+// Joue une partie écrite en SAN (« e4 e5 Nf3 … ») : à chaque pas, on cherche le coup légal dont le SAN que produit le moteur est celui du texte. Un texte qu'aucun coup
+// légal ne produit lève une erreur qui dit où : c'est ainsi qu'une partie réelle éprouve en même temps les coups légaux et l'écriture du SAN.
+export function playSan(state: ChessState, text: string): ChessState {
+  let current = state;
+  for (const token of text.split(/\s+/).filter((entry) => entry !== '')) {
+    const seat = chess.turn(current);
+    if (seat === null) throw new Error(`la partie est finie avant ${token}`);
+    let next: ChessState | null = null;
+    for (const move of chess.legalMoves(current, seat)) {
+      const out = chess.apply(current, seat, move, noRandom);
+      if (out.ok && out.state.plies.at(-1)?.san === token) {
+        next = out.state;
+        break;
+      }
+    }
+    if (next === null) throw new Error(`aucun coup légal ne s'écrit « ${token} » dans ${current.fen}`);
+    current = deepFreeze(next);
+  }
+  return current;
+}
+
 // Les n premiers champs d'un FEN : 3 = placement, trait, roques (la position hors case de prise en passant) ; 4 = avec la case de prise en passant.
 export function fields(fen: string, count: number): string {
   return fen.split(' ').slice(0, count).join(' ');

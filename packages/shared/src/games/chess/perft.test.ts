@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { START_FEN, stateFromFen } from './index';
 import { perft, perftApi, perftDetail, perftDivide, type PerftDetail } from './perft';
+import { Position } from './position';
 import { env } from './test-helpers';
 
 // Les perft du § 13.5 du document des jeux : les nombres publiés (Chess Programming Wiki) pour la position de départ et les positions classiques « à trous », celles
@@ -57,6 +58,36 @@ describe('perft du moteur (positions publiées)', () => {
     expect(Object.values(two).every((value) => value === 20)).toBe(true);
     // Kiwipete : les promotions s'écrivent avec leur pièce, et les deux roques y sont.
     expect(perftDivide(KIWIPETE, 1)).toMatchObject({ e1g1: 1, e1c1: 1 });
+  });
+});
+
+// Les perft ne voient pas un compteur mal rétabli (demi-coups, numéro du coup) : ils ne changent aucun nombre de coups. Or l'enveloppe joue sur la copie d'une position
+// que `legalMoves` vient de jouer et défaire cent fois : si `unmake` oubliait quoi que ce soit, le FEN suivant serait faux sans qu'aucun perft le dise.
+describe('jouer puis défaire (make, unmake)', () => {
+  test.each(REFERENCES)('$name : chaque coup défait rend exactement la même position, compteurs et cases des rois compris, sur trois demi-coups', ({ fen }) => {
+    const position = Position.fromFen(fen);
+    let visited = 0;
+    let mismatches = 0;
+    const walk = (depth: number): void => {
+      const before = position.toFen();
+      const whiteKing = position.kings[0];
+      const blackKing = position.kings[1];
+      for (const move of position.legalMoves()) {
+        position.make(move);
+        visited++;
+        if (depth > 1) walk(depth - 1);
+        position.unmake(move);
+        if (position.toFen() !== before || position.kings[0] !== whiteKing || position.kings[1] !== blackKing) mismatches++;
+      }
+    };
+    walk(3);
+    expect(visited).toBeGreaterThan(100);
+    expect(mismatches).toBe(0);
+    expect(position.toFen()).toBe(Position.fromFen(fen).toFen());
+  });
+
+  test('un FEN lu puis réécrit est identique, compteurs compris, pour chaque position publiée', () => {
+    for (const { fen } of REFERENCES) expect(Position.fromFen(fen).toFen()).toBe(fen);
   });
 });
 

@@ -191,7 +191,16 @@ export const chess: GameDefinition<ChessState, ChessMove, ChessEvent> = {
     return { state: { ...state, result }, events: [{ type: 'draw' }, { type: 'end', reason: 'agreement', winner: null }] };
   },
 
-  result: (state) => state.result,
-  countedMoves: (state) => state.plies.length,
-  invariants: chessInvariants,
+  result(state) {
+    return state.result;
+  },
+
+  // Chaque demi-coup compte : la partie est classée dès qu'un coup a été joué par chaque camp (GAME_MIN_RANKED_MOVES). L'abandon et la nulle n'en sont pas.
+  countedMoves(state) {
+    return state.plies.length;
+  },
+
+  invariants(state) {
+    return chessInvariants(state);
+  },
 };
