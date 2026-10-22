@@ -99,9 +99,26 @@ export const fr = {
     // Ce qu'un lecteur d'écran annonce quand ton statut (ou ton mode) change.
     statusChanged: 'Statut : {status}',
     mode: 'Mode',
-    modeNone: 'Aucun',
-    // Le « + » après tes modes : le panneau où tu les crées et les modifies.
-    modeManage: 'Mes états d\'activité…',
+  },
+  // Les modes à la manière d'Apple, dans le menu de la puce « Moi » : « Normal » (aucun mode : la tuile verte), les modes tout prêts, puis « Mes modes » et la tuile qui en crée
+  // un ; et, dans le panneau, ce qui est propre aux modes tout prêts (on les copie, on ne les modifie pas) et à l'emplacement (la pièce où un mode conduit).
+  modes: {
+    normal: 'Normal',
+    normalHint: 'Aucun mode : ton statut ordinaire.',
+    presetHints: {
+      focus: 'Ta porte se ferme ; tu entends et on t\'entend toujours.',
+      sport: 'Tu vas à la salle de sport, sans entendre ni être entendu ; en sortir te ramène à ton bureau.',
+    },
+    mine: 'Mes modes',
+    create: 'Créer un mode',
+    presetsTitle: 'Modes prêts à l\'emploi',
+    presetsIntro: 'Concentration et Sport ne se modifient pas : copie-les en mode perso pour les changer.',
+    duplicate: 'Dupliquer en mode perso',
+    duplicateLabel: 'Dupliquer {label} en mode perso',
+    place: 'Emplacement',
+    placeHint: 'Prendre ce mode te conduit dans cette pièce ; en sortir te ramène à ton bureau. Sans emplacement, tu ne bouges pas.',
+    placeMap: 'Pièces où le mode peut te conduire',
+    placeIn: 'à {place}',
   },
   office: {
     signOut: 'Se déconnecter',
@@ -156,11 +173,7 @@ export const fr = {
     title: 'Mes états d\'activité',
     intro: 'Crée tes états : un nom, une icône ou la couleur de ton point, et ce que chacun change pour toi. Tu les choisis ensuite dans le menu de ton profil, sous « Mode ».',
     listTitle: 'Mes états',
-    empty: 'Aucun état pour l\'instant. Prends une suggestion, ou crée le tien ci-dessous.',
-    // Trois états tout prêts, pour qui n'en a aucun : un clic les crée.
-    suggestionsLabel: 'Suggestions',
-    suggestionLabel: 'Créer l\'état {label}',
-    suggestions: { focus: 'Concentration', meeting: 'Réunion', break: 'Pause' },
+    empty: 'Aucun état pour l\'instant. Copie un mode prêt à l\'emploi, ou crée le tien ci-dessous.',
     take: 'Prendre',
     takeLabel: 'Prendre l\'état {label}',
     edit: 'Modifier',
@@ -172,7 +185,7 @@ export const fr = {
     formEdit: 'Modifier l\'état',
     label: 'Nom de l\'état',
     labelHint: '24 caractères au plus',
-    // L'icône, facultative : douze, dont le nom (pour les lecteurs d'écran et l'infobulle) est celui de la liste partagée.
+    // L'icône, facultative : quinze, dont le nom (pour les lecteurs d'écran et l'infobulle) est celui de la liste partagée.
     icon: 'Icône',
     iconHint: 'Facultative : sans icône, c\'est le point de la couleur. Clique de nouveau sur l\'icône choisie pour la retirer.',
     icons: {
@@ -188,6 +201,9 @@ export const fr = {
       plane: 'Avion',
       dumbbell: 'Haltère',
       music: 'Musique',
+      check: 'Coche',
+      waves: 'Vagues',
+      'gamepad-2': 'Manette',
     } satisfies Record<ActivityIcon, string>,
     color: 'Couleur du point',
     colorCustom: 'Autre couleur',

@@ -50,6 +50,13 @@
       "when": 1792648489768,
       "tag": "0006_room_music",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792651396270,
+      "tag": "0007_activity_place",
+      "breakpoints": true
     }
   ]
 }

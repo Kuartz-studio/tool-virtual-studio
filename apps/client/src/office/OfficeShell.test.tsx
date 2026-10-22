@@ -930,7 +930,7 @@ describe('les états d\'activité', () => {
     await waitFor(() => expect(useOfficeStore.getState().myStates).toEqual([focus, lunch]));
     await user.click(meChip());
     expect(screen.getByRole('menuitemradio', { name: 'En focus' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: fr.me.modeManage })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: fr.modes.create })).toBeTruthy();
   });
 
   test('« + » ouvre le panneau des états ; Échap le ferme et le focus revient à la puce « Moi »', async () => {
@@ -938,7 +938,7 @@ describe('les états d\'activité', () => {
     renderShell();
     expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
     await user.click(meChip());
-    await user.click(screen.getByRole('menuitem', { name: fr.me.modeManage }));
+    await user.click(screen.getByRole('menuitem', { name: fr.modes.create }));
     expect(screen.getByRole('complementary', { name: fr.states.title })).toBeTruthy();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();

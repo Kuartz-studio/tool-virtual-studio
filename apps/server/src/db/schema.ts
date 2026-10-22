@@ -56,8 +56,9 @@ export const deskSetup = pgTable('desk_setup', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Les états d'activité qu'une personne crée (« En focus », « À table »…) : un nom, la couleur de son point, une icône facultative, et trois
-// interrupteurs (laisser entrer dans son bureau, entendre, être entendue). Ils lui appartiennent, et partent avec son compte.
+// Les états d'activité qu'une personne crée (« En focus », « À table »…) : un nom, la couleur de son point, une icône facultative, un emplacement
+// facultatif (le lieu où le mode conduit), et trois interrupteurs (laisser entrer dans son bureau, entendre, être entendue). Ils lui appartiennent, et
+// partent avec son compte.
 export const activityState = pgTable(
   'activity_state',
   {
@@ -66,6 +67,7 @@ export const activityState = pgTable(
     label: text('label').notNull(),
     color: text('color').notNull(),   // « #rrggbb », en minuscules
     icon: text('icon'),   // un nom de ACTIVITY_ICONS ; null : pas d'icône, le point de la couleur
+    place: text('place'),   // la clé d'une destination de la carte (la salle de sport) où ce mode conduit ; null : on ne bouge pas
     allowEntry: boolean('allow_entry').notNull().default(true),
     hear: boolean('hear').notNull().default(true),
     heard: boolean('heard').notNull().default(true),

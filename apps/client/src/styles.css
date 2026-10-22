@@ -1911,8 +1911,7 @@ svg.lucide.icon-s {
 }
 
 /* Un statut : une tuile avec son point (son nom est dans `aria-label`, et à droite du titre quand il est choisi). */
-.status-tile,
-.mode-chip {
+.status-tile {
   color: var(--text-soft);
   background: var(--surface-soft);
   border: 0;
@@ -1928,60 +1927,105 @@ svg.lucide.icon-s {
   border-radius: 11px;
 }
 
-.status-tile .status-dot,
-.mode-chip .status-dot {
+.status-tile .status-dot {
   box-shadow: none;
 }
 
-.mode-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+/* Les modes à la manière d'Apple : des tuiles rondes (un disque de la couleur du mode, avec son icône, et son nom dessous). La tuile choisie est cerclée de sa couleur. */
+.mode-tiles {
+  display: grid;
+  /* Trois tuiles par ligne dans le menu : « Concentration » et « Créer un mode » tiennent entiers (quatre par ligne les tronquaient). */
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px 4px;
   padding: 6px 8px 8px;
 }
 
-/* Un mode : une pastille avec sa couleur (son icône, quand il en a une) et son nom. « Aucun » n'a que son nom ; « + », que le signe. */
-.mode-chip {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  max-width: 100%;
-  padding: 6px 10px 6px 8px;
-  font-size: 0.78rem;
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-  border-radius: var(--radius-pill);
+.mode-tile {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 2px;
+  font-size: 0.72rem;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
-.mode-chip > span:last-child {
+.mode-tile:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+
+.mode-tile-disc {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: #ffffff;
+  background: var(--tile, var(--text-soft));
+  border-radius: 50%;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.mode-tile-disc .status-dot {
+  width: 14px;
+  height: 14px;
+  background: #ffffff !important;
+  box-shadow: none;
+}
+
+.mode-tile-disc svg.lucide {
+  width: 22px;
+  height: 22px;
+  color: #ffffff;
+}
+
+.mode-tile-name {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.mode-chip svg.lucide {
-  width: 15px;
-  height: 15px;
+.mode-tile[aria-checked='true'] .mode-tile-disc {
+  box-shadow: 0 0 0 2.5px var(--surface), 0 0 0 5px var(--tile, var(--accent));
 }
 
-.mode-chip.is-add {
-  padding: 6px 9px;
+.mode-tile[aria-checked='true'] .mode-tile-name {
+  font-weight: var(--weight-semibold);
 }
 
-.status-tile[aria-checked='false']:hover:not(:disabled),
-.mode-chip[aria-checked='false']:hover:not(:disabled),
-.mode-chip:not([aria-checked]):hover:not(:disabled) {
+/* « + » : un disque creux, qui ne porte que son signe. */
+.mode-tile.is-add .mode-tile-disc {
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1.5px dashed var(--border);
+}
+
+.mode-tile.is-add .mode-tile-disc svg.lucide {
+  color: var(--text-soft);
+}
+
+.mode-tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.status-tile[aria-checked='false']:hover:not(:disabled) {
   background: var(--surface-sunk);
 }
 
-.status-tile[aria-checked='true'],
-.mode-chip[aria-checked='true'] {
+.status-tile[aria-checked='true'] {
   color: var(--accent);
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
-.status-tile:disabled,
-.mode-chip:disabled {
+.status-tile:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -3403,18 +3447,51 @@ svg.lucide.icon-s {
   gap: 6px;
 }
 
-/* Sans aucun état : trois suggestions, un clic en crée une (un bouton, son icône et son nom). */
-.state-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+/* Les modes prêts à l'emploi : des lignes comme celles de ses états, avec leur seul bouton « Dupliquer en mode perso ». */
+.state-presets {
+  display: grid;
+  gap: 8px;
 }
 
-.state-suggestion svg.lucide {
-  width: 16px;
-  height: 16px;
-  color: var(--text-soft);
+/* La mini-carte des pièces où un mode peut conduire : les destinations sont des boutons, les autres pièces un fond. */
+.place-picker {
+  width: 100%;
+  max-height: 168px;
+  background: var(--surface-soft);
+  border-radius: 12px;
+}
+
+.place-picker .place-room {
+  fill: var(--surface-sunk);
+}
+
+.place-picker .place-destination {
+  cursor: pointer;
+  outline: none;
+}
+
+.place-picker .place-destination rect {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 12;
+  transition: fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out);
+}
+
+.place-picker .place-destination text {
+  font-size: 88px;
+  font-weight: 600;
+  fill: var(--text);
+  pointer-events: none;
+}
+
+.place-picker .place-destination:hover rect,
+.place-picker .place-destination:focus-visible rect {
+  stroke: var(--accent);
+}
+
+.place-picker .place-destination[aria-pressed='true'] rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
 }
 
 .state-actions .bar-button {

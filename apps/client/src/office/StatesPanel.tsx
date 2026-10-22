@@ -1,4 +1,4 @@
-import { ACTIVITY_ICONS, ACTIVITY_LABEL_MAX_LENGTH, ACTIVITY_MAX_PER_USER, type ActivityIcon, type ActivityInput, type ActivityState } from '@bureau/shared';
+import { ACTIVITY_ICONS, ACTIVITY_LABEL_MAX_LENGTH, ACTIVITY_MAX_PER_USER, PRESET_MODES, type ActivityIcon, type ActivityInput, type ActivityState } from '@bureau/shared';
 import { useId, useState, type FormEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { ApiError } from '../lib/api';
@@ -8,21 +8,13 @@ import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { ActivityMark } from './ActivityMark';
 import { ACTIVITY_ICON_COMPONENTS } from './activity-icons';
+import { PlacePicker } from './PlacePicker';
 import { Drawer } from './ui/Drawer';
 
 // Des couleurs toutes prêtes pour le point (la couleur libre reste possible : le sélecteur du navigateur).
 export const ACTIVITY_SWATCHES = ['#22c55e', '#f59e0b', '#ef4444', '#6d28d9', '#2f5fd0', '#0ea5e9', '#ec4899', '#9ca3af'] as const;
 
 const EMPTY_FORM: ActivityInput = { label: '', color: ACTIVITY_SWATCHES[3], allowEntry: true, hear: true, heard: true };
-
-// Trois états tout prêts, pour qui n'en a encore aucun : un clic les crée. Le nom, l'icône et la couleur disent ce que c'est ; les interrupteurs,
-// ce que ça change. Concentration (le casque) : porte fermée, et on n'entend ni n'est entendu (on sort des conversations) ; Réunion : porte
-// fermée, mais on parle avec ceux qui y sont ; Pause : tout reste ouvert. Chacun se modifie ensuite, comme les autres.
-const SUGGESTIONS = [
-  { key: 'focus', icon: 'headphones', color: ACTIVITY_SWATCHES[3], allowEntry: false, hear: false, heard: false },
-  { key: 'meeting', icon: 'users', color: ACTIVITY_SWATCHES[2], allowEntry: false, hear: true, heard: true },
-  { key: 'break', icon: 'coffee', color: ACTIVITY_SWATCHES[1], allowEntry: true, hear: true, heard: true },
-] as const satisfies ReadonlyArray<{ key: keyof typeof fr.states.suggestions } & Omit<ActivityInput, 'label'>>;
 
 // Pourquoi une requête sur les états a échoué, en toutes lettres.
 function errorText(err: unknown): string {
@@ -32,24 +24,29 @@ function errorText(err: unknown): string {
   return fr.states.errors.generic;
 }
 
-// Ce qu'un état change, en quelques mots : porte, oreilles, voix.
-function summaryOf(state: ActivityInput): string {
+// Ce qu'un état change, en quelques mots : porte, oreilles, voix, et la pièce où il conduit quand il en a une (`placeName` en donne le nom).
+function summaryOf(state: ActivityInput, placeName: (key: string) => string): string {
   return [
     state.allowEntry ? fr.states.summaryOpen : fr.states.summaryClosed,
     state.hear ? fr.states.summaryHear : fr.states.summaryDeaf,
     state.heard ? fr.states.summaryHeard : fr.states.summaryMuted,
+    ...(state.place === undefined ? [] : [t(fr.modes.placeIn, { place: placeName(state.place) })]),
   ].join(' · ');
 }
 
-// Le panneau Mes états d'activité : la liste de ses propres états (prendre, modifier, supprimer) et le formulaire pour en créer. Un état :
-// un nom, la couleur de son point, une icône (facultative : sans elle, c'est le point qu'on montre), et trois interrupteurs (laisser entrer dans
-// son bureau, entendre, être entendu). Sans aucun état, trois suggestions en créent un d'un clic. Chaque action passe par l'API, puis le
+// Le panneau Mes états d'activité : la liste de ses propres états (prendre, modifier, supprimer), les modes prêts à l'emploi (Concentration, Sport : on les copie en
+// mode perso d'un clic, on ne les modifie ni ne les supprime) et le formulaire pour en créer. Un état : un nom, la couleur de son point, une icône (facultative : sans
+// elle, c'est le point qu'on montre), un emplacement (facultatif : la pièce où il conduit, choisie sur une mini-carte) et trois interrupteurs (laisser entrer dans son
+// bureau, entendre, être entendu). Chaque action passe par l'API, puis le
 // magasin ; la prise d'un état passe par le serveur (`state:set`), comme celle d'un statut. Le focus va au titre à l'ouverture ; Échap ferme.
 export function StatesPanel({ id, socket, onClose }: { id?: string; socket: OfficeSocket | null; onClose(): void }) {
   const myStates = useOfficeStore((state) => state.myStates);
   const activity = useOfficeStore((state) => state.self?.activity ?? null);
   const ready = useOfficeStore((state) => state.ready);
+  const map = useOfficeStore((state) => state.officeMap);
   const uid = useId();
+  // Le nom d'un lieu de la carte, ou sa clé si la carte ne le connaît plus.
+  const placeName = (key: string) => map?.places.find((place) => place.key === key)?.label ?? key;
 
   // Le formulaire : celui d'un nouvel état, ou la modification de l'état `editing`.
   const [form, setForm] = useState<ActivityInput>(EMPTY_FORM);
@@ -62,7 +59,7 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
 
   function startEditing(state: ActivityState) {
     setEditing(state.id);
-    setForm({ label: state.label, color: state.color, ...(state.icon && { icon: state.icon }), allowEntry: state.allowEntry, hear: state.hear, heard: state.heard });
+    setForm({ label: state.label, color: state.color, ...(state.icon && { icon: state.icon }), ...(state.place && { place: state.place }), allowEntry: state.allowEntry, hear: state.hear, heard: state.heard });
     setError(null);
     setNotice(null);
   }
@@ -102,8 +99,15 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
     void save({ ...form, label: form.label.trim() }, editing);
   }
 
-  function suggest({ key, ...input }: (typeof SUGGESTIONS)[number]) {
-    void save({ label: fr.states.suggestions[key], ...input }, null);
+  // Copie un mode prêt à l'emploi dans ses propres modes : même nom, même icône, mêmes réglages, même emplacement ; il se modifie ensuite comme les autres.
+  function duplicate({ id: _id, ...input }: ActivityState) {
+    void save(input, null);
+  }
+
+  // L'emplacement choisi sur la mini-carte : choisir celui qui l'est déjà le retire (le champ part alors du formulaire).
+  function choosePlace(place: string | undefined) {
+    const { place: _chosen, ...rest } = form;
+    setForm(place === undefined ? rest : { ...rest, place });
   }
 
   async function remove(state: ActivityState) {
@@ -152,28 +156,7 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
             {fr.states.listTitle}
           </h3>
           {myStates.length === 0 ? (
-            <>
-              <p className="desk-hint">{fr.states.empty}</p>
-              <div className="state-suggestions" role="group" aria-label={fr.states.suggestionsLabel}>
-                {SUGGESTIONS.map((suggestion) => {
-                  const Icon = ACTIVITY_ICON_COMPONENTS[suggestion.icon];
-                  const label = fr.states.suggestions[suggestion.key];
-                  return (
-                    <button
-                      key={suggestion.key}
-                      type="button"
-                      className="bar-button state-suggestion"
-                      aria-label={t(fr.states.suggestionLabel, { label })}
-                      disabled={busy}
-                      onClick={() => suggest(suggestion)}
-                    >
-                      <Icon />
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
+            <p className="desk-hint">{fr.states.empty}</p>
           ) : (
             <ul className="desk-list">
               {myStates.map((state) => (
@@ -185,7 +168,7 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
                     </span>
                     {activity?.id === state.id && <span className="person-you">{fr.states.current}</span>}
                   </div>
-                  <p className="desk-hint state-summary">{summaryOf(state)}</p>
+                  <p className="desk-hint state-summary">{summaryOf(state, placeName)}</p>
                   <div className="state-actions">
                     {activity?.id !== state.id && (
                       <button
@@ -215,6 +198,32 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
               ))}
             </ul>
           )}
+        </section>
+
+        <section aria-labelledby={`${uid}-presets`}>
+          <h3 id={`${uid}-presets`} className="desk-subtitle">
+            {fr.modes.presetsTitle}
+          </h3>
+          <p className="desk-hint">{fr.modes.presetsIntro}</p>
+          {/* Pas de liste (<li>) : ce ne sont pas ses états, la liste du dessus est la seule. Ni « Modifier » ni « Supprimer » : un mode prêt à l'emploi n'est pas à elle. */}
+          <div className="state-presets" role="group" aria-label={fr.modes.presetsTitle}>
+            {PRESET_MODES.map((preset) => (
+              <div key={preset.id} className="state-row" data-preset={preset.id}>
+                <div className="state-row-head">
+                  <ActivityMark activity={preset} />
+                  <span className="person-name" title={preset.label}>
+                    {preset.label}
+                  </span>
+                </div>
+                <p className="desk-hint state-summary">{summaryOf(preset, placeName)}</p>
+                <div className="state-actions">
+                  <button type="button" className="bar-button" aria-label={t(fr.modes.duplicateLabel, { label: preset.label })} disabled={busy || full} onClick={() => duplicate(preset)}>
+                    {fr.modes.duplicate}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
         <form className="state-form" onSubmit={submit} aria-labelledby={`${uid}-form`}>
@@ -271,6 +280,14 @@ export function StatesPanel({ id, socket, onClose }: { id?: string; socket: Offi
               />
             </div>
           </fieldset>
+
+          {map !== null && map.places.some((place) => place.destination) && (
+            <fieldset className="state-field state-place">
+              <legend>{fr.modes.place}</legend>
+              <PlacePicker map={map} value={form.place} onChange={choosePlace} />
+              <span className="desk-hint">{fr.modes.placeHint}</span>
+            </fieldset>
+          )}
 
           <fieldset className="state-field state-switches">
             <legend>{fr.states.switchesTitle}</legend>

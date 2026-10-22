@@ -1,4 +1,4 @@
-import { STATUSES, type ActivityState, type PublicPlayer, type Status } from '@bureau/shared';
+import { PRESET_MODES, STATUSES, type ActivityState, type PublicPlayer, type Status } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -65,7 +65,7 @@ const trigger = () => screen.getByRole('button', { name: fr.me.chip });
 const item = (status: Status) => screen.getByRole('menuitemradio', { name: fr.status[status] });
 const mode = (label: string) => screen.getByRole('menuitemradio', { name: label });
 const entry = (name: string) => screen.getByRole('menuitem', { name }) as HTMLButtonElement;
-const manage = () => entry(fr.me.modeManage);
+const manage = () => entry(fr.modes.create);
 const dotOf = (element: HTMLElement) => element.querySelector('[data-status]');
 const group = (name: string) => screen.getByRole('group', { name });
 // Les lignes qu'on choisit dans cette zone (statuts, modes et autres), dans l'ordre de la page, par leur nom.
@@ -173,7 +173,7 @@ describe('le menu', () => {
     const user = userEvent.setup();
     const { panels } = renderChip();
     await user.click(trigger());
-    await user.click(entry(fr.me.modeManage));
+    await user.click(entry(fr.modes.create));
     expect(panels.show).toHaveBeenCalledExactlyOnceWith('states', trigger());
     expect(screen.queryByRole('menu')).toBeNull();
   });
@@ -212,10 +212,12 @@ describe('le menu', () => {
       'Occupé',
       'Absent',
       'Ne pas déranger',
+      fr.modes.normal,
+      'Concentration',
+      'Sport',
       'En focus',
       'À table',
-      'Aucun',
-      fr.me.modeManage,
+      fr.modes.create,
       'Se déconnecter',
     ]);
   });
@@ -305,27 +307,45 @@ describe('la section « Statut »', () => {
 });
 
 describe('la section « Mode »', () => {
-  test('sans état : « Aucun », coché, et « + » ; avec des états : les siens d\'abord, chacun avec le point de sa couleur', async () => {
+  test('sans état : « Normal », coché, les modes tout prêts, et « + » ; avec des états : les siens ensuite, chacun avec le point de sa couleur', async () => {
     const user = userEvent.setup();
     const { view } = renderChip();
     await user.click(trigger());
-    expect(linesOf(group(fr.me.mode))).toEqual(['Aucun', fr.me.modeManage]);
-    expect(mode('Aucun').getAttribute('aria-checked')).toBe('true');
+    expect(linesOf(group(fr.me.mode))).toEqual([fr.modes.normal, 'Concentration', 'Sport', fr.modes.create]);
+    expect(mode(fr.modes.normal).getAttribute('aria-checked')).toBe('true');
     view.unmount();
 
     renderChip({ states: [focus, lunch] });
     await user.click(trigger());
-    expect(linesOf(group(fr.me.mode))).toEqual(['En focus', 'À table', 'Aucun', fr.me.modeManage]);
+    expect(linesOf(group(fr.me.mode))).toEqual([fr.modes.normal, 'Concentration', 'Sport', 'En focus', 'À table', fr.modes.create]);
     expect((mode('En focus').querySelector('.status-dot') as HTMLElement).style.backgroundColor).toMatch(PURPLE);
     expect(mode('En focus').getAttribute('aria-checked')).toBe('false');
   });
 
-  test('« + » est nommé, et a la même infobulle (il n\'a que son signe à montrer)', async () => {
+  test('« + Créer un mode » est nommé, et a la même infobulle', async () => {
     const user = userEvent.setup();
     renderChip();
     await user.click(trigger());
-    expect(manage().getAttribute('title')).toBe(fr.me.modeManage);
-    expect(manage().textContent).toBe('');
+    expect(manage().getAttribute('title')).toBe(fr.modes.create);
+    expect(manage().getAttribute('aria-label')).toBe(fr.modes.create);
+  });
+
+  test('un mode tout prêt se prend comme les siens : Sport envoie state:set preset:sport, et le choix est retenu pour un serveur redémarré', async () => {
+    const user = userEvent.setup();
+    const socket = renderChip();
+    await user.click(trigger());
+    await user.click(mode('Sport'));
+    expect(socket.sentOf('state:set')).toEqual(['preset:sport']);
+    expect(useOfficeStore.getState().chosenActivityId).toBe('preset:sport');
+    expect(useOfficeStore.getState().chosenStatus).toBeNull();
+  });
+
+  test('Sport, en cours : seule sa tuile est cochée (« Normal » ne l\'est plus)', async () => {
+    const user = userEvent.setup();
+    renderChip({ activity: PRESET_MODES.find((preset) => preset.id === 'preset:sport') });
+    await user.click(trigger());
+    expect(mode('Sport').getAttribute('aria-checked')).toBe('true');
+    expect(mode(fr.modes.normal).getAttribute('aria-checked')).toBe('false');
   });
 
   test('prendre un mode : state:set, retenu comme choix de l\'onglet, le statut choisi oublié', async () => {
@@ -347,7 +367,7 @@ describe('la section « Mode »', () => {
     const socket = renderChip({ activity: focus, states: [focus, lunch] });
     await user.click(trigger());
     expect(mode('En focus').getAttribute('aria-checked')).toBe('true');
-    expect(mode('Aucun').getAttribute('aria-checked')).toBe('false');
+    expect(mode(fr.modes.normal).getAttribute('aria-checked')).toBe('false');
     expect(item('available').getAttribute('aria-checked')).toBe('false');
     expect(group(fr.me.status).querySelector('em')).toBeNull();
     await user.click(mode('En focus'));
@@ -364,12 +384,12 @@ describe('la section « Mode »', () => {
     expect(useOfficeStore.getState().chosenActivityId).toBeNull();
   });
 
-  test('« Aucun » quitte le mode (state:set null) et rend le statut de dessous, retenu pour un serveur redémarré', async () => {
+  test('« Normal » quitte le mode (state:set null) et rend le statut de dessous, retenu pour un serveur redémarré', async () => {
     const user = userEvent.setup();
     const socket = renderChip({ status: 'busy', activity: focus, states: [focus] });
     useOfficeStore.getState().setChosenActivity('s1');
     await user.click(trigger());
-    await user.click(mode('Aucun'));
+    await user.click(mode(fr.modes.normal));
     expect(socket.sentOf('state:set')).toEqual([null]);
     expect(socket.sentOf('status:set')).toEqual([]);
     expect(useOfficeStore.getState().chosenActivityId).toBeNull();
@@ -377,11 +397,11 @@ describe('la section « Mode »', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  test('« Aucun » sans mode en cours n\'envoie rien, et ferme le menu', async () => {
+  test('« Normal » sans mode en cours n\'envoie rien, et ferme le menu', async () => {
     const user = userEvent.setup();
     const socket = renderChip({ states: [focus] });
     await user.click(trigger());
-    await user.click(mode('Aucun'));
+    await user.click(mode(fr.modes.normal));
     expect(socket.sent).toEqual([]);
     expect(screen.queryByRole('menu')).toBeNull();
   });
@@ -493,12 +513,12 @@ describe('au clavier', () => {
     expect(document.activeElement).toBe(item('busy'));
     await user.keyboard('{ArrowDown}{ArrowDown}');
     expect(document.activeElement).toBe(item('dnd'));
-    // Après les statuts : « Aucun », puis « + », puis les lignes du bas.
+    // Après les statuts : « Normal », les modes tout prêts, « + », puis les lignes du bas.
     await user.keyboard('{ArrowDown}');
-    expect(document.activeElement).toBe(mode('Aucun'));
-    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(mode(fr.modes.normal));
+    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}');
     expect(document.activeElement).toBe(manage());
-    await user.keyboard('{ArrowUp}{ArrowUp}');
+    await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}{ArrowUp}');
     expect(document.activeElement).toBe(item('dnd'));
     await user.keyboard('{Home}');
     expect(document.activeElement).toBe(entry(fr.character.toggle));
@@ -682,7 +702,7 @@ describe('quand on ne peut pas changer de statut', () => {
     expect((trigger() as HTMLButtonElement).disabled).toBe(false);
     await user.click(trigger());
     expect((item('busy') as HTMLButtonElement).disabled).toBe(true);
-    expect((mode('Aucun') as HTMLButtonElement).disabled).toBe(true);
+    expect((mode(fr.modes.normal) as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
     expect(entry(fr.office.signOut).disabled).toBe(false);
   });
@@ -694,7 +714,7 @@ describe('quand on ne peut pas changer de statut', () => {
     render(<MeChip name="Léa" email="lea@exemple.fr" socket={socket.asSocket()} panels={fakePanels({ ready: false })} onSignOut={() => {}} signingOut={false} />);
     await user.click(trigger());
     for (const status of STATUSES) expect((item(status) as HTMLButtonElement).disabled).toBe(true);
-    expect((mode('Aucun') as HTMLButtonElement).disabled).toBe(true);
+    expect((mode(fr.modes.normal) as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
     expect(entry(fr.character.toggle).disabled).toBe(true);
     expect(entry(fr.office.signOut).disabled).toBe(false);

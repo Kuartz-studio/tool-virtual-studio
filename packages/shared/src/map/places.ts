@@ -85,6 +85,9 @@ export function roomSceneOf(place: Pick<Place, 'scene' | 'music'>, state: Pick<R
   return state.on ? (state.scene ?? place.scene) : null;
 }
 
+// Les clés des destinations de la carte (la salle de sport, la salle de jeu) : les lieux où un mode peut conduire.
+export const destinationKeys = (map: OfficeMap): string[] => map.places.filter((place) => place.destination).map((place) => place.key);
+
 // Le lieu de cette clé (`cafe`, ou `desk:A1` pour un bureau), ou undefined.
 export function placeByKey(map: OfficeMap, key: string): Place | undefined {
   return placesOf(map).find((place) => place.key === key);

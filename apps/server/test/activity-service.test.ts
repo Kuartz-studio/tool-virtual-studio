@@ -89,6 +89,29 @@ describe('l\'icône', () => {
   });
 });
 
+describe('l\'emplacement', () => {
+  test('créer avec un emplacement : il est rendu par la création, la lecture et la liste ; sans emplacement, le champ n\'existe pas', async () => {
+    const { service } = await setup();
+    const withPlace = await service.create('ana', { ...focus, place: 'gym' });
+    const without = await service.create('ana', focus);
+    if (!withPlace.ok || !without.ok) throw new Error('création refusée');
+    expect(withPlace.state.place).toBe('gym');
+    expect(await service.get('ana', withPlace.state.id)).toEqual(withPlace.state);
+    expect((await service.list('ana')).map((state) => state.place)).toEqual(['gym', undefined]);
+    expect('place' in without.state).toBe(false);
+  });
+
+  test('update remplace l\'emplacement, ou l\'enlève quand il n\'est plus dit', async () => {
+    const { service } = await setup();
+    const created = await service.create('ana', { ...focus, place: 'gym' });
+    if (!created.ok) throw new Error('création refusée');
+    expect((await service.update('ana', created.state.id, { ...focus, place: 'game' }))?.place).toBe('game');
+    const cleared = await service.update('ana', created.state.id, focus);
+    expect(cleared && 'place' in cleared).toBe(false);
+    expect(await service.get('ana', created.state.id)).toEqual(cleared);
+  });
+});
+
 describe('modifier, supprimer', () => {
   test('update remplace tout, et garde l\'identifiant', async () => {
     const { service } = await setup();

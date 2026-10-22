@@ -28,6 +28,8 @@ import { createChatService } from '../chat/chat-service';
 import { createActivityController } from '../activity/activity-controller';
 import { createActivityService, type ActivityService } from '../activity/activity-service';
 import { createDeskController } from '../desks/desk-controller';
+import { createModeTravel } from '../modes/mode-travel';
+import { createTeleport } from '../teleport';
 import { DeskService } from '../desks/desk-service';
 import type { Db } from '../db/client';
 import type { Env } from '../env';
@@ -218,6 +220,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
 
   // La porte d'un bureau se ferme d'elle-même quand son propriétaire, présent, est dans un état d'activité qui ne laisse pas entrer.
   const desks = d.desks ?? new DeskService(d.db, d.map, { ownerAllowsEntry: (ownerId) => world.get(ownerId)?.activity?.allowEntry !== false, logger });
+  // Poser quelqu'un ailleurs (celui qu'on exclut d'un bureau, celui que son mode conduit à la salle de sport) : le monde le déplace, son navigateur s'y replace.
+  const teleport = createTeleport({ world, socketsOf: (userId) => enteredSockets(userId) });
   const deskController = createDeskController({
     io,
     world,
@@ -225,15 +229,19 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     map: d.map,
     connectedUsers: () => presence.connectedUsers(),
     socketsOf: (userId) => enteredSockets(userId),
+    teleport,
     now,
     logger,
   });
 
+  // Un mode qui a un emplacement conduit à ce lieu (la salle de sport), et en sortir ramène au bureau.
+  const modeTravel = createModeTravel({ world, map: d.map, desks, teleport });
   const activityController = createActivityController({
     io,
     world,
     activities: d.activities ?? createActivityService(d.db),
     desks: deskController,
+    travel: modeTravel,
     logger,
   });
 

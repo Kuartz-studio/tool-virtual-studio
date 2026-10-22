@@ -1,4 +1,4 @@
-import type { Role } from '@bureau/shared';
+import { destinationKeys, type Role } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import request from 'supertest';
@@ -8,6 +8,7 @@ import { createInvitationService } from '../../src/auth/invitations';
 import type { Db } from '../../src/db/client';
 import { user } from '../../src/db/schema';
 import type { Env } from '../../src/env';
+import { loadOfficeMap } from '../../src/realtime/io';
 import { createMemoryMailer, createNoneMailer, type Mailer } from '../../src/mail/mailer';
 import { createServerEvents } from '../../src/server-events';
 import type { SimHost } from '../../src/sim/sim-host';
@@ -42,7 +43,8 @@ async function buildTestApp<M extends Mailer>(mailer: M, env: Env, logger: Logge
   const events = createServerEvents();
   const auth = createAuth({ db, mailer, env, logger, events });
   const invitations = createInvitationService(db);
-  const app = createApp({ env, db, auth, invitations, mailer, events, logger, sim });
+  // Les destinations de la carte de l'environnement (la grande carte en a, celle de développement n'en a pas) : un mode ne conduit qu'à l'une d'elles.
+  const app = createApp({ env, db, auth, invitations, mailer, events, logger, sim, destinations: new Set(destinationKeys(loadOfficeMap(env))) });
 
   // Invite `email`, accepte l'invitation par la vraie route, et renvoie l'id du compte créé avec son cookie de session,
   // prêt pour `.set('Cookie', cookie)`. Par défaut : rôle membre, nom tiré de l'adresse, mot de passe TEST_PASSWORD.

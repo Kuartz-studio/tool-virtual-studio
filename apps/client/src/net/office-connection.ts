@@ -16,7 +16,8 @@ export interface OfficeBusEvents {
   'net:tick': (p: WorldTick) => void;
   'net:joined': (p: PublicPlayer) => void;
   'net:left': (p: { id: string }) => void;
-  'net:correct': (p: { x: number; y: number }) => void;
+  // Le serveur replace l'avatar (un refus de `move`, une porte, un voyage voulu : `reason` « teleport », un mode qui conduit à la salle de sport).
+  'net:correct': (p: { x: number; y: number; reason?: 'teleport' }) => void;
   'net:status': (p: { id: string; status: Status }) => void;
   'net:activity': (p: { id: string; activity: ActivityState | null }) => void;
   'net:profile': (p: { id: string; name: string; avatarKey: string | null }) => void;

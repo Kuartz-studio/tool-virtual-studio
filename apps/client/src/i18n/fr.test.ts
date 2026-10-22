@@ -51,8 +51,8 @@ test('la puce « Moi » : son nom, celui de son menu, ses sections, et les ligne
   expect(fr.me.menu).toBe('Menu de mon profil');
   expect(fr.me.status).toBe('Statut');
   expect(fr.me.mode).toBe('Mode');
-  expect(fr.me.modeNone).toBe('Aucun');
-  expect(fr.me.modeManage).toBe('Mes états d\'activité…');
+  expect(fr.modes.normal).toBe('Normal');
+  expect(fr.modes.create).toBe('Créer un mode');
   // Les lignes du menu portent le nom du panneau qu'elles ouvrent, ou celui de l'action : « Personnage » est devenu « Changer d'apparence ». Le
   // bureau et le son n'y sont plus : ils sont dans le dock du milieu (test suivant).
   expect(fr.character.toggle).toBe('Changer d\'apparence');

@@ -63,7 +63,7 @@ interface SfxDeps {
 
 // Branche les effets sur ce qui se passe : les clics de l'interface, les arrivées et départs, les messages, les toc toc, la conversation
 // qui commence ou finit, l'arrivée au bureau, la connexion qui tombe, un bureau ou un personnage enregistré, la lumière qu'on allume ou
-// qu'on éteint, le café qu'on se sert. Renvoie la fonction qui débranche tout.
+// qu'on éteint, le café qu'on se sert, le voyage d'un mode. Renvoie la fonction qui débranche tout.
 //
 // En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc, la lumière) ne sonne pas.
 export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDeps): () => void {
@@ -93,6 +93,10 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDe
       if (!quiet()) engine.playSfx('arrive', { rate: 0.8, level: 0.6 });
     }),
     listenOnBus(bus, 'local:knock', knock),
+    // Un voyage voulu (un mode qui nous conduit à la salle de sport, ou nous ramène au bureau) : le bruit du saut. Une correction ordinaire (un mur, une porte) ne sonne pas.
+    listenOnBus(bus, 'net:correct', ({ reason }) => {
+      if (reason === 'teleport') engine.playSfx('teleport');
+    }),
     // Une porte de bureau se met en mouvement : le bruit d'une porte qui s'ouvre ou se ferme, plus faible avec la distance (le silence à 14 cases). Celui
     // d'un autre ne sonne pas en « Ne pas déranger » ; celui de son propre bureau, toujours.
     listenOnBus(bus, 'door:moved', ({ open, ownerId, distancePx }) => {

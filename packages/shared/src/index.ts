@@ -25,3 +25,4 @@ export * from './decor/catalog';
 export * from './decor/themes';
 export * from './decor/placement';
 export * from './map/builder';
+export * from './activity/presets';

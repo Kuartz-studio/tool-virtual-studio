@@ -34,6 +34,8 @@ export interface OfficeDebug {
   bubbles(): string[];
   // Ceux dont la tasse de café est montrée au-dessus de la tête en ce moment (identifiants, soi compris).
   cups(): string[];
+  // Combien d'anneaux de lumière (un voyage voulu : un mode qui conduit à la salle de sport) sont en vie à l'écran en ce moment.
+  rings(): number;
   // La machine à café s'agite-t-elle (elle tourne plus vite pendant MACHINE_EXCITED_MS quand quelqu'un se sert) ?
   machineExcited(): boolean;
   // Le nombre d'avatars que la scène dessine pour ce joueur, local ou distant : 1 s'il est là (jamais de doublon), 0 sinon.

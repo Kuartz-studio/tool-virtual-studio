@@ -301,12 +301,22 @@ describe('ce qui se passe au bureau', () => {
     expect(ids()).toEqual(['welcome']);
   });
 
+  test('un voyage voulu (un mode qui conduit à la salle de sport) fait le bruit du saut ; une simple correction ne sonne pas', () => {
+    store.getState().applyInit(init(player('moi'), []));
+    played.length = 0;
+    emitOnBus(bus, 'net:correct', { x: 10, y: 20 });
+    expect(played).toEqual([]);
+    emitOnBus(bus, 'net:correct', { x: 10, y: 20, reason: 'teleport' });
+    expect(played).toEqual([['teleport']]);
+  });
+
   test('débrancher : plus rien ne sonne', () => {
     unbind();
     click('<button type="button">Chat</button>');
     emitOnBus(bus, 'net:joined', player('a'));
     emitOnBus(bus, 'lights:changed', { on: false, by: null, at: 1 });
     emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 30_000 });
+    emitOnBus(bus, 'net:correct', { x: 1, y: 2, reason: 'teleport' });
     store.getState().applyInit(init(player('moi')));
     expect(ids()).toEqual([]);
   });

@@ -35,6 +35,7 @@ import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { addMapSigns } from '../map-signs';
 import { MoveSender } from '../move-sender';
 import { speakerPlaying, speakerSprites, speakerTarget } from '../speakers';
+import { TeleportEffect } from '../teleport-effect';
 import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingBubbles } from '../objects/NameTag';
@@ -94,6 +95,8 @@ export class Office extends Scene {
   private machineScale = 1;
   // Les images d'amplificateur de chaque enceinte (par clé de pièce) : elles tournent tant que la pièce joue.
   private readonly speakerImages = new Map<string, Phaser.GameObjects.Sprite[]>();
+  // Les anneaux de lumière d'un voyage voulu (un mode qui conduit à la salle de sport, ou ramène au bureau), pour soi comme pour ceux qu'on voit sauter.
+  private teleportEffect: TeleportEffect;
   private lighting: LightingLayer;
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
@@ -124,6 +127,7 @@ export class Office extends Scene {
       bubbles: () => this.bubbles?.ids() ?? [],
       cups: () => [...(this.player?.coffeeShown() ? [this.selfId] : []), ...[...this.remotes].filter(([, remote]) => remote.coffeeShown()).map(([id]) => id)],
       machineExcited: () => clock() < this.machineExcitedUntil,
+      rings: () => this.teleportEffect?.count(clock()) ?? 0,
       avatarsOf: (id) => this.children.list.filter((object) => object.name === avatarObjectName(id)).length,
       selfAvatar: () => (this.player ? { wanted: this.player.avatarWanted, shown: this.player.avatarShown } : null),
       toScreen: (x, y) => {
@@ -176,6 +180,7 @@ export class Office extends Scene {
     this.deskLayer.collideWith(this.player);
     this.decorLayer.collideWith(this.player);
     // La nuit : la couche est là dès le départ, invisible tant que la lumière est allumée. Chacun porte son halo, au milieu de son avatar.
+    this.teleportEffect = new TeleportEffect(this);
     this.lighting = new LightingLayer(this);
     this.lighting.track(this.selfId, () => ({ x: this.player.x, y: this.player.y - this.player.displayHeight / 2 }));
     const showDesks = () => {
@@ -241,7 +246,7 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:tick', (p) => this.onTick(p)),
       listenOnBus(EventBus, 'net:joined', (p) => this.onJoined(p)),
       listenOnBus(EventBus, 'net:left', ({ id }) => this.removeRemote(id)),
-      listenOnBus(EventBus, 'net:correct', ({ x, y }) => this.onCorrect(x, y)),
+      listenOnBus(EventBus, 'net:correct', ({ x, y, reason }) => this.onCorrect(x, y, reason)),
       listenOnBus(EventBus, 'net:status', ({ id, status }) => this.onStatus(id, status)),
       listenOnBus(EventBus, 'net:activity', ({ id, activity }) => this.onActivity(id, activity)),
       listenOnBus(EventBus, 'net:profile', (p) => this.onProfile(p)),
@@ -289,6 +294,7 @@ export class Office extends Scene {
       unbindCoffee();
       unbindSpeakers();
       this.prompt.destroy();
+      this.teleportEffect.destroy();
       this.lighting.destroy();
       this.deskLayer.destroy();
       this.decorEditor.destroy();
@@ -317,6 +323,7 @@ export class Office extends Scene {
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     this.player.tick(now);
     this.shakeMachine(now);
+    this.teleportEffect.tick(now);
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];
@@ -349,6 +356,11 @@ export class Office extends Scene {
   // Les lumières de la nuit : les lampes, le feu et les écrans posés, ceux de la carte et ceux des bureaux tels qu'on les voit.
   private showLightSources(): void {
     this.lighting.setStatic([...sourcesFromItems(this.decorLayer.placedImages()), ...sourcesFromProps(this.propLayer.images())]);
+  }
+
+  // Le point où poser un anneau pour quelqu'un dont les pieds sont là : à hauteur de son milieu, pas du sol.
+  private aroundFeet(feet: { x: number; y: number }): { x: number; y: number } {
+    return { x: feet.x, y: feet.y - 14 };
   }
 
   private feet(): { x: number; y: number } {
@@ -438,7 +450,14 @@ export class Office extends Scene {
   private onTick({ moves }: WorldTick): void {
     const at = clock();
     for (const move of moves) {
-      if (move.id !== this.selfId) this.remotes.get(move.id)?.push(at, move, move.tp === true);
+      if (move.id === this.selfId) continue;
+      const remote = this.remotes.get(move.id);
+      // Quelqu'un saute (un mode le conduit à la salle de sport, ou le ramène au bureau) : un anneau de lumière là où il était, un autre là où il arrive.
+      if (remote && move.tp === true) {
+        this.teleportEffect.play(this.aroundFeet(remote.position), at);
+        this.teleportEffect.play(this.aroundFeet(move), at);
+      }
+      remote?.push(at, move, move.tp === true);
     }
   }
 
@@ -449,9 +468,15 @@ export class Office extends Scene {
 
   // Le serveur a refusé un `move` : l'avatar retourne à la dernière position acceptée, et le serveur relit tout de suite notre état
   // (direction, marche) à cet endroit.
-  private onCorrect(x: number, y: number): void {
+  private onCorrect(x: number, y: number, reason?: 'teleport'): void {
     // Le serveur n'est pas d'accord avec le trajet (une porte, un meuble qu'il connaît mieux que nous) : on s'arrête, au lieu de buter en boucle.
     this.autoWalk.cancel();
+    // Un voyage voulu (un mode) : un anneau de lumière au départ et à l'arrivée (le son, lui, vient de sfx-events).
+    if (reason === 'teleport') {
+      const now = clock();
+      this.teleportEffect.play(this.aroundFeet(this.feet()), now);
+      this.teleportEffect.play(this.aroundFeet({ x, y }), now);
+    }
     this.player.placeAt(x, y);
     this.moveSender.reset();
     this.sendLocalState(clock());

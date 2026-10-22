@@ -1,4 +1,4 @@
-import { ACTIVITY_ICONS, ACTIVITY_MAX_PER_USER, type ActivityInput, type ActivityState } from '@bureau/shared';
+import { ACTIVITY_ICONS, ACTIVITY_MAX_PER_USER, buildOfficeTiledMap, parseOfficeMap, type ActivityInput, type ActivityState } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -155,10 +155,10 @@ describe('créer un état', () => {
 });
 
 describe('l\'icône d\'un état', () => {
-  test('une grille de douze icônes, dans l\'ordre de la liste partagée, chacune avec son nom ; aucune n\'est choisie au départ', () => {
+  test('une grille de toutes les icônes, dans l\'ordre de la liste partagée, chacune avec son nom ; aucune n\'est choisie au départ', () => {
     setup([]);
     const buttons = within(iconGrid()).getAllByRole('button');
-    expect(buttons).toHaveLength(12);
+    expect(buttons).toHaveLength(ACTIVITY_ICONS.length);
     expect(buttons.map((button) => button.getAttribute('aria-label'))).toEqual(ACTIVITY_ICONS.map((name) => fr.states.icons[name]));
     expect(buttons.every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true);
     expect(buttons[0]!.querySelector('svg.lucide-headphones')).toBeTruthy();
@@ -230,62 +230,131 @@ describe('l\'icône d\'un état', () => {
   });
 });
 
-describe('les suggestions', () => {
-  const suggestions = () => screen.queryByRole('group', { name: fr.states.suggestionsLabel });
-  const suggestion = (label: string) => within(suggestions()!).getByRole('button', { name: t(fr.states.suggestionLabel, { label }) }) as HTMLButtonElement;
+describe('les modes prêts à l\'emploi', () => {
+  const presets = () => screen.getByRole('group', { name: fr.modes.presetsTitle });
+  const duplicate = (label: string) => within(presets()).getByRole('button', { name: t(fr.modes.duplicateLabel, { label }) }) as HTMLButtonElement;
 
-  test('sans aucun état : Concentration (casque), Réunion (personnes) et Pause (café), en un clic', () => {
+  test('Concentration et Sport, avec leur icône et ce qu\'ils changent ; ni « Modifier », ni « Supprimer », ni « Prendre » : ce ne sont pas ses états', () => {
     setup([]);
-    expect(within(suggestions()!).getAllByRole('button').map((button) => button.textContent)).toEqual(['Concentration', 'Réunion', 'Pause']);
-    expect(suggestion('Concentration').querySelector('svg.lucide-headphones')).toBeTruthy();
-    expect(suggestion('Réunion').querySelector('svg.lucide-users')).toBeTruthy();
-    expect(suggestion('Pause').querySelector('svg.lucide-coffee')).toBeTruthy();
+    const rows = Array.from(presets().querySelectorAll('.state-row'));
+    expect(rows.map((row) => row.querySelector('.person-name')?.textContent)).toEqual(['Concentration', 'Sport']);
+    expect(rows[0]!.querySelector('svg.lucide-headphones')).toBeTruthy();
+    expect(rows[1]!.querySelector('svg.lucide-dumbbell')).toBeTruthy();
+    expect(within(rows[0] as HTMLElement).getByText('porte fermée · entend · entendu')).toBeTruthy();
+    expect(within(rows[1] as HTMLElement).getByText('porte ouverte · n\'entend pas · pas entendu · à gym')).toBeTruthy();
+    expect(within(presets()).getAllByRole('button').map((button) => button.textContent)).toEqual([fr.modes.duplicate, fr.modes.duplicate]);
+    expect(screen.queryAllByRole('listitem')).toHaveLength(0);
     expect(screen.getByText(fr.states.empty)).toBeTruthy();
   });
 
-  test('avec des états, plus de suggestions', () => {
+  test('ils sont là même quand on a déjà des états, et la liste de ses états reste la seule liste', () => {
     setup([focus]);
-    expect(suggestions()).toBeNull();
+    expect(Array.from(presets().querySelectorAll('.state-row'))).toHaveLength(2);
+    expect(screen.getAllByRole('listitem')).toHaveLength(1);
   });
 
-  test.each([
-    ['Concentration', { label: 'Concentration', color: '#6d28d9', icon: 'headphones', allowEntry: false, hear: false, heard: false }],
-    ['Réunion', { label: 'Réunion', color: '#ef4444', icon: 'users', allowEntry: false, hear: true, heard: true }],
-    ['Pause', { label: 'Pause', color: '#f59e0b', icon: 'coffee', allowEntry: true, hear: true, heard: true }],
-  ] as const)('« %s » crée l\'état d\'un clic, avec son icône, et il entre dans la liste', async (label, input) => {
+  test('« Dupliquer en mode perso » copie Sport avec son emplacement, et la copie entre dans la liste, qu\'on modifie ensuite', async () => {
     const user = userEvent.setup();
     setup([]);
-    const created: ActivityState = { id: 'nouveau', ...input };
-    api.createActivityState.mockResolvedValue(created);
-    await user.click(suggestion(label));
-    expect(api.createActivityState).toHaveBeenCalledExactlyOnceWith(input satisfies ActivityInput);
-    expect(useOfficeStore.getState().myStates).toEqual([created]);
+    const copy: ActivityState = { id: 'copie', label: 'Sport', color: '#f97316', icon: 'dumbbell', allowEntry: true, hear: false, heard: false, place: 'gym' };
+    api.createActivityState.mockResolvedValue(copy);
+    await user.click(duplicate('Sport'));
+    expect(api.createActivityState).toHaveBeenCalledExactlyOnceWith({ label: 'Sport', color: '#f97316', icon: 'dumbbell', allowEntry: true, hear: false, heard: false, place: 'gym' } satisfies ActivityInput);
+    expect(useOfficeStore.getState().myStates).toEqual([copy]);
     expect(screen.getByText(fr.states.saved)).toBeTruthy();
-    // L'état existe : la liste le montre avec son icône, et les suggestions s'en vont.
-    expect(screen.getAllByRole('listitem')[0]!.querySelector(`svg.lucide-${input.icon}`)).toBeTruthy();
-    expect(suggestions()).toBeNull();
+    expect(screen.getByRole('button', { name: t(fr.states.editLabel, { label: 'Sport' }) })).toBeTruthy();
   });
 
-  test('le serveur refuse : le message dit pourquoi, rien n\'est ajouté, et les suggestions restent', async () => {
+  test('Concentration se copie sans emplacement : le champ n\'est pas dans la demande', async () => {
+    const user = userEvent.setup();
+    setup([]);
+    api.createActivityState.mockResolvedValue({ id: 'copie', label: 'Concentration', color: '#6d28d9', icon: 'headphones', allowEntry: false, hear: true, heard: true });
+    await user.click(duplicate('Concentration'));
+    const sent = api.createActivityState.mock.calls[0]![0];
+    expect(sent).toEqual({ label: 'Concentration', color: '#6d28d9', icon: 'headphones', allowEntry: false, hear: true, heard: true });
+    expect('place' in sent).toBe(false);
+  });
+
+  test('le serveur refuse : le message dit pourquoi, rien n\'est ajouté, et on peut recommencer', async () => {
     const user = userEvent.setup();
     setup([]);
     api.createActivityState.mockRejectedValueOnce(new ApiError(0, 'network'));
-    await user.click(suggestion('Pause'));
+    await user.click(duplicate('Sport'));
     expect((await screen.findByRole('alert')).textContent).toBe(fr.states.errors.generic);
     expect(useOfficeStore.getState().myStates).toEqual([]);
-    expect(suggestion('Pause').disabled).toBe(false);
+    expect(duplicate('Sport').disabled).toBe(false);
   });
 
-  test('pendant la création, les suggestions sont inactives : un double clic ne crée qu\'un état', async () => {
+  test('pendant la copie, les boutons sont inactifs : un double clic ne crée qu\'un état', async () => {
     const user = userEvent.setup();
     setup([]);
     let finish: (state: ActivityState) => void = () => {};
     api.createActivityState.mockReturnValue(new Promise((resolve) => (finish = resolve)));
-    await user.click(suggestion('Réunion'));
-    expect(suggestion('Pause').disabled).toBe(true);
-    await user.click(suggestion('Pause'));
+    await user.click(duplicate('Concentration'));
+    expect(duplicate('Sport').disabled).toBe(true);
+    await user.click(duplicate('Sport'));
     expect(api.createActivityState).toHaveBeenCalledOnce();
-    await act(async () => finish({ id: 'nouveau', label: 'Réunion', color: '#ef4444', icon: 'users', allowEntry: false, hear: true, heard: true }));
+    await act(async () => finish({ id: 'copie', label: 'Concentration', color: '#6d28d9', icon: 'headphones', allowEntry: false, hear: true, heard: true }));
+  });
+
+  test('à la limite de 12 états, les copies sont inactives', () => {
+    setup(Array.from({ length: ACTIVITY_MAX_PER_USER }, (_, i) => ({ ...lunch, id: `s${i}`, label: `État ${i}` })));
+    expect(duplicate('Sport').disabled).toBe(true);
+    expect(duplicate('Concentration').disabled).toBe(true);
+  });
+});
+
+describe('l\'emplacement d\'un état', () => {
+  const office = parseOfficeMap(buildOfficeTiledMap());
+  const withMap = (states: ActivityState[] = []) => {
+    const view = setup(states);
+    act(() => useOfficeStore.getState().setOfficeMap(office));
+    return view;
+  };
+  const room = (name: string) => screen.getByRole('button', { name }) as unknown as SVGElement;
+
+  test('le formulaire a une mini-carte des destinations ; sans carte, ou sans destination, le champ n\'y est pas', () => {
+    setup([]);
+    expect(screen.queryByText(fr.modes.place)).toBeNull();
+    act(() => useOfficeStore.getState().setOfficeMap(office));
+    expect(screen.getByText(fr.modes.place)).toBeTruthy();
+    expect(room('Salle de sport').getAttribute('aria-pressed')).toBe('false');
+    expect(room('Salle de jeu').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('choisir une pièce la coche, la rechoisir la retire ; l\'état créé porte l\'emplacement choisi', async () => {
+    const user = userEvent.setup();
+    withMap();
+    await user.click(room('Salle de sport'));
+    expect(room('Salle de sport').getAttribute('aria-pressed')).toBe('true');
+    await user.click(room('Salle de sport'));
+    expect(room('Salle de sport').getAttribute('aria-pressed')).toBe('false');
+    await user.click(room('Salle de jeu'));
+    await user.type(labelInput(), 'Parties');
+    api.createActivityState.mockResolvedValue({ id: 'n', label: 'Parties', color: '#6d28d9', allowEntry: true, hear: true, heard: true, place: 'game' });
+    await user.click(screen.getByRole('button', { name: fr.states.create }));
+    expect(api.createActivityState).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ label: 'Parties', place: 'game' }));
+  });
+
+  test('sans pièce choisie, la demande n\'a pas de champ « place »', async () => {
+    const user = userEvent.setup();
+    withMap();
+    await user.type(labelInput(), 'Sans lieu');
+    api.createActivityState.mockResolvedValue({ id: 'n', label: 'Sans lieu', color: '#6d28d9', allowEntry: true, hear: true, heard: true });
+    await user.click(screen.getByRole('button', { name: fr.states.create }));
+    expect('place' in api.createActivityState.mock.calls[0]![0]).toBe(false);
+  });
+
+  test('« Modifier » un état à emplacement coche sa pièce ; la liste dit où il conduit', async () => {
+    const user = userEvent.setup();
+    withMap([{ ...lunch, place: 'gym' }]);
+    expect(within(screen.getAllByRole('listitem')[0]!).getByText('porte ouverte · n\'entend pas · pas entendu · à Salle de sport')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: t(fr.states.editLabel, { label: 'À table' }) }));
+    expect(room('Salle de sport').getAttribute('aria-pressed')).toBe('true');
+    api.updateActivityState.mockResolvedValue({ ...lunch });
+    await user.click(room('Salle de sport'));
+    await user.click(screen.getByRole('button', { name: fr.states.save }));
+    expect('place' in api.updateActivityState.mock.calls[0]![1]).toBe(false);
   });
 });
 

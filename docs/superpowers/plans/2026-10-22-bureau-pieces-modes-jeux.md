@@ -647,13 +647,15 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   - la téléportation arrive aux autres par un mouvement `tp` (T2), au client local par `move:correct` avec `reason: 'teleport'` : anneau de lumière au départ et à l'arrivée, son `teleport`.
 
 **Étapes**
-- [ ] Tests, qui échouent :
+- [x] Tests, qui échouent :
   - `presets` : « Concentration ferme la porte seulement » ; « Sport coupe les deux sens et vise `gym` » ; « les ids sont uniques et préfixés » ;
   - serveur : « choisir `preset:sport` téléporte dans la salle de sport » ; « en sortir ramène au bureau » ; « sans bureau, à l'apparition » ; « sport → détente : directement, retour au bureau ensuite » ; « une `place` inconnue est refusée » ; « se déconnecter en sport : au retour, toujours en mode, toujours dans la salle » ; « la salle pleine : l'avatar reste où il est et le mode s'applique » ; « un mode à `place` avec `allowEntry` faux garde la porte du bureau fermée pendant que son propriétaire est ailleurs » ;
   - client : « `MeMenu` montre Normal, Concentration, Sport puis les modes perso » ; « Normal est coché sans mode » ; « le formulaire a les 3 interrupteurs, l'icône, la couleur et l'emplacement » ; « choisir une pièce sur la mini-carte la coche, la rechoisir la retire » ; « les presets n'ont pas de bouton Supprimer » ;
   - e2e `modes.spec.ts` : « Alice prend Sport : elle apparaît dans la salle de sport pour Bastien, ne l'entend plus, puis retourne à son bureau en reprenant Normal ».
-- [ ] Interface à la Apple : tuiles rondes, icône et nom, la tuile choisie cerclée de sa couleur ; sous « Mes modes », « + Créer un mode ».
-- [ ] Commit : `feat: modes à la Apple, emplacement sur la carte et retour au bureau`.
+- [x] Interface à la Apple : tuiles rondes, icône et nom, la tuile choisie cerclée de sa couleur ; sous « Mes modes », « + Créer un mode ».
+- [x] Commit : `feat: modes à la Apple, emplacement sur la carte et retour au bureau`.
+
+**Tel que livré** (écarts au plan, au registre) : `Teleport` (`apps/server/src/teleport.ts`) est l'utilitaire commun de `DeskController` et de `createModeTravel` ; le retour au bureau n'a lieu que si la personne est encore dans le lieu du mode quitté (sinon elle reste où elle est), et entrer dans un lieu où l'on est déjà ne déplace pas ; Concentration et Sport ne sont jamais en base (ids `preset:`, `presetById`), `PUT` et `DELETE` sur leur id répondent 404 ; l'API refuse une `place` qui n'est pas une destination de la carte (400 `invalid`) : sur la petite carte de développement aucun emplacement n'est permis et le sélecteur n'y est pas montré ; la liste des « suggestions » du panneau devient la section « Modes prêts à l'emploi », toujours visible, avec « Dupliquer en mode perso » ; supprimer le mode en cours ramène au bureau, en modifier un en cours ne déplace pas ; les icônes passent à quinze (`check`, `waves`, `gamepad-2`) ; `fr.me.modeNone` et `fr.me.modeManage` sont remplacés par `fr.modes.*`. L'e2e `modes.spec.ts` vérifie l'arrivée (anneau, son `teleport`, lieu vu par Bastien, mode dans sa liste Personnes) et le retour ; « ne l'entend plus » est couvert par les tests serveur des deux interrupteurs, pas par un e2e (LiveKit n'est pas là). Vérifié : 170 fichiers et 3 065 tests unitaires, 74 e2e passés (6 sautés, ceux qui demandent LiveKit), captures à l'œil.
 
 ---
 

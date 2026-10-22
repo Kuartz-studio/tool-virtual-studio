@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { destinationKeys } from '@bureau/shared';
 import type { Logger } from 'pino';
 import { createApp } from './app';
 import { createAuth } from './auth/auth';
@@ -89,7 +90,7 @@ async function main(): Promise<void> {
     // Le faux live (SIM=1) : ses routes sont dans l'application, ses personnes fictives dans le temps réel.
     const sim = env.SIM === '1' ? createSimHost(env) : undefined;
 
-    const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger, sim }));
+    const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger, sim, destinations: new Set(destinationKeys(map)) }));
     // Le temps réel partage le serveur HTTP de l'application : /socket.io, sur la même origine que le client et /api.
     const realtime = attachRealtime(server, { auth, db, map, mapKey: env.MAP_KEY, events, env, logger, sim });
     await new Promise<void>((resolve, reject) => {

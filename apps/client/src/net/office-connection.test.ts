@@ -130,6 +130,9 @@ describe('connectOffice', () => {
     connectOffice(socket.asSocket(), store, bus);
     socket.receive('move:correct', { x: 80, y: 240 });
     expect(bus.emittedOf('net:correct')).toEqual([{ x: 80, y: 240 }]);
+    // Un voyage voulu (un mode) porte sa raison : le jeu en fait un anneau de lumière, le son un bruit de saut.
+    socket.receive('move:correct', { x: 300, y: 400, reason: 'teleport' });
+    expect(bus.emittedOf('net:correct').at(-1)).toEqual({ x: 300, y: 400, reason: 'teleport' });
   });
 
   test('session:replaced : le magasin le sait (un autre onglet a pris la place)', () => {

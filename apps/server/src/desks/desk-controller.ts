@@ -14,6 +14,7 @@ import type { Logger } from 'pino';
 import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from '../realtime/io';
 import type { World } from '../realtime/world';
+import type { Teleport } from '../teleport';
 import type { DeskResult, DeskService } from './desk-service';
 
 export interface DeskControllerDeps {
@@ -25,6 +26,8 @@ export interface DeskControllerDeps {
   connectedUsers: () => string[];
   /** Les sockets de cette personne qui ont reçu leur init : les seules à qui l'on écrit. */
   socketsOf: (userId: string) => TypedSocket[];
+  /** Pose quelqu'un ailleurs et dit à son navigateur de s'y replacer : celui qu'on exclut, celui qui rentre chez lui. */
+  teleport: Teleport;
   /** L'horloge du temps réel (ms). */
   now: () => number;
   logger: Logger;
@@ -96,12 +99,7 @@ export function createDeskController(d: DeskControllerDeps) {
   }
 
   // Pose la personne là (un pas hors de la pièce, ou chez elle), et dit à son navigateur de s'y replacer.
-  function moveTo(userId: string, point: { x: number; y: number }): boolean {
-    const [x, y] = [Math.round(point.x), Math.round(point.y)];
-    if (!d.world.teleport(userId, x, y)) return false;
-    for (const socket of d.socketsOf(userId)) socket.emit('move:correct', { x, y });
-    return true;
-  }
+  const moveTo = (userId: string, point: { x: number; y: number }): boolean => d.teleport(userId, point);
 
   async function run(userId: string, command: DeskCommand): Promise<DeskAck> {
     const me = d.world.get(userId);

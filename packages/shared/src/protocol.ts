@@ -53,7 +53,7 @@ export const deskCommandSchema = z.discriminatedUnion('type', [
 
 // Les icônes qu'un état d'activité peut porter, sous le nom qu'elles ont chez Lucide (le client les dessine : office/activity-icons.ts). Dans
 // cet ordre, qui est celui de la grille du formulaire.
-export const ACTIVITY_ICONS = ['headphones', 'users', 'coffee', 'utensils', 'phone', 'pen-tool', 'code', 'book-open', 'moon', 'plane', 'dumbbell', 'music'] as const;
+export const ACTIVITY_ICONS = ['headphones', 'users', 'coffee', 'utensils', 'phone', 'pen-tool', 'code', 'book-open', 'moon', 'plane', 'dumbbell', 'music', 'check', 'waves', 'gamepad-2'] as const;
 export type ActivityIcon = (typeof ACTIVITY_ICONS)[number];
 export const activityIconSchema = z.enum(ACTIVITY_ICONS);
 
@@ -63,6 +63,8 @@ export const activityIconSchema = z.enum(ACTIVITY_ICONS);
 // - hear : elle entend les autres (sinon elle n'entend rien) ;
 // - heard : les autres l'entendent (sinon son micro ne publie rien).
 // Sans entendre ni être entendue, elle est hors de toute conversation, comme en Ne pas déranger.
+// Un mode peut aussi avoir un emplacement (`place`, la clé d'un lieu de la carte qui est une destination : la salle de sport, la salle de jeu) : le prendre
+// conduit à ce lieu, en sortir ramène au bureau ; sans emplacement, on ne bouge pas. Le serveur refuse une clé qui n'est pas une destination de la carte.
 export const activityInputSchema = z.object({
   label: z.string().trim().min(1).max(ACTIVITY_LABEL_MAX_LENGTH),
   color: z
@@ -73,6 +75,7 @@ export const activityInputSchema = z.object({
   allowEntry: z.boolean(),
   hear: z.boolean(),
   heard: z.boolean(),
+  place: z.string().min(1).max(64).optional(),
 });
 // L'identifiant d'un état d'activité à prendre (`state:set`), ou null pour revenir à un statut ordinaire.
 export const activityIdSchema = z.string().min(1).max(64).nullable();
@@ -169,7 +172,7 @@ export type DeskAck =
 export interface ServerToClientEvents {
   init: (p: InitPayload) => void;
   'world:tick': (p: WorldTick) => void;
-  'move:correct': (p: { x: number; y: number }) => void;
+  'move:correct': (p: { x: number; y: number; reason?: 'teleport' }) => void;
   'player:joined': (p: PublicPlayer) => void;
   'player:left': (p: { id: string }) => void;
   'status:changed': (p: { id: string; status: Status }) => void;

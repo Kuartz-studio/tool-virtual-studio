@@ -326,7 +326,7 @@ describe('la barre', () => {
     const { panels } = renderBar();
     for (const [name, id] of [
       [fr.character.toggle, 'character'],
-      [fr.me.modeManage, 'states'],
+      [fr.modes.create, 'states'],
     ] as const) {
       await user.click(button(fr.me.chip));
       await user.click(screen.getByRole('menuitem', { name }));
