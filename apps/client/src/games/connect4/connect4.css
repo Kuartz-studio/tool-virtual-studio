@@ -1,0 +1,171 @@
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le plateau du Puissance 4. Tous les sélecteurs commencent par `.game-connect4` ; la feuille ne parle que par les jetons de styles.css et par les variables que `.game-connect4` pose
+   (l'illustration : le plateau bleu, le cerclage, les durées). Le plateau est le même le jour et la nuit : c'est une illustration, que le cadre du panneau entoure.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.game-connect4 {
+  /* La grille : sept colonnes de six rangées. */
+  --game-connect4-columns: 7;
+  --game-connect4-rows: 6;
+  /* Le plateau : son bleu, son liseré clair (qui le détache de la page, de jour comme de nuit), son ombre en bas. */
+  --game-connect4-plate: #1f4fd1;
+  --game-connect4-plate-edge: #5f8bff;
+  --game-connect4-plate-shade: #14308a;
+  --game-connect4-radius: 8px;
+  /* Le cerclage du dernier jeton et de la ligne gagnante : blanc, qui se détache du plateau comme des deux couleurs de jeton. */
+  --game-connect4-marker: #ffffff;
+  /* La chute d'un jeton (environ 250 ms, avec un petit rebond) et la pulsation de la ligne gagnante. */
+  --game-connect4-fall-duration: 250ms;
+  --game-connect4-pulse-duration: 900ms;
+
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+  user-select: none;
+}
+
+/* Le cadre : sept cases de large, ni plus ni moins (le plateau le mesure sur son conteneur, et pose --game-connect4-cell et --game-connect4-inset). */
+.game-connect4-frame {
+  position: relative;
+  flex: none;
+  width: calc(var(--game-connect4-cell) * var(--game-connect4-columns));
+}
+
+/* Le plateau bleu, derrière les colonnes : il commence sous la rangée du fantôme. */
+.game-connect4-plate {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: calc(var(--game-connect4-cell) * var(--game-connect4-rows));
+  background: var(--game-connect4-plate);
+  border-radius: var(--game-connect4-radius);
+  box-shadow:
+    inset 0 0 0 2px var(--game-connect4-plate-edge),
+    inset 0 -6px 0 var(--game-connect4-plate-shade);
+}
+
+.game-connect4-columns {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--game-connect4-columns), var(--game-connect4-cell));
+}
+
+/* Une colonne est un seul bouton, du fantôme jusqu'au fond : toute sa hauteur se clique. */
+.game-connect4-column {
+  display: flex;
+  flex-direction: column;
+  width: var(--game-connect4-cell);
+  margin: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: var(--game-connect4-radius);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Une colonne qu'on ne peut pas jouer (pas son tour, un spectateur, l'aperçu, une colonne pleine) ne se présente pas comme cliquable ; elle reste lisible au clavier. */
+.game-connect4-column[aria-disabled='true'] {
+  cursor: default;
+}
+
+.game-connect4-column:not([aria-disabled='true']):hover {
+  background: var(--accent-soft);
+}
+
+/* La rangée du fantôme, au-dessus du plateau, et la pile des six cases. */
+.game-connect4-lane,
+.game-connect4-cell {
+  position: relative;
+  display: block;
+  width: var(--game-connect4-cell);
+  height: var(--game-connect4-cell);
+}
+
+.game-connect4-cells {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Un jeton, un trou et le fantôme sont des dessins de 13 pixels, posés à un décalage entier dans leur case et jamais floutés. */
+.game-connect4-slot,
+.game-connect4-token,
+.game-connect4-ghost {
+  position: absolute;
+  top: var(--game-connect4-inset);
+  left: var(--game-connect4-inset);
+}
+
+.game-connect4-slot,
+.game-connect4-disc {
+  display: block;
+  image-rendering: pixelated;
+}
+
+/* Le fantôme : le jeton qu'on va lâcher, de sa couleur, à moitié effacé. Invisible tant qu'on ne survole pas la colonne ni ne la vise au clavier. */
+.game-connect4-ghost {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.game-connect4-column:not([aria-disabled='true']):hover .game-connect4-ghost,
+.game-connect4-column:not([aria-disabled='true']):focus-visible .game-connect4-ghost {
+  opacity: 0.6;
+}
+
+/* Un jeton qui vient de tomber : du haut de la colonne jusqu'à sa case, en accélérant, avec un petit rebond. Le mouvement réduit coupe l'animation (styles.css) : il est posé tout de suite. */
+.game-connect4-token[data-falling] {
+  z-index: 1;
+  animation: game-connect4-fall var(--game-connect4-fall-duration) both;
+}
+
+@keyframes game-connect4-fall {
+  0% {
+    transform: translateY(calc(var(--game-connect4-cell) * var(--game-connect4-fall-rows) * -1));
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.55);
+  }
+
+  70% {
+    transform: translateY(0);
+    animation-timing-function: ease-out;
+  }
+
+  85% {
+    transform: translateY(calc(var(--game-connect4-cell) * -0.08));
+    animation-timing-function: ease-in;
+  }
+
+  100% {
+    transform: translateY(0);
+  }
+}
+
+/* Quand une ligne est gagnée, les autres jetons s'effacent sans disparaître. */
+.game-connect4-token[data-dim] {
+  opacity: 0.45;
+}
+
+/* La ligne gagnante : un contour blanc épais et fixe, qui reste quand on demande moins de mouvement, et une pulsation en plus. */
+.game-connect4-token[data-win] {
+  filter: drop-shadow(2px 0 0 var(--game-connect4-marker)) drop-shadow(-2px 0 0 var(--game-connect4-marker)) drop-shadow(0 2px 0 var(--game-connect4-marker))
+    drop-shadow(0 -2px 0 var(--game-connect4-marker));
+}
+
+.game-connect4-token[data-win] .game-connect4-disc {
+  animation: game-connect4-pulse var(--game-connect4-pulse-duration) ease-in-out infinite alternate;
+}
+
+@keyframes game-connect4-pulse {
+  from {
+    transform: scale(1);
+  }
+
+  to {
+    transform: scale(1.1);
+  }
+}
