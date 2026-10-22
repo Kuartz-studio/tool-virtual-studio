@@ -1,16 +1,16 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
 import { deskSettingsButton, goToDeskButton, joinOffice, openDeskPanel, selfAt } from './helpers';
 
-// La lumière du bureau, sur la vraie carte (le second serveur des tests : playwright.config.ts) : l'interrupteur est sur le mur nord du couloir
-// (case 32, 10). Une personne qui s'en approche et appuie sur E éteint pour tout le monde ; la nuit tombe chez elle et chez les autres, qui
+// La lumière du bureau, sur la vraie carte (le second serveur des tests : playwright.config.ts) : l'interrupteur est sur le mur nord de la rue
+// (case 28, 10). Une personne qui s'en approche et appuie sur E éteint pour tout le monde ; la nuit tombe chez elle et chez les autres, qui
 // l'apprennent par un message passager ; un second appui rallume.
 
 // Un seul navigateur à la fois : deux personnes, et le reste de la suite qui tourne sur ce serveur (les tests de personnalisation cherchent un
 // bureau libre, et il n'y en a que six).
 test.describe.configure({ mode: 'default' });
 
-// Dans le couloir, à environ deux cases de l'interrupteur (la portée est de trois).
-const NEAR_SWITCH = { x: 1008, y: 400 };
+// Dans la rue, à deux cases de l'interrupteur (la portée est de trois) : la case (28, 12).
+const NEAR_SWITCH = { x: 28 * 32 + 16, y: 12 * 32 + 16 };
 
 // Place l'avatar sur cette case (window.__office.teleport, que le serveur n'accepte qu'avec E2E=1), arrêté.
 async function teleport(page: Page, spot: { x: number; y: number }): Promise<void> {

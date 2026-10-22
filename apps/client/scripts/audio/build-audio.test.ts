@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'vitest';
-import { MAX_PEAK_DB, MUSIC_SOURCES, MUSIC_TARGET_LUFS, SFX_SOURCES, SFX_TARGET_RMS_DB, musicGain, parseLevels, parseLoudness, renderMeasuredSource, sfxGain } from './build-audio';
+import {
+  MAX_PEAK_DB,
+  MUSIC_SOURCES,
+  MUSIC_TARGET_LUFS,
+  SFX_SOURCES,
+  SFX_TARGET_RMS_DB,
+  SFX_TRIMS,
+  fadeOutFilter,
+  musicGain,
+  parseLevels,
+  parseLoudness,
+  renderMeasuredSource,
+  sfxGain,
+} from './build-audio';
 
 // Le bilan que ffmpeg écrit pour le filtre ebur128 (peak=true), réduit à ce qui compte.
 const EBUR128 = `
@@ -85,5 +98,41 @@ test('le fichier généré : un tableau par genre, les noms avec un tiret entre 
 
 test('les ambiances et les effets listés sont ceux que le catalogue connaît', () => {
   expect(Object.keys(MUSIC_SOURCES).sort()).toEqual(['drift', 'dusk', 'focus', 'lobby', 'quest', 'sunny']);
-  expect(Object.keys(SFX_SOURCES)).toHaveLength(15);
+  expect(Object.keys(SFX_SOURCES)).toHaveLength(25);
+});
+
+test('les effets des portes, du café, des modes et des jeux viennent des dossiers Environment, Other et Card and Board du pack', () => {
+  expect(SFX_SOURCES).toMatchObject({
+    'door-open': 'Environment/door_open.wav',
+    'door-close': 'Environment/door_close.wav',
+    lock: 'Environment/lock_lock.wav',
+    unlock: 'Environment/lock_unlock.wav',
+    coffee: 'Other/drink_slurp.wav',
+    boost: 'Other/whoosh_2.wav',
+    teleport: 'Other/whoosh_1.wav',
+    dice: 'Card and Board/dice_roll_1.wav',
+    piece: 'Card and Board/chips_place_1.wav',
+    win: 'Other/applause.wav',
+  });
+});
+
+test('chaque source est un .wav rangé dans un dossier du pack, et aucun fichier n\'est utilisé deux fois', () => {
+  const sources = Object.values(SFX_SOURCES);
+  for (const source of sources) expect(source).toMatch(/^[A-Za-z ]+\/[a-z0-9_]+\.wav$/);
+  expect(new Set(sources).size).toBe(sources.length);
+});
+
+describe('les effets écourtés', () => {
+  test('seule la victoire (des applaudissements de plusieurs secondes) est écourtée, et son extinction tient dans sa durée', () => {
+    expect(Object.keys(SFX_TRIMS)).toEqual(['win']);
+    const { seconds, fadeSeconds } = SFX_TRIMS.win!;
+    expect(seconds).toBeLessThanOrEqual(4);
+    expect(fadeSeconds).toBeGreaterThan(0);
+    expect(fadeSeconds).toBeLessThan(seconds);
+  });
+
+  test('le filtre d\'extinction commence à la durée moins le temps d\'extinction', () => {
+    expect(fadeOutFilter({ seconds: 3.5, fadeSeconds: 0.8 })).toBe('afade=t=out:st=2.7:d=0.8');
+    expect(fadeOutFilter({ seconds: 3, fadeSeconds: 0.3 })).toBe('afade=t=out:st=2.7:d=0.3');
+  });
 });

@@ -5,7 +5,7 @@ const GAP = 14;
 // Centrée sur son ancre, la fenêtre garde au moins cet écart avec les bords de la page.
 const EDGE = 16;
 
-export type PopoverPlacement = 'top-start' | 'top-end' | 'top';
+export type PopoverPlacement = 'top-start' | 'top-end' | 'top' | 'bottom-start';
 
 export interface PopoverProps {
   open: boolean;
@@ -14,7 +14,8 @@ export interface PopoverProps {
   // c'est elle qui ouvre et ferme (sans cela, le clic qui ferme rouvrirait aussitôt).
   anchorRef: RefObject<HTMLElement | null>;
   // Au-dessus de l'ancre, alignée sur son bord gauche (`top-start`) ou sur son bord droit (`top-end`), ou centrée sur elle (`top`, que les
-  // bords de la page retiennent : sur un écran étroit, elle reste dans la page).
+  // bords de la page retiennent : sur un écran étroit, elle reste dans la page) ; ou au-dessous, alignée sur son bord gauche (`bottom-start`) : ce
+  // que le haut de la page ouvre (la puce du lieu).
   placement?: PopoverPlacement;
   // Son nom, pour les lecteurs d'écran.
   label: string;
@@ -25,20 +26,25 @@ export interface PopoverProps {
 }
 
 // Où poser la fenêtre, au-dessus de l'ancre, en coordonnées de la page : le bord du bas, et le bord gauche, ou droit, ou le milieu (que le CSS
-// ramène à la moitié de la largeur de la fenêtre : `translate`) quand elle est centrée, et que ses bords gardent loin de ceux de la page.
+// ramène à la moitié de la largeur de la fenêtre : `translate`) quand elle est centrée, et que ses bords gardent loin de ceux de la page. Au-dessous
+// (`bottom-start`) : le bord du haut, sous le bas de l'ancre, et son bord gauche.
 export function placeOver(
-  rect: Pick<DOMRect, 'left' | 'right' | 'top' | 'width'>,
+  rect: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width'>,
   viewport: { width: number; height: number },
   placement: PopoverPlacement,
   popoverWidth: number,
 ): CSSProperties {
+  // Alignée sur le bord gauche de l'ancre, la fenêtre est ramenée dans la page (EDGE de marge à droite comme à gauche) : sur un téléphone, une ancre à 88 px du bord la ferait
+  // sortir. Pas encore mesurée (largeur 0), seule la marge de droite la retient.
+  const left = Math.max(EDGE, Math.min(rect.left, viewport.width - EDGE - popoverWidth));
+  if (placement === 'bottom-start') return { top: rect.bottom + GAP, left };
   const bottom = viewport.height - rect.top + GAP;
   if (placement === 'top-end') return { bottom, right: viewport.width - rect.right };
   if (placement === 'top') {
     const half = popoverWidth / 2;
     return { bottom, left: Math.min(Math.max(rect.left + rect.width / 2, EDGE + half), viewport.width - EDGE - half) };
   }
-  return { bottom, left: rect.left };
+  return { bottom, left };
 }
 
 // Où poser la fenêtre : au-dessus de l'ancre, en coordonnées de la page (la couche d'interface est fixe : rien ne défile). Remesurée quand la

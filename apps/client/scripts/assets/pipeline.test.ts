@@ -130,6 +130,53 @@ describe('les assets rangés dans l\'appli', () => {
   });
 });
 
+describe('les planches Gym et Basement', () => {
+  const inCategory = (cat: string) => DECOR_ITEMS.filter((item) => item.cat === cat);
+  const named = (id: string) => DECOR_ITEMS.find((item) => item.id === id);
+
+  test('une catégorie « Sport & jeux », après les neuf premières', () => {
+    expect(DECOR_CATEGORIES.map((c) => c.id)).toContain('sport');
+    expect(DECOR_CATEGORIES.at(-1)).toEqual({ id: 'sport', label: 'Sport & jeux' });
+    expect(inCategory('sport').length).toBeGreaterThanOrEqual(20);
+  });
+
+  test('de quoi équiper une salle de sport : tapis, ballons, haltères, bancs, miroirs', () => {
+    const names = inCategory('sport').map((item) => item.name);
+    for (const wanted of [/Tapis de yoga/, /Ballon de gym/, /Râtelier d'haltères/, /Banc de musculation/, /Miroir de salle de sport/]) {
+      expect(names.some((n) => wanted.test(n)), String(wanted)).toBe(true);
+    }
+  });
+
+  test('de quoi équiper une salle de jeu : ping-pong, billard, arcade, canapés, fauteuils, tabourets, télé', () => {
+    const names = DECOR_ITEMS.filter((item) => item.id.startsWith('ba-')).map((item) => item.name);
+    for (const wanted of [/Table de ping-pong/, /Billard/, /Borne d'arcade/, /Canapé/, /Fauteuil/, /Tabouret/, /Meuble télé/, /Table ronde/, /Coussin/]) {
+      expect(names.some((n) => wanted.test(n)), String(wanted)).toBe(true);
+    }
+  });
+
+  test('les tables de jeu bloquent le passage sur toute leur surface, les sièges jamais', () => {
+    for (const id of ['ba-0-12', 'ba-4-25']) {
+      const table = named(id)!;
+      expect(table.solid, table.name).toBe(true);
+      expect(table.claim, table.name).toBe(table.h);
+    }
+    for (const item of DECOR_ITEMS.filter((i) => i.id.startsWith('ba-') && i.cat === 'sieges')) expect(item.solid, item.name).toBe(false);
+  });
+
+  test('les tapis se posent à même le sol, les miroirs et les tableaux au mur', () => {
+    expect(named('gy-3-1')!.kind).toBe('floor');
+    expect(named('ba-0-16')!.kind).toBe('floor');
+    for (const item of DECOR_ITEMS.filter((i) => /Miroir de salle de sport/.test(i.name))) expect(item.kind, item.name).toBe('wall');
+  });
+
+  test('aucun nom ne se répète dans une catégorie', () => {
+    for (const { id } of DECOR_CATEGORIES) {
+      const names = inCategory(id).map((item) => item.name);
+      expect(new Set(names).size, id).toBe(names.length);
+    }
+  });
+});
+
 describe('qui arrête l\'avatar : les gros éléments seuls', () => {
   const entry = (cat: ResolvedEntry['cat'], rect: ResolvedEntry['rect'], more: Partial<ResolvedEntry> = {}): ResolvedEntry => ({ sheet: 'of', name: 'x', cat, rect, ...more });
 

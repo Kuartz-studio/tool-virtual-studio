@@ -1,20 +1,25 @@
-import { MAX_ZOOM_LEVEL } from '../game/zoom';
-import { fr } from '../i18n/fr';
+import { ZOOM_BUTTON_STEP, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
+import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
 import { MinusIcon, PlusIcon } from './icons';
 import { IconButton } from './ui/IconButton';
 
-// Le zoom, en bas à droite à côté du dock des panneaux : plus loin, plus près. Le jeu lit le niveau au magasin ; la molette et les touches
-// + - 0 le changent aussi. Chaque bouton s'éteint à sa limite (×2 plus près, ×4 plus loin). La vue de départ (100 %) est dans le menu « Plus ».
+// Le zoom, en bas à droite à côté du dock des panneaux : plus loin, le pourcentage du moment (un clic le ramène à 100 %), plus près. Le jeu
+// lit le pourcentage au magasin ; la molette et les touches + - 0 le changent aussi. Un bouton fait 10 %, un cran de molette 5 % ; chaque bouton
+// s'éteint à sa limite (200 % au plus près, 25 % au plus loin).
 export function ZoomDock() {
-  const level = useOfficeStore((state) => state.zoomLevel);
+  const percent = useOfficeStore((state) => state.zoomPercent);
   const stepZoom = useOfficeStore((state) => state.stepZoom);
+  const resetZoom = useOfficeStore((state) => state.resetZoom);
   return (
     <div className="dock dock-zoom" role="group" aria-label={fr.zoom.group}>
-      <IconButton label={fr.zoom.out} shortcut="−" disabled={level <= 0} onClick={() => stepZoom(-1)}>
+      <IconButton label={fr.zoom.out} shortcut="−" disabled={percent <= ZOOM_MIN_PERCENT} onClick={() => stepZoom(-1, ZOOM_BUTTON_STEP)}>
         <MinusIcon />
       </IconButton>
-      <IconButton label={fr.zoom.in} shortcut="+" disabled={level >= MAX_ZOOM_LEVEL} onClick={() => stepZoom(1)}>
+      <IconButton className="zoom-reset" label={fr.zoom.reset} shortcut="0" onClick={() => resetZoom()}>
+        <span className="zoom-value">{t(fr.zoom.level, { percent })}</span>
+      </IconButton>
+      <IconButton label={fr.zoom.in} shortcut="+" disabled={percent >= ZOOM_MAX_PERCENT} onClick={() => stepZoom(1, ZOOM_BUTTON_STEP)}>
         <PlusIcon />
       </IconButton>
     </div>

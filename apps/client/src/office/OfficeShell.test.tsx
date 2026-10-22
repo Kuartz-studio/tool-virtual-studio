@@ -151,7 +151,7 @@ describe('la mise en page', () => {
   test('la barre du bas : la puce « Moi », micro, caméra, partage d\'écran et musique, le zoom, puis Chat, Personnes et Plus ; le nom et le statut sont dans la puce', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
     expect(within(meChip()).getByText('Léa')).toBeTruthy();
     expect(within(meChip()).getByText(fr.status.available)).toBeTruthy();
   });
@@ -385,6 +385,11 @@ describe('le panneau Personnes', () => {
       blocked: new Uint8Array(900),
       spawn: { x: 48, y: 48 },
       switches: [],
+      places: [],
+      coffees: [],
+      speakers: [],
+      tables: [],
+      signs: [],
       zones: [zone('1', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' })],
     } as unknown as OfficeMap;
     const user = userEvent.setup();
@@ -925,7 +930,7 @@ describe('les états d\'activité', () => {
     await waitFor(() => expect(useOfficeStore.getState().myStates).toEqual([focus, lunch]));
     await user.click(meChip());
     expect(screen.getByRole('menuitemradio', { name: 'En focus' })).toBeTruthy();
-    expect(screen.getByRole('menuitem', { name: fr.me.modeManage })).toBeTruthy();
+    expect(screen.getByRole('menuitem', { name: fr.modes.create })).toBeTruthy();
   });
 
   test('« + » ouvre le panneau des états ; Échap le ferme et le focus revient à la puce « Moi »', async () => {
@@ -933,7 +938,7 @@ describe('les états d\'activité', () => {
     renderShell();
     expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
     await user.click(meChip());
-    await user.click(screen.getByRole('menuitem', { name: fr.me.modeManage }));
+    await user.click(screen.getByRole('menuitem', { name: fr.modes.create }));
     expect(screen.getByRole('complementary', { name: fr.states.title })).toBeTruthy();
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();

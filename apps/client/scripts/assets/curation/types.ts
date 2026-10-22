@@ -31,4 +31,6 @@ export const SHEETS: Record<string, string> = {
   cl: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/5_Classroom_and_library_32x32.png',
   fi: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/9_Fishing_32x32.png',
   ge: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/1_Generic_32x32.png',
+  gy: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/8_Gym_32x32.png',
+  ba: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/14_Basement_32x32.png',
 };

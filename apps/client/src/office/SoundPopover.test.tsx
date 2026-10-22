@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useRef } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { audioEngine } from '../audio/audio';
 import { useAudioStore } from '../audio/audio-store';
+import { useOfficeStore } from '../state/office-store';
 import { SCENE_IDS } from '../audio/catalog';
 import { DEFAULT_AUDIO_PREFS } from '../audio/prefs';
 import { bindKeyboard, DirectionInput } from '../game/input';
@@ -13,7 +14,8 @@ import { SoundPopover } from './SoundPopover';
 
 beforeEach(() => {
   localStorage.clear();
-  useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, status: 'running', playing: null, place: 'lobby' });
+  useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, status: 'running', playing: null, place: 'lobby', placeKey: null });
+  useOfficeStore.getState().reset();
 });
 
 afterEach(() => {
@@ -141,7 +143,36 @@ describe('les ambiances', () => {
     expect(prefs().scene).toBe('drift');
   });
 
-  test('« Selon l\'endroit » dit l\'ambiance de l\'endroit où l\'on est, avec sa pochette', () => {
+  test('« Selon la pièce » dit l\'ambiance de la pièce où l\'on est, celle que ses occupants ont réglée : le sous-titre et la pochette la suivent', () => {
+    useAudioStore.setState({ place: 'dusk', placeKey: 'game' });
+    const { rerender } = render(<Harness />);
+    const card = auto().closest('label')!;
+    expect(card.textContent).toContain(t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes.dusk.title }));
+    // Quelqu'un règle la pièce sur « Expédition » : c'est elle qu'on entend ici.
+    act(() => useOfficeStore.getState().setRoomMusic('game', { on: true, scene: 'quest', by: null, at: 1 }));
+    rerender(<Harness />);
+    expect(card.textContent).toContain(t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes.quest.title }));
+    expect(card.querySelector('canvas')?.getAttribute('data-cover')).toBe('quest');
+  });
+
+  test('« Selon la pièce » dans une pièce dont la musique est coupée : « Ici : musique coupée » ; la pochette reste celle de l\'ambiance par défaut', () => {
+    useAudioStore.setState({ place: 'dusk', placeKey: 'game' });
+    act(() => useOfficeStore.getState().setRoomMusic('game', { on: false, scene: null, by: null, at: 1 }));
+    render(<Harness />);
+    const card = auto().closest('label')!;
+    expect(card.textContent).toContain(fr.sound.ambiance.autoOff);
+    expect(card.textContent).not.toContain(fr.sound.scenes.dusk.title);
+    expect(card.querySelector('canvas')?.getAttribute('data-cover')).toBe('dusk');
+  });
+
+  test('« Selon la pièce » dans un endroit sans enceinte : l\'ambiance par défaut, quoi que dise un état oublié', () => {
+    useAudioStore.setState({ place: 'lobby', placeKey: null });
+    act(() => useOfficeStore.getState().setRoomMusic('street-n', { on: false, scene: null, by: null, at: 1 }));
+    render(<Harness />);
+    expect(auto().closest('label')!.textContent).toContain(t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes.lobby.title }));
+  });
+
+  test('« Selon la pièce » dit l\'ambiance de l\'endroit où l\'on est, avec sa pochette', () => {
     useAudioStore.setState({ place: 'dusk' });
     const { rerender } = render(<Harness />);
     const card = auto().closest('label')!;

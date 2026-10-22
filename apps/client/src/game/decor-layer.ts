@@ -1,14 +1,15 @@
 import {
-  DEFAULT_DESK_DECOR,
-  DESK_ROOM,
   OFFICE_DESK_SLOTS,
   TILE_SIZE,
   decorItem,
+  defaultDeskDecor,
   deskKey,
+  deskRoomSpecOf,
   floorTheme,
   wallTheme,
   type DeskDecor,
   type DeskInfo,
+  type DeskRoomSpec,
   type OfficeDeskSlot,
   type OfficeMap,
   type Zone,
@@ -26,6 +27,9 @@ import { snapToPixels } from './pixel-snap';
 interface Room {
   key: string;
   zone: Zone;
+  // Sa taille et le côté de sa porte, lus sur la carte ; le poste par défaut qui va avec (une place libre, ou dont personne n'a rien réglé).
+  spec: DeskRoomSpec;
+  fallback: DeskDecor;
   slot: OfficeDeskSlot | null;
   signature: string;
   sprites: GameObjects.Image[];
@@ -63,12 +67,12 @@ export class DecorLayer {
     this.staticDrawn = layoutDecor(placed);
     this.staticSprites = drawAll(scene, this.staticDrawn);
 
-    // Les pièces de bureau de la taille des pièces du jeu : une carte aux bureaux d'une autre taille (la carte de développement) n'a pas de déco.
+    // Les pièces de bureau que la carte décrit, chacune avec sa taille et sa porte : une carte sans portes (celle de développement) n'a pas de déco.
     for (const zone of map.zones.filter((z) => z.type === 'desk')) {
-      const [width, height] = [zone.width / TILE_SIZE, zone.height / TILE_SIZE];
-      if (width !== DESK_ROOM.width || height !== DESK_ROOM.height) continue;
       const key = deskKey(zone);
-      this.rooms.set(key, { key, zone, slot: OFFICE_DESK_SLOTS.find((s) => s.key === key) ?? null, signature: '', sprites: [], bodies: [], colliders: [], drawn: [] });
+      const spec = deskRoomSpecOf(map, key);
+      if (!spec) continue;
+      this.rooms.set(key, { key, zone, spec, fallback: defaultDeskDecor(spec), slot: OFFICE_DESK_SLOTS.find((s) => s.key === key) ?? null, signature: '', sprites: [], bodies: [], colliders: [], drawn: [] });
     }
   }
 
@@ -101,6 +105,11 @@ export class DecorLayer {
     return this.rooms.get(key)?.zone;
   }
 
+  // La pièce de ce bureau (taille et porte), pour que l'éditeur sache où l'on peut poser.
+  specOf(key: string): DeskRoomSpec | undefined {
+    return this.rooms.get(key)?.spec;
+  }
+
   // Tout ce qui est dessiné, meubles de la carte et éléments des bureaux (brouillons de l'éditeur compris) : la clé de chaque élément et le
   // rectangle de son image, en pixels de la carte. Pour les lumières de la nuit (sourcesFromItems).
   placedImages(): Array<{ id: string; x: number; y: number; w: number; h: number }> {
@@ -124,7 +133,7 @@ export class DecorLayer {
     const preview = this.previews.get(room.key);
     if (preview) return preview;
     const desk = this.desks.find((d) => d.key === room.key);
-    return desk ? { floor: desk.floor, wall: desk.wall, items: desk.items } : DEFAULT_DESK_DECOR;
+    return desk ? { floor: desk.floor, wall: desk.wall, items: desk.items } : room.fallback;
   }
 
   private refresh(room: Room): void {
@@ -146,7 +155,7 @@ export class DecorLayer {
     const wall = wallTheme(decor.wall);
     const [roomX, roomY] = [Math.round(room.zone.x / TILE_SIZE), Math.round(room.zone.y / TILE_SIZE)];
     if (floor && this.layers.sol) {
-      for (let y = roomY; y < roomY + DESK_ROOM.height; y++) for (let x = roomX; x < roomX + DESK_ROOM.width; x++) this.layers.sol.putTileAt(floor.gid, x, y);
+      for (let y = roomY; y < roomY + room.spec.height; y++) for (let x = roomX; x < roomX + room.spec.width; x++) this.layers.sol.putTileAt(floor.gid, x, y);
     }
     if (wall && this.layers.murs && room.slot) {
       for (const cell of room.slot.walls) this.layers.murs.putTileAt(wall[cell.part], cell.x, cell.y);

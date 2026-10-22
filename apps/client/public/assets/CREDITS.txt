@@ -1,8 +1,10 @@
 Illustrations : LimeZu (https://limezu.itch.io)
-  - Modern Interiors : meubles, sols, murs, personnages (Character Generator)
+  - Modern Interiors : meubles, sols, murs, personnages (Character Generator), salle de sport et sous-sol (tapis,
+                       appareils, ping-pong, billard, bornes d'arcade, canapés), objets animés (portes vitrées,
+                       machine à café, cheminée, enceintes, tapis de course, sacs de frappe, bougies, aquarium)
   - Modern Office    : mobilier de bureau
 
-Les images de ce dossier (characters/, decor/, tiles/) sont tirées de ces packs, rognées et rangées par
+Les images de ce dossier (characters/, decor/, tiles/, props/) sont tirées de ces packs, rognées et rangées par
 apps/client/scripts/assets (`pnpm --filter @bureau/client gen:assets`).
 
 Licence des packs : usage libre dans un projet, commercial ou non ; il est interdit de revendre ou de
@@ -21,7 +23,9 @@ Musique : « Music Loop Bundle » d'Abstraction (Benjamin Burnes, Tallbeard Stud
   Les fichiers .ogg sont ceux du pack, sans leur pochette ni leurs étiquettes (le son est identique) ; les .m4a
   (pour Safari) sont des copies en AAC. Rangés par apps/client/scripts/audio (`pnpm --filter @bureau/client gen:audio`).
 
-Effets sonores : « 400 Sounds Pack » (dossiers UI, Musical Effects et Other), rangés dans audio/sfx/.
+Effets sonores : « 400 Sounds Pack » (dossiers UI, Musical Effects, Other, Environment et Card and Board), rangés dans audio/sfx/.
+  Les portes, les serrures, le café, l'élan, la téléportation, les dés, les pions et la victoire en font partie
+  (les applaudissements de la victoire sont écourtés à 3,5 s, avec une extinction).
   Le dossier du pack ne contient aucun fichier de licence : vérifier auprès de son vendeur qu'elle autorise
   d'en livrer des extraits dans une appli (comme ici), et ne pas les mettre dans un dépôt public.
 

@@ -1,4 +1,4 @@
-import { AVATAR_BODY, LIGHT_SWITCH_REACH_TILES, TILE_SIZE } from '../constants';
+import { AVATAR_BODY, COFFEE_REACH_TILES, LIGHT_SWITCH_REACH_TILES, TILE_SIZE } from '../constants';
 import type { OfficeMap, Zone, ZoneType } from './parse-map';
 
 // Une case est praticable si elle est dans la carte et que le calque `collisions` n'y a pas de tuile.
@@ -53,6 +53,17 @@ export function zoneAt(m: OfficeMap, x: number, y: number, types: readonly ZoneT
 // du centre de l'un d'eux, en ligne droite. Le serveur la pose pour accepter `lights:set`, le client pour montrer qu'on peut appuyer :
 // une seule règle. Une position qui n'est pas un nombre fini n'est à portée de rien.
 export function withinSwitchReach(pos: { x: number; y: number }, switches: ReadonlyArray<{ x: number; y: number }>): boolean {
-  const reach = LIGHT_SWITCH_REACH_TILES * TILE_SIZE;
-  return switches.some((s) => Math.hypot(pos.x - s.x, pos.y - s.y) <= reach);
+  return withinReach(pos, switches, LIGHT_SWITCH_REACH_TILES);
+}
+
+// Cette position est à portée d'une machine à café : à COFFEE_REACH_TILES cases ou moins du centre de la case de service de l'une d'elles,
+// en ligne droite. La même règle, de même, pour le serveur (`coffee:take`) et le client (montrer qu'on peut se servir). Sans machine (la petite
+// carte de développement), personne n'est à portée.
+export function withinCoffeeReach(pos: { x: number; y: number }, coffees: ReadonlyArray<{ x: number; y: number }>): boolean {
+  return withinReach(pos, coffees, COFFEE_REACH_TILES);
+}
+
+function withinReach(pos: { x: number; y: number }, points: ReadonlyArray<{ x: number; y: number }>, tiles: number): boolean {
+  const reach = tiles * TILE_SIZE;
+  return points.some((p) => Math.hypot(pos.x - p.x, pos.y - p.y) <= reach);
 }

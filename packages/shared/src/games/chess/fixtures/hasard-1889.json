@@ -1,0 +1,11 @@
+[
+  {"kind":"create","setup":{"seats":2,"first":1},"rng":[]},
+  {"kind":"move","seat":1,"move":{"from":"g2","to":"g4"},"rng":[],"at":4000},
+  {"kind":"move","seat":0,"move":{"from":"f7","to":"f5"},"rng":[],"at":8000},
+  {"kind":"move","seat":1,"move":{"from":"b2","to":"b4"},"rng":[],"at":12000},
+  {"kind":"move","seat":0,"move":{"from":"e8","to":"f7"},"rng":[],"at":16000},
+  {"kind":"move","seat":1,"move":{"from":"h2","to":"h3"},"rng":[],"at":20000},
+  {"kind":"move","seat":0,"move":{"from":"e7","to":"e6"},"rng":[],"at":24000},
+  {"kind":"move","seat":1,"move":{"from":"f2","to":"f3"},"rng":[],"at":28000},
+  {"kind":"move","seat":0,"move":{"from":"d8","to":"h4"},"rng":[],"at":32000}
+]

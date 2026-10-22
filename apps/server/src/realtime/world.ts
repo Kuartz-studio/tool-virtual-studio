@@ -1,4 +1,8 @@
 import {
+  MAX_SPEED_PX_PER_S,
+  MOVE_JITTER_MS,
+  NORMAL_MAX_SPEED_PX_PER_S,
+  SPEAKING_TTL_MS,
   isWalkablePoint,
   validateMove,
   type ActivityState,
@@ -19,6 +23,8 @@ type Move = WorldTick['moves'][number];
 interface Entry {
   player: PublicPlayer;
   at: number;
+  // Jusqu'à quelle heure (ms, horloge du monde) sa parole tient sans nouveau « je parle » : le serveur éteint la bulle ensuite (expireSpeaking).
+  speakingUntil?: number;
 }
 
 // Ce joueur peut-il se trouver là ? Décide de l'entrée d'un lieu fermé (un bureau dont la porte lui est fermée) : appelé pour chaque
@@ -45,6 +51,9 @@ export class World {
   private readonly activities = new Map<string, ActivityState | null>();
   // Le dernier mouvement accepté de chaque joueur depuis le dernier drainMoves, dans l'ordre du premier mouvement de la fenêtre.
   private readonly pendingMoves = new Map<string, Move>();
+  // Jusqu'à quelle heure (ms, horloge du monde) chaque personne a un café : sa limite de vitesse est alors celle du café (maxSpeedOf). `announced` :
+  // sa fin a déjà été rendue par expireBoosts (la ligne reste MOVE_JITTER_MS de plus, pour la limite de vitesse).
+  private readonly boosts = new Map<string, { until: number; announced: boolean }>();
   private entryGuard: EntryGuard = () => true;
 
   constructor(
@@ -87,16 +96,56 @@ export class World {
     if (!entry) return undefined;
     this.entries.delete(id);
     this.pendingMoves.delete(id);
+    this.boosts.delete(id);
     return copy(entry.player);
+  }
+
+  // « Je parle » (true) ou « je me tais » (false) d'une personne présente, pour la bulle au-dessus de son avatar. Chaque « je parle » remet le délai
+  // de SPEAKING_TTL_MS à zéro. Rend vrai si l'état a changé (à diffuser), faux s'il était déjà celui-là (le battement du client) ou si la
+  // personne n'est pas au monde. La parole ne survit pas à la personne : leave et join la remettent à zéro.
+  setSpeaking(id: string, speaking: boolean): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    const was = entry.player.speaking === true;
+    if (speaking) {
+      entry.player.speaking = true;
+      entry.speakingUntil = this.now() + SPEAKING_TTL_MS;
+    } else {
+      delete entry.player.speaking;
+      delete entry.speakingUntil;
+    }
+    return was !== speaking;
+  }
+
+  // Éteint la parole de ceux qui n'ont rien redit depuis SPEAKING_TTL_MS, et rend leurs identifiants (à diffuser).
+  expireSpeaking(): string[] {
+    const now = this.now();
+    const expired: string[] = [];
+    for (const [id, entry] of this.entries) {
+      if (entry.player.speaking === true && entry.speakingUntil !== undefined && now >= entry.speakingUntil) {
+        delete entry.player.speaking;
+        delete entry.speakingUntil;
+        expired.push(id);
+      }
+    }
+    return expired;
   }
 
   get(id: string): PublicPlayer | undefined {
     const entry = this.entries.get(id);
-    return entry ? copy(entry.player) : undefined;
+    return entry ? this.view(id, entry) : undefined;
   }
 
   list(): PublicPlayer[] {
-    return [...this.entries.values()].map((entry) => copy(entry.player));
+    return [...this.entries].map(([id, entry]) => this.view(id, entry));
+  }
+
+  // Le joueur tel que get et list le donnent : sa copie, avec ce qu'il lui reste de café (boost) quand il en a un. join, lui, rend le joueur qui arrive.
+  private view(id: string, entry: Entry): PublicPlayer {
+    const player = copy(entry.player);
+    const boost = this.boostRemaining(id);
+    if (boost > 0) player.boost = boost;
+    return player;
   }
 
   // Vérifie le mouvement (validateMove, de la dernière position acceptée à celle-ci, à l'heure de réception) et, s'il passe,
@@ -109,7 +158,7 @@ export class World {
 
     const p = entry.player;
     const at = this.now();
-    if (!validateMove(this.map, { x: p.x, y: p.y, at: entry.at }, { x: m.x, y: m.y, at }).ok || !this.entryGuard(id, p, m)) {
+    if (!validateMove(this.map, { x: p.x, y: p.y, at: entry.at }, { x: m.x, y: m.y, at }, this.maxSpeedOf(id)).ok || !this.entryGuard(id, p, m)) {
       return { ok: false, correct: { x: p.x, y: p.y } };
     }
     p.x = m.x;
@@ -117,7 +166,10 @@ export class World {
     p.dir = m.dir;
     p.moving = m.moving;
     entry.at = at;
-    this.pendingMoves.set(id, { id, x: m.x, y: m.y, dir: m.dir, moving: m.moving });
+    // Une téléportation de la même fenêtre (pas encore diffusée) reste une téléportation pour les autres : ce mouvement la remplace dans le tick,
+    // mais l'avatar n'a pas glissé jusqu'à sa nouvelle place.
+    const teleported = this.pendingMoves.get(id)?.tp === true;
+    this.pendingMoves.set(id, { id, x: m.x, y: m.y, dir: m.dir, moving: m.moving, ...(teleported ? { tp: true as const } : {}) });
     return { ok: true };
   }
 
@@ -132,8 +184,44 @@ export class World {
     p.y = y;
     p.moving = false;
     entry.at = this.now();
-    this.pendingMoves.set(id, { id, x, y, dir: p.dir, moving: false });
+    this.pendingMoves.set(id, { id, x, y, dir: p.dir, moving: false, tp: true });
     return true;
+  }
+
+  // Donne `ms` de café à une personne présente, à partir de maintenant (un nouveau café remet le compte à zéro) ; null le retire tout de suite. Un
+  // identifiant qui n'est pas dans le monde est ignoré. Le café ne survit pas au départ de la personne (leave).
+  setBoost(id: string, ms: number | null): void {
+    if (!this.entries.has(id)) return;
+    if (ms === null) this.boosts.delete(id);
+    else this.boosts.set(id, { until: this.now() + ms, announced: false });
+  }
+
+  // Ce qu'il reste de café à cette personne, en ms : 0 sans café, une fois fini, ou pour un inconnu.
+  boostRemaining(id: string): number {
+    const boost = this.boosts.get(id);
+    return boost ? Math.max(0, boost.until - this.now()) : 0;
+  }
+
+  // Ceux dont le café vient de finir (à diffuser, une seule fois chacun). Leur ligne reste MOVE_JITTER_MS de plus, le temps de la limite de vitesse
+  // (maxSpeedOf), puis disparaît. Un café retiré avec setBoost(id, null) n'y figure pas : celui qui l'a retiré le dit lui-même.
+  expireBoosts(): string[] {
+    const now = this.now();
+    const ended: string[] = [];
+    for (const [id, boost] of this.boosts) {
+      if (now >= boost.until && !boost.announced) {
+        boost.announced = true;
+        ended.push(id);
+      }
+      if (now > boost.until + MOVE_JITTER_MS) this.boosts.delete(id);
+    }
+    return ended;
+  }
+
+  // La plus grande vitesse que le serveur accepte de cette personne : celle du café jusqu'à MOVE_JITTER_MS après sa fin (les derniers paquets
+  // arrivent en retard, leur heure de réception est celle d'après), sinon celle de la course. Un inconnu n'a pas de café.
+  maxSpeedOf(id: string): number {
+    const boost = this.boosts.get(id);
+    return boost !== undefined && this.now() <= boost.until + MOVE_JITTER_MS ? MAX_SPEED_PX_PER_S : NORMAL_MAX_SPEED_PX_PER_S;
   }
 
   // Le statut d'un joueur présent, retenu aussi pour son prochain retour. Un identifiant qui n'est pas dans le monde est ignoré.

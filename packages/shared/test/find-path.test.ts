@@ -17,6 +17,11 @@ function grid(rows: string[]): OfficeMap {
     zones: [],
     spawn: { x: 16, y: 16 },
     switches: [],
+    places: [],
+    coffees: [],
+    speakers: [],
+    tables: [],
+    signs: [],
   };
 }
 

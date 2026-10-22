@@ -1,19 +1,8 @@
-import type { DecorCategoryId } from '@bureau/shared';
-import type { Entry, EntryOptions } from './types';
+import type { Entry } from './types';
+import { named, on } from './helpers';
 
 // Les planches « Modern Interiors » retenues pour ce qui manque au pack Office : salon, bibliothèque, cuisine, salle de conférence,
-// musique, plein air. Un objet se désigne par la case de son coin haut-gauche (`at`) quand la découpe automatique l'isole bien, par un
-// rectangle (x, y, largeur, hauteur) quand elle en a fusionné plusieurs.
-type Pick = readonly [number, number];
-type Rect = readonly [number, number, number, number];
-
-const on =
-  (sheet: string, cat: DecorCategoryId) =>
-  (name: string, where: Pick | Rect, options: EntryOptions = {}): Entry =>
-    where.length === 2 ? { sheet, cat, name, at: where as Pick, ...options } : { sheet, cat, name, rect: where as Rect, ...options };
-
-const named = (base: string, wheres: ReadonlyArray<Pick | Rect>, make: ReturnType<typeof on>, options: EntryOptions = {}): Entry[] =>
-  wheres.map((where, index) => make(wheres.length === 1 ? base : `${base} ${index + 1}`, where, options));
+// musique, plein air (la salle de sport et le sous-sol ont les leurs : gym.ts, basement.ts).
 
 // ---- Salon (Living Room) -----------------------------------------------------------------------------------------------
 const lrPlant = on('lr', 'plantes');

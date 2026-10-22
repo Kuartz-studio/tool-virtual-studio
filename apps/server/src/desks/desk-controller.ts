@@ -14,6 +14,7 @@ import type { Logger } from 'pino';
 import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from '../realtime/io';
 import type { World } from '../realtime/world';
+import type { Teleport } from '../teleport';
 import type { DeskResult, DeskService } from './desk-service';
 
 export interface DeskControllerDeps {
@@ -25,6 +26,8 @@ export interface DeskControllerDeps {
   connectedUsers: () => string[];
   /** Les sockets de cette personne qui ont reçu leur init : les seules à qui l'on écrit. */
   socketsOf: (userId: string) => TypedSocket[];
+  /** Pose quelqu'un ailleurs et dit à son navigateur de s'y replacer : celui qu'on exclut, celui qui rentre chez lui. */
+  teleport: Teleport;
   /** L'horloge du temps réel (ms). */
   now: () => number;
   logger: Logger;
@@ -60,9 +63,26 @@ export function createDeskController(d: DeskControllerDeps) {
     socket.emit('desk:access', { closed });
   }
 
-  // Les portes fermées de chacun, relues : après tout changement qui peut en ouvrir ou en fermer une.
+  // Les portes fermées de chacun, relues : après tout changement qui peut en ouvrir ou en fermer une. Ceux qui se tiennent dans le cadre d'une porte qui vient
+  // de se fermer pour eux sont repoussés dans la rue (evictFromThresholds).
   function pushAccess(): void {
     for (const userId of d.connectedUsers()) for (const socket of d.socketsOf(userId)) sendAccess(socket);
+    evictFromThresholds();
+  }
+
+  // Une porte qui se ferme ne coince personne : qui est dans son cadre et ne peut plus y passer est posé devant elle, côté rue, comme celui qu'on exclut. La
+  // pièce, elle, garde ceux qui y sont (ils y restent libres de leurs pas).
+  function evictFromThresholds(): void {
+    for (const slot of d.desks.slots) {
+      const { door } = slot;
+      if (!door) continue;
+      for (const userId of d.connectedUsers()) {
+        const player = d.world.get(userId);
+        if (!player || d.desks.canEnter(userId, slot.key)) continue;
+        const inDoorway = player.x >= door.x && player.x < door.x + door.width && player.y >= door.y && player.y < door.y + door.height;
+        if (inDoorway) moveTo(userId, slot.exit);
+      }
+    }
   }
 
   function pushBans(userId: string): void {
@@ -79,12 +99,7 @@ export function createDeskController(d: DeskControllerDeps) {
   }
 
   // Pose la personne là (un pas hors de la pièce, ou chez elle), et dit à son navigateur de s'y replacer.
-  function moveTo(userId: string, point: { x: number; y: number }): boolean {
-    const [x, y] = [Math.round(point.x), Math.round(point.y)];
-    if (!d.world.teleport(userId, x, y)) return false;
-    for (const socket of d.socketsOf(userId)) socket.emit('move:correct', { x, y });
-    return true;
-  }
+  const moveTo = (userId: string, point: { x: number; y: number }): boolean => d.teleport(userId, point);
 
   async function run(userId: string, command: DeskCommand): Promise<DeskAck> {
     const me = d.world.get(userId);

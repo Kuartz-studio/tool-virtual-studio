@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { TILE_SIZE, buildOffice, buildOfficeTiledMap, parseOfficeMap } from '@bureau/shared';
+import { LIGHT_SWITCH_REACH_TILES, TILE_SIZE, buildOffice, buildOfficeTiledMap, parseOfficeMap, placeByKey } from '@bureau/shared';
 import { PNG } from 'pngjs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { DECOR_DEPTH, layoutDecor, type Drawn } from './decor-layout';
+import { Interactions } from './interactions';
 import { addSwitchTextures, LightSwitch, PLATE, plateRows, SWITCH_TEXTURES } from './light-switch';
 import { DEPTH } from './map-layers';
 
@@ -49,31 +50,30 @@ function fakeScene() {
     made.push(object);
     return object;
   };
+  // Pas de texte : l'étiquette « [E] … » n'est plus à l'interrupteur, c'est celle, unique, d'InteractionPrompt.
   const scene = {
     add: {
       image: (x: number, y: number, texture: string) => make('image', x, y, { texture }),
       rectangle: (x: number, y: number, width: number, height: number, color: number) => make('rectangle', x, y, { width, height, color }),
-      text: (x: number, y: number, text: string, style: Record<string, unknown>) => make('text', x, y, { text, style }),
     },
   } as unknown as Phaser.Scene;
   const only = (kind: FakeObject['kind']) => made.find((object) => object.kind === kind)!;
-  return { scene, made, plate: () => only('image'), beacon: () => only('rectangle'), label: () => only('text') };
+  return { scene, made, plate: () => only('image'), beacon: () => only('rectangle') };
 }
 
 const switches: LightSwitch[] = [];
-function setup(onUse: () => void = () => {}) {
+// `feetAt` : où sont les pieds de l'avatar à cet instant (le gestionnaire les relit à chaque touche et à chaque clic) ; près de la plaque par défaut.
+function setup(onUse: () => void = () => {}, feetAt: () => { x: number; y: number } = () => feet(0, cases(1))) {
   const game = fakeScene();
-  const lightSwitch = new LightSwitch(game.scene, POS, onUse);
+  const interactions = new Interactions({ feet: feetAt });
+  const lightSwitch = new LightSwitch(game.scene, POS, interactions, onUse);
   switches.push(lightSwitch);
-  return { ...game, lightSwitch };
+  return { ...game, lightSwitch, interactions };
 }
 afterEach(() => {
   for (const lightSwitch of switches.splice(0)) lightSwitch.destroy();
   document.body.replaceChildren();
 });
-
-const pressE = (init: KeyboardEventInit = {}, target: EventTarget = window) =>
-  target.dispatchEvent(new KeyboardEvent('keydown', { key: 'e', code: 'KeyE', bubbles: true, cancelable: true, ...init }));
 
 describe('la plaque', () => {
   test('10 × 14 px, sur la face du mur au-dessus de la plinthe : devant les murs et ce qu\'on y accroche, derrière les meubles et les avatars', () => {
@@ -84,11 +84,10 @@ describe('la plaque', () => {
     expect(plate().depth).toBeLessThan(DEPTH.meublesBas);
   });
 
-  test('allumée au départ : la plaque « allumée », sans témoin ni étiquette', () => {
-    const { plate, beacon, label } = setup();
+  test('allumée au départ : la plaque « allumée », sans témoin', () => {
+    const { plate, beacon } = setup();
     expect(plate().textureKey).toBe(SWITCH_TEXTURES.on);
     expect(beacon().visible).toBe(false);
-    expect(label().visible).toBe(false);
   });
 
   test('éteinte : la plaque « éteinte » et le témoin ambré de 2 × 2 px, au-dessus de la nuit ; rallumée : le témoin s\'éteint', () => {
@@ -117,126 +116,83 @@ describe('la plaque', () => {
   });
 });
 
-describe('à portée', () => {
-  test('updateReach : à 3 cases c\'est à portée, à 4 cases non, en ligne droite', () => {
-    const { lightSwitch } = setup();
-    expect(lightSwitch.updateReach(feet(0, cases(3)))).toBe(true);
-    expect(lightSwitch.updateReach(feet(cases(3), 0))).toBe(true);
-    expect(lightSwitch.updateReach(feet(0, cases(4)))).toBe(false);
-    expect(lightSwitch.updateReach(feet(0, cases(3) + 1))).toBe(false);
-    expect(lightSwitch.updateReach(feet(cases(2), cases(2)))).toBe(true);   // 2,83 cases
-    expect(lightSwitch.updateReach(feet(72, 72))).toBe(false);   // 3,18 cases
-    expect(lightSwitch.updateReach(feet(0, 0))).toBe(true);
+describe('la cible de l\'interrupteur', () => {
+  test('à 3 cases c\'est à portée, à 4 cases non, en ligne droite : la règle du serveur (LIGHT_SWITCH_REACH_TILES)', () => {
+    const { interactions } = setup();
+    expect(interactions.update(feet(0, cases(3)))).not.toBeNull();
+    expect(interactions.update(feet(cases(3), 0))).not.toBeNull();
+    expect(interactions.update(feet(0, cases(4)))).toBeNull();
+    expect(interactions.update(feet(0, cases(3) + 1))).toBeNull();
+    expect(interactions.update(feet(cases(2), cases(2)))).not.toBeNull();   // 2,83 cases
+    expect(interactions.update(feet(72, 72))).toBeNull();   // 3,18 cases
+    expect(interactions.update(feet(0, 0))!.reachTiles).toBe(LIGHT_SWITCH_REACH_TILES);
   });
 
-  test('l\'étiquette n\'est là qu\'à portée, devant tout, au-dessus de la plaque', () => {
-    const { lightSwitch, label, plate } = setup();
-    lightSwitch.updateReach(feet(0, cases(2)));
-    expect(label().visible).toBe(true);
-    expect(label().depth).toBe(DEPTH.nameTags);
-    expect(label().y).toBeLessThanOrEqual(plate().y - PLATE.height / 2);
-    expect(label().x).toBe(POS.x);
-    lightSwitch.updateReach(feet(0, cases(5)));
-    expect(label().visible).toBe(false);
+  test('son étiquette se pose au milieu, juste au-dessus de la plaque', () => {
+    const { interactions, plate } = setup();
+    const target = interactions.update(feet(0, cases(2)))!;
+    expect(target.labelAt!.x).toBe(POS.x);
+    expect(target.labelAt!.y).toBeLessThanOrEqual(plate().y - PLATE.height / 2);
   });
 
-  test('l\'étiquette dit ce que la touche va faire : « [E] Éteindre » quand c\'est allumé, « [E] Allumer » quand c\'est éteint', () => {
-    const { lightSwitch, label } = setup();
-    expect(label().text).toBe('[E] Éteindre');
+  test('son texte dit ce que la touche va faire : « [E] Éteindre » quand c\'est allumé, « [E] Allumer » quand c\'est éteint', () => {
+    const { interactions, lightSwitch } = setup();
+    const target = interactions.update(feet(0, 0))!;
+    expect(target.prompt()).toBe('[E] Éteindre');
     lightSwitch.setOn(false);
-    expect(label().text).toBe('[E] Allumer');
+    expect(target.prompt()).toBe('[E] Allumer');
     lightSwitch.setOn(true);
-    expect(label().text).toBe('[E] Éteindre');
-  });
-
-  test('l\'étiquette est dans le style de celles des noms : texte blanc de 10 px sur une pastille sombre translucide', () => {
-    const { label } = setup();
-    expect(label().extra.style).toMatchObject({ fontSize: '10px', color: '#ffffff', backgroundColor: 'rgba(29, 32, 48, 0.75)', padding: { x: 3, y: 1 } });
-  });
-
-  test('setZoom : le texte est dessiné à la taille où on le voit, jamais en dessous de 1', () => {
-    const { lightSwitch, label } = setup();
-    lightSwitch.setZoom(2);
-    expect(label().resolution).toBe(2);
-    lightSwitch.setZoom(0.5);
-    expect(label().resolution).toBe(1);
+    expect(target.prompt()).toBe('[E] Éteindre');
   });
 });
 
 describe('la touche E et le clic', () => {
-  test('E : onUse est appelé à portée seulement', () => {
+  test('E (le gestionnaire) : onUse est appelé à portée seulement, aux pieds de l\'instant', () => {
     const onUse = vi.fn();
-    const { lightSwitch } = setup(onUse);
-    pressE();
-    expect(onUse).not.toHaveBeenCalled();   // personne n'est encore à portée
-
-    lightSwitch.updateReach(feet(0, cases(3)));
-    pressE();
-    expect(onUse).toHaveBeenCalledTimes(1);
-
-    lightSwitch.updateReach(feet(0, cases(4)));
-    pressE();
-    expect(onUse).toHaveBeenCalledTimes(1);
-  });
-
-  test('si l\'on sait où sont ses pieds, la portée est celle de l\'instant : un pas, ou une téléportation, depuis la dernière image comptent', () => {
-    const onUse = vi.fn();
-    const game = fakeScene();
     let where = feet(0, cases(8));
-    switches.push(new LightSwitch(game.scene, POS, onUse, () => where));
-    pressE();
+    const { interactions } = setup(onUse, () => where);
+    expect(interactions.use()).toBe(false);
     expect(onUse).not.toHaveBeenCalled();
-    expect(game.label().visible).toBe(false);
-
-    where = feet(0, cases(2));   // aucune image entre-temps : personne n'a appelé updateReach
-    pressE();
+    where = feet(0, cases(3));   // aucune image entre-temps : personne n'a appelé update
+    expect(interactions.use()).toBe(true);
     expect(onUse).toHaveBeenCalledTimes(1);
-    expect(game.label().visible).toBe(true);
-
-    where = feet(0, cases(8));
-    game.plate().handlers.get('pointerdown')!();
+    where = feet(0, cases(4));
+    expect(interactions.use()).toBe(false);
     expect(onUse).toHaveBeenCalledTimes(1);
-    expect(game.label().visible).toBe(false);
   });
 
   test('le clic sur la plaque : de même, à portée seulement', () => {
     const onUse = vi.fn();
-    const { lightSwitch, plate } = setup(onUse);
+    let where = feet(0, cases(8));
+    const { plate } = setup(onUse, () => where);
     expect(plate().interactive).toBe(true);
     const click = plate().handlers.get('pointerdown')!;
     click();
     expect(onUse).not.toHaveBeenCalled();
-    lightSwitch.updateReach(feet(cases(1), cases(1)));
+    where = feet(cases(1), cases(1));
+    click();
+    expect(onUse).toHaveBeenCalledTimes(1);
+    where = feet(0, cases(8));
     click();
     expect(onUse).toHaveBeenCalledTimes(1);
   });
 
-  test('dans un champ de saisie (le chat), E s\'écrit : rien', () => {
-    const onUse = vi.fn();
-    const { lightSwitch } = setup(onUse);
-    lightSwitch.updateReach(feet(0, cases(1)));
-    const field = document.body.appendChild(document.createElement('input'));
-    field.focus();
-    pressE({}, field);
-    expect(onUse).not.toHaveBeenCalled();
-  });
-
   test('ce n\'est qu\'une demande : la plaque ne change qu\'à l\'annonce du serveur (setOn)', () => {
-    const { lightSwitch, plate } = setup();
-    lightSwitch.updateReach(feet(0, cases(1)));
-    pressE();
+    const { interactions, lightSwitch, plate } = setup();
+    interactions.use(feet(0, cases(1)));
     expect(plate().textureKey).toBe(SWITCH_TEXTURES.on);
     lightSwitch.setOn(false);
     expect(plate().textureKey).toBe(SWITCH_TEXTURES.off);
   });
 
-  test('destroy : les objets disparaissent et la touche E ne fait plus rien', () => {
+  test('destroy : les objets disparaissent et plus rien n\'est à actionner', () => {
     const onUse = vi.fn();
-    const { lightSwitch, made } = setup(onUse);
-    lightSwitch.updateReach(feet(0, cases(1)));
+    const { interactions, lightSwitch, made } = setup(onUse);
+    expect(interactions.update(feet(0, cases(1)))).not.toBeNull();
     lightSwitch.destroy();
     expect(made.every((object) => object.destroyed)).toBe(true);
-    pressE();
+    expect(interactions.update(feet(0, cases(1)))).toBeNull();
+    expect(interactions.use(feet(0, cases(1)))).toBe(false);
     expect(onUse).not.toHaveBeenCalled();
   });
 });
@@ -272,7 +228,7 @@ describe('l\'interrupteur de la grande carte', () => {
   test('aucun meuble ne passe devant la plaque : l\'image de l\'arbuste voisin monte jusqu\'au mur, mais ses feuilles n\'y arrivent pas', () => {
     const [position] = map.switches;
     const game = fakeScene();
-    switches.push(new LightSwitch(game.scene, position!, () => {}));
+    switches.push(new LightSwitch(game.scene, position!, new Interactions(), () => {}));
     const [plateX, plateY] = [game.plate().x, game.plate().y];
     const area = { left: plateX - PLATE.width / 2, right: plateX + PLATE.width / 2, top: plateY - PLATE.height / 2, bottom: plateY + PLATE.height / 2 };
     const placed = buildOffice().canvas.decor.map(({ id, x, y }) => ({ id, x, y }));
@@ -282,15 +238,15 @@ describe('l\'interrupteur de la grande carte', () => {
     }
   });
 
-  test('il est sur la face du mur nord du couloir, entre les portes des bureaux A3 et A4, et on peut s\'y tenir en dessous', () => {
+  test('il est sur la face du mur nord de la rue, entre la porte du bureau A5 et la place centrale, et on peut s\'y tenir en dessous', () => {
     const [position] = map.switches;
     const [tx, ty] = [Math.floor(position!.x / TILE_SIZE), Math.floor(position!.y / TILE_SIZE)];
-    expect([tx, ty]).toEqual([32, 10]);
-    const doors = map.zones.filter((zone) => zone.type === 'door');
-    const between = (key: string) => doors.find((door) => door.name === key)!;
-    expect(tx * TILE_SIZE).toBeGreaterThan(between('A3').x + between('A3').width);
-    expect((tx + 1) * TILE_SIZE).toBeLessThan(between('A4').x);
-    // Un mur sous lui : l'avatar ne s'y met pas ; la case juste au sud est le couloir, praticable.
+    expect([tx, ty]).toEqual([28, 10]);
+    const door = map.zones.find((zone) => zone.type === 'door' && zone.name === 'A5')!;
+    const plaza = placeByKey(map, 'plaza')!.rects[0]!;
+    expect(tx * TILE_SIZE).toBeGreaterThan(door.x + door.width);
+    expect((tx + 1) * TILE_SIZE).toBeLessThan(plaza.x);
+    // Un mur sous lui : l'avatar ne s'y met pas ; la case juste au sud est la rue, praticable.
     expect(map.blocked[ty * map.widthTiles + tx]).toBe(1);
     expect(map.blocked[(ty + 1) * map.widthTiles + tx]).toBe(0);
   });

@@ -1,0 +1,352 @@
+/* ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Les petits chevaux : le plateau, ses chevaux, le dé, la liste des coups et le classement de fin. Tous les sélecteurs commencent par
+   `.game-ludo` ; rien ici n'est global (pas de :root, pas d'élément nu). Seuls les jetons de styles.css servent au cadre (texte, boutons,
+   rayons) ; l'illustration a sa palette, en variables locales, la même le jour et la nuit (§ 9.5.6 et § 12.4 du document des jeux).
+   Le plateau se mesure sur son conteneur en JavaScript (Board.tsx) : aucune règle ici ne dépend de la taille de la fenêtre.
+   ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.game-ludo {
+  /* Les quatre couleurs de l'illustration : le corps du cheval, son reflet, sa crinière, et la teinte douce de la case. SEAT_COLORS (palette.ts) dit les mêmes. */
+  --ludo-red: #d9453f;
+  --ludo-red-light: #f08a82;
+  --ludo-red-dark: #8a1f1c;
+  --ludo-red-soft: #f7d9d6;
+  --ludo-green: #3d9f5c;
+  --ludo-green-light: #86d09e;
+  --ludo-green-dark: #1f6038;
+  --ludo-green-soft: #d7efdf;
+  --ludo-yellow: #efb52a;
+  --ludo-yellow-light: #f9de8a;
+  --ludo-yellow-dark: #9a6b08;
+  --ludo-yellow-soft: #fbefc6;
+  --ludo-blue: #3b78d8;
+  --ludo-blue-light: #8db5ee;
+  --ludo-blue-dark: #1c4590;
+  --ludo-blue-soft: #d6e4f8;
+  /* Le contour du cheval, son œil, son éclat, son naseau. */
+  --ludo-ink: #1c1a22;
+  --ludo-eye: #14121a;
+  --ludo-white: #ffffff;
+  --ludo-nostril: #2a2430;
+  /* Le plateau : la feuille des cases, leur grille, le fond, le cadre, et l'écurie d'un siège sorti (grisée). */
+  --ludo-paper: #fffdf6;
+  --ludo-grid: #cdc4ad;
+  --ludo-board: #f1ead6;
+  --ludo-frame: #3a342b;
+  --ludo-gone: #e4e0d4;
+  --ludo-gone-edge: #b9b3a3;
+  /* Le surlignage : il contraste à 3 contre 1 avec toutes les cases [WCAG 1.4.11]. Une prise se marque autrement que le pas ordinaire (trait plein, plus épais), pas seulement par la couleur. */
+  --ludo-focus: #101828;
+  /* Les tailles : une cible tactile de 44 px (la liste des coups, le lancer), le dé, les textes dessinés (en cases, car ils suivent le plateau). */
+  --ludo-touch: 44px;
+  --ludo-die-size: 52px;
+  --ludo-label-size: 0.55px;
+  --ludo-count-size: 0.62px;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Une couleur : ce que ses cases, ses chevaux et sa pastille lisent. */
+.game-ludo .ludo-tone-0 {
+  --tone: var(--ludo-red);
+  --tone-light: var(--ludo-red-light);
+  --tone-dark: var(--ludo-red-dark);
+  --tone-soft: var(--ludo-red-soft);
+}
+
+.game-ludo .ludo-tone-1 {
+  --tone: var(--ludo-green);
+  --tone-light: var(--ludo-green-light);
+  --tone-dark: var(--ludo-green-dark);
+  --tone-soft: var(--ludo-green-soft);
+}
+
+.game-ludo .ludo-tone-2 {
+  --tone: var(--ludo-yellow);
+  --tone-light: var(--ludo-yellow-light);
+  --tone-dark: var(--ludo-yellow-dark);
+  --tone-soft: var(--ludo-yellow-soft);
+}
+
+.game-ludo .ludo-tone-3 {
+  --tone: var(--ludo-blue);
+  --tone-light: var(--ludo-blue-light);
+  --tone-dark: var(--ludo-blue-dark);
+  --tone-soft: var(--ludo-blue-soft);
+}
+
+/* Le plateau : un SVG aux bords nets, dessiné en code. Il n'est jamais plus large que son conteneur (la taille vient de Board.tsx). */
+.game-ludo .ludo-board {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-m);
+  box-shadow: var(--edge);
+  image-rendering: pixelated;
+}
+
+.game-ludo .ludo-frame {
+  fill: var(--ludo-board);
+}
+
+.game-ludo .ludo-yard-bg {
+  fill: var(--tone-soft);
+  stroke: var(--tone);
+  stroke-width: 0.1;
+}
+
+/* Le siège qui a le trait : le cadre de son écurie est plus épais. */
+.game-ludo .ludo-yard[data-turn] .ludo-yard-bg {
+  stroke-width: 0.26;
+}
+
+/* Une couleur qui ne joue pas (à deux ou trois joueurs) : son écurie s'efface. Un siège sorti : son écurie est grisée. */
+.game-ludo .ludo-yard[data-unused] {
+  opacity: 0.4;
+}
+
+.game-ludo .ludo-yard[data-out] .ludo-yard-bg {
+  fill: var(--ludo-gone);
+  stroke: var(--ludo-gone-edge);
+}
+
+.game-ludo .ludo-slot {
+  fill: var(--ludo-paper);
+  stroke: var(--tone);
+  stroke-width: 0.08;
+}
+
+.game-ludo .ludo-yard-name,
+.game-ludo .ludo-yard-out {
+  font-size: var(--ludo-label-size);
+  font-weight: 700;
+  fill: var(--ludo-frame);
+}
+
+.game-ludo .ludo-cell {
+  fill: var(--ludo-paper);
+  stroke: var(--ludo-grid);
+  stroke-width: 0.05;
+}
+
+/* La case de départ d'une couleur : pleine de sa couleur. Son allée : sa teinte douce. */
+.game-ludo .ludo-cell.ludo-start {
+  fill: var(--tone);
+}
+
+.game-ludo .ludo-lane {
+  fill: var(--tone-soft);
+  stroke: var(--tone);
+  stroke-width: 0.05;
+}
+
+.game-ludo .ludo-home {
+  fill: var(--tone);
+  stroke: var(--ludo-paper);
+  stroke-width: 0.06;
+}
+
+.game-ludo .ludo-arrived-count {
+  font-size: var(--ludo-count-size);
+  font-weight: 800;
+  fill: var(--ludo-frame);
+  paint-order: stroke;
+  stroke: var(--ludo-paper);
+  stroke-width: 0.14px;
+  stroke-linejoin: round;
+}
+
+/* Une tête de cheval : une lettre de la grille, une couleur (horse-art.ts). */
+.game-ludo .px-o {
+  fill: var(--ludo-ink);
+}
+
+.game-ludo .px-b {
+  fill: var(--tone);
+}
+
+.game-ludo .px-l {
+  fill: var(--tone-light);
+}
+
+.game-ludo .px-m {
+  fill: var(--tone-dark);
+}
+
+.game-ludo .px-e {
+  fill: var(--ludo-eye);
+}
+
+.game-ludo .px-w {
+  fill: var(--ludo-white);
+}
+
+.game-ludo .px-n {
+  fill: var(--ludo-nostril);
+}
+
+/* Un cheval saute de case en case : sa place change d'un coup. Seul celui qu'on prend glisse jusqu'à son écurie, le temps que Board.tsx lui donne (CAPTURE_MS). */
+.game-ludo .ludo-horse {
+  transition-property: transform;
+  transition-timing-function: var(--ease-out);
+}
+
+/* Un cheval jouable : souligné, numéroté, cliquable (la zone cliquable est transparente). */
+.game-ludo .ludo-underline {
+  fill: var(--ludo-focus);
+  stroke: var(--ludo-white);
+  stroke-width: 0.05;
+}
+
+.game-ludo .ludo-horse-number {
+  font-size: var(--ludo-label-size);
+  font-weight: 800;
+  fill: var(--ludo-focus);
+  paint-order: stroke;
+  stroke: var(--ludo-white);
+  stroke-width: 0.16px;
+  stroke-linejoin: round;
+}
+
+.game-ludo .ludo-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+/* Le dernier coup, et la case d'arrivée d'un coup qu'on survole : un cadre, un cercle. Un pas ordinaire est en pointillé, une prise en trait plein plus épais. */
+.game-ludo .ludo-last {
+  fill: none;
+  stroke: var(--ludo-focus);
+  stroke-width: 0.08;
+  stroke-dasharray: 0.18 0.12;
+}
+
+.game-ludo .ludo-target {
+  fill: none;
+  stroke: var(--ludo-focus);
+  stroke-width: 0.12;
+  stroke-dasharray: 0.24 0.16;
+  pointer-events: none;
+}
+
+.game-ludo .ludo-target[data-capture] {
+  stroke-width: 0.18;
+  stroke-dasharray: none;
+}
+
+/* Le dé, ses repères et le bouton « Lancer le dé ». */
+.game-ludo .ludo-dice-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 12px 16px;
+  width: 100%;
+  min-height: var(--ludo-die-size);
+}
+
+.game-ludo .ludo-die {
+  flex: none;
+  width: var(--ludo-die-size);
+  height: var(--ludo-die-size);
+}
+
+.game-ludo .ludo-die-body {
+  fill: var(--ludo-paper);
+  stroke: var(--ludo-frame);
+  stroke-width: 0.7;
+}
+
+.game-ludo .ludo-die-pip {
+  fill: var(--ludo-frame);
+}
+
+/* Un dé qui n'a pas encore de valeur : estompé. */
+.game-ludo .ludo-die:not([data-value]) {
+  opacity: 0.45;
+}
+
+.game-ludo .ludo-marks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.game-ludo .ludo-mark {
+  padding: 2px 10px;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.game-ludo .ludo-roll {
+  min-height: var(--ludo-touch);
+  padding: 0 24px;
+  font-size: var(--text-m);
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.game-ludo .ludo-roll:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--accent-hover);
+}
+
+/* La liste des coups : des boutons pleine largeur, d'au moins 44 px de haut. C'est le chemin du clavier, du lecteur d'écran et du téléphone. */
+.game-ludo .ludo-moves {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.game-ludo .ludo-move {
+  justify-content: flex-start;
+  width: 100%;
+  min-height: var(--ludo-touch);
+  text-align: left;
+}
+
+/* Le classement de la fin de partie. */
+.game-ludo .ludo-standings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.game-ludo .ludo-standing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.game-ludo .ludo-dot {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  background: var(--tone);
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.game-ludo .ludo-standing[data-out] {
+  color: var(--text-soft);
+}

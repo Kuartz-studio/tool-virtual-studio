@@ -1,13 +1,15 @@
 import { TILE_SIZE } from '@bureau/shared';
 import type { Cameras, GameObjects, Scene } from 'phaser';
-import type { LightSource } from './light-sources';
+import type { LightFlicker, LightSource } from './light-sources';
 import { LIGHT_TEXTURE_SIZE, LIGHT_TEXTURES } from './light-textures';
 import { DEPTH } from './map-layers';
 import { snapToPixels } from './pixel-snap';
+import { prefersReducedMotion } from './reduced-motion';
 
 // La nuit : quand la lumière du bureau est éteinte, une obscurité bleu nuit couvre la carte. Elle est trouée en paliers nets autour des lampes,
-// du feu et des écrans (light-sources.ts), et en douceur autour de chaque personne ; les lampes, le feu et les écrans brillent en plus d'un halo
-// de leur couleur, par-dessus. Lumière allumée, la couche n'existe pas à l'écran et ne dessine rien : le canevas est celui du jour, au pixel près.
+// du feu, des télévisions et des écrans (light-sources.ts), chacun à sa force (un écran n'efface que le quart de l'obscurité en son centre, une
+// cheminée presque toute), et en douceur autour de chaque personne ; les lumières brillent en plus d'un halo de leur couleur, par-dessus.
+// Lumière allumée, la couche n'existe pas à l'écran et ne dessine rien : le canevas est celui du jour, au pixel près.
 //
 // L'obscurité est une RenderTexture posée sur la vue de la caméra et redessinée à chaque image de nuit : un aplat, puis l'effacement d'une
 // texture de lumière (light-textures.ts) à chaque lumière visible. Sans WebGL (rendu Canvas), ou le contexte WebGL perdu, c'est un voile uni,
@@ -26,7 +28,8 @@ const PERSON_TINT = 0xffe9c8;
 // La couleur des lumières, juste au-dessus de l'obscurité (sous le témoin de l'interrupteur, à 1 000 000,6, et les noms) :
 // - la teinte : ce qu'elles éclairent prend leur couleur (multipliée, comme une lumière colorée), sur toute leur portée et par les mêmes paliers.
 //   C'est leur couleur, éclaircie (TINT_LIGHTEN de blanc), qui laisse au sol ses couleurs, chaudes ou froides ;
-// - le halo : autour de l'ampoule, leur couleur ajoutée (ADD), à GLOW_ALPHA en pleine nuit (il suit le niveau), sur une part de leur portée.
+// - le halo : autour de l'ampoule, leur couleur ajoutée (ADD), à GLOW_ALPHA en pleine nuit, sur une part de leur portée.
+// La teinte et le halo suivent le niveau de la nuit et la force de la lumière : une source à 0,22 les a à 0,22 de ceux d'une lumière pleine.
 const TINT_DEPTH = DEPTH.night + 0.02;
 const TINT_LIGHTEN = 0.35;
 export const GLOW_ALPHA = 0.35;
@@ -43,11 +46,11 @@ export function tintOf(color: number): number {
 // (à ces instants, en ms) en 320 ms.
 const FADE_MS = 450;
 const NEON: ReadonlyArray<readonly [atMs: number, level: number]> = [[0, 1], [80, 0.25], [160, 0.9], [240, 0.15], [320, 0]];
-// La cheminée vacille : sa portée bouge de ±4 %, autour de 8 Hz (deux ondes mêlées, pour que le feu ne batte pas comme un métronome).
-const FIRE_FLICKER = 0.04;
-const fireFlicker = (ms: number): number => {
+// Une lumière qui vacille (les données de sa sorte : light-sources.ts) voit sa portée bouger de ± l'amplitude, autour de `hz` battements par
+// seconde : deux ondes mêlées, la seconde à 13/8 de la première, pour que la flamme ne batte pas comme un métronome.
+const flickerFactor = (ms: number, { amplitude, hz }: LightFlicker): number => {
   const t = ms / 1000;
-  return 1 + FIRE_FLICKER * (0.7 * Math.sin(2 * Math.PI * 8 * t) + 0.3 * Math.sin(2 * Math.PI * 13 * t + 1.3));
+  return 1 + amplitude * (0.7 * Math.sin(2 * Math.PI * hz * t) + 0.3 * Math.sin(2 * Math.PI * hz * (13 / 8) * t + 1.3));
 };
 
 // Ce que ce fichier prend de Phaser sans l'importer (Phaser a besoin d'un vrai canevas, que les tests n'ont pas) : le rendu WebGL
@@ -88,14 +91,11 @@ export function viewRect(camera: ViewCamera): ViewRect {
 const sameRect = (a: ViewRect, b: ViewRect | null): boolean =>
   b !== null && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
-// prefers-reduced-motion, relu à chaque bascule et à chaque image de feu : la personne peut le changer pendant qu'elle joue.
-let reducedMotionQuery: MediaQueryList | null | undefined;
-function prefersReducedMotion(): boolean {
-  if (reducedMotionQuery === undefined) {
-    reducedMotionQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
-  }
-  return reducedMotionQuery?.matches ?? false;
-}
+// La taille de la texture de l'obscurité est arrondie au-dessus à ce pas, en pixels de la couche : la vue change de taille à chaque image d'un
+// glissement du zoom, et Phaser refait la texture (et son framebuffer) à chaque changement de taille. Le surplus, à droite et en bas de la
+// vue, reste hors de l'écran.
+export const NIGHT_SIZE_STEP = 64;
+const sizeFor = (pixels: number): number => Math.ceil(pixels / NIGHT_SIZE_STEP) * NIGHT_SIZE_STEP;
 
 export interface LightingOptions {
   // L'heure, en ms (performance.now par défaut) : les transitions et le vacillement du feu.
@@ -216,8 +216,8 @@ export class LightingLayer {
       glow.setVisible(!fallback);
       if (fallback) continue;
       const radius = this.radiusOf(source);
-      tint.setAlpha(level).setScale((2 * radius) / LIGHT_TEXTURE_SIZE);
-      glow.setAlpha(GLOW_ALPHA * level).setScale((2 * radius * GLOW_SCALE) / LIGHT_TEXTURE_SIZE);
+      tint.setAlpha(level * source.strength).setScale((2 * radius) / LIGHT_TEXTURE_SIZE);
+      glow.setAlpha(GLOW_ALPHA * level * source.strength).setScale((2 * radius * GLOW_SCALE) / LIGHT_TEXTURE_SIZE);
     }
     for (const person of this.people.values()) {
       person.at = person.getPos();
@@ -271,9 +271,9 @@ export class LightingLayer {
     if (elapsed >= NEON[NEON.length - 1]![0]) this.transition = null;
   }
 
-  // La portée d'une lumière à cette image : le feu vacille, sauf en mouvement réduit.
+  // La portée d'une lumière à cette image : celle qui vacille (le feu, une télévision, une bougie) bouge, sauf en mouvement réduit.
   private radiusOf(source: LightSource): number {
-    return source.kind === 'fire' && !this.reducedMotion() ? source.radius * fireFlicker(this.now()) : source.radius;
+    return source.flicker && !this.reducedMotion() ? source.radius * flickerFactor(this.now(), source.flicker) : source.radius;
   }
 
   private hide(): void {
@@ -304,25 +304,27 @@ export class LightingLayer {
     this.drawnAt = rect;
     this.veil.setVisible(false);
     // Un pixel de la couche est un pixel de la carte (le grain des tuiles) ; vue de loin (zoom < 1), un pixel de l'écran, pour que la
-    // texture ne dépasse jamais la taille de l'écran.
+    // texture ne dépasse jamais la taille de l'écran (à un pas de NIGHT_SIZE_STEP près).
     const resolution = Math.min(1, (this.camera.zoomX + this.camera.zoomY) / 2);
-    const width = Math.ceil(rect.width * resolution);
-    const height = Math.ceil(rect.height * resolution);
+    const width = sizeFor(rect.width * resolution);
+    const height = sizeFor(rect.height * resolution);
     if (width !== this.size.width || height !== this.size.height) {
       darkness.resize(width, height);
       this.size = { width, height };
     }
     darkness.setPosition(rect.x, rect.y).setScale(1 / resolution).setVisible(true);
     darkness.clear().fill(NIGHT_COLOR, NIGHT_ALPHA * this.current);
-    const hole = (key: string, x: number, y: number, radius: number) => {
+    // `strength` : la part d'obscurité que le trou efface en son centre (1, tout ; une personne n'en dit pas : le trou est plein).
+    const hole = (key: string, x: number, y: number, radius: number, strength?: number) => {
       if (x + radius < rect.x || x - radius > rect.x + rect.width || y + radius < rect.y || y - radius > rect.y + rect.height) return;
       // Au pixel entier : la forme du trou ne change pas d'une image à l'autre quand une personne marche.
       darkness.stamp(key, undefined, Math.round((x - rect.x) * resolution), Math.round((y - rect.y) * resolution), {
         scale: (2 * radius * resolution) / LIGHT_TEXTURE_SIZE,
         blendMode: BLEND_ERASE,
+        ...(strength !== undefined && { alpha: strength }),
       });
     };
-    for (const source of this.sources) hole(LIGHT_TEXTURES.banded, source.x, source.y, this.radiusOf(source));
+    for (const source of this.sources) hole(LIGHT_TEXTURES.banded, source.x, source.y, this.radiusOf(source), source.strength);
     for (const { at } of this.people.values()) {
       if (at) hole(LIGHT_TEXTURES.soft, at.x, at.y, PERSON_RADIUS_TILES * TILE_SIZE);
     }

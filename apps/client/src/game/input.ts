@@ -1,4 +1,5 @@
 import type { Direction } from '@bureau/shared';
+import { WheelZoom } from './zoom';
 
 // Les touches de déplacement, par leur position sur le clavier (KeyboardEvent.code) et non par la lettre qu'elles portent : ZQSD
 // sur un clavier AZERTY est au même endroit que WASD sur un QWERTY, et envoie les mêmes codes (KeyW, KeyA, KeyS, KeyD). Les
@@ -139,6 +140,20 @@ export function bindZoomKeys(onZoom: (step: 1 | -1 | 0) => void): () => void {
   };
   window.addEventListener('keydown', onKeyDown);
   return () => window.removeEventListener('keydown', onKeyDown);
+}
+
+// La molette sur le jeu, et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette et qui zoomerait la page entière
+// si on ne l'arrêtait pas : l'événement est toujours arrêté (la page ne défile ni ne zoome sous le jeu). `onSteps` reçoit des crans de 5 %
+// (zoom.ts, WheelZoom), positifs vers le plus près, quand un geste en a fait au moins un. Renvoie la fonction qui débranche.
+export function bindWheelZoom(target: HTMLElement, onSteps: (steps: number) => void): () => void {
+  const wheel = new WheelZoom();
+  const onWheel = (event: WheelEvent) => {
+    event.preventDefault();
+    const steps = wheel.feed(event.deltaY, event.deltaMode, event.ctrlKey, event.timeStamp);
+    if (steps !== 0) onSteps(steps);
+  };
+  target.addEventListener('wheel', onWheel, { passive: false });
+  return () => target.removeEventListener('wheel', onWheel);
 }
 
 // La touche « utiliser » (E) : elle actionne ce qui est à portée (l'interrupteur de la lumière). On la reconnaît à sa lettre (le libellé dit

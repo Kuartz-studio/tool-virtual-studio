@@ -51,8 +51,8 @@ test('la puce « Moi » : son nom, celui de son menu, ses sections, et les ligne
   expect(fr.me.menu).toBe('Menu de mon profil');
   expect(fr.me.status).toBe('Statut');
   expect(fr.me.mode).toBe('Mode');
-  expect(fr.me.modeNone).toBe('Aucun');
-  expect(fr.me.modeManage).toBe('Mes états d\'activité…');
+  expect(fr.modes.normal).toBe('Normal');
+  expect(fr.modes.create).toBe('Créer un mode');
   // Les lignes du menu portent le nom du panneau qu'elles ouvrent, ou celui de l'action : « Personnage » est devenu « Changer d'apparence ». Le
   // bureau et le son n'y sont plus : ils sont dans le dock du milieu (test suivant).
   expect(fr.character.toggle).toBe('Changer d\'apparence');
@@ -69,7 +69,7 @@ test('le juke-box : le nom du bouton et de sa fenêtre, ses interrupteurs et ses
   expect(fr.sound.effects.label).toBe('Effets sonores');
   expect(fr.sound.effects.volume).toBe('Volume des effets sonores');
   expect(fr.sound.effects.test).toBe('Écouter un effet');
-  expect(fr.sound.ambiance.auto).toBe('Selon l\'endroit');
+  expect(fr.sound.ambiance.auto).toBe('Selon la pièce');
   expect(t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes.lobby.title })).toBe('Ici : Salle d\'attente');
   expect(Object.values(fr.sound.scenes).map((scene) => scene.title)).toEqual(['Salle d\'attente', 'Concentration', 'Soleil', 'Crépuscule', 'Dérive', 'Expédition']);
 });
@@ -82,9 +82,8 @@ test('le bouton du bureau : « Aller à mon bureau » dehors, « Réglages du bu
   expect(fr.desk.title).toBe('Mon bureau');
 });
 
-test('le lieu : « Couloir » faute de zone, les grandes pièces de la grande carte, et combien sont ici', () => {
+test('le lieu : « Couloir » pour une rue ou faute de zone, et combien sont ici', () => {
   expect(fr.office.where.hallway).toBe('Couloir');
-  expect(Object.values(fr.office.where.rooms)).toEqual(['Café', 'Accueil', 'Piscine', 'Salon', 'Coin musique', 'Grande salle', 'Salle de réunion']);
   expect(fr.office.where.onePerson).toBe('1 personne ici');
   expect(t(fr.office.where.manyPeople, { count: 4 })).toBe('4 personnes ici');
 });
@@ -152,4 +151,32 @@ test('la lumière : les messages de ceux qui changent l\'état, le tien et celui
   expect(fr.lights.selfOn).toBe('Tu as rallumé la lumière');
   expect(fr.lights.use).toBe('Éteindre');
   expect(fr.lights.useOn).toBe('Allumer');
+});
+
+// Les jeux : les noms et les phrases que lisent les tests de bout en bout (e2e/jeux-*.ts), mot pour mot, et les listes complètes (chaque jeu, chaque erreur du serveur).
+test('les jeux : les noms, l\'étiquette d\'une table, l\'invitation et ses boutons', () => {
+  expect(fr.games.names).toEqual({ chess: 'Échecs', backgammon: 'Backgammon', connect4: 'Puissance 4', ludo: 'Petits chevaux' });
+  expect(t(fr.games.prompt, { game: fr.games.names.chess, action: fr.games.play })).toBe('[E] Échecs : jouer');
+  expect(t(fr.games.prompt, { game: fr.games.names.ludo, action: fr.games.watch })).toBe('[E] Petits chevaux : regarder la partie');
+  expect(t(fr.games.invitation, { name: 'Alice', game: fr.games.invitedTo.chess })).toBe('Alice t\'invite aux échecs');
+  expect(t(fr.games.invitation, { name: 'Alice', game: fr.games.invitedTo.connect4 })).toBe('Alice t\'invite au Puissance 4');
+  expect(t(fr.games.acceptLabel, { name: 'Alice' })).toBe('Accepter l\'invitation de Alice');
+  expect(t(fr.games.declineLabel, { name: 'Alice' })).toBe('Refuser l\'invitation de Alice');
+  expect(t(fr.games.notice.accepted, { name: 'Bastien', game: fr.games.names.chess })).toBe('Bastien a rejoint la table de Échecs.');
+  expect(t(fr.games.notice.declined, { name: 'Claire' })).toBe('Claire a refusé ton invitation.');
+  expect(t(fr.games.lobby.sitAt, { n: 2 })).toBe('S\'asseoir à la chaise 2');
+  expect(fr.games.invite.toggle).toBe('Inviter quelqu\'un');
+  expect(t(fr.games.invite.sendLabel, { name: 'Bastien' })).toBe('Inviter Bastien');
+  expect(fr.games.soon).toBe('Bientôt disponible');
+});
+
+test('les jeux : chaque erreur du serveur a son texte, et chaque raison de fin de la plateforme aussi', async () => {
+  const { GAME_ERRORS } = await import('@bureau/shared');
+  expect(Object.keys(fr.games.errors).sort()).toEqual([...GAME_ERRORS].sort());
+  for (const message of Object.values(fr.games.errors)) expect(message.length).toBeGreaterThan(5);
+  for (const reason of ['resign', 'timeout', 'disconnect'] as const) {
+    expect(fr.games.end[reason]).toContain('{loser}');
+    expect(fr.games.end[reason]).toContain('{winner}');
+    expect(fr.games.end[`${reason}Many`]).toContain('{loser}');
+  }
 });

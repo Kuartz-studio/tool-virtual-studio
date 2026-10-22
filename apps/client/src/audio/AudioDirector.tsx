@@ -5,15 +5,16 @@ import { listenOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
 import { audioEngine } from './audio';
 import { selectWantedScene, useAudioStore } from './audio-store';
-import type { SceneId } from './catalog';
 import type { AudioEngine } from './engine';
-import { OUTSIDE_SCENE, sceneAt } from './scene-at';
+import { OUTSIDE_SCENE, soundAt } from './scene-at';
 import { bindSfx } from './sfx-events';
 import { useSingleTab } from './single-tab';
 
 // Combien de temps il faut rester dans un autre endroit pour que l'ambiance change : une personne qui longe un mur, ou qui traverse une
 // porte sans s'arrêter, ne fait pas changer la musique.
 export const PLACE_SETTLE_MS = 700;
+// Où l'on est pour le son : l'ambiance par défaut, et la pièce dont on règle la musique (null : aucune).
+type Spot = ReturnType<typeof soundAt>;
 // Après la dernière voix, la musique attend ce délai avant de remonter : entre deux phrases, elle ne pompe pas.
 export const DUCK_HOLD_MS = 1200;
 
@@ -24,7 +25,8 @@ export const DUCK_HOLD_MS = 1200;
 //     le serveur a remplacé par un autre (« Ouvert dans un autre onglet »), ni dans un onglet que la personne a quitté pour un autre onglet
 //     de l'appli (un seul onglet joue à la fois, single-tab.ts) ;
 //   - le lieu : tant qu'on n'est pas au bureau (connexion, écran d'entrée), la salle d'attente ; au bureau, l'ambiance de l'endroit où
-//     l'on se trouve, qui change quand on y reste (PLACE_SETTLE_MS) ;
+//     l'on se trouve, qui change quand on y reste (PLACE_SETTLE_MS), et la pièce dont on règle la musique (celle qui a une enceinte) :
+//     ceux qui y sont la règlent pour tous (le magasin du bureau la dit), elle peut être éteinte ou jouer une autre ambiance ;
 //   - la voix : quand quelqu'un parle dans la conversation, soi-même compris, la musique baisse ;
 //   - les effets : les clics, les arrivées, les messages… (sfx-events.ts) ;
 //   - la sortie du son choisie à l'écran d'entrée.
@@ -34,7 +36,7 @@ export function AudioDirector({ engine = audioEngine }: { engine?: AudioEngine }
   useEngineState(engine);
   usePlaceScene();
   useDucking(engine);
-  useEffect(() => bindSfx(engine, { bus: EventBus, store: useOfficeStore }), [engine]);
+  useEffect(() => bindSfx(engine, { bus: EventBus, store: useOfficeStore, placeKey: () => useAudioStore.getState().placeKey }), [engine]);
   useOutputDevice(engine);
   return null;
 }
@@ -56,7 +58,10 @@ function useUnlockOnGesture(engine: AudioEngine): void {
 // pour un autre onglet de l'appli, ne joue rien : ni musique, ni effets.
 function useEngineSettings(engine: AudioEngine): void {
   const prefs = useAudioStore((state) => state.prefs);
-  const wanted = useAudioStore(selectWantedScene);
+  const place = useAudioStore((state) => state.place);
+  const placeKey = useAudioStore((state) => state.placeKey);
+  const music = useOfficeStore((state) => state.music);
+  const wanted = selectWantedScene({ prefs, place, placeKey }, music);
   const replaced = useOfficeStore((state) => state.replaced);
   const elsewhere = useSingleTab();
   const silent = replaced || elsewhere;
@@ -75,11 +80,10 @@ function useEngineState(engine: AudioEngine): void {
   }, [engine]);
 }
 
-// L'ambiance du lieu. Hors du bureau (pas de carte : la connexion, l'écran d'entrée, le jeu qui charge), la salle d'attente. Au bureau, celle de
+// L'ambiance du lieu, et sa pièce réglable. Hors du bureau (pas de carte : la connexion, l'écran d'entrée, le jeu qui charge), la salle d'attente. Au bureau, celles de
 // l'endroit où sont les pieds de la personne : tout de suite à l'arrivée, puis seulement quand elle est restée un moment dans un autre.
 function usePlaceScene(): void {
   const map = useOfficeStore((state) => state.officeMap);
-  const mapKey = useOfficeStore((state) => state.mapKey);
   useEffect(() => {
     const { setPlace } = useAudioStore.getState();
     if (map === null) {
@@ -87,22 +91,24 @@ function usePlaceScene(): void {
       return;
     }
     const start = useOfficeStore.getState().self ?? map.spawn;
-    let settled: SceneId = sceneAt(map, mapKey, start.x, start.y);
-    setPlace(settled);
+    let settled = soundAt(map, start.x, start.y);
+    setPlace(settled.scene, settled.key);
 
-    let pending: { scene: SceneId; timer: ReturnType<typeof setTimeout> } | null = null;
+    // Un endroit est une ambiance et une pièce réglable : passer d'une pièce à une autre de même ambiance (deux salles de « focus ») change la musique qu'on y règle.
+    const same = (a: Spot, b: Spot) => a.scene === b.scene && a.key === b.key;
+    let pending: { spot: Spot; timer: ReturnType<typeof setTimeout> } | null = null;
     const moveTo = (x: number, y: number) => {
-      const scene = sceneAt(map, mapKey, x, y);
-      if (pending?.scene === scene) return;
+      const spot = soundAt(map, x, y);
+      if (pending !== null && same(pending.spot, spot)) return;
       if (pending !== null) clearTimeout(pending.timer);
       pending = null;
-      if (scene === settled) return;
+      if (same(spot, settled)) return;
       pending = {
-        scene,
+        spot,
         timer: setTimeout(() => {
           pending = null;
-          settled = scene;
-          setPlace(scene);
+          settled = spot;
+          setPlace(spot.scene, spot.key);
         }, PLACE_SETTLE_MS),
       };
     };
@@ -111,7 +117,7 @@ function usePlaceScene(): void {
       off();
       if (pending !== null) clearTimeout(pending.timer);
     };
-  }, [map, mapKey]);
+  }, [map]);
 }
 
 // Qui parle (soi-même compris) baisse la musique ; elle remonte un peu après la dernière voix.

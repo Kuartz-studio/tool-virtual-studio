@@ -39,9 +39,9 @@ Un bureau virtuel pour ton équipe, dans l'esprit de Gather **[ton choix]** :
   - connexion, mot de passe oublié par e-mail, déconnexion.
 - **Un seul bureau**, vu de dessus façon Gather, en pixel art **[ton choix]**.
 - **Déplacement :**
-  - au clavier (flèches, ZQSD ou WASD), dans 4 directions ; Maj enfoncée, on court (trois fois la vitesse de marche, sans effet visuel : LimeZu ne fournit pas de sprite d'effet de vitesse) ;
+  - au clavier (flèches, ZQSD ou WASD), dans 4 directions, à 320 px/s ; Maj enfoncée, on court (une fois et demie la vitesse de marche, sans effet visuel : LimeZu ne fournit pas de sprite d'effet de vitesse) ;
   - bloqué par les murs et les meubles ;
-  - le zoom de la vue (molette, pincement du pavé tactile, boutons + / − en bas à gauche, ou touches + - 0) va de ×2 plus près à ×4 plus loin que la vue de départ, par crans qui gardent les tuiles nettes ;
+  - le zoom de la vue (molette, pincement du pavé tactile, boutons − / + de part et d'autre du pourcentage en bas à droite, ou touches + - 0) va de 25 % à 200 %, 100 % au départ (l'ancienne vue de départ aux trois quarts) : 5 % par cran de molette ou de pincement, 10 % par bouton ou par touche, et la caméra glisse d'un pourcentage à l'autre (d'un bond si le système demande moins de mouvement). Un clic sur le pourcentage, ou la touche 0, rétablit 100 % ;
   - l'avatar passe devant ou derrière les meubles.
 - **Multijoueur :** chacun voit les autres bouger de façon fluide, avec leur nom et leur statut.
 - **Audio/vidéo de proximité dès la V1** **[ton choix]** :
@@ -63,7 +63,7 @@ Un bureau virtuel pour ton équipe, dans l'esprit de Gather **[ton choix]** :
 - Rejoindre quelqu'un depuis la liste des personnes (téléportation à côté de lui).
 - Un volume qui baisse avec la distance pendant une conversation.
 - Des messages privés.
-- Les lumières, faites : une lumière commune au bureau, que l'interrupteur du couloir éteint et rallume pour tout le monde (la nuit est dessinée dans une RenderTexture, avec le halo des lampes et celui des personnes). Un cycle jour/nuit automatique reste à faire.
+- Les lumières, faites : une lumière commune au bureau, que l'interrupteur du couloir éteint et rallume pour tout le monde (la nuit est dessinée dans une RenderTexture, avec le halo des lumières, chacune à sa force : un écran très faible, une lampe de bureau faible et petite, un lampadaire moyen, une cheminée forte et large ; et celui des personnes). Un cycle jour/nuit automatique reste à faire.
 - Absent automatique quand l'ordinateur est inactif, en option. Cette détection n'existe que dans Chrome et Edge, et demande une autorisation.
 
 ### Non-objectifs (hors projet, sauf si on le redécide)
@@ -244,7 +244,7 @@ Le paquet partagé garantit que le client et le serveur appliquent les mêmes r�
   - les panneaux chat, personnes et admin.
 - **Communication Phaser ↔ React :** par un bus d'événements, déjà fourni par le modèle officiel.
 - **Les autres avatars :** affichés avec environ 100 ms de retard, en glissant d'une position reçue à la suivante. Ils sautent directement à la bonne place après une téléportation ou un retour sur l'onglet.
-- **Au-dessus de chaque tête :** le nom, un point de statut, et un indicateur quand la personne parle.
+- **Au-dessus de chaque tête :** le nom, un point de statut, et une petite bulle de parole (trois points qui montent) quand la personne parle, que tout le bureau voit, même de loin et hors de sa conversation.
 
 ### 7.5 Serveur temps réel
 

@@ -1,5 +1,5 @@
-import type { PlacedItem, Role } from '@bureau/shared';
-import { boolean, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { GameId, GameResult, MatchLogEntry, PlacedItem, Role } from '@bureau/shared';
+import { boolean, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { user } from './auth-schema';
 
 // Le schéma complet de la base : drizzle-kit en tire les migrations (drizzle/), createDb le donne à Drizzle.
@@ -56,8 +56,9 @@ export const deskSetup = pgTable('desk_setup', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Les états d'activité qu'une personne crée (« En focus », « À table »…) : un nom, la couleur de son point, une icône facultative, et trois
-// interrupteurs (laisser entrer dans son bureau, entendre, être entendue). Ils lui appartiennent, et partent avec son compte.
+// Les états d'activité qu'une personne crée (« En focus », « À table »…) : un nom, la couleur de son point, une icône facultative, un emplacement
+// facultatif (le lieu où le mode conduit), et trois interrupteurs (laisser entrer dans son bureau, entendre, être entendue). Ils lui appartiennent, et
+// partent avec son compte.
 export const activityState = pgTable(
   'activity_state',
   {
@@ -66,6 +67,7 @@ export const activityState = pgTable(
     label: text('label').notNull(),
     color: text('color').notNull(),   // « #rrggbb », en minuscules
     icon: text('icon'),   // un nom de ACTIVITY_ICONS ; null : pas d'icône, le point de la couleur
+    place: text('place'),   // la clé d'une destination de la carte (la salle de sport) où ce mode conduit ; null : on ne bouge pas
     allowEntry: boolean('allow_entry').notNull().default(true),
     hear: boolean('hear').notNull().default(true),
     heard: boolean('heard').notNull().default(true),
@@ -82,3 +84,49 @@ export const officeLights = pgTable('office_lights', {
   changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
   changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// La musique de chaque pièce, que ceux qui y sont règlent pour tous : une ligne par pièce touchée (la clé du lieu : `game`, `desk:A1`), écrite au premier
+// changement. Sans ligne, la pièce est allumée avec son ambiance par défaut. `scene` est l'ambiance choisie (null : celle par défaut de la pièce), `changedBy`
+// celui qui l'a réglée en dernier (null si son compte n'existe plus), `changedAt` le moment du changement.
+export const roomMusic = pgTable('room_music', {
+  placeKey: text('place_key').primaryKey(),
+  on: boolean('on').notNull().default(true),
+  scene: text('scene'),
+  changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+// Une partie de jeu finie, classée ou non, écrite une seule fois, à sa fin. `id` est fixé par le serveur au début de la partie : une seconde écriture de la
+// même partie ne fait rien. Les joueurs sont copiés (siège, identifiant, nom du moment, notes avant et après ; null quand la partie n'est pas classée) : pas de
+// clé étrangère, la ligne reste si un compte disparaît. `moves` est le journal de la partie (de quoi la rejouer), `moveCount` les coups comptés à la fin.
+export const gameMatch = pgTable(
+  'game_match',
+  {
+    id: uuid('id').primaryKey(),
+    game: text('game').$type<GameId>().notNull(),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
+    endedAt: timestamp('ended_at', { withTimezone: true }).notNull(),
+    players: jsonb('players').$type<Array<{ seat: number; userId: string; name: string; before: number | null; after: number | null }>>().notNull(),
+    result: jsonb('result').$type<GameResult>().notNull(),
+    moves: jsonb('moves').$type<MatchLogEntry[]>().notNull(),
+    moveCount: integer('move_count').notNull(),
+    ranked: boolean('ranked').notNull(),
+  },
+  (table) => [index('game_match_game_ended_at_idx').on(table.game, table.endedAt)],
+);
+
+// La note de chaque personne à chaque jeu (Elo). Sans ligne : 1200, aucune partie classée. La ligne part avec le compte.
+export const gameRating = pgTable(
+  'game_rating',
+  {
+    userId: text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+    game: text('game').$type<GameId>().notNull(),
+    rating: integer('rating').notNull().default(1200),
+    games: integer('games').notNull().default(0),
+    wins: integer('wins').notNull().default(0),
+    losses: integer('losses').notNull().default(0),
+    draws: integer('draws').notNull().default(0),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.game] }), index('game_rating_game_rating_idx').on(table.game, table.rating)],
+);

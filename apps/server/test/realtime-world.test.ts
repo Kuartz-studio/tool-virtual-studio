@@ -405,7 +405,7 @@ describe('debug:teleport', () => {
 
     const tick = nextEvent(b.socket, 'world:tick');
     a.socket.emit('debug:teleport', { x: 400, y: 400 });
-    expect((await tick).moves).toEqual([{ id: a.id, x: 400, y: 400, dir: 'right', moving: false }]);
+    expect((await tick).moves).toEqual([{ id: a.id, x: 400, y: 400, dir: 'right', moving: false, tp: true }]);   // `tp` : B le voit sauter, pas glisser
     expect(srv.realtime.world.get(a.id)).toMatchObject({ x: 400, y: 400, dir: 'right', moving: false });
   });
 
@@ -543,5 +543,68 @@ describe('startWorldTicks', () => {
     const calls = drain.mock.calls.length;
     await sleep(150);
     expect(drain).toHaveBeenCalledTimes(calls);
+  });
+});
+
+// ---- debug:boost : du café, pour les tests de la vitesse -------------------------------------------------------------------------
+
+describe('debug:boost', () => {
+  // Une horloge arrêtée : A n'a pas une milliseconde de plus que la marge de gigue. Sans café, 180 px d'un coup au plus ; sous café, 360.
+  async function setup(env: Record<string, string> = { E2E: '1' }) {
+    const clock = { t: 5_000 };
+    const srv = await startTestServer({ now: () => clock.t, env });
+    const a = await enter(srv, await srv.inviteAndLogin('a@x.fr'));
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    return { clock, srv, a, b, aEvents: record(a.socket) };
+  }
+
+  test('avec E2E=1 : A a du café, le serveur accepte les 320 px d\'un coup que sa limite normale refuse', async () => {
+    const { srv, a, b } = await setup();
+    a.socket.emit('debug:boost', { ms: 30_000 });
+    const tick = nextEvent(b.socket, 'world:tick');
+    a.socket.emit('move', walk(400));   // 320 px d'un coup
+    expect((await tick).moves).toEqual([{ id: a.id, ...walk(400) }]);
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ x: 400, y: 240 });
+    expect(srv.realtime.world.maxSpeedOf(a.id)).toBe(960);
+  });
+
+  test('sans café, les mêmes 320 px sont refusés : move:correct', async () => {
+    const { a } = await setup();
+    a.socket.emit('move', walk(400));
+    expect(await nextEvent(a.socket, 'move:correct')).toEqual(SPAWN);
+  });
+
+  test('ms = 0 retire le café', async () => {
+    const { a } = await setup();
+    a.socket.emit('debug:boost', { ms: 30_000 });
+    a.socket.emit('debug:boost', { ms: 0 });
+    a.socket.emit('move', walk(400));
+    expect(await nextEvent(a.socket, 'move:correct')).toEqual(SPAWN);
+  });
+
+  test('le café finit : 30 s plus tard (et la gigue), la limite normale est revenue', async () => {
+    const { clock, a, srv } = await setup();
+    a.socket.emit('debug:boost', { ms: 1_000 });
+    await sleep(WORLD_TICK_MS);
+    expect(srv.realtime.world.maxSpeedOf(a.id)).toBe(960);
+    clock.t += 1_000 + 250 + 1;
+    expect(srv.realtime.world.maxSpeedOf(a.id)).toBe(480);
+  });
+
+  test('sans E2E=1, l\'événement n\'existe pas : ignoré, la limite reste la normale', async () => {
+    const { srv, a } = await setup({});
+    a.socket.emit('debug:boost', { ms: 30_000 });
+    await sleep(WORLD_TICK_MS * 2);
+    expect(srv.realtime.world.maxSpeedOf(a.id)).toBe(480);
+    a.socket.emit('move', walk(400));
+    expect(await nextEvent(a.socket, 'move:correct')).toEqual(SPAWN);
+  });
+
+  test.each([[-5], ['beaucoup'], [1.5], [4_000_000], [null], [undefined]])('avec E2E=1, une charge invalide (%j) est ignorée', async (ms) => {
+    const { srv, a } = await setup();
+    emitRaw(a.socket, 'debug:boost', { ms });
+    emitRaw(a.socket, 'debug:boost', ms);
+    await sleep(WORLD_TICK_MS * 2);
+    expect(srv.realtime.world.maxSpeedOf(a.id)).toBe(480);
   });
 });

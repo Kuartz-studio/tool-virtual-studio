@@ -1,14 +1,13 @@
-import { withinSwitchReach } from '@bureau/shared';
+import { LIGHT_SWITCH_REACH_TILES } from '@bureau/shared';
 import type { GameObjects, Scene, Textures } from 'phaser';
 import { fr } from '../i18n/fr';
 import { DECOR_DEPTH } from './decor-layout';
-import { bindUseKey } from './input';
-import { DEPTH } from './map-layers';
-import { TAG_BACKGROUND, TAG_PAD_X, TAG_PAD_Y, TAG_TEXT_STYLE } from './objects/NameTag';
+import type { Interactable, Interactions, Point } from './interactions';
 import { snapToPixels } from './pixel-snap';
 
-// L'interrupteur de la lumière : une plaque au mur du couloir, que tout le monde actionne de près (3 cases au plus : withinSwitchReach, la
-// règle du serveur aussi), par la touche E ou d'un clic sur la plaque. Actionné, il ne change rien lui-même : il demande (onUse), et la
+// L'interrupteur de la lumière : une plaque au mur du couloir, que tout le monde actionne de près (3 cases au plus : LIGHT_SWITCH_REACH_TILES,
+// la règle du serveur aussi), par la touche E ou d'un clic sur la plaque. C'est une cible du gestionnaire de la touche E (interactions.ts) :
+// c'est lui qui retient la plus proche, et l'étiquette « [E] … » est la sienne. Actionné, il ne change rien lui-même : il demande (onUse), et la
 // plaque ne bascule qu'à l'annonce du serveur (setOn), comme pour tout le monde. Ce fichier n'importe de Phaser que des types : la scène
 // lui donne de quoi dessiner.
 
@@ -87,78 +86,50 @@ const BEACON_COLOR = 0xf59e0b;
 const BEACON_SIZE = 2;
 // Son centre : au milieu de la plaque, sur ses 2e et 3e rangées de pixels (le biseau du haut et la rangée dessous).
 const BEACON_OFFSET_Y = PLATE.offsetY - PLATE.height / 2 + 1 + BEACON_SIZE / 2;
-// L'étiquette est une pastille comme celle des noms, juste au-dessus de la plaque.
+// L'étiquette « [E] … » (InteractionPrompt) se pose juste au-dessus de la plaque : cet espace, en pixels.
 const LABEL_GAP = 2;
-const LABEL_BACKGROUND = `rgba(${(TAG_BACKGROUND.color >> 16) & 255}, ${(TAG_BACKGROUND.color >> 8) & 255}, ${TAG_BACKGROUND.color & 255}, ${TAG_BACKGROUND.alpha})`;
-const LABEL_STYLE = { ...TAG_TEXT_STYLE, backgroundColor: LABEL_BACKGROUND, padding: { x: TAG_PAD_X, y: TAG_PAD_Y } };
 
 export class LightSwitch {
   private readonly plate: GameObjects.Image;
   private readonly beacon: GameObjects.Rectangle;
-  private readonly label: GameObjects.Text;
-  private readonly unbindKey: () => void;
+  private readonly unregister: () => void;
   private on = true;
-  private inReach = false;
 
-  // `pos` : le centre de l'interrupteur, en pixels (OfficeMap.switches). `onUse` : la personne l'actionne, de près. `feet` (facultatif) : où
-  // sont ses pieds à cet instant ; sans lui, la portée est celle de la dernière image (updateReach).
+  // `pos` : le centre de l'interrupteur, en pixels (OfficeMap.switches). `interactions` : le gestionnaire de la touche E, qui sait où sont les
+  // pieds de l'avatar ; l'interrupteur s'y inscrit. `onUse` : la personne l'actionne, de près.
   constructor(
     scene: Scene,
-    private readonly pos: { x: number; y: number },
-    private readonly onUse: () => void,
-    private readonly feet?: () => { x: number; y: number },
+    pos: Point,
+    interactions: Interactions,
+    onUse: () => void,
   ) {
     this.plate = snapToPixels(scene.add.image(pos.x, pos.y + PLATE.offsetY, SWITCH_TEXTURES.on)).setDepth(PLATE_DEPTH);
     this.plate.setInteractive({ useHandCursor: true });
-    this.plate.on('pointerdown', () => this.use());
     this.beacon = snapToPixels(scene.add.rectangle(pos.x, pos.y + BEACON_OFFSET_Y, BEACON_SIZE, BEACON_SIZE, BEACON_COLOR)).setDepth(BEACON_DEPTH).setVisible(false);
-    this.label = snapToPixels(scene.add.text(pos.x, pos.y + PLATE.offsetY - PLATE.height / 2 - LABEL_GAP, this.labelText(), { ...LABEL_STYLE, resolution: 1 }).setOrigin(0.5, 1))
-      .setDepth(DEPTH.nameTags)
-      .setVisible(false);
-    this.unbindKey = bindUseKey(() => this.use());
+    const target: Interactable = {
+      id: `switch:${pos.x},${pos.y}`,
+      pos,
+      reachTiles: LIGHT_SWITCH_REACH_TILES,
+      labelAt: { x: pos.x, y: pos.y + PLATE.offsetY - PLATE.height / 2 - LABEL_GAP },
+      prompt: () => `[E] ${this.on ? fr.lights.use : fr.lights.useOn}`,
+      use: onUse,
+    };
+    this.unregister = interactions.register(target);
+    // Un clic sur la plaque : elle seule, même si une autre cible est plus proche, et à portée seulement.
+    this.plate.on('pointerdown', () => interactions.useTarget(target));
   }
 
-  // L'état de la lumière tel que le serveur l'annonce : la plaque bascule, le témoin ambré brille dans le noir, l'étiquette dit ce que la
-  // touche fera.
+  // L'état de la lumière tel que le serveur l'annonce : la plaque bascule, le témoin ambré brille dans le noir. L'étiquette, elle, relit
+  // le texte de la cible à chaque image : elle dit ce que la touche fera.
   setOn(on: boolean): void {
     this.on = on;
     this.plate.setTexture(on ? SWITCH_TEXTURES.on : SWITCH_TEXTURES.off);
     this.beacon.setVisible(!on);
-    this.label.setText(this.labelText());
-  }
-
-  // Là où sont les pieds de l'avatar local, à chaque image : l'étiquette ne se montre qu'à portée. Dit si l'on y est.
-  updateReach(player: { x: number; y: number }): boolean {
-    const near = withinSwitchReach(player, [this.pos]);
-    if (near !== this.inReach) {
-      this.inReach = near;
-      this.label.setVisible(near);
-    }
-    return near;
-  }
-
-  // La touche E, ou un clic sur la plaque : à portée seulement. Rend vrai si la demande est partie. La portée est relue à cet instant (un pas
-  // ou une téléportation depuis la dernière image comptent) quand on sait où sont les pieds.
-  private use(): boolean {
-    if (this.feet) this.updateReach(this.feet());
-    if (!this.inReach) return false;
-    this.onUse();
-    return true;
-  }
-
-  // Le zoom de la caméra a changé : le texte est redessiné à la nouvelle taille (jamais en dessous de 1, comme celui des noms).
-  setZoom(zoom: number): void {
-    this.label.setResolution(Math.max(1, zoom));
   }
 
   destroy(): void {
-    this.unbindKey();
+    this.unregister();
     this.plate.destroy();
     this.beacon.destroy();
-    this.label.destroy();
-  }
-
-  private labelText(): string {
-    return `[E] ${this.on ? fr.lights.use : fr.lights.useOn}`;
   }
 }

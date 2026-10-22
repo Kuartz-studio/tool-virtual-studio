@@ -1,8 +1,26 @@
+import { MUSIC_SCENES, type MusicScene } from '../audio/scenes';
+import type { Point } from './find-path';
+import type { GameTable, Place, Rect } from './places';
 import { isWalkablePoint } from './queries';
 import type { TiledLayer, TiledMapJson, TiledObject, TiledObjectLayer, TiledTileLayer } from './tiled-types';
 
-export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch'] as const;
+// Les types de zones du calque `zones` :
+// - spawn : l'apparition ; private : une pièce isolée (salle de réunion) ; desk et door : un bureau et sa porte (même nom) ; label : un texte
+//   écrit au sol ; switch : l'interrupteur de la lumière ;
+// - place : un lieu (nom = sa clé ; propriétés label, kind `room` `open` ou `street`, scene, music, destination) ;
+// - coffee : la case, 1 × 1, devant la machine à café ; speaker : l'enceinte, 1 × 1 (nom = la clé du lieu qu'elle règle, qui a de la musique) ;
+// - game : la table d'un jeu (nom = chess, backgammon, connect4 ou ludo) ; seat : une chaise, 1 × 1 (nom = `<jeu>:<n>`, n à partir de 1) ;
+// - sign : un panneau (propriété text).
+export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch', 'place', 'coffee', 'speaker', 'game', 'seat', 'sign'] as const;
 export type ZoneType = (typeof ZONE_TYPES)[number];
+
+// Les zones dont les propriétés Tiled sont gardées (`Zone.properties`) : celles qui en portent.
+const ZONES_WITH_PROPERTIES: readonly ZoneType[] = ['place', 'sign'];
+
+// Les quatre jeux de la salle de jeu : les noms des zones `game` de la carte. Une seule liste, que la plateforme des jeux réexporte.
+export const GAME_IDS = ['chess', 'backgammon', 'connect4', 'ludo'] as const;
+export type GameId = (typeof GAME_IDS)[number];
+const PLACE_KINDS = ['room', 'open', 'street'] as const;
 
 // Un rectangle du calque `zones`, en pixels.
 export interface Zone {
@@ -14,6 +32,8 @@ export interface Zone {
   y: number;
   width: number;
   height: number;
+  // Les propriétés Tiled de la zone (label, kind, scene… d'une place ; text d'un panneau), pour les types qui en portent.
+  properties?: Readonly<Record<string, string | number | boolean>>;
 }
 
 // La clé d'une place de bureau : le nom de sa zone `desk`, ou à défaut son numéro. C'est ce qui désigne la place dans la base de données
@@ -33,6 +53,16 @@ export interface OfficeMap {
   spawn: { x: number; y: number };   // en pixels
   // Le centre de chaque zone `switch` (une case, posée sur un mur : la plaque), en pixels, dans l'ordre de la carte.
   switches: Array<{ x: number; y: number }>;
+  // Les lieux déclarés par la carte (zones `place`), dans son ordre ; les bureaux sont ajoutés par placeAt et placeByKey (places.ts).
+  places: Place[];
+  // Le centre de la case devant chaque machine à café, en pixels.
+  coffees: Point[];
+  // Le centre de chaque enceinte, en pixels, et la clé du lieu dont elle règle la musique.
+  speakers: Array<Point & { place: string }>;
+  // Les tables de jeu, avec leurs sièges.
+  tables: GameTable[];
+  // Les panneaux : leur rectangle, en pixels, et leur texte.
+  signs: Array<Rect & { text: string }>;
 }
 
 // Pourquoi une carte est refusée :
@@ -77,6 +107,8 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
 
   const spawnZone = pickSpawnZone(zones);
   checkDesks(zones);
+  const tileSize = json.tilewidth;
+  const places = readPlaces(zones);
   const map: OfficeMap = {
     widthTiles: json.width,
     heightTiles: json.height,
@@ -85,6 +117,11 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
     zones,
     spawn: { x: spawnZone.x + spawnZone.width / 2, y: spawnZone.y + spawnZone.height / 2 },
     switches: zones.filter((zone) => zone.type === 'switch').map((zone) => ({ x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 })),
+    places,
+    coffees: readCoffees(zones, tileSize),
+    speakers: readSpeakers(zones, places, tileSize),
+    tables: readTables(zones, tileSize),
+    signs: readSigns(zones),
   };
   if (!isWalkablePoint(map, map.spawn.x, map.spawn.y)) {
     throw new MapError(
@@ -216,7 +253,19 @@ function readZone(obj: TiledObject): Zone {
     throw new MapError('bad_zone', `${label} : position ou taille invalide (x = ${x}, y = ${y}, largeur = ${width}, hauteur = ${height}). La largeur et la hauteur doivent être positives.`);
   }
 
-  return { id: String(obj.id), type, name, text: readText(propertyValue(obj, 'text')), x, y, width, height };
+  const properties = ZONES_WITH_PROPERTIES.includes(type) ? readProperties(obj) : undefined;
+  return { id: String(obj.id), type, name, text: readText(propertyValue(obj, 'text')), x, y, width, height, ...(properties ? { properties } : {}) };
+}
+
+// Les propriétés de l'objet qui sont du texte, un nombre ou un booléen ; undefined s'il n'en a aucune.
+function readProperties(obj: TiledObject): Record<string, string | number | boolean> | undefined {
+  if (!Array.isArray(obj.properties)) return undefined;
+  const found: Record<string, string | number | boolean> = {};
+  for (const property of obj.properties) {
+    const value: unknown = property?.value;
+    if (typeof property?.name === 'string' && (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')) found[property.name] = value;
+  }
+  return Object.keys(found).length > 0 ? found : undefined;
 }
 
 // Les clés des places sont uniques, et chaque porte (zone `door`, dont le nom est la clé d'une place) ferme un bureau qui existe.
@@ -238,6 +287,117 @@ function checkDesks(zones: Zone[]): void {
       );
     }
   }
+}
+
+// « Zone n° 3 (« gym »)» : de quoi retrouver la zone dans Tiled.
+const labelOf = (zone: Zone): string => `Zone n° ${zone.id}${zone.name ? ` (« ${zone.name} »)` : ''}`;
+
+// Un drapeau de Tiled : une case cochée (booléen), 1, ou le texte « 1 » ou « true ».
+const isFlag = (value: unknown): boolean => value === true || value === 1 || value === '1' || value === 'true';
+
+// Les lieux : une zone `place` par lieu, avec son nom (la clé, unique), son label, son genre (`room` par défaut), sa scène musicale (`lobby` par
+// défaut), et ses drapeaux music et destination.
+function readPlaces(zones: Zone[]): Place[] {
+  const places: Place[] = [];
+  const keys = new Set<string>();
+  for (const zone of zones.filter((z) => z.type === 'place')) {
+    const where = labelOf(zone);
+    if (zone.name === null) throw new MapError('bad_zone', `${where} : un lieu (zone place) doit avoir un nom : c'est sa clé.`);
+    if (zone.name.startsWith('desk:')) throw new MapError('bad_zone', `${where} : la clé « ${zone.name} » est réservée aux bureaux (« desk: » au début).`);
+    if (keys.has(zone.name)) throw new MapError('bad_zone', `${where} : deux lieux portent la clé « ${zone.name} ». Elle doit être unique.`);
+    keys.add(zone.name);
+    const label = readText(zone.properties?.label);
+    if (label === null) throw new MapError('bad_zone', `${where} : ce lieu n'a pas de propriété « label » (son nom affiché).`);
+    const kind = readText(zone.properties?.kind) ?? 'room';
+    if (!(PLACE_KINDS as readonly string[]).includes(kind)) {
+      throw new MapError('bad_zone', `${where} : le genre « ${kind} » est inconnu. Genres possibles : ${PLACE_KINDS.join(', ')}.`);
+    }
+    const scene = readText(zone.properties?.scene) ?? 'lobby';
+    if (!(MUSIC_SCENES as readonly string[]).includes(scene)) {
+      throw new MapError('bad_zone', `${where} : la scène « ${scene} » est inconnue. Scènes possibles : ${MUSIC_SCENES.join(', ')}.`);
+    }
+    places.push({
+      key: zone.name,
+      label,
+      kind: kind as Place['kind'],
+      rects: [{ x: zone.x, y: zone.y, width: zone.width, height: zone.height }],
+      scene: scene as MusicScene,
+      music: isFlag(zone.properties?.music),
+      destination: isFlag(zone.properties?.destination),
+    });
+  }
+  return places;
+}
+
+// Une zone d'une case sur une case (une enceinte, la case de la machine à café, un siège) : son centre, en pixels.
+function oneTile(zone: Zone, tileSize: number, what: string): Point {
+  if (zone.width !== tileSize || zone.height !== tileSize) {
+    throw new MapError('bad_zone', `${labelOf(zone)} : ${what} fait 1 × 1 case (${tileSize} × ${tileSize} px), pas ${zone.width} × ${zone.height}.`);
+  }
+  return { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 };
+}
+
+function readCoffees(zones: Zone[], tileSize: number): Point[] {
+  return zones.filter((z) => z.type === 'coffee').map((zone) => oneTile(zone, tileSize, 'la case devant la machine à café (zone coffee)'));
+}
+
+// Les enceintes : chacune règle la musique d'un lieu qui en a (propriété music).
+function readSpeakers(zones: Zone[], places: Place[], tileSize: number): Array<Point & { place: string }> {
+  return zones
+    .filter((z) => z.type === 'speaker')
+    .map((zone) => {
+      const centre = oneTile(zone, tileSize, 'une enceinte (zone speaker)');
+      const target = places.find((place) => place.key === zone.name);
+      if (!target) {
+        throw new MapError('bad_zone', `${labelOf(zone)} : cette enceinte (zone speaker) ne règle aucun lieu. Son nom doit être la clé d'une zone place${zone.name ? ` (« ${zone.name} » n'existe pas)` : ''}.`);
+      }
+      if (!target.music) {
+        throw new MapError('bad_zone', `${labelOf(zone)} : l'enceinte (zone speaker) règle « ${target.key} », qui n'a pas de musique : lui donner la propriété music.`);
+      }
+      return { ...centre, place: target.key };
+    });
+}
+
+// Les tables de jeu (une zone `game` par jeu) et leurs sièges (zones `seat`, nommées `<jeu>:<n>`), dans l'ordre de leur numéro.
+function readTables(zones: Zone[], tileSize: number): GameTable[] {
+  const tables: GameTable[] = [];
+  for (const zone of zones.filter((z) => z.type === 'game')) {
+    const game = GAME_IDS.find((id) => id === zone.name);
+    if (!game) {
+      throw new MapError('bad_zone', `${labelOf(zone)} : le jeu « ${zone.name ?? ''} » est inconnu (zone game). Jeux possibles : ${GAME_IDS.join(', ')}.`);
+    }
+    if (tables.some((table) => table.game === game)) throw new MapError('bad_zone', `${labelOf(zone)} : deux tables pour le jeu « ${game} » : une seule est permise.`);
+    tables.push({ game, rect: { x: zone.x, y: zone.y, width: zone.width, height: zone.height }, seats: [] });
+  }
+  const seats = new Map<GameId, Map<number, Point>>();
+  for (const zone of zones.filter((z) => z.type === 'seat')) {
+    const match = /^([^:]+):([1-9][0-9]*)$/.exec(zone.name ?? '');
+    if (!match) throw new MapError('bad_zone', `${labelOf(zone)} : le nom d'un siège (zone seat) est « <jeu>:<numéro> » avec un numéro à partir de 1, par exemple « chess:1 » (reçu : « ${zone.name ?? ''} »).`);
+    const game = GAME_IDS.find((id) => id === match[1]);
+    if (!game || !tables.some((table) => table.game === game)) {
+      throw new MapError('bad_zone', `${labelOf(zone)} : ce siège (zone seat) est pour le jeu « ${match[1]} », qui n'a pas de table (zone game du même nom).`);
+    }
+    const number = Number(match[2]);
+    const taken = seats.get(game) ?? new Map<number, Point>();
+    if (taken.has(number)) throw new MapError('bad_zone', `${labelOf(zone)} : deux sièges portent le nom « ${zone.name} ».`);
+    taken.set(number, oneTile(zone, tileSize, 'un siège (zone seat)'));
+    seats.set(game, taken);
+  }
+  for (const table of tables) {
+    table.seats = [...(seats.get(table.game) ?? new Map<number, Point>()).entries()].sort((a, b) => a[0] - b[0]).map(([, point]) => point);
+  }
+  return tables;
+}
+
+// Les panneaux : un rectangle et un texte (propriété text).
+function readSigns(zones: Zone[]): Array<Rect & { text: string }> {
+  return zones
+    .filter((z) => z.type === 'sign')
+    .map((zone) => {
+      const text = readText(zone.properties?.text);
+      if (text === null) throw new MapError('bad_zone', `${labelOf(zone)} : ce panneau (zone sign) n'a pas de propriété « text ».`);
+      return { x: zone.x, y: zone.y, width: zone.width, height: zone.height, text };
+    });
 }
 
 function pickSpawnZone(zones: Zone[]): Zone {

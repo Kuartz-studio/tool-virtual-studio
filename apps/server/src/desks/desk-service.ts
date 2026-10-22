@@ -1,12 +1,15 @@
 import {
-  DEFAULT_DESK_DECOR,
   DESK_NAME_MAX_LENGTH,
+  DESK_ROOMS,
   checkDecor,
+  defaultDeskDecor,
   deskKey,
+  deskRoomSpecOf,
   type DeskAck,
   type DeskBan,
   type DeskDecor,
   type DeskInfo,
+  type DeskRoomSpec,
   type OfficeMap,
   type PlacedItem,
   type Zone,
@@ -16,13 +19,15 @@ import type { Db } from '../db/client';
 import { desk, deskSetup, user } from '../db/schema';
 import { oneAtATimePerKey } from '../one-at-a-time';
 
-// Une place de bureau de la carte : sa zone desk, sa porte (la zone door qui porte la même clé, s'il y en a une) et le point, juste
-// devant la porte et hors de la pièce, où l'on dépose quelqu'un qu'on exclut.
+// Une place de bureau de la carte : sa zone desk, sa porte (la zone door qui porte la même clé, s'il y en a une), le point, juste devant la porte
+// et hors de la pièce, où l'on dépose quelqu'un qu'on exclut, et la pièce (sa taille et le côté de sa porte, lus sur la carte : standard, ou
+// compacte, porte au sud ou au nord). Une place sans porte (la petite carte de développement) a la pièce standard.
 export interface DeskSlot {
   key: string;
   zone: Zone;
   door: Zone | null;
   exit: { x: number; y: number };
+  room: DeskRoomSpec;
 }
 
 // Les places de la carte, dans l'ordre des zones. Sans porte, le point de sortie est sous la pièce.
@@ -33,7 +38,7 @@ export function deskSlots(map: OfficeMap): DeskSlot[] {
     .map((zone) => {
       const key = deskKey(zone);
       const door = doors.get(key) ?? null;
-      return { key, zone, door, exit: exitPoint(zone, door, map.tileSize) };
+      return { key, zone, door, exit: exitPoint(zone, door, map.tileSize), room: deskRoomSpecOf(map, key) ?? DESK_ROOMS.standard };
     });
 }
 
@@ -69,6 +74,8 @@ export type DeskResult = { ok: true; changed: DeskInfo[]; access: boolean } | De
 export interface DeskServiceOptions {
   /** Le propriétaire laisse-t-il entrer d'après son état d'activité du moment ? Faux : sa porte est fermée, comme verrouillée. */
   ownerAllowsEntry?: (ownerId: string) => boolean;
+  /** Où dire qu'un décor enregistré ne tient plus dans sa pièce (une fois par personne et par place). */
+  logger?: { warn(context: Record<string, unknown>, message: string): void };
 }
 
 // Les bureaux du bureau virtuel : 6 places sur la carte, chacune libre ou à quelqu'un (une place par personne), avec son nom, sa porte
@@ -88,6 +95,9 @@ export class DeskService {
   private readonly setups = new Map<string, DeskDecor>();
   private readonly serial = oneAtATimePerKey();
   private readonly ownerAllowsEntry: (ownerId: string) => boolean;
+  private readonly logger: DeskServiceOptions['logger'];
+  // Les décors déjà signalés comme ne tenant plus dans leur pièce (« personne|place »), pour ne le journaliser qu'une fois.
+  private readonly unfit = new Set<string>();
 
   /** Résolue quand les bureaux occupés et les décors sont lus en base ; rejetée si elle est illisible. Les commandes l'attendent. */
   readonly ready: Promise<void>;
@@ -100,6 +110,7 @@ export class DeskService {
   ) {
     this.slots = deskSlots(map);
     this.ownerAllowsEntry = options.ownerAllowsEntry ?? (() => true);
+    this.logger = options.logger;
     for (const slot of this.slots) {
       this.states.set(slot.key, { key: slot.key, ownerId: null, ownerName: null, name: null, locked: false, banned: new Map(), admitted: new Set() });
     }
@@ -238,7 +249,7 @@ export class DeskService {
       await this.ready;
       const state = this.stateOf(userId);
       if (!state) return fail('no_desk');
-      const checked = checkDecor(decor);
+      const checked = checkDecor(decor, this.roomOf(state.key));
       if (!checked.ok) return { ok: false, error: 'bad_decor', reason: checked.error };
       // Une copie à nous, réduite à { id, x, y } : ni les champs en trop, ni la liste de l'appelant ne se retrouvent en mémoire ou en base.
       const next: DeskDecor = { floor: decor.floor, wall: decor.wall, items: copyItems(decor.items) };
@@ -339,10 +350,27 @@ export class DeskService {
     return state.ownerId !== null && (state.locked || !this.ownerAllowsEntry(state.ownerId));
   }
 
-  // Le décor que montre une place : celui de son occupant s'il en a réglé un, le poste par défaut sinon (et pour une place libre).
+  // La pièce de cette place (celle de la carte).
+  private roomOf(key: string): DeskRoomSpec {
+    return this.slots.find((slot) => slot.key === key)?.room ?? DESK_ROOMS.standard;
+  }
+
+  // Le décor que montre une place : celui de son occupant s'il en a réglé un et qu'il tient dans la pièce, le poste par défaut de la pièce sinon (et
+  // pour une place libre). Un décor enregistré qui ne tient plus (la carte a changé : la pièce est devenue plus petite, sa porte a changé de côté)
+  // est ignoré et journalisé, jamais effacé : il revient si la pièce redevient assez grande.
   private decorOf(state: DeskState): DeskDecor {
+    const room = this.roomOf(state.key);
     const own = state.ownerId === null ? undefined : this.setups.get(state.ownerId);
-    return own ?? DEFAULT_DESK_DECOR;
+    if (own) {
+      const checked = checkDecor(own, room);
+      if (checked.ok) return own;
+      const id = `${state.ownerId}|${state.key}`;
+      if (!this.unfit.has(id)) {
+        this.unfit.add(id);
+        this.logger?.warn({ userId: state.ownerId, desk: state.key, reason: checked.error }, 'Décor enregistré qui ne tient plus dans sa pièce : le poste par défaut est montré, le décor reste en base');
+      }
+    }
+    return defaultDeskDecor(room);
   }
 
   private info(state: DeskState): DeskInfo {

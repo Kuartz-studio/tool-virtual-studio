@@ -1,4 +1,4 @@
-import { DEFAULT_DESK_DECOR, DESK_ROOM, type DeskInfo } from '@bureau/shared';
+import { DEFAULT_DESK_DECOR, DESK_ROOMS, buildTiledMap, parseOfficeMap, type DeskInfo } from '@bureau/shared';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { createOfficeStore } from './office-store';
 
@@ -60,7 +60,7 @@ describe('l\'éditeur de déco du magasin', () => {
     s.openDecorEditor(desk);
     s.holdDecorItem('of-7-28');
     s.placeHeld({ x: 4, y: 3 });
-    s.placeHeld({ x: DESK_ROOM.doorX, y: DESK_ROOM.height - 1 });   // devant la porte : elle serait murée
+    s.placeHeld({ x: DESK_ROOMS.standard.door.x, y: DESK_ROOMS.standard.height - 1 });   // devant la porte : elle serait murée
     expect(store.getState().decorEditor!.error).toBe('blocks_door');
     expect(store.getState().decorEditor!.draft.items).toHaveLength(1);
     s.placeHeld({ x: 7, y: 1 });
@@ -170,9 +170,9 @@ describe('l\'éditeur de déco du magasin', () => {
   test('remplacer qui rendrait la pièce invalide : refusé avec la raison, rien n\'est en attente', () => {
     const s = store.getState();
     // Un bureau devant la porte, de la même sorte qu\'un autre meuble, ne peut pas non plus le remplacer s\'il mure la porte.
-    s.openDecorEditor({ ...desk, items: [{ id: 'of-6-10', x: DESK_ROOM.doorX, y: DESK_ROOM.height - 1 }] });
+    s.openDecorEditor({ ...desk, items: [{ id: 'of-6-10', x: DESK_ROOMS.standard.door.x, y: DESK_ROOMS.standard.height - 1 }] });
     s.holdDecorItem('of-7-28');
-    s.placeHeld({ x: DESK_ROOM.doorX, y: DESK_ROOM.height - 1 });
+    s.placeHeld({ x: DESK_ROOMS.standard.door.x, y: DESK_ROOMS.standard.height - 1 });
     expect(store.getState().decorEditor).toMatchObject({ error: 'blocks_door', replace: null });
   });
 
@@ -197,5 +197,57 @@ describe('l\'éditeur de déco du magasin', () => {
     s.confirmReplace();
     s.cancelReplace();
     expect(store.getState().decorEditor).toBe(before);
+  });
+});
+
+describe('l\'éditeur de déco, dans une pièce de la carte qui n\'est pas la standard', () => {
+  // A5 : compacte (6 × 7), porte au sud ; A6 : compacte, porte au nord de la pièce.
+  const ROWS = Array.from({ length: 24 }, (_, y) => (y === 0 || y === 23 ? '#'.repeat(30) : `#${'.'.repeat(28)}#`));
+  const map = parseOfficeMap(
+    buildTiledMap({
+      ascii: ROWS,
+      zones: [
+        { type: 'desk', name: 'A5', x: 12, y: 2, w: 6, h: 7 },
+        { type: 'door', name: 'A5', x: 14, y: 9, w: 2, h: 2 },
+        { type: 'desk', name: 'A6', x: 12, y: 15, w: 6, h: 7 },
+        { type: 'door', name: 'A6', x: 14, y: 13, w: 2, h: 2 },
+        { type: 'spawn', x: 25, y: 12, w: 1, h: 1 },
+      ],
+      tileset: { name: 'dev', image: 'tiles.png' },
+    }),
+  );
+
+  test('un élément se pose dans les limites de la pièce compacte, pas de la standard', () => {
+    const s = store.getState();
+    s.setOfficeMap(map);
+    s.openDecorEditor({ ...desk, key: 'A5' });
+    s.holdDecorItem('of-7-28');
+    s.placeHeld({ x: 5, y: 3 });
+    // Le bureau (3 de large) est ramené contre le mur est de la pièce de 6 cases : colonne 3, pas la colonne 4 qu'une pièce de 9 accepterait.
+    expect(store.getState().decorEditor!.draft.items).toEqual([{ id: 'of-7-28', x: 3, y: 2 }]);
+  });
+
+  test('un geste qui mure la porte de la pièce compacte est refusé avec la raison', () => {
+    const s = store.getState();
+    s.setOfficeMap(map);
+    s.openDecorEditor({ ...desk, key: 'A5' });
+    s.holdDecorItem('of-7-28');
+    // Au-delà de la dernière colonne (la sixième) : le pointeur est hors de la pièce, l'ancre ramène le bureau dedans, mais un bureau sur la porte est refusé.
+    s.placeHeld({ x: 2, y: 6 });
+    expect(store.getState().decorEditor!.error).toBe('blocks_door');
+    expect(store.getState().decorEditor!.draft.items).toEqual([]);
+  });
+
+  test('porte au nord : un élément mural au-dessus de la porte est refusé', () => {
+    const s = store.getState();
+    s.setOfficeMap(map);
+    s.openDecorEditor({ ...desk, key: 'A6' });
+    s.holdDecorItem('of-15-0');
+    s.placeHeld({ x: 2, y: 0 });
+    expect(store.getState().decorEditor!.error).toBe('blocks_door');
+    expect(store.getState().decorEditor!.draft.items).toEqual([]);
+    s.placeHeld({ x: 4, y: 0 });
+    expect(store.getState().decorEditor!.error).toBeNull();
+    expect(store.getState().decorEditor!.draft.items).toEqual([{ id: 'of-15-0', x: 4, y: 0 }]);
   });
 });

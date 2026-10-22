@@ -1,26 +1,41 @@
 import { randomUUID } from 'node:crypto';
 import {
+  COFFEE_DURATION_MS,
+  DESK_PLACE_PREFIX,
   EMPTY_GROUPING,
+  GAME_LADDER_RATE,
+  GAME_RATE,
   OPEN_SPACE_GROUPING,
   MEDIA_STATE_RATE,
   MOVE_RATE,
   OFFICE_ROOM,
   DESK_RATE,
+  SPEAKING_RATE,
   STATUS_RATE,
   activityIdSchema,
   chatSendSchema,
+  debugBoostSchema,
+  debugGameSchema,
   deskCommandSchema,
+  gameCommandSchema,
+  gameLadderSchema,
   computeGroups,
   lightsSetSchema,
   mediaStateSchema,
   moveSchema,
+  musicSetSchema,
+  placeAt,
+  speakingSchema,
   statusSchema,
+  withinCoffeeReach,
   withinSwitchReach,
   type ChatAck,
   type ChatMessage,
   type DeskAck,
+  type GameAck,
   type GroupConfig,
   type GroupingState,
+  type LadderAck,
   type OfficeMap,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
@@ -28,9 +43,11 @@ import type { ActivityController } from '../activity/activity-controller';
 import type { ChatService } from '../chat/chat-service';
 import type { DeskController } from '../desks/desk-controller';
 import type { Env } from '../env';
+import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
+import type { MusicService } from '../music/music-service';
 import { createRateLimiter, type RateLimiter } from '../rate-limit';
 import type { TypedServer, TypedSocket } from './io';
 import type { World } from './world';
@@ -59,6 +76,20 @@ export interface HandlerDeps {
   lightsLimiter: RateLimiter;
   /** Les interrupteurs de la carte (leur centre, en pixels) : sans l'un d'eux à portée, la lumière ne se change pas. */
   switches: ReadonlyArray<{ x: number; y: number }>;
+  /** La musique de chaque pièce : `music:set` la règle. */
+  music: Pick<MusicService, 'get' | 'set' | 'wouldChange'>;
+  /** La limite de débit des réglages de musique (un par MUSIC_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
+  musicLimiter: RateLimiter;
+  /** La carte : le lieu où le monde voit la personne décide de la pièce dont elle règle la musique. */
+  map: OfficeMap;
+  /** Qui occupe cette place de bureau (son identifiant), ou null si elle est libre ou n'existe pas : dans un bureau, son propriétaire seul en règle la musique. */
+  deskOwnerOf: (deskKey: string) => string | null;
+  /** Les tables de jeu : `game:do` et `game:ladder` y passent, `debug:game` (E2E seulement) y remplace l'état d'une partie. */
+  games: Pick<GamesController, 'run' | 'ladder' | 'debugSet'>;
+  /** La limite de débit des cafés (une prise par COFFEE_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
+  coffeeLimiter: RateLimiter;
+  /** Les cases de service des machines à café de la carte (leur centre, en pixels) : sans l'une d'elles à portée, on ne se sert pas. */
+  coffees: ReadonlyArray<{ x: number; y: number }>;
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
@@ -77,7 +108,10 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   // chaque init et à chaque changement de micro, caméra ou partage.
   const statusLimiter = createRateLimiter({ ...STATUS_RATE, now: d.now });
   const mediaLimiter = createRateLimiter({ ...MEDIA_STATE_RATE, now: d.now });
+  const speakingLimiter = createRateLimiter({ ...SPEAKING_RATE, now: d.now });
   const deskLimiter = createRateLimiter({ ...DESK_RATE, now: d.now });
+  const gameLimiter = createRateLimiter({ ...GAME_RATE, now: d.now });
+  const ladderLimiter = createRateLimiter({ ...GAME_LADDER_RATE, now: d.now });
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
   // flot de messages invalides ne coûte presque rien. Refusé par le monde (trop vite, case bloquante, hors carte), il renvoie à
@@ -121,6 +155,21 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     if (!media.success || !d.world.get(userId)) return;
     d.world.setMedia(userId, media.data);
     io.to(OFFICE_ROOM).emit('media:changed', { id: userId, media: media.data });
+    // Un micro coupé ne parle plus : la bulle s'éteint chez tout le monde, sans attendre le « je me tais » du client.
+    if (!media.data.mic && d.world.setSpeaking(userId, false)) io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: false });
+  });
+
+  // « Je parle » ou « je me tais », pour la bulle au-dessus de l'avatar : à tout le bureau, émetteur compris, mais seulement quand l'état change
+  // (le client redit « je parle » toutes les SPEAKING_HEARTBEAT_MS : cela remet le délai de SPEAKING_TTL_MS à zéro, sans rien rediffuser). « Je parle »
+  // est ignoré quand le micro est coupé, ou que l'état d'activité porté ne laisse pas entendre (`heard` faux) : aucun son ne part alors de cette
+  // personne. « Je me tais » passe toujours. Même limite de débit que le statut, par socket.
+  socket.on('speaking:set', (payload) => {
+    if (!speakingLimiter.take(socket.id)) return;
+    const speaking = speakingSchema.safeParse(payload);
+    const me = d.world.get(userId);
+    if (!speaking.success || !me) return;
+    if (speaking.data && (!me.media.mic || me.activity?.heard === false)) return;
+    if (d.world.setSpeaking(userId, speaking.data)) io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: speaking.data });
   });
 
   // Le chat, avec accusé de réception. Une socket dont le joueur n'est pas (encore, ou plus) au monde est ignorée sans réponse, comme
@@ -193,6 +242,43 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     });
   });
 
+  // Les commandes d'une table de jeu (regarder, s'asseoir, se dire prêt, jouer un coup, abandonner, proposer la nulle, inviter, répondre à une invitation), avec accusé de
+  // réception : `game:table` dit ce qui a changé à tout le bureau. Le tronc commun, comme `desk:do` : une socket qui n'a pas reçu son init, ou dont la personne n'est pas au
+  // monde, est ignorée sans réponse ; puis, dans cet ordre : 1. au-delà de GAME_RATE par socket : `rate_limited` ; 2. commande invalide (gameCommandSchema) : `invalid` ; 3. la
+  // commande (GamesService), qui ne lève jamais : une erreur imprévue répond `unavailable`.
+  socket.on('game:do', (payload, ack) => {
+    const reply = (r: GameAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!gameLimiter.take(socket.id)) return reply({ ok: false, error: 'rate_limited' });
+    const command = gameCommandSchema.safeParse(payload);
+    if (!command.success) return reply({ ok: false, error: 'invalid' });
+    d.games.run(userId, command.data).then(reply, (err: unknown) => {
+      logServerError(d.logger, { err, userId }, 'Commande de jeu impossible');
+      reply({ ok: false, error: 'unavailable' });
+    });
+  });
+
+  // Le classement d'un jeu : les meilleurs et le rang de cette personne. Même tronc : ignorée sans init ; au-delà de GAME_LADDER_RATE par socket : `rate_limited` ; jeu inconnu :
+  // `invalid` ; une base qui ne répond pas : `unavailable`.
+  socket.on('game:ladder', (payload, ack) => {
+    const reply = (r: LadderAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!ladderLimiter.take(socket.id)) return reply({ ok: false, error: 'rate_limited' });
+    const request = gameLadderSchema.safeParse(payload);
+    if (!request.success) return reply({ ok: false, error: 'invalid' });
+    d.games.ladder(request.data.game, userId).then(
+      (ladder) => reply({ ok: true, ...ladder }),
+      (err: unknown) => {
+        logServerError(d.logger, { err, userId }, 'Lecture du classement impossible');
+        reply({ ok: false, error: 'unavailable' });
+      },
+    );
+  });
+
   // Allumer ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
   // monde voit la personne (jamais là où elle dit être). Aucune réponse, quoi qu'il arrive : la confirmation est `lights:changed`, que tout
   // le bureau reçoit, émetteur compris. Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme
@@ -217,12 +303,69 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     );
   });
 
+  // Régler la musique de la pièce où l'on est : celle où le monde voit la personne (jamais celle qu'elle dit), si elle a une enceinte ; dans un bureau, seul son
+  // propriétaire le fait. Aucune réponse, quoi qu'il arrive : la confirmation est `music:changed`, que tout le bureau reçoit, émetteur compris (ceux qui sont
+  // ailleurs aussi : ils en ont besoin en y entrant). Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme pour le
+  // chat. Puis, dans cet ordre, ce qui ne passe pas est ignoré :
+  // 1. charge utile invalide (musicSetSchema) ;
+  // 2. la clé n'est pas celle du lieu où est la personne, ou ce lieu n'a pas d'enceinte (la rue, la salle client), ou c'est le bureau d'un autre ;
+  // 3. la pièce est déjà dans l'état demandé : la demande est idempotente, elle ne change rien et ne compte pas dans la limite ;
+  // 4. plus d'un réglage par personne et par MUSIC_RATE_MS : la limite est celle du compte, que se reconnecter ne remet pas à zéro.
+  // Les réglages d'une même pièce passent l'un après l'autre (MusicService) : deux personnes qui demandent le même état en même temps ne le changent qu'une
+  // fois, et une seule diffusion part. Une base qui n'enregistre pas le réglage le laisse sans effet : journalisé, rien ne part.
+  socket.on('music:set', (payload) => {
+    const me = d.world.get(userId);
+    if (!me || !socket.rooms.has(OFFICE_ROOM)) return;
+    const request = musicSetSchema.safeParse(payload);
+    if (!request.success) return;
+    const place = placeAt(d.map, me.x, me.y);
+    if (place === null || place.key !== request.data.place || !place.music) return;
+    if (place.kind === 'desk' && d.deskOwnerOf(place.key.slice(DESK_PLACE_PREFIX.length)) !== userId) return;
+    const { place: key, ...patch } = request.data;
+    if (!d.music.wouldChange(key, patch) || !d.musicLimiter.take(userId)) return;
+    d.music.set(key, patch, { id: userId, name: me.name }).then(
+      (state) => {
+        if (state) io.to(OFFICE_ROOM).emit('music:changed', { place: key, state });
+      },
+      (err: unknown) => logServerError(d.logger, { err, userId, place: key }, 'Changement de la musique impossible'),
+    );
+  });
+
+  // Prendre un café, de près : à COFFEE_REACH_TILES cases ou moins d'une machine de la carte, là où le monde voit la personne (jamais là où elle dit
+  // être). Elle a alors COFFEE_DURATION_MS de vitesse doublée, que tout le bureau apprend (`coffee:changed`, émetteur compris : c'est sa confirmation) ;
+  // un café pris pendant un autre remet le compte à zéro. Aucune réponse, quoi qu'il arrive. Une socket qui n'a pas reçu son init, ou dont la personne n'est
+  // pas au monde, est ignorée, comme pour le chat. Puis, dans cet ordre, ce qui ne passe pas est ignoré : 1. trop loin de toute machine ; 2. plus d'un
+  // café par personne et par COFFEE_RATE_MS (la limite est celle du compte, que se reconnecter ne remet pas à zéro). Le statut n'y change rien : se
+  // servir un café en « Ne pas déranger » est permis.
+  socket.on('coffee:take', () => {
+    const me = d.world.get(userId);
+    if (!me || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!withinCoffeeReach(me, d.coffees) || !d.coffeeLimiter.take(userId)) return;
+    d.world.setBoost(userId, COFFEE_DURATION_MS);
+    io.to(OFFICE_ROOM).emit('coffee:changed', { id: userId, ms: COFFEE_DURATION_MS });
+  });
+
   // Réservé aux tests de bout en bout : sans E2E=1 (que loadEnv refuse en production), l'événement n'existe pas. Le joueur est posé
   // là, à l'arrêt, si la case est praticable (World.teleport) ; les autres l'apprennent au prochain tick, comme pour un mouvement.
   if (d.env.E2E === '1') {
     socket.on('debug:teleport', (payload) => {
       const point = teleportSchema.safeParse(payload);
       if (point.success) d.world.teleport(userId, point.data.x, point.data.y);
+    });
+    // Donne du café à la personne (le serveur relève sa limite de vitesse, et tout le bureau l'apprend, comme avec la machine), 0 le retire : de quoi
+    // tester la vitesse du café sans aller à la machine, ni attendre ses 30 s.
+    socket.on('debug:boost', (payload) => {
+      const boost = debugBoostSchema.safeParse(payload);
+      if (!boost.success || !d.world.get(userId)) return;
+      d.world.setBoost(userId, boost.data.ms === 0 ? null : boost.data.ms);
+      io.to(OFFICE_ROOM).emit('coffee:changed', { id: userId, ms: boost.data.ms });
+    });
+    // Remplace l'état de la partie en cours à une table par un état fabriqué (il doit passer les invariants du jeu), et impose les prochains dés : de quoi jouer une fin de
+    // partie sans en jouer toute la longueur.
+    socket.on('debug:game', (payload) => {
+      const request = debugGameSchema.safeParse(payload);
+      if (!request.success || !d.world.get(userId)) return;
+      d.games.debugSet(request.data.game, request.data.state, request.data.rolls);
     });
   }
 }
@@ -249,6 +392,9 @@ function every(ms: number, logger: Logger, failure: string, fn: () => void): () 
 // ticks, pas à dire l'heure. Le minuteur ne retient pas le processus ; la fonction rendue l'arrête.
 export function startWorldTicks(io: TypedServer, world: World, tickMs: number, now: () => number, logger: Logger): () => void {
   return every(tickMs, logger, 'Envoi du world:tick impossible', () => {
+    // Une bulle de parole que plus rien ne tient (SPEAKING_TTL_MS sans nouveau « je parle ») s'éteint pour tout le monde, comme un café qui finit.
+    for (const id of world.expireSpeaking()) io.to(OFFICE_ROOM).emit('speaking:changed', { id, speaking: false });
+    for (const id of world.expireBoosts()) io.to(OFFICE_ROOM).emit('coffee:changed', { id, ms: 0 });
     const moves = world.drainMoves();
     if (moves.length === 0) return;
     io.to(OFFICE_ROOM).volatile.emit('world:tick', { t: Math.round(now()), moves });

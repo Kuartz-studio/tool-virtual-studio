@@ -1,6 +1,6 @@
 import { DESK_KNOCK_COOLDOWN_MS, DESK_RATE, type DeskAck, type DeskCommand, type MovePayload } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS } from './helpers/decor';
+import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS, defaultSetupOf } from './helpers/decor';
 import { enter, nextEvent, record, sleep, startTestServer, type ClientSocket, type TestServer } from './helpers/realtime';
 import { findUserByEmail } from './helpers/test-app';
 
@@ -49,7 +49,7 @@ describe('les places', () => {
     expect(a.init.desks.map((d) => d.key)).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6']);
     // Personne n'a décoré sa pièce : toutes montrent le poste de travail par défaut.
     expect(a.init.desks[0]).toEqual({ key: 'A1', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP });
-    expect(a.init.desks.every((d) => d.floor === DEFAULT_SETUP.floor && d.items.length === DEFAULT_SETUP.items.length)).toBe(true);
+    expect(a.init.desks.every((d) => d.floor === DEFAULT_SETUP.floor && d.items.length === defaultSetupOf(d.key).items.length)).toBe(true);
     expect(a.init.closedDesks).toEqual([]);
 
     const changed = nextEvent(a.socket, 'desk:changed');
@@ -78,7 +78,7 @@ describe('les places', () => {
     await sleep(60);
     expect(seenByB.payloadsOf('desk:changed')).toEqual([
       { key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
-      { key: 'A6', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
+      { key: 'A6', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...defaultSetupOf('A6') },
     ]);
     expect(await run(b.socket, { type: 'claim', key: 'A6' })).toEqual({ ok: false, error: 'taken' });
     expect(await run(b.socket, { type: 'claim', key: 'nulle-part' })).toEqual({ ok: false, error: 'unknown_desk' });
@@ -276,6 +276,39 @@ describe('la vie des bureaux', () => {
     await sleep(300);
     expect(srv.realtime.desks.get('A5')).toEqual({ key: 'A5', ownerId: a.id, ownerName: 'a', name: 'Chez A', locked: true, closedByState: false, ...CUSTOM_DECOR });
     expect(srv.realtime.desks.get('A1')?.ownerId).toBeNull();
+  });
+});
+
+describe('le seuil : une porte qui se ferme ne coince personne', () => {
+  // Le point de sortie devant la porte de A1, côté rue : le centre de la case (5, 11).
+  const STREET = { x: 160, y: 368 };
+
+  test('verrouiller pendant que quelqu\'un est sur le seuil : il est repoussé dans la rue, devant la porte, et son navigateur s\'y replace', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');   // A1
+    const b = await person(srv, 'b@x.fr');   // A2
+    await teleport(b, DOORWAY);
+    expect(posOf(srv, b)).toEqual(DOORWAY);
+    const corrected = nextEvent(b.socket, 'move:correct');
+    expect(await run(a.socket, { type: 'lock', locked: true })).toEqual({ ok: true });
+    expect(await corrected).toEqual(STREET);
+    expect(posOf(srv, b)).toEqual(STREET);
+  });
+
+  test('ni le propriétaire sur son seuil, ni celui qui est dans la rue, ni celui qui est dans la pièce (même admis) ne bougent', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');   // A1
+    const b = await person(srv, 'b@x.fr');
+    const c = await person(srv, 'c@x.fr');
+    await teleport(a, DOORWAY);
+    await teleport(b, OUTSIDE);
+    await teleport(c, INSIDE);
+    expect(await run(a.socket, { type: 'admit', userId: c.id })).toEqual({ ok: true });
+    expect(await run(a.socket, { type: 'lock', locked: true })).toEqual({ ok: true });
+    await sleep(100);
+    expect(posOf(srv, a)).toEqual(DOORWAY);
+    expect(posOf(srv, b)).toEqual(OUTSIDE);
+    expect(posOf(srv, c)).toEqual(INSIDE);
   });
 });
 

@@ -127,3 +127,59 @@ describe('/api/me/states', () => {
     expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toEqual([]);
   });
 });
+
+// L'emplacement d'un mode : la clé d'une destination de la carte (la salle de sport, la salle de jeu) ; la grande carte en a, celle de développement n'en a pas.
+describe('l\'emplacement d\'un mode', () => {
+  const office = { env: { MAP_KEY: 'office' } };
+
+  test('une destination de la carte : créé, rendu par la liste, modifié ; sans emplacement, le champ n\'existe pas', async () => {
+    const t = await createTestApp(office);
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    const created = await post(t, lea.cookie, { ...body, place: 'gym' });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ label: 'En focus', place: 'gym' });
+    expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toEqual([created.body]);
+
+    const moved = await request(t.app).put(`/api/me/states/${created.body.id}`).set('Cookie', lea.cookie).send({ ...body, place: 'game' });
+    expect(moved.status).toBe(200);
+    expect(moved.body.place).toBe('game');
+    const cleared = await request(t.app).put(`/api/me/states/${created.body.id}`).set('Cookie', lea.cookie).send(body);
+    expect('place' in cleared.body).toBe(false);
+    const plain = await post(t, lea.cookie, body);
+    expect('place' in plain.body).toBe(false);
+  });
+
+  test.each([
+    ['un lieu qui n\'est pas une destination (le café, la place)', { ...body, place: 'cafe' }],
+    ['une clé que la carte ne connaît pas', { ...body, place: 'nulle-part' }],
+    ['une clé de bureau (on y va à pied, ou par « Aller à mon bureau »)', { ...body, place: 'desk:A1' }],
+    ['un emplacement vide', { ...body, place: '' }],
+    ['un emplacement qui n\'est pas une chaîne', { ...body, place: 3 }],
+  ])('créer ou modifier avec %s : 400 invalid', async (_name, payload) => {
+    const t = await createTestApp(office);
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    const res = await post(t, lea.cookie, payload);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid' });
+    const created = (await post(t, lea.cookie, body)).body as ActivityState;
+    const edit = await request(t.app).put(`/api/me/states/${created.id}`).set('Cookie', lea.cookie).send(payload as object);
+    expect(edit.status).toBe(400);
+  });
+
+  test('la carte de développement n\'a aucune destination : tout emplacement est refusé', async () => {
+    const t = await createTestApp();
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    expect((await post(t, lea.cookie, { ...body, place: 'gym' })).status).toBe(400);
+  });
+
+  test('les modes tout prêts ne sont pas à soi : on ne les modifie ni ne les supprime (404), et la liste ne les contient pas', async () => {
+    const t = await createTestApp(office);
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    const edited: unknown[] = [];
+    t.events.on('activity:edited', (change) => edited.push(change));
+    expect((await request(t.app).put('/api/me/states/preset:sport').set('Cookie', lea.cookie).send(body)).status).toBe(404);
+    expect((await request(t.app).delete('/api/me/states/preset:focus').set('Cookie', lea.cookie)).status).toBe(404);
+    expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toEqual([]);
+    expect(edited).toEqual([]);
+  });
+});

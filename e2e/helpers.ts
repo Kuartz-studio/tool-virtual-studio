@@ -100,7 +100,7 @@ export function musicButton(page: Page): Locator {
 }
 
 // Ouvre le juke-box (la fenêtre « Musique et ambiances », au-dessus du bouton du dock), et le renvoie : la musique, son volume, les ambiances et les
-// effets sonores. Ses cartes d'ambiance sont des boutons radio, que le nom de l'ambiance (« Crépuscule ») ou « Selon l'endroit » désigne.
+// effets sonores. Ses cartes d'ambiance sont des boutons radio, que le nom de l'ambiance (« Crépuscule ») ou « Selon la pièce » désigne.
 export async function openJukebox(page: Page): Promise<Locator> {
   await musicButton(page).click();
   const jukebox = page.getByRole('dialog', { name: 'Musique et ambiances', exact: true });
@@ -127,8 +127,18 @@ const DESK_WALK_TIMEOUT = 60_000;
 export async function openDeskPanel(page: Page): Promise<Locator> {
   const settings = deskSettingsButton(page);
   if (!(await settings.isVisible())) {
-    await goToDeskButton(page).click();
-    await expect(settings).toBeVisible({ timeout: DESK_WALK_TIMEOUT });
+    // La marche automatique peut s'arrêter en route (une correction du serveur, un onglet qui passe un instant en arrière-plan, une machine surchargée où le jeu tourne au ralenti) : tant qu'on n'est
+    // pas arrivé, on la relance dès qu'elle ne marche plus. Elle repart de là où l'avatar est.
+    await expect
+      .poll(
+        async () => {
+          if (await settings.isVisible()) return true;
+          if (!(await page.evaluate(() => window.__office?.autoWalking() ?? false))) await goToDeskButton(page).click({ timeout: 2000 }).catch(() => undefined);
+          return false;
+        },
+        { timeout: DESK_WALK_TIMEOUT, intervals: [500, 1000] },
+      )
+      .toBe(true);
   }
   await settings.click();
   const panel = page.getByRole('complementary', { name: 'Mon bureau', exact: true });
@@ -303,4 +313,26 @@ export async function playerSeenBy(page: Page, id: string): Promise<{ x: number;
 // Le nombre d'avatars que cette page dessine pour ce joueur.
 export async function avatarsOf(page: Page, id: string): Promise<number> {
   return page.evaluate((playerId) => window.__office?.avatarsOf(playerId) ?? 0, id);
+}
+
+// Place l'avatar sur ce point (window.__office.teleport, que le serveur n'accepte qu'avec E2E=1), et attend qu'il y soit, arrêté.
+export async function teleportTo(page: Page, spot: { x: number; y: number }): Promise<void> {
+  await page.evaluate(({ x, y }) => window.__office!.teleport(x, y), spot);
+  await expect.poll(() => selfAt(page)).toMatchObject(spot);
+}
+
+// Chacun reçoit un bureau en arrivant sur la vraie carte, et les tests de personnalisation en cherchent de libres sur ce serveur : un test qui n'a pas
+// besoin du sien le rend tout de suite. L'avatar y marche, puis revient où il était.
+export async function giveDeskBack(page: Page): Promise<void> {
+  if (!(await goToDeskButton(page).or(deskSettingsButton(page)).isVisible())) return;
+  const { x, y } = await selfAt(page);
+  const panel = await openDeskPanel(page);
+  const giveBack = panel.getByRole('button', { name: 'Rendre mon bureau' });
+  await expect(giveBack).toBeVisible();
+  await giveBack.click();
+  await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
+  await panel.getByRole('button', { name: 'Fermer le panneau Mon bureau' }).click();
+  await expect(panel).toHaveCount(0);
+  await expect(goToDeskButton(page).or(deskSettingsButton(page))).toHaveCount(0);
+  await teleportTo(page, { x, y });
 }

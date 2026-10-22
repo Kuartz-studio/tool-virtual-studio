@@ -1,5 +1,4 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
-import { zoomPercent } from '../game/zoom';
 import { fr, t } from '../i18n/fr';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { ChatIcon, DecorIcon, FlaskIcon, MoreIcon, ShieldIcon, UsersIcon, ZoomResetIcon } from './icons';
@@ -31,7 +30,7 @@ interface MoreEntry {
 // l'autre, Entrée ou Espace choisit, Échap ferme et rend le focus au bouton.
 export function SocialDock({ panels }: { panels: PanelControls }) {
   const online = useOfficeStore((state) => (state.self === null ? 0 : 1) + Object.keys(state.players).length);
-  const level = useOfficeStore((state) => state.zoomLevel);
+  const percent = useOfficeStore((state) => state.zoomPercent);
   const resetZoom = useOfficeStore((state) => state.resetZoom);
   const desks = useOfficeStore((state) => state.desks);
   const selfId = useOfficeStore((state) => state.selfId);
@@ -50,7 +49,7 @@ export function SocialDock({ panels }: { panels: PanelControls }) {
     { key: 'decor', label: fr.decor.toggle, icon: <DecorIcon />, disabled: !panels.ready || !hasDesk, panel: true, run: (opener) => panels.show('decor', opener) },
     ...(panels.admin ? [{ key: 'admin', label: fr.admin.toggle, icon: <ShieldIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('admin', opener) }] : []),
     ...(panels.sim ? [{ key: 'sim', label: fr.sim.toggle, icon: <FlaskIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('sim', opener) }] : []),
-    { key: 'zoom', label: fr.zoom.reset, name: fr.zoom.reset, hint: t(fr.zoom.level, { percent: zoomPercent(level) }), icon: <ZoomResetIcon />, run: () => resetZoom() },
+    { key: 'zoom', label: fr.zoom.reset, name: fr.zoom.reset, hint: t(fr.zoom.level, { percent }), icon: <ZoomResetIcon />, run: () => resetZoom() },
   ];
 
   // Les lignes qu'on peut choisir : celles qui ne sont pas inactives.

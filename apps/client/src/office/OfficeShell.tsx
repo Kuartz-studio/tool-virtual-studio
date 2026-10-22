@@ -1,5 +1,6 @@
 import type { Role } from '@bureau/shared';
 import { Activity, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { GamePanel } from '../games/GamePanel';
 import { fr } from '../i18n/fr';
 import { listActivityStates } from '../lib/activity-api';
 import { useMailMode } from '../lib/config';
@@ -12,6 +13,7 @@ import { selectChatUnread, useOfficeStore } from '../state/office-store';
 import { AdminPanel } from './AdminPanel';
 import { ChatPanel } from './ChatPanel';
 import { CharacterBuilder } from './CharacterBuilder';
+import { CoffeePill } from './CoffeePill';
 import { DecorPanel } from './DecorPanel';
 import { ControlBar } from './ControlBar';
 import { DeskPanel } from './DeskPanel';
@@ -65,7 +67,8 @@ interface OfficeShellProps {
 }
 
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
-// - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), et en haut au milieu les vignettes de la conversation (VideoStrip) ;
+// - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), avec dessous la pastille du café quand on en a un (CoffeePill), et en haut au
+//   milieu les vignettes de la conversation (VideoStrip) ;
 // - sous elles, les messages passagers (Toasts) : un toc toc à la porte de son bureau, une porte fermée ;
 // - à droite, un seul panneau à la fois (Personnes, Chat, Mon bureau, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
 // - en bas, la barre (ControlBar) : des docks à icônes (la puce « Moi » avec ton statut, le micro, la caméra, la musique et le bureau, le zoom, le
@@ -163,6 +166,18 @@ export function OfficeShell({
   // qu'ouvert, ne saurait où l'on a marché avant son ouverture. La puce du lieu et le filtre « Ici » le prennent d'elle : un seul lieu pour les deux.
   const place = usePlace();
 
+  // Le panneau d'une table de jeu : le magasin le demande (la touche E devant une table, « Accepter » une invitation), la coque l'ouvre à la place de celui d'avant ; il se ferme avec
+  // le panneau (un autre panneau qui s'ouvre, « Fermer »), et le magasin n'en demande plus.
+  const gameOpen = useOfficeStore((state) => state.gameOpen);
+  useEffect(() => {
+    if (gameOpen !== null) show('game', null);
+    // Seulement quand une table est demandée : `show` change à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameOpen]);
+  useEffect(() => {
+    if (panel !== 'game' && useOfficeStore.getState().gameOpen !== null) useOfficeStore.getState().openGame(null);
+  }, [panel]);
+
   const panels: PanelControls = {
     open: panel,
     toggle: (id, from) => (panel === id ? close() : show(id, from)),
@@ -180,6 +195,7 @@ export function OfficeShell({
       {children}
       <div ref={layer} className="office-ui" data-theme={lightsOn ? 'day' : 'night'} data-lights={lightsOn ? 'on' : 'off'} inert={replaced}>
         <WhereChip place={place} />
+        <CoffeePill />
         <div className="office-top">
           <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />
         </div>
@@ -206,6 +222,7 @@ export function OfficeShell({
           {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
           {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}
           {panel === 'states' && <StatesPanel id={idOf('states')} socket={socket} onClose={close} />}
+          {panel === 'game' && gameOpen !== null && <GamePanel id={idOf('game')} socket={socket} onClose={close} />}
           {isAdmin && panel === 'admin' && <AdminPanel id={idOf('admin')} selfId={user.id} mail={mail} onClose={close} />}
           {__SIM__ && panel === 'sim' && <SimPanel id={idOf('sim')} onClose={close} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont

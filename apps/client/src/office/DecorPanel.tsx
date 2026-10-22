@@ -1,12 +1,12 @@
 import {
   DECOR_CATEGORIES,
-  DEFAULT_DESK_DECOR,
   FLOOR_THEMES,
   MAX_DECOR_ITEMS,
   WALL_THEMES,
   decorCategoryLabel,
   decorItem,
   decorItemsOf,
+  defaultDeskDecor,
   type DecorCategoryId,
 } from '@bureau/shared';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -15,7 +15,7 @@ import { sendDeskCommand } from '../net/desk-commands';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
-import { sameDecor } from './decor-draft';
+import { roomOfDesk, sameDecor } from './decor-draft';
 import { EraserIcon, CloseIcon } from './icons';
 import { deskErrorText } from './desks';
 import { ReplaceDialog } from './ReplaceDialog';
@@ -252,7 +252,7 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
               </button>
             </div>
             <div className="decor-footer-row">
-              <button type="button" className="bar-button" onClick={() => store().setDecorDraft({ ...DEFAULT_DESK_DECOR, items: [...DEFAULT_DESK_DECOR.items] })}>
+              <button type="button" className="bar-button" onClick={() => editor && store().setDecorDraft(defaultDeskDecor(roomOfDesk(store().officeMap, editor.deskKey)))}>
                 {fr.decor.reset}
               </button>
               <button type="button" className="bar-button" onClick={() => editor && store().setDecorDraft({ ...editor.draft, items: [] })}>

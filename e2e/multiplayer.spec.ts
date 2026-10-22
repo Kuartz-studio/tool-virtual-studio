@@ -81,7 +81,8 @@ test('window.__office.teleport : A va là, et B l\'y voit sans glisser ; refusé
 
   // Une case libre de l'open space, loin de l'apparition.
   await a.page.evaluate(() => window.__office!.teleport(400, 420));
-  expect(await selfAt(a.page)).toEqual({ id: a.id, x: 400, y: 420 });
+  // `self` est tenu à jour à chaque image : sur une machine chargée, la lecture peut précéder l'image qui suit la téléportation.
+  await expect.poll(() => selfAt(a.page), { timeout: WALK_TIMEOUT }).toEqual({ id: a.id, x: 400, y: 420 });
   // Chez B, A saute directement (plus de TELEPORT_SNAP_PX) : jamais vu entre les deux.
   const seen: Array<{ x: number; y: number }> = [];
   await expect
@@ -299,4 +300,33 @@ test('B perd la connexion pendant que A part, que C bouge et que D arrive : à s
   await b.page.keyboard.up('ArrowRight');
   const bMoved = await restingAt(b.page);
   await expect.poll(() => playerSeenBy(c.page, b.id), { timeout: WALK_TIMEOUT }).toMatchObject({ x: bMoved.x, y: bMoved.y });
+});
+
+// La bulle de parole : quand quelqu'un parle, tout le bureau le voit, même loin de lui et hors de sa conversation. Sans room audio, les tests n'ont pas
+// de voix : window.__office.media.speak(true) fait parler l'avatar local, comme le ferait la détection de la room, et le reste est le vrai chemin
+// (le délai de 150 ms, speaking:set, le serveur, speaking:changed, la scène de l'autre).
+test('la bulle de parole : quand A parle, B, à l\'autre bout de la carte et hors de sa conversation, voit sa bulle, qui s\'éteint quand A se tait', async ({ browser }) => {
+  const a = await arrive(browser, 'Anouk');
+  const b = await arrive(browser, 'Basile');
+  await expectToSee(b.page, a.id);
+  // B est à l'autre bout de la ligne d'apparition, à 19 cases de A : bien au-delà de ce qui fait une conversation.
+  await b.page.evaluate(() => window.__office!.teleport(688, 240));
+  await expect.poll(async () => (await selfAt(b.page)).x).toBe(688);
+  const bubblesOf = (page: Page) => page.evaluate(() => window.__office!.bubbles());
+  expect(await bubblesOf(b.page)).not.toContain(a.id);
+
+  // La bulle de soi s'allume sans attendre le serveur : deux images plus tard, avant même que « je parle » parte (150 ms de parole continue).
+  const own = await a.page.evaluate(() => {
+    window.__office!.media.speak(true);
+    return new Promise<string[]>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve(window.__office!.bubbles()))));
+  });
+  expect(own).toContain(a.id);
+
+  // B la voit, dans les secondes qui suivent : les 150 ms de parole, le serveur, le réseau, l'image.
+  await expect.poll(() => bubblesOf(b.page), { timeout: 5000 }).toContain(a.id);
+
+  // A se tait : sa bulle s'éteint chez lui tout de suite, chez B après 700 ms de silence.
+  await a.page.evaluate(() => window.__office!.media.speak(false));
+  await expect.poll(() => bubblesOf(a.page)).not.toContain(a.id);
+  await expect.poll(() => bubblesOf(b.page), { timeout: 5000 }).not.toContain(a.id);
 });

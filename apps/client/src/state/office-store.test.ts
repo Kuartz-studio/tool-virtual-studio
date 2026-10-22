@@ -1,6 +1,6 @@
-import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer } from '@bureau/shared';
-import { beforeEach, describe, expect, test } from 'vitest';
-import { DEFAULT_ZOOM_LEVEL, MAX_ZOOM_LEVEL } from '../game/zoom';
+import { CHAT_HISTORY_LIMIT, type ChatMessage, type GameId, type GameInvite, type GameMatchView, type GameTableView, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { ZOOM_BUTTON_STEP, ZOOM_DEFAULT_PERCENT, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
 
 // Le réglage de la pièce d'un bureau qui n'a rien de particulier.
@@ -79,6 +79,21 @@ test('removePlayer : retire ; un inconnu, ou soi-même, ne change rien', () => {
   store.getState().removePlayer('inconnu');
   store.getState().removePlayer('moi');
   expect(store.getState()).toBe(before);
+});
+
+test('setSpeaking : la parole d\'un autre, ou la sienne ; se taire retire la clé ; un inconnu est ignoré', () => {
+  store.getState().applyInit(init(SELF, [A, B]));
+  const { setSpeaking } = store.getState();
+  setSpeaking('a', true);
+  setSpeaking('moi', true);
+  expect(store.getState().players.a?.speaking).toBe(true);
+  expect(store.getState().self?.speaking).toBe(true);
+  expect(store.getState().players.b).not.toHaveProperty('speaking');
+  setSpeaking('a', false);
+  expect(store.getState().players.a).not.toHaveProperty('speaking');
+  const before = store.getState().players;
+  setSpeaking('inconnu', true);
+  expect(store.getState().players).toBe(before);
 });
 
 test('setStatus, setMedia, setProfile : pour un autre joueur, et pour soi-même', () => {
@@ -454,26 +469,46 @@ describe('zoom', () => {
   beforeEach(() => {
     useOfficeStore.getState().reset();
   });
+  const store = () => useOfficeStore.getState();
 
-  test('au départ, la vue de départ ; un cran plus près ou plus loin, arrêté aux bornes', () => {
-    const store = () => useOfficeStore.getState();
-    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
+  test('au départ, 100 % ; chaque cran fait 5 %, arrêté à 25 % et à 200 %', () => {
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
     store().stepZoom(1);
-    store().stepZoom(1);
-    expect(store().zoomLevel).toBe(MAX_ZOOM_LEVEL);
-    for (let i = 0; i < 10; i++) store().stepZoom(-1);
-    expect(store().zoomLevel).toBe(0);
+    expect(store().zoomPercent).toBe(105);
+    store().stepZoom(-3);
+    expect(store().zoomPercent).toBe(90);
+    store().stepZoom(1000);
+    expect(store().zoomPercent).toBe(ZOOM_MAX_PERCENT);
+    store().stepZoom(-1000);
+    expect(store().zoomPercent).toBe(ZOOM_MIN_PERCENT);
   });
 
-  test('setZoomLevel ramène un niveau hors bornes aux bornes ; resetZoom et reset() rétablissent la vue de départ', () => {
-    const store = () => useOfficeStore.getState();
-    store().setZoomLevel(99);
-    expect(store().zoomLevel).toBe(MAX_ZOOM_LEVEL);
+  test('un cran de 10 % (les boutons) va au cran voisin de la grille de 10, y compris depuis le minimum', () => {
+    store().stepZoom(1, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(110);
+    store().stepZoom(-2, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(90);
+    store().setZoomPercent(ZOOM_MIN_PERCENT);
+    store().stepZoom(1, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(30);
+  });
+
+  test('setZoomPercent ramène un pourcentage hors bornes aux bornes, et un pourcentage entre deux crans au cran de 5 % le plus proche', () => {
+    store().setZoomPercent(999);
+    expect(store().zoomPercent).toBe(ZOOM_MAX_PERCENT);
+    store().setZoomPercent(103);
+    expect(store().zoomPercent).toBe(105);
+    store().setZoomPercent(Number.NaN);
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
+  });
+
+  test('resetZoom et reset() rétablissent 100 %', () => {
+    store().setZoomPercent(30);
     store().resetZoom();
-    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
-    store().setZoomLevel(0);
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
+    store().setZoomPercent(30);
     store().reset();
-    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
   });
 });
 
@@ -518,5 +553,227 @@ describe('la lumière', () => {
     store.getState().applyInit({ ...init(SELF, [A]), lights: OFF });
     store.getState().reset();
     expect(store.getState().lights).toEqual(LIT);
+  });
+});
+
+// La musique des pièces : le serveur dit l'état de celles qu'on a réglées (init, puis `music:changed`) ; les autres sont allumées, leur ambiance par défaut.
+describe('la musique des pièces', () => {
+  const OFF: RoomMusic = { on: false, scene: null, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
+  const QUEST: RoomMusic = { on: true, scene: 'quest', by: { id: 'b', name: 'B' }, at: 1_700_000_005_000 };
+
+  test('avant tout réglage : aucune pièce n\'a d\'état', () => {
+    expect(store.getState().music).toEqual({});
+  });
+
+  test('init : les pièces réglées vont au magasin ; un init sans `music` dit que personne n\'a rien réglé', () => {
+    store.getState().applyInit({ ...init(SELF, [A]), music: { game: OFF } });
+    expect(store.getState().music).toEqual({ game: OFF });
+    store.getState().applyInit(init(SELF, [A]));
+    expect(store.getState().music).toEqual({});
+  });
+
+  test('setRoomMusic : l\'état de cette pièce, tel que le serveur l\'annonce ; les autres pièces ne changent pas', () => {
+    store.getState().setRoomMusic('game', OFF);
+    store.getState().setRoomMusic('gym', QUEST);
+    expect(store.getState().music).toEqual({ game: OFF, gym: QUEST });
+    store.getState().setRoomMusic('game', { ...OFF, on: true, at: OFF.at + 1 });
+    expect(store.getState().music.game).toMatchObject({ on: true, at: OFF.at + 1 });
+    expect(store.getState().music.gym).toBe(QUEST);
+  });
+
+  test('un nouvel init remplace tout : ce qu\'on croyait avant une coupure n\'a plus cours', () => {
+    store.getState().applyInit({ ...init(SELF, [A]), music: { game: OFF } });
+    store.getState().setRoomMusic('gym', QUEST);
+    store.getState().applyInit({ ...init(SELF, [A]), music: { cafe: QUEST } });
+    expect(store.getState().music).toEqual({ cafe: QUEST });
+  });
+
+  test('setRoomMusic ne change que la musique : les joueurs restent les mêmes objets ; reset efface tout', () => {
+    store.getState().applyInit(init(SELF, [A]));
+    const before = store.getState();
+    store.getState().setRoomMusic('game', OFF);
+    expect(store.getState().players).toBe(before.players);
+    expect(store.getState().self).toBe(before.self);
+    store.getState().reset();
+    expect(store.getState().music).toEqual({});
+  });
+});
+
+// Le café : le serveur dit ce qu'il reste (`coffee:changed`, ou `boost` dans l'init) ; le magasin en garde l'échéance, sur l'horloge de la page.
+describe('le café', () => {
+  const NOW = 5_000;
+  beforeEach(() => {
+    vi.spyOn(performance, 'now').mockReturnValue(NOW);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('avant tout café : personne n\'en a', () => {
+    expect(store.getState().coffee).toEqual({});
+  });
+
+  test('setCoffee : l\'échéance est l\'heure de la page plus ce que dit le serveur ; un nouveau café la remplace ; 0 la retire', () => {
+    store.getState().setCoffee('a', 30_000);
+    expect(store.getState().coffee).toEqual({ a: NOW + 30_000 });
+    vi.mocked(performance.now).mockReturnValue(NOW + 10_000);
+    store.getState().setCoffee('a', 30_000);
+    store.getState().setCoffee('moi', 5_000);
+    expect(store.getState().coffee).toEqual({ a: NOW + 40_000, moi: NOW + 15_000 });
+    store.getState().setCoffee('a', 0);
+    expect(store.getState().coffee).toEqual({ moi: NOW + 15_000 });
+  });
+
+  test('retirer un café qu\'on ne connaît pas ne change rien (l\'état reste le même objet)', () => {
+    store.getState().setCoffee('a', 1_000);
+    const before = store.getState().coffee;
+    store.getState().setCoffee('inconnu', 0);
+    expect(store.getState().coffee).toBe(before);
+  });
+
+  test('init : le café de soi-même et des autres (boost, ce qu\'il en reste) devient une échéance ; le magasin n\'en garde pas la durée', () => {
+    store.getState().applyInit(init(player('moi', { boost: 12_000 }), [player('a', { boost: 30_000 }), player('b')]));
+    expect(store.getState().coffee).toEqual({ moi: NOW + 12_000, a: NOW + 30_000 });
+    expect(store.getState().self).not.toHaveProperty('boost');
+    expect(store.getState().players.a).not.toHaveProperty('boost');
+  });
+
+  test('un nouvel init remplace tous les cafés : celui d\'avant la coupure, fini ou non, n\'a plus cours', () => {
+    store.getState().applyInit(init(SELF, [A], 'dev-office'));
+    store.getState().setCoffee('a', 30_000);
+    store.getState().setCoffee('moi', 30_000);
+    store.getState().applyInit(init(player('moi', { boost: 4_000 }), [A]));
+    expect(store.getState().coffee).toEqual({ moi: NOW + 4_000 });
+  });
+
+  test('quelqu\'un qui part n\'a plus de café ; reset (le bureau quitté) les efface tous', () => {
+    store.getState().applyInit(init(SELF, [A, B]));
+    store.getState().setCoffee('a', 30_000);
+    store.getState().setCoffee('b', 30_000);
+    store.getState().removePlayer('a');
+    expect(store.getState().coffee).toEqual({ b: NOW + 30_000 });
+    store.getState().reset();
+    expect(store.getState().coffee).toEqual({});
+  });
+});
+
+const GAME_NOW = 10_000;
+
+describe('les jeux', () => {
+  const table = (game: GameId, version: number, over: Partial<GameTableView> = {}): GameTableView => ({ game, version, chairs: [null, null], spectators: [], match: null, ...over });
+  const match = (id: string, userIds: string[], status: 'playing' | 'ended' = 'playing'): GameMatchView => ({
+    id,
+    status,
+    players: userIds.map((userId) => ({ userId, name: userId, avatarKey: null, connected: true, reconnectMs: null, out: false })),
+    first: 0,
+    state: {},
+    events: [],
+    turnMs: status === 'playing' ? 1000 : null,
+    drawOffer: null,
+    startedAt: 0,
+    result: null,
+    ranked: null,
+    ratings: null,
+  });
+  const invite = (id: string, game: GameId = 'chess'): GameInvite => ({ id, game, from: { id: 'a', name: 'A', avatarKey: null }, ttlMs: 60_000 });
+  const withGames = (games?: GameTableView[], gameInvites?: GameInvite[]): InitPayload => ({ ...init(SELF, [A]), ...(games ? { games } : {}), ...(gameInvites ? { gameInvites } : {}) });
+  // Une invitation au magasin : ce que le serveur dit, avec son échéance (maintenant + ce qu'il lui reste à vivre).
+  const entry = (given: GameInvite) => ({ ...given, until: GAME_NOW + given.ttlMs });
+  beforeEach(() => {
+    vi.spyOn(performance, 'now').mockReturnValue(GAME_NOW);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('avant tout init : aucune table, aucune invitation, aucun panneau de jeu ouvert, rien d\'interrompu', () => {
+    expect(store.getState()).toMatchObject({ games: {}, gameInvites: [], gameOpen: null, gameInterrupted: null });
+  });
+
+  test('init : les tables, par jeu, et les invitations en attente ; un init qui n\'en dit rien les vide', () => {
+    store.getState().applyInit(withGames([table('chess', 3), table('ludo', 0)], [invite('i1')]));
+    expect(Object.keys(store.getState().games).sort()).toEqual(['chess', 'ludo']);
+    expect(store.getState().games.chess?.version).toBe(3);
+    expect(store.getState().gameInvites).toEqual([entry(invite('i1'))]);
+    store.getState().applyInit(withGames());
+    expect(store.getState().games).toEqual({});
+    expect(store.getState().gameInvites).toEqual([]);
+  });
+
+  test('setGameTable : la table de ce jeu est remplacée par une version plus récente ; une version égale ou plus ancienne est ignorée (l\'état reste le même objet)', () => {
+    store.getState().applyInit(withGames([table('chess', 3)]));
+    store.getState().setGameTable(table('chess', 4, { spectators: [{ id: 'a', name: 'A' }] }));
+    expect(store.getState().games.chess?.spectators).toHaveLength(1);
+    const before = store.getState().games;
+    store.getState().setGameTable(table('chess', 4));
+    store.getState().setGameTable(table('chess', 2));
+    expect(store.getState().games).toBe(before);
+  });
+
+  test('setGameTable : une table que l\'init ne connaissait pas s\'ajoute', () => {
+    store.getState().applyInit(withGames([table('chess', 3)]));
+    store.getState().setGameTable(table('connect4', 1));
+    expect(Object.keys(store.getState().games).sort()).toEqual(['chess', 'connect4']);
+  });
+
+  test('addGameInvite : une invitation de même identifiant remplace l\'ancienne, sans changer de rang ; removeGameInvite la retire, un inconnu ne change rien', () => {
+    store.getState().addGameInvite(invite('i1'));
+    store.getState().addGameInvite(invite('i2', 'ludo'));
+    store.getState().addGameInvite({ ...invite('i1'), ttlMs: 10_000 });
+    expect(store.getState().gameInvites.map((known) => [known.id, known.ttlMs, known.until])).toEqual([['i1', 10_000, GAME_NOW + 10_000], ['i2', 60_000, GAME_NOW + 60_000]]);
+    store.getState().removeGameInvite('i1');
+    expect(store.getState().gameInvites.map((known) => known.id)).toEqual(['i2']);
+    const before = store.getState().gameInvites;
+    store.getState().removeGameInvite('inconnue');
+    expect(store.getState().gameInvites).toBe(before);
+  });
+
+  test('openGame : le panneau d\'une table s\'ouvre, et null le ferme', () => {
+    store.getState().openGame('connect4');
+    expect(store.getState().gameOpen).toBe('connect4');
+    store.getState().openGame(null);
+    expect(store.getState().gameOpen).toBeNull();
+  });
+
+  test('init : une partie qu\'on jouait et que le serveur ne connaît plus (il a redémarré) est « interrompue »', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) })]));
+    store.getState().applyInit(withGames([table('chess', 0)]));
+    expect(store.getState().gameInterrupted).toBe('chess');
+    store.getState().dismissGameInterrupted();
+    expect(store.getState().gameInterrupted).toBeNull();
+  });
+
+  test('une interruption signalée le reste aux init suivants, jusqu\'à ce qu\'on l\'ait lue', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) })]));
+    store.getState().applyInit(withGames([table('chess', 0)]));
+    store.getState().applyInit(withGames([table('chess', 1)]));
+    expect(store.getState().gameInterrupted).toBe('chess');
+  });
+
+  test('init : une autre partie à la même table (un autre identifiant) vaut aussi interruption', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) })]));
+    store.getState().applyInit(withGames([table('chess', 1, { match: match('m2', ['moi', 'a']) })]));
+    expect(store.getState().gameInterrupted).toBe('chess');
+  });
+
+  test('init : la partie qui continue, ou qui a fini pendant la coupure (même identifiant), ou celle des autres, n\'est pas interrompue', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) }), table('ludo', 2, { match: match('m9', ['a', 'b']) })]));
+    store.getState().applyInit(withGames([table('chess', 6, { match: match('m1', ['moi', 'a'], 'ended') })]));
+    expect(store.getState().gameInterrupted).toBeNull();
+    store.getState().applyInit(withGames([table('ludo', 0)]));
+    expect(store.getState().gameInterrupted).toBeNull();
+  });
+
+  test('init : une partie finie qu\'on avait vue et que le serveur n\'a plus n\'est pas une interruption (elle était finie)', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a'], 'ended') })]));
+    store.getState().applyInit(withGames([table('chess', 0)]));
+    expect(store.getState().gameInterrupted).toBeNull();
+  });
+
+  test('reset (le bureau quitté) : tout redevient comme au départ', () => {
+    store.getState().applyInit(withGames([table('chess', 3)], [invite('i1')]));
+    store.getState().openGame('chess');
+    store.getState().reset();
+    expect(store.getState()).toMatchObject({ games: {}, gameInvites: [], gameOpen: null, gameInterrupted: null });
   });
 });

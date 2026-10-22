@@ -83,7 +83,7 @@ test('au bureau : le jingle d\'arrivée, l\'ambiance de la petite carte, et les 
   await expect.poll(() => sinceThen(page, from)).toEqual(['panel-open', 'panel-close', 'toggle-off', 'toggle-on']);
 });
 
-test('le juke-box : choisir une ambiance la joue partout, « Selon l\'endroit » rend la main, couper la musique la fait taire', async ({ browser }) => {
+test('le juke-box : choisir une ambiance la joue partout, « Selon la pièce » rend la main, couper la musique la fait taire', async ({ browser }) => {
   test.slow();
   const { page } = await arrive(browser, 'Blandine');
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('focus');
@@ -96,8 +96,8 @@ test('le juke-box : choisir une ambiance la joue partout, « Selon l\'endroit »
   await expect(button).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => sinceThen(page, fromOpen)).toEqual(['panel-open']);
 
-  await expect(jukebox.getByRole('radio', { name: /^Selon l'endroit/ })).toBeChecked();
-  // « Selon l'endroit » dit l'ambiance d'ici : la petite carte n'a que la concentration.
+  await expect(jukebox.getByRole('radio', { name: /^Selon la pièce/ })).toBeChecked();
+  // « Selon la pièce » dit l'ambiance d'ici : la petite carte n'a que la concentration.
   await expect(jukebox.locator('.juke-auto')).toContainText('Ici : Concentration');
   // L'ambiance qui joue a son égaliseur.
   await expect(jukebox.locator('[data-playing="true"]')).toContainText('Concentration');
@@ -105,7 +105,7 @@ test('le juke-box : choisir une ambiance la joue partout, « Selon l\'endroit »
   await jukebox.getByRole('radio', { name: /^Crépuscule/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('dusk');
   await expect(jukebox.locator('[data-playing="true"]')).toContainText('Crépuscule');
-  await jukebox.getByRole('radio', { name: /^Selon l'endroit/ }).check();
+  await jukebox.getByRole('radio', { name: /^Selon la pièce/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('focus');
 
   await jukebox.getByRole('switch', { name: 'Musique' }).uncheck();

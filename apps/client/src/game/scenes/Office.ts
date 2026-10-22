@@ -4,6 +4,8 @@ import {
   isSimBot,
   parseOfficeMap,
   type ActivityState,
+  type GameId,
+  type GameTable,
   type InitPayload,
   type OfficeMap,
   type PublicPlayer,
@@ -14,26 +16,36 @@ import {
 } from '@bureau/shared';
 import { Scale, Scene, Scenes } from 'phaser';
 import { fr, t } from '../../i18n/fr';
+import { chairOf } from '../../games/table-view';
 import { deskTitle } from '../../office/desks';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { selectDeskOf, useOfficeStore } from '../../state/office-store';
 import { AutoWalk, cancelOnMoveKey, planDeskWalk } from '../auto-walk';
 import { avatarObjectName } from '../avatars';
+import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
+import { gameTableTarget, tableFocus, type TableState } from '../game-tables';
+import { PropLayer } from '../prop-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
-import { bindKeyboard, bindZoomKeys, DirectionInput } from '../input';
-import { sourcesFromItems } from '../light-sources';
+import { bindKeyboard, bindUseKey, bindWheelZoom, bindZoomKeys, DirectionInput } from '../input';
+import { Interactions } from '../interactions';
+import { sourcesFromItems, sourcesFromProps } from '../light-sources';
 import { LightSwitch } from '../light-switch';
 import { LightingLayer } from '../lighting';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
+import { addMapSigns } from '../map-signs';
 import { MoveSender } from '../move-sender';
+import { speakerPlaying, speakerSprites, speakerTarget } from '../speakers';
+import { TeleportEffect } from '../teleport-effect';
+import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
-import { SpeakingRings } from '../objects/NameTag';
+import { SpeakingBubbles } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
-import { cameraBounds, cameraZoom, WheelZoom } from '../zoom';
+import { prefersReducedMotion } from '../reduced-motion';
+import { cameraBounds, cameraZoom, easeZoom, ZOOM_BUTTON_STEP } from '../zoom';
 import { SimDrag } from '../../sim/sim-drag';
 
 // La largeur du panneau de déco (à droite de l'écran), en pixels de l'écran : la pièce se centre dans le reste.
@@ -49,10 +61,16 @@ const clock = () => performance.now();
 // Le jeu ne démarre qu'après le premier `init` du serveur (OfficePage) : la scène lit au magasin où le serveur l'a placée et qui est
 // là, puis suit le bus (office-connection.ts) : positions des autres, arrivées, départs, statuts, profils, corrections, et un nouvel
 // `init` à chaque reconnexion. Elle envoie l'état de l'avatar local sur le bus (`local:move`), au rythme de MoveSender. Qui parle dans
-// la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette. L'interrupteur de la lumière (une
+// la conversation (`media:speaking`, de l'audio et de la vidéo), ou dans le bureau (`net:speaking`, même loin de soi), fait paraître une bulle de
+// parole au-dessus de son étiquette (SpeakingBubbles). L'interrupteur de la lumière (une
 // plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
-// il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). Lumière éteinte, c'est la nuit (LightingLayer) :
-// l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. « Aller à mon
+// il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). La machine à café (une cible de la touche E devant le bar) demande
+// un café (`local:coffee`) ; il commence à l'annonce du serveur (`coffee:changed`) : le magasin en tient l'échéance de chacun, l'avatar local en prend la vitesse
+// du café, et chacun, soi compris, a une tasse fumante au-dessus de la tête et de la poussière derrière lui quand il court. La machine s'agite 1 s quand quelqu'un
+// se sert. Lumière éteinte, c'est la nuit (LightingLayer) :
+// l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. Ce qu'on actionne
+// de près (la touche E, ou un clic) passe par un seul gestionnaire (Interactions), qui retient la cible la plus proche et dont l'étiquette
+// « [E] … » est unique. « Aller à mon
 // bureau » (`local:walk-to-desk`) fait marcher l'avatar tout seul jusqu'à sa place (AutoWalk), comme le ferait le clavier ; une touche de
 // déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à l'interface s'il marche.
 export class Office extends Scene {
@@ -67,15 +85,31 @@ export class Office extends Scene {
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
   private othersVisible = true;
-  private rings: SpeakingRings;
+  private bubbles: SpeakingBubbles;
   private deskLayer: DeskLayer;
   private decorLayer: DecorLayer;
+  private propLayer: PropLayer;
   // Les interrupteurs de lumière de la carte (un seul sur la grande carte, aucun sur celle de développement).
   private switches: LightSwitch[] = [];
+  // Ce qu'on actionne de près (touche E, ou un clic) : un seul gestionnaire, et l'étiquette « [E] … » unique qu'il commande.
+  private interactions: Interactions;
+  private prompt: InteractionPrompt;
+  // La machine à café s'agite jusqu'à cette heure (ms, horloge du jeu) ; la vitesse de son animation, telle qu'on l'a réglée.
+  private machineExcitedUntil = 0;
+  private machineScale = 1;
+  // Les images d'amplificateur de chaque enceinte (par clé de pièce) : elles tournent tant que la pièce joue.
+  private readonly speakerImages = new Map<string, Phaser.GameObjects.Sprite[]>();
+  // Les anneaux de lumière d'un voyage voulu (un mode qui conduit à la salle de sport, ou ramène au bureau), pour soi comme pour ceux qu'on voit sauter.
+  private teleportEffect: TeleportEffect;
   private lighting: LightingLayer;
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
   private editingRoom: Zone | null = null;
+  // Le panneau d'une table de jeu aussi : la caméra est sur la table, dans la partie de l'écran qu'il laisse libre.
+  private focusedTable: GameTable | null = null;
+  // Le zoom que la caméra montre en ce moment, et celui où elle va : elle glisse de l'un à l'autre quand la personne change de pourcentage.
+  private zoomShown = 1;
+  private zoomTarget = 1;
   // Le faux live (VITE_SIM=1) : le glisser-déposer des personnes fictives. Absent d'un build normal.
   private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
@@ -92,7 +126,14 @@ export class Office extends Scene {
       players: {},
       media: mediaDebug,
       teleport: (x, y) => this.teleport(x, y),
+      boost: (ms) => this.boost(ms),
+      boosted: () => this.boosted(),
+      speed: () => this.player?.currentSpeed() ?? 0,
       showOthers: (visible) => this.showOthers(visible),
+      bubbles: () => this.bubbles?.ids() ?? [],
+      cups: () => [...(this.player?.coffeeShown() ? [this.selfId] : []), ...[...this.remotes].filter(([, remote]) => remote.coffeeShown()).map(([id]) => id)],
+      machineExcited: () => clock() < this.machineExcitedUntil,
+      rings: () => this.teleportEffect?.count(clock()) ?? 0,
       avatarsOf: (id) => this.children.list.filter((object) => object.name === avatarObjectName(id)).length,
       selfAvatar: () => (this.player ? { wanted: this.player.avatarWanted, shown: this.player.avatarShown } : null),
       toScreen: (x, y) => {
@@ -103,6 +144,10 @@ export class Office extends Scene {
       zoom: () => this.cameras.main.zoom,
       nightLevel: () => this.lighting?.level ?? 0,
       autoWalking: () => this.autoWalk?.walking ?? false,
+      doors: () => this.deskLayer?.phases() ?? {},
+      tables: () => (this.officeMap?.tables ?? []).map((table) => ({ game: table.game, ...table.rect, seats: table.seats.map((seat) => ({ x: seat.x, y: seat.y })) })),
+      gameTable: (game) => useOfficeStore.getState().games[game as GameId] ?? null,
+      debugGame: (game, state, rolls) => emitOnBus(EventBus, 'local:debug-game', { game: game as GameId, state, ...(rolls ? { rolls } : {}) }),
     };
     exposeDebug(this.debug);
 
@@ -112,8 +157,11 @@ export class Office extends Scene {
     this.tilemap = this.add.tilemap(this.mapKey);
     const { collisions, sol, murs } = buildMapLayers(this, this.tilemap);
     addZoneLabels(this, this.officeMap.zones);
+    addMapSigns(this, this.officeMap.signs);
     // Les meubles de la carte, et dans chaque bureau le décor de son occupant (thèmes compris).
     this.decorLayer = new DecorLayer(this, this.tilemap, { sol, murs }, this.officeMap);
+    // Les objets animés de la carte (machine à café, cheminée, enceintes, sport, bougies, aquarium).
+    this.propLayer = new PropLayer(this, this.tilemap);
     this.decorEditor = new DecorEditorView(this, this.decorLayer, { onOpen: (room) => this.focusRoom(room), onClose: () => this.followPlayer() });
     useOfficeStore.getState().setOfficeMap(this.officeMap);
     // Le zoom d'abord : les étiquettes des avatars en dépendent.
@@ -129,15 +177,19 @@ export class Office extends Scene {
     this.physics.add.collider(this.player, collisions);
     this.debug.self = { id: me.id, ...this.feet() };
     this.moveSender = new MoveSender();
-    // Les noms des bureaux et leurs portes : celles qui sont fermées pour soi sont des obstacles pour l'avatar local.
+    // Les noms des bureaux et leurs portes vitrées : celles qui sont fermées pour soi sont des obstacles pour l'avatar local ; elles s'ouvrent devant qui s'en
+    // approche (la sienne, ou son propriétaire qu'on voit y entrer), et le son des portes en est prévenu.
     this.deskLayer = new DeskLayer(this, this.officeMap, {
       feet: () => this.feet(),
+      ownerAt: (id) => (id === this.selfId ? this.feet() : (this.remotes.get(id)?.position ?? null)),
       onKnock: (key) => emitOnBus(EventBus, 'local:knock', { key }),
       onBlocked: (key) => this.deskBlocked(key),
+      onDoorMoved: (move) => emitOnBus(EventBus, 'door:moved', move),
     });
     this.deskLayer.collideWith(this.player);
     this.decorLayer.collideWith(this.player);
     // La nuit : la couche est là dès le départ, invisible tant que la lumière est allumée. Chacun porte son halo, au milieu de son avatar.
+    this.teleportEffect = new TeleportEffect(this);
     this.lighting = new LightingLayer(this);
     this.lighting.track(this.selfId, () => ({ x: this.player.x, y: this.player.y - this.player.displayHeight / 2 }));
     const showDesks = () => {
@@ -147,11 +199,19 @@ export class Office extends Scene {
     };
     showDesks();
     this.decorEditor.sync(useOfficeStore.getState().decorEditor);
-    this.rings = new SpeakingRings((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
+    this.bubbles = new SpeakingBubbles((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
+    // Ceux que le serveur dit parler déjà (le magasin les a suivis, même avant le jeu) ont leur bulle d'emblée.
+    this.bubbles.resetServer(Object.values(players).filter((player) => player.speaking).map((player) => player.id));
 
-    // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit. La portée est celle des pieds de l'avatar, relue à
-    // chaque appui (la touche E, ou un clic sur la plaque).
-    this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, () => this.useLights(), () => this.feet()));
+    // Ce qu'on actionne de près : la portée est celle des pieds de l'avatar, relue à chaque appui (la touche E, ou un clic).
+    this.interactions = new Interactions({ feet: () => this.feet() });
+    this.prompt = new InteractionPrompt(this);
+    this.prompt.setZoom(this.cameras.main.zoom);
+    // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit.
+    this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, this.interactions, () => this.useLights()));
+    const unbindCoffee = this.bindCoffeeMachines();
+    const unbindSpeakers = this.bindSpeakers();
+    const unbindTables = this.bindGameTables();
     const showLights = (instant = false) => {
       const { on } = useOfficeStore.getState().lights;
       for (const lightSwitch of this.switches) lightSwitch.setOn(on);
@@ -159,33 +219,29 @@ export class Office extends Scene {
     };
     // On arrive dans le noir : la nuit tout de suite, sans fondu ni éclair de jour.
     showLights(true);
-    for (const lightSwitch of this.switches) lightSwitch.setZoom(this.cameras.main.zoom);
 
     // Les autres, à leur dernière position connue : celle de l'init, ou d'un tick arrivé pendant le chargement du jeu (que la scène,
     // qui n'existait pas encore, n'a pas reçu).
     const now = clock();
     for (const player of Object.values(players)) this.addRemote({ ...player, ...positions.get(player.id) }, now);
+    // Ceux qui ont un café en arrivant (le magasin le sait), soi compris.
+    this.showCoffee();
 
     this.directions = new DirectionInput();
     const unbindKeyboard = bindKeyboard(this.directions);
+    // La touche E actionne la cible la plus proche (une seule, quel que soit le nombre d'objets à portée).
+    const unbindUse = bindUseKey(() => void this.interactions.use());
     // La marche automatique le dit à l'interface (`walk:state`) à chaque départ et à chaque arrêt ; une touche de déplacement l'interrompt.
     this.autoWalk = new AutoWalk((walking) => emitOnBus(EventBus, 'walk:state', { walking }));
     const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
 
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
-    // pas prendre pour le zoom de la page), et les touches + - 0. Le niveau est au magasin ; layoutCamera le lit.
-    const wheelZoom = new WheelZoom();
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const step = wheelZoom.feed(event.deltaY, event.deltaMode, event.ctrlKey, event.timeStamp);
-      if (step !== 0) useOfficeStore.getState().stepZoom(step);
-    };
-    const canvas = this.game.canvas;
-    canvas.addEventListener('wheel', onWheel, { passive: false });
+    // pas prendre pour le zoom de la page), et les touches + - 0. Le pourcentage est au magasin ; la caméra y glisse (glideZoom).
+    const unbindWheel = bindWheelZoom(this.game.canvas, (steps) => useOfficeStore.getState().stepZoom(steps));
     const unbindZoomKeys = bindZoomKeys((step) => {
       const store = useOfficeStore.getState();
       if (step === 0) store.resetZoom();
-      else store.stepZoom(step);
+      else store.stepZoom(step, ZOOM_BUTTON_STEP);
     });
 
     // La caméra suit l'avatar, dans les bornes de la carte. Le décalage met le milieu de l'avatar au centre de l'écran, et non ses
@@ -200,22 +256,33 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:tick', (p) => this.onTick(p)),
       listenOnBus(EventBus, 'net:joined', (p) => this.onJoined(p)),
       listenOnBus(EventBus, 'net:left', ({ id }) => this.removeRemote(id)),
-      listenOnBus(EventBus, 'net:correct', ({ x, y }) => this.onCorrect(x, y)),
+      listenOnBus(EventBus, 'net:correct', ({ x, y, reason }) => this.onCorrect(x, y, reason)),
       listenOnBus(EventBus, 'net:status', ({ id, status }) => this.onStatus(id, status)),
       listenOnBus(EventBus, 'net:activity', ({ id, activity }) => this.onActivity(id, activity)),
       listenOnBus(EventBus, 'net:profile', (p) => this.onProfile(p)),
-      listenOnBus(EventBus, 'media:speaking', (ids) => this.rings.update(ids)),
+      listenOnBus(EventBus, 'media:speaking', (ids) => this.bubbles.updateMedia(ids)),
+      // La parole des autres, d'après le serveur. La sienne vient de la room (media:speaking), tout de suite : l'écho du serveur la ferait durer.
+      listenOnBus(EventBus, 'net:speaking', ({ id, speaking }) => {
+        if (id !== this.selfId) this.bubbles.setServer(id, speaking);
+      }),
+      // Quelqu'un se sert (le café vient d'être annoncé) : la machine s'agite un instant. La fin d'un café (`ms` 0) ne la touche pas.
+      listenOnBus(EventBus, 'coffee:changed', ({ ms }) => {
+        if (ms > 0) this.machineExcitedUntil = clock() + MACHINE_EXCITED_MS;
+      }),
       listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
       listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
         if (state.lights !== previous.lights) showLights();
+        if (state.coffee !== previous.coffee) this.showCoffee();
+        if (state.music !== previous.music) this.showSpeakers();
         if (state.decorEditor !== previous.decorEditor) {
           this.decorEditor.sync(state.decorEditor);
           // Le brouillon de l'éditeur montre peut-être une lampe de plus, ou de moins.
           this.showLightSources();
         }
-        if (state.zoomLevel !== previous.zoomLevel) this.layoutCamera();
+        if (state.zoomPercent !== previous.zoomPercent) this.retargetZoom();
+        if (state.gameOpen !== previous.gameOpen) this.syncGameFocus(state.gameOpen);
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -228,16 +295,23 @@ export class Office extends Scene {
       this.autoWalk.cancel();
       unbindWalkKeys();
       unbindKeyboard();
+      unbindUse();
       unbindZoomKeys();
-      canvas.removeEventListener('wheel', onWheel);
+      unbindWheel();
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
+      unbindCoffee();
+      unbindSpeakers();
+      unbindTables();
+      this.prompt.destroy();
+      this.teleportEffect.destroy();
       this.lighting.destroy();
       this.deskLayer.destroy();
       this.decorEditor.destroy();
       this.decorLayer.destroy();
+      this.propLayer.destroy();
       useOfficeStore.getState().setOfficeMap(null);
       this.debug.ready = false;
       this.debug.self = null;
@@ -258,7 +332,10 @@ export class Office extends Scene {
     const now = clock();
     const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
     if (autoDirection !== null) this.player.step(autoDirection);
-    else this.player.step(this.directions.current(), this.directions.sprinting());
+    else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
+    this.player.tick(now);
+    this.shakeMachine(now);
+    this.teleportEffect.tick(now);
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];
@@ -268,6 +345,8 @@ export class Office extends Scene {
       }
       this.simDrag?.arrived(remote.id, drawn);
     }
+    // Les portes s'ouvrent devant qui s'en approche, avec les positions de cette image.
+    this.deskLayer.tick();
   }
 
   // Après la physique de l'image (POST_UPDATE, où Arcade, abonné avant nous, vient de déplacer l'avatar) : l'état de l'avatar local
@@ -275,18 +354,25 @@ export class Office extends Scene {
   // position dans les sprites qu'après ; lu dans update(), l'arrêt partirait un pas de physique avant l'endroit où l'avatar s'arrête
   // vraiment, et les autres le verraient s'arrêter 2 ou 3 px trop tôt.
   private afterPhysics(): void {
+    // La caméra glisse vers son zoom avant que la nuit ne se dessine : elle la dessine à la vue de cette image.
+    this.glideZoom();
     this.sendLocalState(clock());
     const feet = this.feet();
     if (this.debug.self) Object.assign(this.debug.self, feet);
-    // L'étiquette de l'interrupteur se montre à portée (3 cases) : d'après les pieds de cette image.
-    for (const lightSwitch of this.switches) lightSwitch.updateReach(feet);
+    // La cible qu'on peut actionner de près (l'interrupteur, à 3 cases…) et son étiquette : d'après les pieds de cette image.
+    this.prompt.show(this.interactions.update(feet));
     // La nuit, d'après les avatars à leur place de cette image.
     this.lighting.update();
   }
 
   // Les lumières de la nuit : les lampes, le feu et les écrans posés, ceux de la carte et ceux des bureaux tels qu'on les voit.
   private showLightSources(): void {
-    this.lighting.setStatic(sourcesFromItems(this.decorLayer.placedImages()));
+    this.lighting.setStatic([...sourcesFromItems(this.decorLayer.placedImages()), ...sourcesFromProps(this.propLayer.images())]);
+  }
+
+  // Le point où poser un anneau pour quelqu'un dont les pieds sont là : à hauteur de son milieu, pas du sol.
+  private aroundFeet(feet: { x: number; y: number }): { x: number; y: number } {
+    return { x: feet.x, y: feet.y - 14 };
   }
 
   private feet(): { x: number; y: number } {
@@ -308,13 +394,59 @@ export class Office extends Scene {
     return [room.x + room.width / 2 + EDITOR_PANEL_WIDTH_PX / 2 / zoom, room.y + room.height / 2];
   }
 
-  // Il se ferme : la caméra revient à l'avatar.
+  // Il se ferme (ou le panneau de la table de jeu) : la caméra revient à l'avatar.
   private followPlayer(): void {
     this.editingRoom = null;
+    this.focusedTable = null;
     const camera = this.cameras.main;
     camera.pan(this.player.x, this.player.y - this.player.displayHeight / 2, 350, 'Sine.easeInOut', true, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-      if (progress === 1 && this.editingRoom === null) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
+      if (progress === 1 && this.editingRoom === null && this.focusedTable === null) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
     });
+  }
+
+  // Les tables de jeu de la carte : une cible de la touche E devant chacune (« [E] Échecs : jouer »), qui demande l'ouverture de son panneau ; un clic sur la table fait de même,
+  // de près. Rend la fonction qui les retire.
+  private bindGameTables(): () => void {
+    const targets = this.officeMap.tables.map((table) =>
+      gameTableTarget(
+        table,
+        () => this.tableState(table.game),
+        () => useOfficeStore.getState().openGame(table.game),
+      ),
+    );
+    const unregister = targets.map((target) => this.interactions.register(target));
+    // Une zone invisible sur chaque table : un clic y actionne la cible (de près seulement : `useTarget` relit la portée).
+    const zones = this.officeMap.tables.map((table, index) =>
+      this.add
+        .zone(table.rect.x + table.rect.width / 2, table.rect.y + table.rect.height / 2, table.rect.width, table.rect.height)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.interactions.useTarget(targets[index]!)),
+    );
+    return () => {
+      for (const off of unregister) off();
+      for (const zone of zones) zone.destroy();
+    };
+  }
+
+  // Ce que la personne et cette table sont l'une pour l'autre (assise, une partie en cours) : de quoi écrire l'étiquette « [E] … ».
+  private tableState(game: GameId): TableState {
+    const { games, selfId } = useOfficeStore.getState();
+    const table = games[game];
+    return { seated: chairOf(table, selfId) !== null, playing: table?.match?.status === 'playing' };
+  }
+
+  // Le panneau d'une table s'ouvre (le magasin le dit) : la caméra quitte l'avatar et va à la table, qu'elle place dans la partie de l'écran que le panneau laisse libre. Il se ferme :
+  // elle revient à l'avatar.
+  private syncGameFocus(game: GameId | null): void {
+    const table = game === null ? undefined : this.officeMap.tables.find((candidate) => candidate.game === game);
+    if (!table) {
+      if (this.focusedTable) this.followPlayer();
+      return;
+    }
+    this.focusedTable = table;
+    const camera = this.cameras.main;
+    camera.stopFollow();
+    camera.pan(...tableFocus(table.rect, camera.zoom, this.scale.gameSize), 450, 'Sine.easeInOut', true);
   }
 
   // L'interrupteur est actionné de près (E, ou un clic sur la plaque) : on demande l'état contraire de celui qu'on voit. La lumière ne change qu'à
@@ -367,6 +499,8 @@ export class Office extends Scene {
     for (const id of [...this.remotes.keys()]) {
       if (!present.has(id)) this.removeRemote(id);
     }
+    // Ce que le serveur dit de la parole remplace tout ce qu'il disait avant cet init.
+    this.bubbles.resetServer(p.players.filter((player) => player.speaking).map((player) => player.id));
     for (const player of p.players) this.placeRemote(player, now);
   }
 
@@ -374,19 +508,33 @@ export class Office extends Scene {
   private onTick({ moves }: WorldTick): void {
     const at = clock();
     for (const move of moves) {
-      if (move.id !== this.selfId) this.remotes.get(move.id)?.push(at, move);
+      if (move.id === this.selfId) continue;
+      const remote = this.remotes.get(move.id);
+      // Quelqu'un saute (un mode le conduit à la salle de sport, ou le ramène au bureau) : un anneau de lumière là où il était, un autre là où il arrive.
+      if (remote && move.tp === true) {
+        this.teleportEffect.play(this.aroundFeet(remote.position), at);
+        this.teleportEffect.play(this.aroundFeet(move), at);
+      }
+      remote?.push(at, move, move.tp === true);
     }
   }
 
   private onJoined(p: PublicPlayer): void {
+    if (p.speaking) this.bubbles.setServer(p.id, true);
     this.placeRemote(p, clock());
   }
 
   // Le serveur a refusé un `move` : l'avatar retourne à la dernière position acceptée, et le serveur relit tout de suite notre état
   // (direction, marche) à cet endroit.
-  private onCorrect(x: number, y: number): void {
+  private onCorrect(x: number, y: number, reason?: 'teleport'): void {
     // Le serveur n'est pas d'accord avec le trajet (une porte, un meuble qu'il connaît mieux que nous) : on s'arrête, au lieu de buter en boucle.
     this.autoWalk.cancel();
+    // Un voyage voulu (un mode) : un anneau de lumière au départ et à l'arrivée (le son, lui, vient de sfx-events).
+    if (reason === 'teleport') {
+      const now = clock();
+      this.teleportEffect.play(this.aroundFeet(this.feet()), now);
+      this.teleportEffect.play(this.aroundFeet({ x, y }), now);
+    }
     this.player.placeAt(x, y);
     this.moveSender.reset();
     this.sendLocalState(clock());
@@ -433,7 +581,8 @@ export class Office extends Scene {
     const remote = new RemotePlayer(this, p, now, { zoom: this.cameras.main.zoom, bodyFits: this.bodyFits });
     remote.setVisible(this.othersVisible);
     if (isSimBot(p.id)) this.simDrag?.attach(remote);
-    remote.setSpeaking(this.rings.isSpeaking(p.id));
+    remote.setSpeaking(this.bubbles.isSpeaking(p.id));
+    remote.setCoffeeUntil(useOfficeStore.getState().coffee[p.id] ?? 0);
     this.remotes.set(p.id, remote);
     this.lighting.track(p.id, () => remote.lightPoint());
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };
@@ -443,6 +592,7 @@ export class Office extends Scene {
     this.simDrag?.clear(id);
     this.remotes.get(id)?.destroy();
     this.remotes.delete(id);
+    this.bubbles.forget(id);
     this.lighting.untrack(id);
     delete this.debug.players[id];
   }
@@ -456,6 +606,72 @@ export class Office extends Scene {
     emitOnBus(EventBus, 'local:teleport', { x: tx, y: ty });
     this.moveSender.reset();
     this.sendLocalState(clock());
+  }
+
+  // Un café (window.__office.boost, pour les tests ; la machine à café en donne un aussi) : l'avatar local va à la vitesse du café pendant `ms` ms, et la
+  // connexion le dit au serveur (`debug:boost`), qui relève sa limite de vitesse et l'annonce à tout le bureau. L'échéance est au magasin dès maintenant :
+  // le test n'attend pas la réponse du serveur.
+  private boost(ms: number): void {
+    useOfficeStore.getState().setCoffee(this.selfId, ms);
+    emitOnBus(EventBus, 'local:boost', { ms });
+  }
+
+  // L'avatar local a-t-il un café ? Le magasin en tient l'échéance (ce que dit le serveur : la machine, ou `debug:boost`).
+  private boosted(): boolean {
+    return clock() < (useOfficeStore.getState().coffee[this.selfId] ?? 0);
+  }
+
+  // Le café de chacun, d'après le magasin : la tasse et la poussière de soi et de ceux qu'on voit, jusqu'à leur échéance.
+  private showCoffee(): void {
+    const { coffee } = useOfficeStore.getState();
+    this.player.setCoffeeUntil(coffee[this.selfId] ?? 0);
+    for (const [id, remote] of this.remotes) remote.setCoffeeUntil(coffee[id] ?? 0);
+  }
+
+  // Les machines à café de la carte : une cible de la touche E devant chacune (« [E] Prendre un café »), qui demande un café ; un clic sur la machine
+  // fait de même, de près. Rend la fonction qui les retire.
+  private bindCoffeeMachines(): () => void {
+    const targets = this.officeMap.coffees.map((position) => coffeeTarget(position, () => emitOnBus(EventBus, 'local:coffee')));
+    const unregister = targets.map((target) => this.interactions.register(target));
+    for (const sprite of this.propLayer.byKey('coffee')) {
+      // La cible de cette machine : la case de service la plus proche d'elle, en largeur.
+      const middle = sprite.x + sprite.displayWidth / 2;
+      const target = targets.reduce<(typeof targets)[number] | undefined>((best, next) => (best === undefined || Math.abs(next.pos.x - middle) < Math.abs(best.pos.x - middle) ? next : best), undefined);
+      if (target) sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.interactions.useTarget(target));
+    }
+    return () => {
+      for (const off of unregister) off();
+    };
+  }
+
+  // Les enceintes de la carte : une cible de la touche E devant chacune (« [E] Couper la musique » / « [E] Lancer la musique »), qui demande l'état contraire de celui qu'on voit
+  // pour sa pièce (`local:music`) ; son amplificateur tourne tant que la pièce joue. Rend la fonction qui les retire.
+  private bindSpeakers(): () => void {
+    const targets = this.officeMap.speakers.map((speaker) =>
+      speakerTarget(speaker, () => useOfficeStore.getState().music[speaker.place], (request) => emitOnBus(EventBus, 'local:music', request)),
+    );
+    const unregister = targets.map((target) => this.interactions.register(target));
+    const amplifiers = [...this.propLayer.byKey('amplifier-big'), ...this.propLayer.byKey('amplifier')];
+    for (const speaker of this.officeMap.speakers) this.speakerImages.set(speaker.place, speakerSprites(speaker, amplifiers));
+    this.showSpeakers();
+    return () => {
+      for (const off of unregister) off();
+      this.speakerImages.clear();
+    };
+  }
+
+  // Chaque amplificateur tourne tant que sa pièce joue, d'après la musique que le serveur a annoncée ; éteinte, il s'arrête sur sa première image.
+  private showSpeakers(): void {
+    const { music } = useOfficeStore.getState();
+    for (const [place, sprites] of this.speakerImages) for (const sprite of sprites) this.propLayer.setPlaying(sprite, speakerPlaying(music[place]));
+  }
+
+  // La machine à café tourne plus vite pendant MACHINE_EXCITED_MS après qu'on s'est servi : on ne retouche son animation que quand sa vitesse change.
+  private shakeMachine(now: number): void {
+    const scale = machineTimeScale(now, this.machineExcitedUntil);
+    if (scale === this.machineScale) return;
+    this.machineScale = scale;
+    for (const sprite of this.propLayer.byKey('coffee')) sprite.anims.timeScale = scale;
   }
 
   private showOthers(visible: boolean): void {
@@ -478,21 +694,50 @@ export class Office extends Scene {
     this.sendLocalState(clock());
   };
 
-  // Le zoom et les bornes de la caméra dépendent de la taille du canevas et du niveau de zoom choisi : on les refait à chaque
-  // redimensionnement et à chaque cran de zoom. Où elle regarde, en revanche, n'est pas à régler ici : elle suit l'avatar, et continue
-  // après le redimensionnement (sauf devant la pièce que l'éditeur montre : on la recentre, le panneau n'occupant pas la même part de
-  // l'écran à un autre zoom). Les étiquettes des avatars suivent le zoom.
+  // Le zoom et les bornes de la caméra dépendent de la taille du canevas et du pourcentage de zoom choisi. Au démarrage et à chaque
+  // redimensionnement, la caméra prend tout de suite le zoom du moment ; à chaque changement de pourcentage, elle y glisse (retargetZoom,
+  // puis glideZoom à chaque image).
   private layoutCamera = (): void => {
+    this.zoomTarget = this.targetZoom();
+    this.zoomShown = this.zoomTarget;
+    this.applyZoom(this.zoomShown);
+  };
+
+  // Le zoom que la caméra doit avoir : celui du pourcentage choisi, pour la taille du canevas.
+  private targetZoom(): number {
     const { width, height } = this.scale.gameSize;
-    const zoom = cameraZoom(width, height, useOfficeStore.getState().zoomLevel);
+    return cameraZoom(width, height, useOfficeStore.getState().zoomPercent);
+  }
+
+  // La personne a changé de pourcentage : la caméra glisse vers le nouveau zoom, ou y saute si elle demande moins de mouvement.
+  private retargetZoom(): void {
+    this.zoomTarget = this.targetZoom();
+    if (!prefersReducedMotion()) return;
+    this.zoomShown = this.zoomTarget;
+    this.applyZoom(this.zoomShown);
+  }
+
+  // À chaque image : un pas du glissement, tant que la caméra n'est pas au zoom voulu.
+  private glideZoom(): void {
+    if (this.zoomShown === this.zoomTarget) return;
+    this.zoomShown = easeZoom(this.zoomShown, this.zoomTarget, this.game.loop.delta);
+    this.applyZoom(this.zoomShown);
+  }
+
+  // Le zoom de la caméra, ses bornes, et la résolution des étiquettes à ce zoom. Où elle regarde, en revanche, n'est pas à régler ici : elle
+  // suit l'avatar, et continue (sauf devant la pièce que l'éditeur montre : on la recentre, le panneau n'occupant pas la même part de l'écran
+  // à un autre zoom).
+  private applyZoom(zoom: number): void {
+    const { width, height } = this.scale.gameSize;
     const bounds = cameraBounds({ width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels }, { width, height }, zoom);
     const camera = this.cameras.main;
     camera.setZoom(zoom);
     camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     if (this.editingRoom) camera.centerOn(...this.roomFocus(this.editingRoom, zoom));
+    else if (this.focusedTable) camera.centerOn(...tableFocus(this.focusedTable.rect, zoom, { width, height }));
     // À la création, layoutCamera passe avant les avatars.
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);
-    for (const lightSwitch of this.switches) lightSwitch.setZoom(zoom);
-  };
+    this.prompt?.setZoom(zoom);
+  }
 }

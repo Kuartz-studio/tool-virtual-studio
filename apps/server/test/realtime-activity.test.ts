@@ -1,5 +1,5 @@
-import { GROUP_DEBOUNCE_MS, GROUPS_TICK_MS, type ActivityInput, type ActivityState } from '@bureau/shared';
-import { describe, expect, test } from 'vitest';
+import { GROUP_DEBOUNCE_MS, GROUPS_TICK_MS, PRESET_MODES, placeAt, zoneAt, type ActivityInput, type ActivityState, type WorldTick } from '@bureau/shared';
+import { describe, expect, test, vi } from 'vitest';
 import { createActivityService } from '../src/activity/activity-service';
 import { enter, nextEvent, record, sleep, startTestServer, type TestServer } from './helpers/realtime';
 
@@ -205,5 +205,164 @@ describe('entendre et être entendu', () => {
     a.socket.emit('state:set', state.id);
     await sleep(3 * GROUPS_TICK_MS);
     expect(srv.realtime.coordinator.groupMembersOf(b.id)).toEqual([a.id, b.id].sort());
+  });
+});
+
+// Les modes tout prêts (Concentration, Sport : ceux du partage, jamais de la base) et l'emplacement d'un mode : le prendre conduit à ce lieu, en sortir ramène au bureau.
+describe('les modes tout prêts et leur emplacement', () => {
+  const preset = (id: string) => PRESET_MODES.find((mode) => mode.id === id)!;
+  const inRoom = (srv: TestServer, key: string, at: { x: number; y: number }) => placeAt(srv.map, at.x, at.y)?.key === key;
+  const inDesk = (srv: TestServer, key: string, at: { x: number; y: number }) => zoneAt(srv.map, at.x, at.y, ['desk'])?.name === key;
+  const toGym: ActivityInput = { label: 'Muscu', color: '#f97316', allowEntry: true, hear: false, heard: false, place: 'gym' };
+
+  test('« Concentration » : pris comme un mode à soi, sans la base : annoncé à tout le bureau, la porte du bureau se ferme, et personne ne bouge', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    const before = srv.realtime.world.get(a.id)!;
+    const changed = nextEvent(b.socket, 'activity:changed');
+    const door = nextEvent(b.socket, 'desk:changed');
+    const seen = record(a.socket);
+    a.socket.emit('state:set', 'preset:focus');
+    expect(await changed).toEqual({ id: a.id, activity: preset('preset:focus') });
+    expect(await door).toMatchObject({ key: 'A1', closedByState: true });
+    await sleep(100);
+    expect(seen.names()).not.toContain('move:correct');
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ x: before.x, y: before.y });
+  });
+
+  test('« Sport » : on est conduit dans la salle de sport : `move:correct` avec la raison « teleport » pour la personne, un saut (`tp`) dans le tick pour les autres', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    const moved = nextEvent(a.socket, 'move:correct');
+    const changed = nextEvent(b.socket, 'activity:changed');
+    const seenByB = record(b.socket);
+    a.socket.emit('state:set', 'preset:sport');
+    const correct = await moved;
+    expect(correct.reason).toBe('teleport');
+    expect(inRoom(srv, 'gym', correct)).toBe(true);
+    expect(await changed).toEqual({ id: a.id, activity: preset('preset:sport') });
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ x: correct.x, y: correct.y });
+    await vi.waitFor(() => {
+      const jump = (seenByB.payloadsOf('world:tick') as WorldTick[]).flatMap((tick) => tick.moves).find((move) => move.id === a.id && move.tp === true);
+      expect(jump).toMatchObject({ x: correct.x, y: correct.y });
+    });
+  });
+
+  test('en sortir (state:set null) ramène au bureau, au centre de sa pièce ; un statut ordinaire aussi', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const desk = srv.realtime.desks.deskOf(a.id)!.key;
+    a.socket.emit('state:set', 'preset:sport');
+    await nextEvent(a.socket, 'move:correct');
+    const home = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', null);
+    const back = await home;
+    expect(back.reason).toBe('teleport');
+    expect(inDesk(srv, desk, back)).toBe(true);
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ x: back.x, y: back.y });
+
+    // Un statut ordinaire prend la place du mode : il ramène de même.
+    a.socket.emit('state:set', 'preset:sport');
+    await nextEvent(a.socket, 'move:correct');
+    const again = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('status:set', 'busy');
+    expect(inDesk(srv, desk, await again)).toBe(true);
+  });
+
+  test('sans bureau : en sortir ramène à l\'apparition', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    a.socket.emit('desk:do', { type: 'release' }, () => undefined);
+    await vi.waitFor(() => expect(srv.realtime.desks.deskOf(a.id)).toBeUndefined());
+    a.socket.emit('state:set', 'preset:sport');
+    await nextEvent(a.socket, 'move:correct');
+    const home = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', null);
+    expect(await home).toEqual({ x: srv.map.spawn.x, y: srv.map.spawn.y, reason: 'teleport' });
+  });
+
+  test('d\'un mode à emplacement à un autre : directement dans la nouvelle pièce, et le retour, ensuite, est le bureau', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const desk = srv.realtime.desks.deskOf(a.id)!.key;
+    const toGame = await stateOf(srv, a.id, { ...toGym, label: 'Jeux', place: 'game' });
+    expect(toGame.place).toBe('game');
+    a.socket.emit('state:set', 'preset:sport');
+    await nextEvent(a.socket, 'move:correct');
+    const next = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', toGame.id);
+    expect(inRoom(srv, 'game', await next)).toBe(true);
+    const home = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', null);
+    expect(inDesk(srv, desk, await home)).toBe(true);
+  });
+
+  test('un mode dont l\'emplacement n\'est pas une destination de la carte (le café) : pris, sans déplacer personne', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const before = srv.realtime.world.get(a.id)!;
+    const toCafe = await stateOf(srv, a.id, { ...toGym, label: 'Café', place: 'cafe' });
+    const changed = nextEvent(a.socket, 'activity:changed');
+    const seen = record(a.socket);
+    a.socket.emit('state:set', toCafe.id);
+    expect((await changed).activity).toEqual(toCafe);
+    await sleep(100);
+    expect(seen.names()).not.toContain('move:correct');
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ x: before.x, y: before.y });
+  });
+
+  test('un mode à emplacement qui ne laisse pas entrer garde la porte du bureau fermée pendant que son propriétaire est ailleurs', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    const closed = await stateOf(srv, a.id, { ...toGym, allowEntry: false });
+    const door = nextEvent(b.socket, 'desk:changed');
+    const moved = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', closed.id);
+    expect(await door).toMatchObject({ key: 'A1', closedByState: true });
+    expect(inRoom(srv, 'gym', await moved)).toBe(true);
+    expect(srv.realtime.desks.canEnter(b.id, 'A1')).toBe(false);
+    expect(srv.realtime.desks.canEnter(a.id, 'A1')).toBe(true);
+  });
+
+  test('on se déconnecte en sport et on revient dans le délai de grâce : toujours en mode, toujours dans la salle', async () => {
+    const srv = await startOffice();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    const a = await enter(srv, cookie);
+    const moved = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', 'preset:sport');
+    const gone = await moved;
+    a.socket.disconnect();
+    const back = await enter(srv, cookie);
+    expect(back.init.self.activity).toEqual(preset('preset:sport'));
+    expect(back.init.self).toMatchObject({ x: gone.x, y: gone.y });
+  });
+
+  test('un mode tout prêt qui n\'existe pas, ou celui d\'un autre nom : ignoré, sans rien dire à personne', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const seen = record(a.socket);
+    a.socket.emit('state:set', 'preset:inconnu');
+    a.socket.emit('state:set', 'preset:');
+    await sleep(150);
+    expect(seen.names()).not.toContain('activity:changed');
+    expect(seen.names()).not.toContain('move:correct');
+    expect(srv.realtime.world.get(a.id)?.activity).toBeNull();
+  });
+
+  test('la salle est prise : on y arrive à une place libre, loin de ceux qui y sont', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    const first = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', 'preset:sport');
+    const spotA = await first;
+    const second = nextEvent(b.socket, 'move:correct');
+    b.socket.emit('state:set', 'preset:sport');
+    const spotB = await second;
+    expect(inRoom(srv, 'gym', spotB)).toBe(true);
+    expect(Math.hypot(spotA.x - spotB.x, spotA.y - spotB.y)).toBeGreaterThanOrEqual(2 * srv.map.tileSize);
   });
 });

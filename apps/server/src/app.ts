@@ -33,6 +33,8 @@ export interface AppDeps {
   logger?: Logger;
   /** Les états d'activité des personnes. Par défaut, ceux de la base. */
   activities?: ActivityService;
+  /** Les clés des destinations de la carte (destinationKeys) : un mode ne peut conduire qu'à l'une d'elles. Par défaut, aucune. */
+  destinations?: ReadonlySet<string>;
   /** Le faux live (SIM=1) : ses routes sont sous /api/sim. Absent en production. */
   sim?: SimHost;
 }
@@ -64,7 +66,10 @@ export function createApp(deps: AppDeps): express.Express {
   if (deps.env.E2E === '1') app.use('/api/test', testRoutes(deps));
   if (deps.sim) app.use('/api/sim', simRoutes({ auth: deps.auth, sim: deps.sim }));
   app.use('/api', memberRoutes(deps));
-  app.use('/api', activityRoutes({ auth: deps.auth, events: deps.events, activities: deps.activities ?? createActivityService(deps.db) }));
+  app.use(
+    '/api',
+    activityRoutes({ auth: deps.auth, events: deps.events, activities: deps.activities ?? createActivityService(deps.db), destinations: deps.destinations ?? new Set<string>() }),
+  );
   // Une adresse inconnue sous /api répond en JSON, avant le client : jamais sa page HTML.
   app.use('/api', notFound);
 

@@ -10,7 +10,7 @@ export interface ActivityService {
   get(userId: string, id: string): Promise<ActivityState | undefined>;
   /** Crée un état ; `limit` si elle en a déjà ACTIVITY_MAX_PER_USER. */
   create(userId: string, input: ActivityInput): Promise<{ ok: true; state: ActivityState } | { ok: false; error: 'limit' }>;
-  /** Remplace un de ses états, icône comprise (sans icône dans `input`, il n'en a plus) ; undefined s'il n'est pas à elle. */
+  /** Remplace un de ses états, icône et emplacement compris (sans icône ni emplacement dans `input`, il n'en a plus) ; undefined s'il n'est pas à elle. */
   update(userId: string, id: string, input: ActivityInput): Promise<ActivityState | undefined>;
   /** Supprime un de ses états ; faux s'il n'est pas à elle. */
   remove(userId: string, id: string): Promise<boolean>;
@@ -28,6 +28,7 @@ const stateOf = (row: typeof activityState.$inferSelect): ActivityState => {
     label: row.label,
     color: row.color,
     ...(icon && { icon }),
+    ...(row.place !== null && { place: row.place }),
     allowEntry: row.allowEntry,
     hear: row.hear,
     heard: row.heard,
@@ -66,6 +67,7 @@ export function createActivityService(db: Db): ActivityService {
               label: sql<string>`${input.label}`.as('label'),
               color: sql<string>`${input.color}`.as('color'),
               icon: sql<string | null>`${input.icon ?? null}`.as('icon'),
+              place: sql<string | null>`${input.place ?? null}`.as('place'),
               allowEntry: sql<boolean>`${input.allowEntry}`.as('allow_entry'),
               hear: sql<boolean>`${input.hear}`.as('hear'),
               heard: sql<boolean>`${input.heard}`.as('heard'),
@@ -82,7 +84,7 @@ export function createActivityService(db: Db): ActivityService {
       if (!isUuid(id)) return undefined;
       const [row] = await db
         .update(activityState)
-        .set({ label: input.label, color: input.color, icon: input.icon ?? null, allowEntry: input.allowEntry, hear: input.hear, heard: input.heard })
+        .set({ label: input.label, color: input.color, icon: input.icon ?? null, place: input.place ?? null, allowEntry: input.allowEntry, hear: input.hear, heard: input.heard })
         .where(and(eq(activityState.userId, userId), eq(activityState.id, id)))
         .returning();
       return row && stateOf(row);

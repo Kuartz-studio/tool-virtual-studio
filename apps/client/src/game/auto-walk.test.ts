@@ -33,6 +33,11 @@ function grid(rows: string[]): OfficeMap {
     zones: [],
     spawn: { x: 16, y: 16 },
     switches: [],
+    places: [],
+    coffees: [],
+    speakers: [],
+    tables: [],
+    signs: [],
   };
 }
 const open = (width: number, height: number): OfficeMap => grid(Array.from({ length: height }, () => '.'.repeat(width)));

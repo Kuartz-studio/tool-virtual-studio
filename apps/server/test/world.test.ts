@@ -1,4 +1,4 @@
-import { DEV_OFFICE, buildTiledMap, parseOfficeMap } from '@bureau/shared';
+import { DEV_OFFICE, MAX_SPEED_PX_PER_S, MOVE_JITTER_MS, NORMAL_MAX_SPEED_PX_PER_S, SPEAKING_TTL_MS, buildTiledMap, parseOfficeMap } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { World } from '../src/realtime/world';
 
@@ -247,7 +247,7 @@ describe('teleport', () => {
     world.drainMoves();
     expect(world.teleport('a', 400, 400)).toBe(true);
     expect(world.get('a')).toMatchObject({ x: 400, y: 400, dir: 'right', moving: false });
-    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false }]);
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false, tp: true }]);
     expect(world.drainMoves()).toEqual([]);
   });
 
@@ -257,7 +257,7 @@ describe('teleport', () => {
     clock.t = 100;
     world.applyMove('a', { x: 120, y: 240, dir: 'right', moving: true });
     world.teleport('a', 400, 400);
-    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false }]);
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 400, y: 400, dir: 'right', moving: false, tp: true }]);
   });
 
   test.each([
@@ -289,6 +289,155 @@ describe('teleport', () => {
     // de join (1 000 ms plus tôt), 900 px seraient permis, et (581, 400) n'est qu'à 181 px.
     expect(world.applyMove('a', { x: 581, y: 400, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 400, y: 400 } });
     expect(world.applyMove('a', { x: 580, y: 400, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+});
+
+describe('teleport : le mouvement est marqué `tp` pour que les autres sautent au lieu de glisser', () => {
+  test('un mouvement ordinaire ne porte pas de `tp`', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.applyMove('a', { x: 160, y: 240, dir: 'right', moving: true });
+    expect(world.drainMoves()[0]).not.toHaveProperty('tp');
+  });
+
+  test('un mouvement accepté après la téléportation, dans la même fenêtre, la garde : les autres la voient toujours comme une téléportation', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    clock.t = 100;
+    world.teleport('a', 400, 400);
+    clock.t = 200;
+    expect(world.applyMove('a', { x: 420, y: 400, dir: 'right', moving: true })).toEqual({ ok: true });
+    expect(world.drainMoves()).toEqual([{ id: 'a', x: 420, y: 400, dir: 'right', moving: true, tp: true }]);
+    // La fenêtre suivante repart de zéro : le mouvement d'après est ordinaire.
+    clock.t = 300;
+    world.applyMove('a', { x: 440, y: 400, dir: 'right', moving: true });
+    expect(world.drainMoves()[0]).not.toHaveProperty('tp');
+  });
+});
+
+// ---- Le café -----------------------------------------------------------------------------------------------------------------
+
+describe('le café : la limite de vitesse du joueur passe de 480 à 960 px/s', () => {
+  test('sans café, 500 px en 100 ms sont refusés ; sous café, ils passent (504 px au plus)', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 30_000);
+    clock.t = 100;
+    expect(world.applyMove('b', { x: 580, y: 240, dir: 'right', moving: true })).toEqual({ ok: false, correct: { x: 80, y: 240 } });
+    expect(world.applyMove('a', { x: 580, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+  });
+
+  test('maxSpeedOf : 960 sous café, 480 sinon, et un inconnu n\'a pas de café', () => {
+    const { world, join } = setup();
+    join('a');
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+    world.setBoost('a', 30_000);
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    expect(world.maxSpeedOf('fantome')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+  });
+
+  test('la limite normale revient MOVE_JITTER_MS après la fin du café : les derniers paquets en retard passent encore', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    world.setBoost('a', 1_000);   // jusqu'à t = 1 000
+    clock.t = 1_000 + MOVE_JITTER_MS;
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    clock.t = 1_000 + MOVE_JITTER_MS + 1;
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+  });
+
+  test('un nouveau café remet le compte à zéro ; setBoost(id, null) l\'éteint tout de suite', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    world.setBoost('a', 1_000);
+    clock.t = 900;
+    world.setBoost('a', 1_000);   // jusqu'à t = 1 900
+    clock.t = 1_500;
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    world.setBoost('a', null);
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+  });
+
+  test('un joueur qui part perd son café, il ne le retrouve pas en revenant', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setBoost('a', 30_000);
+    world.leave('a');
+    join('a');
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+  });
+
+  test('boostRemaining : ce qu\'il reste de café en ms, 0 sans café, une fois fini, ou pour un inconnu', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    expect(world.boostRemaining('a')).toBe(0);
+    world.setBoost('a', 30_000);
+    expect(world.boostRemaining('a')).toBe(30_000);
+    clock.t = 12_500;
+    expect(world.boostRemaining('a')).toBe(17_500);
+    clock.t = 30_000;
+    expect(world.boostRemaining('a')).toBe(0);
+    clock.t = 45_000;
+    expect(world.boostRemaining('a')).toBe(0);
+    expect(world.boostRemaining('fantome')).toBe(0);
+  });
+
+  test('expireBoosts rend ceux dont le café vient de finir, une seule fois, et garde la limite du café MOVE_JITTER_MS de plus', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 1_000);
+    world.setBoost('b', 5_000);
+    clock.t = 999;
+    expect(world.expireBoosts()).toEqual([]);
+    clock.t = 1_000;
+    expect(world.expireBoosts()).toEqual(['a']);
+    expect(world.expireBoosts()).toEqual([]);   // une seule fois
+    // Fini pour tout le monde, mais les derniers paquets arrivent en retard : la limite du café tient encore.
+    expect(world.maxSpeedOf('a')).toBe(MAX_SPEED_PX_PER_S);
+    clock.t = 1_000 + MOVE_JITTER_MS + 1;
+    expect(world.maxSpeedOf('a')).toBe(NORMAL_MAX_SPEED_PX_PER_S);
+    expect(world.expireBoosts()).toEqual([]);
+    expect(world.maxSpeedOf('b')).toBe(MAX_SPEED_PX_PER_S);
+    clock.t = 5_000;
+    expect(world.expireBoosts()).toEqual(['b']);
+  });
+
+  test('un nouveau café après la fin s\'éteindra à son tour, et celui qu\'on retire avec null ne se redit pas', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 1_000);
+    clock.t = 1_000;
+    expect(world.expireBoosts()).toEqual(['a']);
+    world.setBoost('a', 1_000);   // un autre café : jusqu'à t = 2 000
+    clock.t = 1_999;
+    expect(world.expireBoosts()).toEqual([]);
+    clock.t = 2_000;
+    expect(world.expireBoosts()).toEqual(['a']);
+    world.setBoost('b', 10_000);
+    world.setBoost('b', null);   // retiré à la main : l'appelant le dit lui-même, expireBoosts n'a rien à ajouter
+    clock.t = 20_000;
+    expect(world.expireBoosts()).toEqual([]);
+  });
+
+  test('get et list disent le café en cours (boost, ce qu\'il en reste en ms) et rien pour les autres', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setBoost('a', 30_000);
+    clock.t = 10_000;
+    expect(world.get('a')?.boost).toBe(20_000);
+    expect(world.get('b')).not.toHaveProperty('boost');
+    expect(world.list().map((p) => [p.id, p.boost])).toEqual([['a', 20_000], ['b', undefined]]);
+    clock.t = 30_000;
+    expect(world.get('a')).not.toHaveProperty('boost');
+    // join rend le joueur tel qu'il arrive : jamais avec un café, même si l'identifiant en avait un avant de partir.
+    world.setBoost('b', 30_000);
+    world.leave('b');
+    expect(join('b')).not.toHaveProperty('boost');
   });
 });
 
@@ -503,5 +652,84 @@ describe('état d\'activité', () => {
     expect(world.editActivity('a', 's1', null)).toEqual({ activity: null });
     expect(world.rememberedActivity('a')).toBeNull();
     expect(world.editActivity('a', 's1', null)).toBeUndefined();
+  });
+});
+
+describe('la parole', () => {
+  test('setSpeaking : la personne parle, le monde le dit dans sa copie ; elle se tait, la clé disparaît', () => {
+    const { world, join } = setup();
+    join('a');
+    expect(world.get('a')).not.toHaveProperty('speaking');
+    expect(world.setSpeaking('a', true)).toBe(true);
+    expect(world.get('a')?.speaking).toBe(true);
+    expect(world.list()[0]?.speaking).toBe(true);
+    expect(world.setSpeaking('a', false)).toBe(true);
+    expect(world.get('a')).not.toHaveProperty('speaking');
+  });
+
+  test('setSpeaking rend vrai quand l\'état change, faux quand il est déjà celui-là : le « je parle » répété ne se rediffuse pas', () => {
+    const { world, join } = setup();
+    join('a');
+    expect(world.setSpeaking('a', false)).toBe(false);
+    expect(world.setSpeaking('a', true)).toBe(true);
+    expect(world.setSpeaking('a', true)).toBe(false);
+    expect(world.setSpeaking('a', false)).toBe(true);
+  });
+
+  test('un identifiant absent du monde : ignoré', () => {
+    const { world } = setup();
+    expect(world.setSpeaking('inconnu', true)).toBe(false);
+    expect(world.expireSpeaking()).toEqual([]);
+  });
+
+  test('expireSpeaking éteint, et rend, ceux qui n\'ont pas redit « je parle » depuis SPEAKING_TTL_MS', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setSpeaking('a', true);
+    clock.t = 1000;
+    world.setSpeaking('b', true);
+    clock.t = SPEAKING_TTL_MS - 1;
+    expect(world.expireSpeaking()).toEqual([]);
+    // a a parlé il y a SPEAKING_TTL_MS : éteint ; b, il y a un peu moins : encore là.
+    clock.t = SPEAKING_TTL_MS;
+    expect(world.expireSpeaking()).toEqual(['a']);
+    expect(world.get('a')).not.toHaveProperty('speaking');
+    expect(world.get('b')?.speaking).toBe(true);
+    clock.t = 1000 + SPEAKING_TTL_MS;
+    expect(world.expireSpeaking()).toEqual(['b']);
+    expect(world.expireSpeaking()).toEqual([]);
+  });
+
+  test('chaque « je parle » remet le délai à zéro : celui qui le redit toutes les 3 s ne s\'éteint pas', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    world.setSpeaking('a', true);
+    for (let t = 3000; t <= 30_000; t += 3000) {
+      clock.t = t;
+      expect(world.setSpeaking('a', true)).toBe(false);
+      expect(world.expireSpeaking()).toEqual([]);
+    }
+    expect(world.get('a')?.speaking).toBe(true);
+    clock.t = 30_000 + SPEAKING_TTL_MS;
+    expect(world.expireSpeaking()).toEqual(['a']);
+  });
+
+  test('quitter le monde, ou y revenir, ne laisse pas parler : la parole ne survit pas à la personne', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setSpeaking('a', true);
+    expect(world.leave('a')?.speaking).toBe(true);
+    expect(join('a')).not.toHaveProperty('speaking');
+    expect(world.get('a')).not.toHaveProperty('speaking');
+    expect(world.expireSpeaking()).toEqual([]);
+  });
+
+  test('un second join du même identifiant remplace le joueur : il ne parle plus', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setSpeaking('a', true);
+    join('a');
+    expect(world.get('a')).not.toHaveProperty('speaking');
   });
 });

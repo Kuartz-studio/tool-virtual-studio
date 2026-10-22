@@ -18,8 +18,9 @@ export function createGameConfig(parent: string, mapKey: string): Phaser.Types.C
     roundPixels: true,
     // Le vide autour de la carte.
     backgroundColor: '#1d2030',
-    // Vue de dessus : rien ne tombe.
-    physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 } } },
+    // Vue de dessus : rien ne tombe. La physique avance par pas fixes : à 120 Hz, un avatar qui court sous café (960 px/s) fait 8 px par pas, la moitié de la
+    // marge des tuiles (tileBias, 16 px) : quelle que soit la cadence de l'affichage, il ne traverse pas un mur d'une case.
+    physics: { default: 'arcade', arcade: { gravity: { x: 0, y: 0 }, fps: 120 } },
     scene: [new Boot(), new Preloader(mapKey), new Office(mapKey)],
   };
 }

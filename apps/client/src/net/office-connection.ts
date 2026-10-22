@@ -1,4 +1,4 @@
-import type { ActivityState, InitPayload, LightsState, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { ActivityState, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -16,21 +16,44 @@ export interface OfficeBusEvents {
   'net:tick': (p: WorldTick) => void;
   'net:joined': (p: PublicPlayer) => void;
   'net:left': (p: { id: string }) => void;
-  'net:correct': (p: { x: number; y: number }) => void;
+  // Le serveur replace l'avatar (un refus de `move`, une porte, un voyage voulu : `reason` « teleport », un mode qui conduit à la salle de sport).
+  'net:correct': (p: { x: number; y: number; reason?: 'teleport' }) => void;
   'net:status': (p: { id: string; status: Status }) => void;
   'net:activity': (p: { id: string; activity: ActivityState | null }) => void;
   'net:profile': (p: { id: string; name: string; avatarKey: string | null }) => void;
+  // Quelqu'un se met à parler, ou se tait, d'après le serveur (`speaking:changed`) : la bulle au-dessus de son avatar, même loin de soi et hors de
+  // sa conversation. Le magasin le dit déjà à jour (pour ceux qu'il connaît) quand l'événement part.
+  'net:speaking': (p: { id: string; speaking: boolean }) => void;
   // La lumière du bureau vient d'être allumée ou éteinte, par quelqu'un (soi-même compris) : le serveur l'annonce à tout le bureau. Le magasin
   // la dit déjà à jour quand l'événement part. Pas à l'arrivée : l'état d'un `init` n'est pas un changement.
   'lights:changed': (p: LightsState) => void;
+  // Quelqu'un vient de prendre un café (`ms` : ce qui lui en reste, 30 s tout neuf) ou le sien est fini (`ms` 0), soi-même compris : le serveur l'annonce à
+  // tout le bureau. Le magasin en dit déjà l'échéance à jour quand l'événement part. Pas à l'arrivée : le café d'un `init` n'est pas une prise.
+  'coffee:changed': (p: { id: string; ms: number }) => void;
+  // L'invitée a répondu à l'une de nos invitations à une table (elle accepte, refuse, ne dit rien, ou a quitté le bureau), ou n'a pas répondu à temps : un message
+  // passager (la file de toasts). Le magasin n'en garde rien.
+  'game:notice': (p: GameNotice) => void;
   'local:move': (p: MovePayload) => void;
   // Le jeu : la personne a cliqué sur la porte fermée de ce bureau, près de elle. La connexion toque pour elle (`desk:do`, knock).
   'local:knock': (p: { key: string }) => void;
+  // Le jeu : la porte de ce bureau se met en mouvement (`open` : elle s'ouvre ; sinon elle se ferme), à `distancePx` de la personne qui joue ; `ownerId` :
+  // à qui est le bureau. Le son des portes (audio/sfx-events.ts) en dépend.
+  'door:moved': (p: { key: string; open: boolean; ownerId: string | null; distancePx: number }) => void;
   // Le jeu : la personne actionne l'interrupteur de la lumière, de près. La connexion demande l'état voulu au serveur (`lights:set`) ; la
   // lumière ne change qu'à son annonce (`lights:changed`).
   'local:lights': (p: { on: boolean }) => void;
+  // Le jeu : la personne se sert à la machine à café, de près. La connexion le demande au serveur (`coffee:take`) ; le café ne commence qu'à son annonce
+  // (`coffee:changed`).
+  'local:coffee': () => void;
+  // Le jeu ou l'interface : la personne règle la musique de la pièce où elle est (l'enceinte, la puce du lieu). La connexion le demande au serveur
+  // (`music:set`) ; la musique ne change qu'à son annonce (`music:changed`), que le magasin retient.
+  'local:music': (p: MusicSetPayload) => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
+  // window.__office.boost (tests de bout en bout seulement) : `debug:boost`, que le serveur n'accepte qu'avec E2E=1.
+  'local:boost': (p: { ms: number }) => void;
+  // window.__office.debugGame (tests de bout en bout seulement) : `debug:game`, que le serveur n'accepte qu'avec E2E=1.
+  'local:debug-game': (p: DebugGamePayload) => void;
   // L'interface demande au jeu de faire marcher l'avatar tout seul jusqu'à son bureau (« Aller à mon bureau », game/auto-walk.ts), ou
   // d'arrêter cette marche. Rien ne part au serveur de ces deux-là : l'avatar marche comme au clavier, et ses positions partent par `local:move`.
   'local:walk-to-desk': () => void;
@@ -80,7 +103,10 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // - la connexion est prête (`ready`, au magasin) une fois l'`init` de cette connexion reçu, et ne l'est plus dès qu'elle est coupée ;
 // - la lumière du bureau (`lights:changed`, et celle de l'`init`) va au magasin, puis au bus (`lights:changed`) : le jeu l'obscurcit, le son
 //   fait son bruit d'interrupteur ;
-// - ce que le jeu produit (`local:move`, `local:teleport`, `local:lights`) part au serveur, mais seulement quand la connexion est prête. Avant, le
+// - la musique des pièces (`music:changed`, et celle de l'`init`) va au magasin, que lisent l'audio (ce qu'on entend où l'on est), la puce du lieu et les enceintes ;
+// - le café (`coffee:changed`, et le `boost` de chacun dans l'`init`) va au magasin, qui en tient l'échéance, puis au bus (`coffee:changed`) : le jeu montre la
+//   tasse et donne la vitesse, le son joue la machine, la pastille compte les secondes ;
+// - ce que le jeu produit (`local:move`, `local:teleport`, `local:lights`, `local:coffee`, `local:music`) part au serveur, mais seulement quand la connexion est prête. Avant, le
 //   serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure, Socket.io garderait les messages et les enverrait au
 //   retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
 //
@@ -136,6 +162,10 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       emitOnBus(bus, 'net:activity', p);
     },
     'media:changed': (p) => state().setMedia(p.id, p.media),
+    'speaking:changed': (p) => {
+      state().setSpeaking(p.id, p.speaking);
+      emitOnBus(bus, 'net:speaking', p);
+    },
     'profile:changed': (p) => {
       state().setProfile(p);
       emitOnBus(bus, 'net:profile', p);
@@ -163,6 +193,19 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setLights(lights);
       emitOnBus(bus, 'lights:changed', lights);
     },
+    // La musique d'une pièce : au magasin, que lisent l'audio, la puce du lieu et les enceintes.
+    'music:changed': (p) => state().setRoomMusic(p.place, p.state),
+    // Les jeux : la table entière au magasin (qui n'en prend que la version la plus récente), les invitations reçues (et retirées) au magasin ; l'avis d'une réponse à l'une
+    // de nos invitations va au bus, pour les messages passagers.
+    'game:table': (view) => state().setGameTable(view),
+    'game:invite': (invite) => state().addGameInvite(invite),
+    'game:invite:gone': ({ id }) => state().removeGameInvite(id),
+    'game:notice': (notice) => emitOnBus(bus, 'game:notice', notice),
+    // Le café : le magasin d'abord (il en tient l'échéance, que le jeu et la pastille y lisent), puis le bus, pour le jeu et le son.
+    'coffee:changed': (p) => {
+      state().setCoffee(p.id, p.ms);
+      emitOnBus(bus, 'coffee:changed', p);
+    },
     // Le faux live (SIM=1 côté serveur) : qui est dans la room, et leur son. Le serveur n'en envoie jamais autrement.
     'sim:room': (p) => setSimRoom(p),
   };
@@ -185,8 +228,20 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     listenOnBus(bus, 'local:teleport', (p) => {
       if (state().ready) socket.emit('debug:teleport', p);
     }),
+    listenOnBus(bus, 'local:boost', (p) => {
+      if (state().ready) socket.emit('debug:boost', p);
+    }),
+    listenOnBus(bus, 'local:debug-game', (p) => {
+      if (state().ready) socket.emit('debug:game', p);
+    }),
     listenOnBus(bus, 'local:lights', ({ on }) => {
       if (state().ready) socket.emit('lights:set', { on });
+    }),
+    listenOnBus(bus, 'local:coffee', () => {
+      if (state().ready) socket.emit('coffee:take');
+    }),
+    listenOnBus(bus, 'local:music', (p) => {
+      if (state().ready) socket.emit('music:set', p);
     }),
     listenOnBus(bus, 'local:knock', ({ key }) => {
       if (!state().ready) return;

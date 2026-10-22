@@ -1,4 +1,4 @@
-import { buildOfficeTiledMap, parseOfficeMap, PLAZA, type DeskInfo, type OfficeMap, type PublicPlayer, type Zone } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, type DeskInfo, type OfficeMap, type PublicPlayer, type Zone } from '@bureau/shared';
 import { act, renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { EventBus } from '../game/EventBus';
@@ -17,6 +17,11 @@ const map = {
   blocked: new Uint8Array(900),
   spawn: { x: 48, y: 48 },
   switches: [],
+  places: [],
+  coffees: [],
+  speakers: [],
+  tables: [],
+  signs: [],
   zones: [
     zone('1', 'label', 0, 320, 320, 64, { text: 'ACCUEIL' }),
     zone('2', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' }),
@@ -84,7 +89,7 @@ describe('usePlace : le lieu où l\'on est', () => {
     act(() => useOfficeStore.getState().setOfficeMap(office));
     const { result } = renderHook(() => usePlace());
     expect(result.current).toBe('Accueil');
-    walkTo((PLAZA.x + 15) * 32 + 16, (PLAZA.y + 6) * 32 + 16);
+    walkTo(40 * 32 + 16, 5 * 32 + 16);
     expect(result.current).toBe('Café');
   });
 

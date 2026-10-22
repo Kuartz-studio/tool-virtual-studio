@@ -99,9 +99,26 @@ export const fr = {
     // Ce qu'un lecteur d'écran annonce quand ton statut (ou ton mode) change.
     statusChanged: 'Statut : {status}',
     mode: 'Mode',
-    modeNone: 'Aucun',
-    // Le « + » après tes modes : le panneau où tu les crées et les modifies.
-    modeManage: 'Mes états d\'activité…',
+  },
+  // Les modes à la manière d'Apple, dans le menu de la puce « Moi » : « Normal » (aucun mode : la tuile verte), les modes tout prêts, puis « Mes modes » et la tuile qui en crée
+  // un ; et, dans le panneau, ce qui est propre aux modes tout prêts (on les copie, on ne les modifie pas) et à l'emplacement (la pièce où un mode conduit).
+  modes: {
+    normal: 'Normal',
+    normalHint: 'Aucun mode : ton statut ordinaire.',
+    presetHints: {
+      focus: 'Ta porte se ferme ; tu entends et on t\'entend toujours.',
+      sport: 'Tu vas à la salle de sport, sans entendre ni être entendu ; en sortir te ramène à ton bureau.',
+    },
+    mine: 'Mes modes',
+    create: 'Créer un mode',
+    presetsTitle: 'Modes prêts à l\'emploi',
+    presetsIntro: 'Concentration et Sport ne se modifient pas : copie-les en mode perso pour les changer.',
+    duplicate: 'Dupliquer en mode perso',
+    duplicateLabel: 'Dupliquer {label} en mode perso',
+    place: 'Emplacement',
+    placeHint: 'Prendre ce mode te conduit dans cette pièce ; en sortir te ramène à ton bureau. Sans emplacement, tu ne bouges pas.',
+    placeMap: 'Pièces où le mode peut te conduire',
+    placeIn: 'à {place}',
   },
   office: {
     signOut: 'Se déconnecter',
@@ -133,18 +150,8 @@ export const fr = {
     // Le lieu où l'on est (la puce en haut à gauche) et ceux qui y sont.
     where: {
       label: 'Lieu',
-      // Là où aucune zone de la carte ne porte de nom.
+      // Les rues, et là où aucune zone de la carte ne porte de nom. Les pièces portent le nom que leur donne la carte (zone `place`).
       hallway: 'Couloir',
-      // Les grandes pièces de la grande carte (office/where.ts).
-      rooms: {
-        cafe: 'Café',
-        reception: 'Accueil',
-        pool: 'Piscine',
-        lounge: 'Salon',
-        music: 'Coin musique',
-        hall: 'Grande salle',
-        meeting: 'Salle de réunion',
-      },
       onePerson: '1 personne ici',
       manyPeople: '{count} personnes ici',
     },
@@ -166,11 +173,7 @@ export const fr = {
     title: 'Mes états d\'activité',
     intro: 'Crée tes états : un nom, une icône ou la couleur de ton point, et ce que chacun change pour toi. Tu les choisis ensuite dans le menu de ton profil, sous « Mode ».',
     listTitle: 'Mes états',
-    empty: 'Aucun état pour l\'instant. Prends une suggestion, ou crée le tien ci-dessous.',
-    // Trois états tout prêts, pour qui n'en a aucun : un clic les crée.
-    suggestionsLabel: 'Suggestions',
-    suggestionLabel: 'Créer l\'état {label}',
-    suggestions: { focus: 'Concentration', meeting: 'Réunion', break: 'Pause' },
+    empty: 'Aucun état pour l\'instant. Copie un mode prêt à l\'emploi, ou crée le tien ci-dessous.',
     take: 'Prendre',
     takeLabel: 'Prendre l\'état {label}',
     edit: 'Modifier',
@@ -182,7 +185,7 @@ export const fr = {
     formEdit: 'Modifier l\'état',
     label: 'Nom de l\'état',
     labelHint: '24 caractères au plus',
-    // L'icône, facultative : douze, dont le nom (pour les lecteurs d'écran et l'infobulle) est celui de la liste partagée.
+    // L'icône, facultative : quinze, dont le nom (pour les lecteurs d'écran et l'infobulle) est celui de la liste partagée.
     icon: 'Icône',
     iconHint: 'Facultative : sans icône, c\'est le point de la couleur. Clique de nouveau sur l\'icône choisie pour la retirer.',
     icons: {
@@ -198,6 +201,9 @@ export const fr = {
       plane: 'Avion',
       dumbbell: 'Haltère',
       music: 'Musique',
+      check: 'Coche',
+      waves: 'Vagues',
+      'gamepad-2': 'Manette',
     } satisfies Record<ActivityIcon, string>,
     color: 'Couleur du point',
     colorCustom: 'Autre couleur',
@@ -284,7 +290,7 @@ export const fr = {
       generic: 'Cette action a échoué. Réessaie.',
     },
   },
-  // Les boutons de zoom du jeu, en bas à gauche : jusqu'à ×2 plus près, ×4 plus loin que la vue de départ.
+  // Les boutons de zoom du jeu, en bas à droite : de 25 % à 200 %, 100 % au départ ; le pourcentage du milieu le rétablit.
   zoom: {
     group: 'Zoom',
     in: 'Zoom avant',
@@ -302,6 +308,190 @@ export const fr = {
     selfOn: 'Tu as rallumé la lumière',
     use: 'Éteindre',
     useOn: 'Allumer',
+  },
+  // La musique de la pièce où l'on est : l'enceinte (« [E] Couper la musique », de près) et le bouton haut-parleur de la puce du lieu, dont la fenêtre règle l'état de la
+  // pièce pour tous ceux qui y sont : allumée ou coupée, et son ambiance (« Par défaut » : celle que la carte lui donne). Dans un bureau, son propriétaire seul y touche.
+  roomMusic: {
+    mute: 'Couper la musique',
+    play: 'Lancer la musique',
+    // Le bouton de la puce du lieu, et la fenêtre qu'il ouvre : le même nom, qui est aussi l'infobulle.
+    button: 'Musique de la pièce',
+    title: 'Musique de la pièce',
+    on: 'Musique allumée',
+    // Le nom du groupe des ambiances, pour les lecteurs d'écran, et son premier choix : celle de la carte.
+    scenes: 'Ambiance de la pièce',
+    default: 'Par défaut',
+    defaultHint: 'L\'ambiance de la pièce : {scene}',
+    // Qui a réglé la pièce en dernier.
+    by: 'Réglée par {name}',
+    // Quand on écoute une ambiance choisie dans le panneau Son (son casque), le réglage de la pièce vaut pour les autres.
+    headphones: 'Tu écoutes l\'ambiance choisie dans le panneau Son : ce réglage est pour ceux qui sont ici.',
+  },
+  // Le café : la machine du bar (« [E] Prendre un café », de près) et la pastille qui compte ce qu'il en reste, sous la puce du lieu.
+  coffee: {
+    take: 'Prendre un café',
+    // La pastille, en secondes ; et son nom pour les lecteurs d'écran.
+    left: '{seconds} s',
+    pill: 'Café : encore {seconds} s',
+  },
+  // Les jeux de la salle de jeu (échecs, backgammon, Puissance 4, petits chevaux) : tout ce qui est commun aux quatre. Ce qui est propre à un jeu (ses cases, ses pièces, ses
+  // raisons de fin, ses règles) est dans le fichier de textes de son dossier (`games/<jeu>/fr.ts`).
+  games: {
+    names: { chess: 'Échecs', backgammon: 'Backgammon', connect4: 'Puissance 4', ludo: 'Petits chevaux' },
+    // Ce que dit l'étiquette « [E] » devant une table : s'y asseoir pour jouer, ou regarder la partie en cours.
+    prompt: '[E] {game} : {action}',
+    play: 'jouer',
+    watch: 'regarder la partie',
+    // Le panneau : son nom (celui de la table), le bouton des règles, les onglets.
+    panel: 'Table de {game}',
+    rules: 'Règles',
+    rulesTitle: 'Règles du jeu',
+    tabs: { label: 'Partie ou classement', match: 'Partie', ladder: 'Classement' },
+    // Un jeu dont le module n'est pas là (le registre ne l'a pas) : sa table est fermée.
+    soon: 'Bientôt disponible',
+    soonHint: 'Ce jeu n\'est pas encore au bureau. Tu peux t\'asseoir à la table : la partie commencera quand il sera là.',
+    loading: 'Chargement du jeu…',
+    loadFailed: 'Impossible de charger le jeu. Ferme le panneau et rouvre-le pour réessayer.',
+    // La salle d'attente : les chaises, qui est assis, le bouton « Prêt ».
+    lobby: {
+      title: 'À la table',
+      free: 'Libre',
+      seatLabel: 'Chaise {n}',
+      sit: 'S\'asseoir',
+      sitAt: 'S\'asseoir à la chaise {n}',
+      stand: 'Se lever',
+      ready: 'Prêt',
+      notReady: 'Pas prêt',
+      readyLabel: 'Je suis prêt',
+      waitingFor: 'On attend {names}.',
+      needMore: 'Il faut {count} joueurs au moins pour commencer.',
+      allReady: 'Tout le monde est prêt : la partie commence.',
+      sitHint: 'Assieds-toi à une chaise pour jouer, ou regarde la partie.',
+      disconnected: 'déconnecté',
+    },
+    // Inviter quelqu'un du bureau à la table.
+    invite: {
+      toggle: 'Inviter quelqu\'un',
+      title: 'Inviter à la table',
+      nobody: 'Personne d\'autre n\'est en ligne.',
+      send: 'Inviter',
+      sendLabel: 'Inviter {name}',
+      sent: 'Invitation envoyée à {name}.',
+      busyNow: '{name} joue déjà une partie.',
+    },
+    // Le toast d'une invitation reçue, et les avis de ses réponses.
+    invitedTo: { chess: 'aux échecs', backgammon: 'au backgammon', connect4: 'au Puissance 4', ludo: 'aux petits chevaux' },
+    invitation: '{name} t\'invite {game}',
+    accept: 'Accepter',
+    decline: 'Refuser',
+    acceptLabel: 'Accepter l\'invitation de {name}',
+    declineLabel: 'Refuser l\'invitation de {name}',
+    notice: {
+      accepted: '{name} a rejoint la table de {game}.',
+      declined: '{name} a refusé ton invitation.',
+      expired: '{name} n\'a pas répondu à ton invitation.',
+      gone: '{name} a quitté le bureau.',
+    },
+    // Les joueurs, d'une ligne à l'autre : le tour, le compte à rebours, la connexion, la sortie (une partie à plusieurs qui continue sans celui qui a abandonné).
+    you: 'toi',
+    turn: 'au trait',
+    countdown: 'Il reste {time}',
+    reconnect: 'déconnecté, encore {time}',
+    out: 'sorti',
+    timeWarning: 'Il reste moins d\'une minute pour jouer.',
+    // La ligne d'état.
+    status: {
+      yourTurn: 'À toi de jouer',
+      turnOf: 'Au tour de {name}',
+      waiting: 'En attente de la partie',
+      watching: 'Tu regardes la partie.',
+      thinking: 'Coup en cours…',
+      out: 'Tu as quitté la partie : elle continue sans toi.',
+    },
+    // Ce qui se passe quand une partie finit pour une raison que la plateforme écrit (celle d'un jeu est écrite par son module).
+    end: {
+      title: 'Partie finie',
+      resign: '{loser} abandonne. {winner} gagne.',
+      timeout: '{loser} n\'a pas joué depuis 5 minutes. {winner} gagne.',
+      disconnect: '{loser} a quitté le bureau. {winner} gagne.',
+      resignMany: '{loser} abandonne.',
+      timeoutMany: '{loser} n\'a pas joué depuis 5 minutes.',
+      disconnectMany: '{loser} a quitté le bureau.',
+      agreement: 'Nulle par accord.',
+      winner: '{name} gagne.',
+      winners: '{names} gagnent.',
+      won: 'Tu as gagné !',
+      lost: 'Tu as perdu.',
+      drawn: 'Match nul.',
+      unranked: 'Partie non classée : il faut deux coups au moins pour compter au classement.',
+      ratingLine: '{name} : {before} → {after} ({delta})',
+    },
+    // Les gestes d'une partie en cours, et d'une partie finie.
+    actions: {
+      resign: 'Abandonner',
+      resignTitle: 'Abandonner la partie ?',
+      resignBody: 'Tu perds la partie, et ton classement en tient compte.',
+      resignConfirm: 'Abandonner',
+      resignCancel: 'Annuler',
+      rematch: 'Revanche',
+      rematchWaiting: 'Revanche demandée : on attend l\'autre.',
+      leave: 'Se lever',
+      sit: 'S\'asseoir',
+    },
+    draw: {
+      offer: 'Proposer la nulle',
+      offered: 'Nulle proposée : on attend la réponse.',
+      received: '{name} propose la nulle.',
+      accept: 'Accepter la nulle',
+      decline: 'Refuser',
+    },
+    spectators: {
+      one: '1 spectateur : {names}',
+      many: '{count} spectateurs : {names}',
+    },
+    interrupted: 'Partie interrompue : le serveur a redémarré. Les parties en cours ne sont pas gardées.',
+    dismiss: 'Compris',
+    // Pourquoi une commande de jeu est refusée (la réponse du serveur, `GameAck`) ; `stale`, un double clic ou un coup envoyé sur un état dépassé, n'est jamais montré.
+    errors: {
+      invalid: 'Commande refusée.',
+      rate_limited: 'Doucement : trop de gestes à la suite.',
+      unknown_game: 'Ce jeu n\'a pas de table ici.',
+      too_far: 'Tu es trop loin de la table : approche-toi de la salle de jeu.',
+      chair_taken: 'Cette chaise est déjà prise.',
+      table_full: 'Toutes les chaises sont prises : tu peux regarder la partie.',
+      already_here: 'Tu es déjà assis à cette table.',
+      in_progress: 'Une partie est en cours à cette table.',
+      busy: 'Une partie est en cours pour cette personne.',
+      not_seated: 'Tu n\'es pas assis à cette table.',
+      no_match: 'Aucune partie n\'est en cours.',
+      stale: 'Coup trop tardif.',
+      not_your_turn: 'Ce n\'est pas ton tour.',
+      illegal: 'Coup refusé.',
+      no_offer: 'Aucune nulle n\'est proposée.',
+      already_offered: 'Une nulle est déjà proposée.',
+      too_early: 'Trop tôt pour proposer la nulle : il faut jouer encore un peu.',
+      self: 'Tu ne peux pas t\'inviter toi-même.',
+      offline: 'Cette personne n\'est plus au bureau.',
+      dnd: 'Cette personne ne veut pas être dérangée.',
+      too_many: 'Trop d\'invitations en attente : patiente un instant.',
+      expired: 'Cette invitation n\'est plus valable.',
+      unavailable: 'Le serveur ne répond pas : réessaie dans un instant.',
+    },
+    // Le classement d'un jeu.
+    ladder: {
+      title: 'Classement',
+      loading: 'Chargement du classement…',
+      failed: 'Impossible de lire le classement.',
+      retry: 'Réessayer',
+      empty: 'Personne n\'est encore classé à ce jeu : la première partie classée ouvre la liste.',
+      rank: 'Rang',
+      player: 'Joueur',
+      rating: 'Note',
+      games: 'Parties',
+      record: 'V / N / D',
+      you: 'Ta place',
+      table: 'Classement de {game}',
+    },
   },
   // Le son : la musique d'ambiance (celle de l'endroit où l'on est, ou celle qu'on choisit) et les effets sonores (clics, arrivées, messages,
   // toc toc…), que l'on coupe et règle chacun de son côté, depuis le juke-box du dock du milieu. La voix des autres n'en fait pas partie : elle
@@ -321,21 +511,23 @@ export const fr = {
     ambiance: {
       // Le nom du groupe des cartes, pour les lecteurs d'écran.
       label: 'Ambiance',
-      auto: 'Selon l\'endroit',
-      // L'infobulle de « Selon l'endroit », et son sous-titre : l'ambiance du lieu où l'on est.
-      autoHint: 'La musique change avec l\'endroit où tu es.',
+      auto: 'Selon la pièce',
+      // L'infobulle de « Selon la pièce », et son sous-titre : l'ambiance de la pièce où l'on est (celle que ses occupants ont réglée, sinon l'ambiance qui lui va), ou
+      // le silence quand ils ont coupé sa musique.
+      autoHint: 'La musique change avec la pièce où tu es : celle que ses occupants ont réglée, sinon l\'ambiance qui lui va.',
       autoHere: 'Ici : {scene}',
+      autoOff: 'Ici : musique coupée',
       // Dite aux lecteurs d'écran pour l'ambiance qu'on entend (l'égaliseur de sa carte est décoratif).
       playing: 'En cours',
     },
     // Les six ambiances : leur nom, ce qu'elles évoquent, et où elles jouent d'elles-mêmes.
     scenes: {
-      lobby: { title: 'Salle d\'attente', mood: 'Calme, comme une ville la nuit', where: 'L\'accueil, le couloir, la connexion' },
-      focus: { title: 'Concentration', mood: 'Chill, pour travailler ou se reposer', where: 'Les bureaux et la salle de réunion' },
-      sunny: { title: 'Soleil', mood: 'Joyeux et décontracté', where: 'La place centrale et la piscine' },
-      dusk: { title: 'Crépuscule', mood: 'Mystérieux, façon Moyen Âge le soir', where: 'Le salon' },
-      drift: { title: 'Dérive', mood: 'Étrange et planant, un peu science-fiction', where: 'La grande salle' },
-      quest: { title: 'Expédition', mood: 'Plus rythmé : aventure et découverte', where: 'Le coin musique' },
+      lobby: { title: 'Salle d\'attente', mood: 'Calme, comme une ville la nuit', where: 'L\'accueil, la place et les rues, la connexion' },
+      focus: { title: 'Concentration', mood: 'Chill, pour travailler ou se reposer', where: 'Les bureaux, la salle de réunion et la salle client' },
+      sunny: { title: 'Soleil', mood: 'Joyeux et décontracté', where: 'Le café, la piscine et le salon' },
+      dusk: { title: 'Crépuscule', mood: 'Mystérieux, façon Moyen Âge le soir', where: 'La salle de jeu' },
+      drift: { title: 'Dérive', mood: 'Étrange et planant, un peu science-fiction', where: 'La salle de conférence' },
+      quest: { title: 'Expédition', mood: 'Plus rythmé : aventure et découverte', where: 'La salle de sport' },
     },
     status: {
       locked: 'Le son démarre dès que tu cliques ou appuies sur une touche.',

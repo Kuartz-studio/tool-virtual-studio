@@ -5,9 +5,16 @@ const debug = (): OfficeDebug => ({
   ready: true,
   self: null,
   players: {},
-  media: { room: null, tiles: 0 },
+  media: { room: null, tiles: 0, speak: () => {} },
   teleport: () => {},
+  boost: () => {},
+  boosted: () => false,
+  speed: () => 0,
   showOthers: () => {},
+  bubbles: () => [],
+  cups: () => [],
+  machineExcited: () => false,
+  rings: () => 0,
   avatarsOf: () => 0,
   selfAvatar: () => null,
   toScreen: (x, y) => ({ x, y }),
@@ -15,6 +22,10 @@ const debug = (): OfficeDebug => ({
   zoom: () => 2,
   nightLevel: () => 0,
   autoWalking: () => false,
+  doors: () => ({}),
+  tables: () => [],
+  gameTable: () => null,
+  debugGame: () => {},
 });
 
 afterEach(() => {

@@ -1,4 +1,4 @@
-import { MAX_SPEED_PX_PER_S, MOVE_JITTER_MS, MOVE_SEGMENT_STEP_PX, MOVE_TOLERANCE } from '../constants';
+import { MOVE_JITTER_MS, MOVE_SEGMENT_STEP_PX, MOVE_TOLERANCE, NORMAL_MAX_SPEED_PX_PER_S } from '../constants';
 import type { OfficeMap } from '../map/parse-map';
 import { isWalkablePoint } from '../map/queries';
 
@@ -8,8 +8,9 @@ export type MoveRejection = 'out_of_bounds' | 'too_fast' | 'blocked';
 // recevoir. x et y sont les pieds de l'avatar, en pixels ; `at` est l'heure (ms) à laquelle le serveur a reçu chaque position, jamais
 // une heure donnée par le client. Trois contrôles, dans cet ordre, le premier qui échoue donne la raison :
 // 1. out_of_bounds : `to` n'est pas dans la carte ;
-// 2. too_fast : la distance dépasse MAX_SPEED_PX_PER_S (la course, 3 × la marche) × (dt + MOVE_JITTER_MS) / 1000 × MOVE_TOLERANCE, avec dt = to.at − from.at.
-//    La gigue (MOVE_JITTER_MS) absorbe les paquets qui arrivent groupés ou en retard ; la tolérance est une marge de plus ;
+// 2. too_fast : la distance dépasse `maxSpeed` (par défaut NORMAL_MAX_SPEED_PX_PER_S, la course ; MAX_SPEED_PX_PER_S sous café) × (dt + MOVE_JITTER_MS) / 1000
+//    × MOVE_TOLERANCE, avec dt = to.at − from.at. La gigue (MOVE_JITTER_MS) absorbe les paquets qui arrivent groupés ou en retard ; la tolérance est
+//    une marge de plus ;
 // 3. blocked : le segment entier, de `from` à `to`, passe sur des cases praticables.
 //
 // Les contrôles sont écrits pour échouer du bon côté : une valeur qui n'est pas un nombre (NaN) est refusée, jamais acceptée.
@@ -17,6 +18,7 @@ export function validateMove(
   m: OfficeMap,
   from: { x: number; y: number; at: number },
   to: { x: number; y: number; at: number },
+  maxSpeed: number = NORMAL_MAX_SPEED_PX_PER_S,
 ): { ok: true } | { ok: false; reason: MoveRejection } {
   if (!(to.x >= 0 && to.x < m.widthTiles * m.tileSize && to.y >= 0 && to.y < m.heightTiles * m.tileSize)) {
     return { ok: false, reason: 'out_of_bounds' };
@@ -28,7 +30,7 @@ export function validateMove(
   // Une horloge qui recule ne doit pas figer le joueur : avec dt négatif, dt + MOVE_JITTER_MS pourrait être négatif et plus aucun
   // mouvement, même sur place, ne passerait. Le temps écoulé est alors compté pour nul.
   const dt = Math.max(0, to.at - from.at);
-  const allowed = ((MAX_SPEED_PX_PER_S * (dt + MOVE_JITTER_MS)) / 1000) * MOVE_TOLERANCE;
+  const allowed = ((maxSpeed * (dt + MOVE_JITTER_MS)) / 1000) * MOVE_TOLERANCE;
   if (!(distance <= allowed)) return { ok: false, reason: 'too_fast' };
 
   // Des échantillons régulièrement espacés d'au plus MOVE_SEGMENT_STEP_PX, du départ (compris) à l'arrivée (comprise). Une case

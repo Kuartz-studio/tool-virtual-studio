@@ -1,4 +1,4 @@
-import { buildOfficeTiledMap, parseOfficeMap, PLAZA, type ActivityState, type OfficeMap, type PublicPlayer, type Status, type Zone } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, type ActivityState, type OfficeMap, type PublicPlayer, type Status, type Zone } from '@bureau/shared';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode } from 'react';
@@ -40,6 +40,11 @@ const map = {
   blocked: new Uint8Array(900),
   spawn: { x: 48, y: 48 },
   switches: [],
+  places: [],
+  coffees: [],
+  speakers: [],
+  tables: [],
+  signs: [],
   zones: [zone('1', 'label', 0, 320, 320, 64, { text: 'ACCUEIL' }), zone('2', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' })],
 } as unknown as OfficeMap;
 // Où poser quelqu'un : à l'accueil, dans la salle de réunion, dans le couloir ; et le nom de chacun de ces lieux (placeAt), que la coque donne au panneau
@@ -180,9 +185,9 @@ describe('le sélecteur', () => {
   });
 });
 
-// « Ici », sur la grande carte : le même lieu que la puce du lieu (placeAt), qui nomme ses grandes pièces. Le café est la place centrale, bien plus
-// large que la bande d'une case que la carte étiquette « CAFÉ » : deux personnes aux deux bouts de la place sont ici ensemble, et non avec celle qui
-// est dans le couloir.
+// « Ici », sur la grande carte : le même lieu que la puce du lieu (placeAt), qui nomme ses pièces d'après les lieux de la carte. Le café est bien plus
+// large que la bande d'une case que la carte étiquette « CAFÉ » : deux personnes aux deux bouts du café sont ici ensemble, et non avec celle qui est
+// dans la rue.
 describe('« Ici » sur la grande carte', () => {
   const office = parseOfficeMap(buildOfficeTiledMap());
   const spot = (tx: number, ty: number) => ({ x: tx * 32 + 16, y: ty * 32 + 16 });
@@ -191,11 +196,11 @@ describe('« Ici » sur la grande carte', () => {
     act(() => useOfficeStore.getState().setOfficeMap(office));
   };
 
-  test('au café, aux deux bouts de la place : ensemble ; celui du couloir : ailleurs', () => {
+  test('au café, aux deux bouts : ensemble ; celui du couloir : ailleurs', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arriveInOffice(
-      [player('bob', 'Bob', 'available', spot(PLAZA.x + 1, PLAZA.y + 1)), player('zoe', 'Zoé', 'available', spot(30, 12))],
-      player('moi', 'Moi', 'available', spot(PLAZA.x + PLAZA.w - 2, PLAZA.y + PLAZA.h - 2)),
+      [player('bob', 'Bob', 'available', spot(33, 3)), player('zoe', 'Zoé', 'available', spot(30, 12))],
+      player('moi', 'Moi', 'available', spot(46, 8)),
     );
     render(<PeoplePanel place="Café" onClose={() => {}} />);
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
@@ -207,8 +212,8 @@ describe('« Ici » sur la grande carte', () => {
   test('« Tout le bureau » dit le lieu de chacun : le café, l\'accueil, le couloir', async () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arriveInOffice(
-      [player('bob', 'Bob', 'available', spot(54, 41)), player('zoe', 'Zoé', 'available', spot(30, 12))],
-      player('moi', 'Moi', 'available', spot(PLAZA.x + 5, PLAZA.y + 5)),
+      [player('bob', 'Bob', 'available', spot(40, 22)), player('zoe', 'Zoé', 'available', spot(30, 12))],
+      player('moi', 'Moi', 'available', spot(35, 7)),
     );
     render(<PeoplePanel place="Café" onClose={() => {}} />);
     await userEvent.click(tab(/^Tout le bureau/));

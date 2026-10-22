@@ -1,5 +1,6 @@
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { MUSIC_SCENES } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { fr } from '../i18n/fr';
 import { MUSIC_FORMATS, musicUrls, SCENE_IDS, SCENES, SFX, SFX_IDS, sfxUrl } from './catalog';
@@ -22,6 +23,10 @@ describe('le catalogue du son', () => {
     }
     // Aucun texte pour une ambiance qui n'existe plus.
     expect(Object.keys(fr.sound.scenes).sort()).toEqual([...SCENE_IDS].sort());
+  });
+
+  test('la liste des ambiances est celle du partage : le serveur et la carte nomment les mêmes', () => {
+    expect(SCENE_IDS).toBe(MUSIC_SCENES);
   });
 
   test('chaque ambiance a ses deux fichiers (ogg et m4a), qui existent et ne sont pas vides', () => {

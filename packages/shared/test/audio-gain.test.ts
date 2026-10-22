@@ -61,9 +61,9 @@ describe('audioGain : le volume selon la distance', () => {
 describe('gainBetween : dans un bureau rien ne change', () => {
   const map = parseOfficeMap(buildTiledMap({ ...OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
   const inRoom = { x: tile(4) + 16, y: tile(3) + 16 };                  // dans le bureau A1
-  const hall = { x: tile(56), y: tile(25) };                              // dans la grande salle
-  const farOpen = { x: tile(36), y: tile(25) };                           // espace ouvert, loin
-  const nearOpen = { x: tile(36), y: tile(22) };
+  const hall = { x: tile(60), y: tile(20) };                              // dans la salle de conférence
+  const farOpen = { x: tile(30), y: tile(15) };                           // espace ouvert (la place centrale), loin
+  const nearOpen = { x: tile(30), y: tile(12) };                          // espace ouvert (la rue nord)
 
   test('soi-même dans une zone : plein volume, même d\'une personne très loin', () => {
     expect(gainBetween(map, inRoom, farOpen)).toBe(1);
@@ -115,11 +115,12 @@ describe('le calcul des groupes avec la règle du bureau (OPEN_SPACE_GROUPING)',
   });
 
   test('une salle ou un bureau : toujours tout le monde, quelle que soit la distance (la règle des zones ne change pas)', () => {
-    const s = settle([p('a', tile(49), tile(17)), p('b', tile(64), tile(25))]);
+    // La salle de conférence, d'un bout à l'autre de ses 22 cases.
+    const s = settle([p('a', tile(52), tile(18)), p('b', tile(71), tile(22))]);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
     expect(s.groups.g1?.zoneId).not.toBeNull();
-    // La zone détente aussi : d'un bout à l'autre de ses 42 cases, de la piscine au coin musique.
-    const lounge = settle([p('a', tile(2), tile(34)), p('b', tile(41), tile(44))]);
+    // La détente aussi : d'un bout à l'autre de ses 43 cases, de la piscine au coin musique.
+    const lounge = settle([p('a', tile(38), tile(33)), p('b', tile(79), tile(42))]);
     expect(lounge.assignment).toEqual({ a: 'g1', b: 'g1' });
   });
 

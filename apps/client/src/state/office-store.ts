@@ -7,17 +7,22 @@ import {
   type DeskDecor,
   type DeskInfo,
   type DeskKnock,
+  type GameId,
+  type GameInvite,
+  type GameMatchView,
+  type GameTableView,
   type InitPayload,
   type LightsState,
   type MediaJoinPayload,
   type MediaState,
   type OfficeMap,
   type PublicPlayer,
+  type RoomMusic,
   type Status,
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
-import { clampZoomLevel, DEFAULT_ZOOM_LEVEL, stepZoomLevel } from '../game/zoom';
-import { anchorFor, planPlace, removeAt } from '../office/decor-draft';
+import { clampZoomPercent, stepZoomPercent, ZOOM_DEFAULT_PERCENT, ZOOM_WHEEL_STEP } from '../game/zoom';
+import { anchorFor, planPlace, removeAt, roomOfDesk } from '../office/decor-draft';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
 // dernière consigne audio/vidéo, et les messages du chat. Le serveur le dit à chaque (re)connexion (`init`), puis par événements
@@ -55,6 +60,10 @@ export interface PendingReplace {
   at: { x: number; y: number };
   replacing: number[];
 }
+
+// Une invitation à une table, telle que le magasin la garde : ce que le serveur a dit, et jusqu'à quand elle vaut, en ms sur l'horloge de la page (performance.now), puisque le
+// serveur ne donne que ce qu'il lui reste à vivre à la réception.
+export type GameInviteEntry = GameInvite & { until: number };
 
 export interface OfficeState {
   // Le compte connecté, d'après le dernier `init` ; null avant le premier.
@@ -108,14 +117,34 @@ export interface OfficeState {
   // La lumière du bureau, la même pour tout le monde : allumée tant que le serveur n'a rien dit, puis celle du dernier `init` ou de
   // `lights:changed`. Le jeu l'obscurcit quand elle est éteinte ; `by` et `at` disent qui l'a changée en dernier, et quand.
   lights: LightsState;
+  // Jusqu'à quand chaque personne a un café, en ms sur l'horloge de la page (performance.now) : le serveur dit ce qu'il lui reste (`coffee:changed`, ou
+  // `boost` dans l'`init`), le magasin en fait une échéance. Qui n'a pas de ligne n'a pas de café. Le jeu y lit ceux dont la tasse se montre (et si
+  // l'avatar local va à la vitesse du café), la pastille ce qu'il reste à soi-même.
+  coffee: Record<string, number>;
+  // La musique des pièces que quelqu'un a réglées, par clé de lieu (celle de la carte, `desk:A1` pour un bureau) : celle du dernier `init`, puis ce que dit
+  // `music:changed`. Une pièce qui n'y est pas est allumée, avec son ambiance par défaut. L'audio y lit ce qu'il joue (selectWantedScene), la puce du lieu ce qu'on
+  // règle.
+  music: Record<string, RoomMusic>;
+  // Les tables de jeu, par jeu : la dernière vue que le serveur en a donnée (celle de l'`init`, puis `game:table`, qui ne remplace que par une version plus récente).
+  // Un jeu sans table sur la carte n'y est pas : la petite carte de développement n'en a aucune.
+  games: Partial<Record<GameId, GameTableView>>;
+  // Les invitations à une table qui attendent sa réponse (celles de l'`init`, puis `game:invite`) ; une invitation y reste jusqu'à ce qu'on réponde, qu'elle expire
+  // ou que le serveur la retire (`game:invite:gone`).
+  gameInvites: GameInviteEntry[];
+  // La table dont le panneau est ouvert, ou que l'on demande d'ouvrir (la touche E à une table, « Accepter » une invitation) : la coque ouvre alors le panneau, la
+  // caméra va à la table. null : aucun panneau de jeu.
+  gameOpen: GameId | null;
+  // La table où une partie que l'on jouait a disparu pendant une coupure (le serveur a redémarré : les parties en cours ne sont pas gardées) : le panneau dit
+  // « Partie interrompue ». null sans interruption à signaler.
+  gameInterrupted: GameId | null;
   // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
   // null avant le jeu, et en dehors de lui.
   officeMap: OfficeMap | null;
   // L'éditeur de la déco de son bureau ; null quand il est fermé.
   decorEditor: DecorEditor | null;
-  // Le zoom de la caméra : le niveau choisi (zoom.ts, ZOOM_FACTORS), celui de la vue de départ au début. Le jeu le lit, les boutons de
-  // zoom, la molette et le clavier l'écrivent.
-  zoomLevel: number;
+  // Le zoom de la caméra : le pourcentage choisi (zoom.ts), 100 % au début. Le jeu le lit (la caméra y glisse), les boutons de zoom, la
+  // molette et le clavier l'écrivent.
+  zoomPercent: number;
   // La dernière position connue de chaque autre joueur présent (init, arrivée, ticks). Un Map modifié sur place, sans prévenir les
   // abonnés : un `init` et reset() le remplacent, un départ en retire le joueur ; rien n'y reste de ceux qui sont partis.
   positions: Map<string, PlayerPosition>;
@@ -128,10 +157,25 @@ export interface OfficeState {
   setOfficeMap(map: OfficeMap | null): void;
   // La lumière du bureau, telle que le serveur l'annonce (`lights:changed`) : le serveur fait foi, rien n'est changé avant son annonce.
   setLights(lights: LightsState): void;
+  // Le café de cette personne, tel que le serveur l'annonce (`coffee:changed`) : `ms` ms à partir de maintenant, qui remplacent ce qui restait ; 0 : fini,
+  // l'échéance disparaît.
+  setCoffee(id: string, ms: number): void;
+  // La musique de cette pièce, telle que le serveur l'annonce (`music:changed`) : le serveur fait foi, rien n'est changé avant son annonce.
+  setRoomMusic(place: string, state: RoomMusic): void;
   setDeskNotice(text: string | null): void;
-  // Le zoom : un niveau donné (ramené aux bornes), un cran plus près ou plus loin, la vue de départ.
-  setZoomLevel(level: number): void;
-  stepZoom(step: 1 | -1): void;
+  // Une table a changé (`game:table`) : la vue remplace celle de ce jeu si sa version est plus récente ; une version égale ou plus ancienne est ignorée.
+  setGameTable(view: GameTableView): void;
+  // Une invitation arrive (`game:invite`) : elle remplace celle de même identifiant ; elle est retirée quand on répond ou que le serveur la retire.
+  addGameInvite(invite: GameInvite): void;
+  removeGameInvite(id: string): void;
+  // Ouvre le panneau de cette table, ou le ferme (null).
+  openGame(game: GameId | null): void;
+  // « Partie interrompue » a été lu.
+  dismissGameInterrupted(): void;
+  // Le zoom : un pourcentage donné (ramené aux bornes et au cran de 5 % le plus proche), des crans de `size` % plus près (positifs) ou plus
+  // loin (négatifs ; 5 % par cran si `size` n'est pas dit), la vue de départ.
+  setZoomPercent(percent: number): void;
+  stepZoom(steps: number, size?: number): void;
   resetZoom(): void;
   // L'éditeur de déco : ouvert sur ce bureau (le sien), fermé ; le thème ; l'élément en main ; poser l'élément en main sur cette case de la pièce
   // (refusé si la pièce cesse d'être valable : `error` dit pourquoi) ; reprendre en main, ou jeter, l'élément n° i ; remplacer tout le brouillon.
@@ -164,6 +208,8 @@ export interface OfficeState {
   removeMyState(id: string): void;
   setChosenActivity(id: string | null): void;
   setMedia(id: string, m: MediaState): void;
+  // Cette personne se met à parler (vrai), ou se tait (faux : la clé disparaît, comme dans les messages du serveur) : `speaking:changed`.
+  setSpeaking(id: string, speaking: boolean): void;
   setProfile(p: { id: string; name: string; avatarKey: string | null }): void;
   setReplaced(v: boolean): void;
   // La connexion coupée : setReady(false). (L'`init` la rend prête : applyInit.)
@@ -203,9 +249,15 @@ type Data = Pick<
   | 'deskKnocks'
   | 'deskNotice'
   | 'lights'
+  | 'coffee'
+  | 'music'
+  | 'games'
+  | 'gameInvites'
+  | 'gameOpen'
+  | 'gameInterrupted'
   | 'officeMap'
   | 'decorEditor'
-  | 'zoomLevel'
+  | 'zoomPercent'
   | 'positions'
 >;
 
@@ -232,13 +284,57 @@ const initialData = (): Data => ({
   deskKnocks: [],
   deskNotice: null,
   lights: LIGHTS_ON,
+  coffee: {},
+  music: {},
+  games: {},
+  gameInvites: [],
+  gameOpen: null,
+  gameInterrupted: null,
   officeMap: null,
   decorEditor: null,
-  zoomLevel: DEFAULT_ZOOM_LEVEL,
+  zoomPercent: ZOOM_DEFAULT_PERCENT,
   positions: new Map(),
 });
 
 const positionOf = (p: PlayerPosition): PlayerPosition => ({ x: p.x, y: p.y, dir: p.dir, moving: p.moving });
+
+// Ce même enregistrement sans la clé `id` : une copie.
+function without<T>(record: Record<string, T>, id: string): Record<string, T> {
+  const rest = { ...record };
+  delete rest[id];
+  return rest;
+}
+
+// Les échéances de café que dit un `init` : celles de ceux qui en ont un (leur `boost`, ce qu'il leur reste), à partir de maintenant.
+function coffeeDeadlines(players: readonly PublicPlayer[]): Record<string, number> {
+  const now = performance.now();
+  return Object.fromEntries(players.flatMap((p) => (p.boost !== undefined && p.boost > 0 ? [[p.id, now + p.boost] as const] : [])));
+}
+
+// Un joueur tel que le magasin le garde : sans `boost`, qui n'est que ce qu'il restait de café à l'instant de l'`init` (l'échéance, elle, est dans `coffee`).
+function withoutBoost(p: PublicPlayer): PublicPlayer {
+  if (p.boost === undefined) return p;
+  const rest = { ...p };
+  delete rest.boost;
+  return rest;
+}
+
+// Une invitation reçue, avec l'échéance que lui donne ce qu'il lui reste à vivre.
+const inviteEntry = (invite: GameInvite): GameInviteEntry => ({ ...invite, until: performance.now() + invite.ttlMs });
+
+// Les tables d'un `init`, par jeu.
+const gamesOf = (tables: readonly GameTableView[] | undefined): Partial<Record<GameId, GameTableView>> => Object.fromEntries((tables ?? []).map((table) => [table.game, table]));
+
+// Le jeu où une partie que cette personne jouait n'existe plus dans les tables du nouvel `init` : le serveur a redémarré, ou une autre partie a pris la place. Une partie qui
+// continue, ou qui a fini pendant la coupure (le serveur la garde jusqu'à la suivante), n'est pas interrompue ; ni celle des autres, ni celle qui était déjà finie.
+function interruptedGame(before: Partial<Record<GameId, GameTableView>>, after: Partial<Record<GameId, GameTableView>>, selfId: string): GameId | null {
+  for (const table of Object.values(before)) {
+    const match: GameMatchView | null = table.match;
+    if (match?.status !== 'playing' || !match.players.some((player) => player.userId === selfId)) continue;
+    if (after[table.game]?.match?.id !== match.id) return table.game;
+  }
+  return null;
+}
 
 // Les messages sans doublon d'`id` : le premier exemplaire reste.
 function uniqueById(messages: readonly ChatMessage[]): ChatMessage[] {
@@ -291,9 +387,9 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
         const history = lastMessages(uniqueById(p.chatHistory));
         set((state) => ({
           selfId: p.self.id,
-          self: p.self,
+          self: withoutBoost(p.self),
           mapKey: p.mapKey,
-          players: Object.fromEntries(others.map((player) => [player.id, player])),
+          players: Object.fromEntries(others.map((player) => [player.id, withoutBoost(player)])),
           positions: new Map(others.map((player) => [player.id, positionOf(player)])),
           // Un init n'arrive qu'à un onglet connecté : s'il avait été remplacé, il a repris la main.
           replaced: false,
@@ -307,8 +403,16 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           deskBans: p.deskBans,
           // Les toc toc d'avant la coupure sont périmés : la personne n'est peut-être plus là pour les entendre.
           deskKnocks: [],
-          // La lumière du moment : celle que l'on croyait avant une coupure n'a plus cours.
+          // La lumière du moment : celle que l'on croyait avant une coupure n'a plus cours. Les cafés non plus : ceux d'avant la coupure ont fini, ou
+          // été remis, sans que personne nous le dise.
           lights: p.lights ?? LIGHTS_ON,
+          coffee: coffeeDeadlines([p.self, ...others]),
+          // La musique des pièces du moment : un init sans `music` dit que personne n'a rien réglé.
+          music: p.music ?? {},
+          // Les tables et les invitations du moment ; une partie qu'on jouait et que le serveur ne connaît plus est signalée (et le reste jusqu'à ce qu'on l'ait lue).
+          games: gamesOf(p.games),
+          gameInvites: (p.gameInvites ?? []).map(inviteEntry),
+          gameInterrupted: interruptedGame(state.games, gamesOf(p.games), p.self.id) ?? state.gameInterrupted,
         }));
       },
 
@@ -321,10 +425,10 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       removePlayer: (id) => {
         get().positions.delete(id);
         set((state) => {
-          if (!Object.hasOwn(state.players, id)) return state;
-          const players = { ...state.players };
-          delete players[id];
-          return { players };
+          const players = Object.hasOwn(state.players, id) ? without(state.players, id) : state.players;
+          // Son café part avec lui : plus personne ne dira qu'il est fini.
+          const coffee = Object.hasOwn(state.coffee, id) ? without(state.coffee, id) : state.coffee;
+          return players === state.players && coffee === state.coffee ? state : { players, coffee };
         });
       },
 
@@ -350,10 +454,33 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
       setOfficeMap: (officeMap) => set({ officeMap }),
       setLights: (lights) => set({ lights }),
+      setGameTable: (view) =>
+        set((state) => {
+          const known = state.games[view.game];
+          return known && known.version >= view.version ? state : { games: { ...state.games, [view.game]: view } };
+        }),
+      addGameInvite: (invite) =>
+        set((state) => {
+          const entry = inviteEntry(invite);
+          const index = state.gameInvites.findIndex((known) => known.id === invite.id);
+          if (index === -1) return { gameInvites: [...state.gameInvites, entry] };
+          const invites = [...state.gameInvites];
+          invites[index] = entry;
+          return { gameInvites: invites };
+        }),
+      removeGameInvite: (id) => set((state) => (state.gameInvites.some((invite) => invite.id === id) ? { gameInvites: state.gameInvites.filter((invite) => invite.id !== id) } : state)),
+      openGame: (game) => set({ gameOpen: game }),
+      dismissGameInterrupted: () => set({ gameInterrupted: null }),
+      setCoffee: (id, ms) =>
+        set((state) => {
+          if (ms > 0) return { coffee: { ...state.coffee, [id]: performance.now() + ms } };
+          return Object.hasOwn(state.coffee, id) ? { coffee: without(state.coffee, id) } : state;
+        }),
+      setRoomMusic: (place, state) => set((s) => ({ music: { ...s.music, [place]: state } })),
       setDeskNotice: (deskNotice) => set({ deskNotice }),
-      setZoomLevel: (level) => set({ zoomLevel: clampZoomLevel(level) }),
-      stepZoom: (step) => set((state) => ({ zoomLevel: stepZoomLevel(state.zoomLevel, step) })),
-      resetZoom: () => set({ zoomLevel: DEFAULT_ZOOM_LEVEL }),
+      setZoomPercent: (percent) => set({ zoomPercent: clampZoomPercent(percent) }),
+      stepZoom: (steps, size = ZOOM_WHEEL_STEP) => set((state) => ({ zoomPercent: stepZoomPercent(state.zoomPercent, steps, size) })),
+      resetZoom: () => set({ zoomPercent: ZOOM_DEFAULT_PERCENT }),
 
       openDecorEditor: (desk) => {
         const saved: DeskDecor = { floor: desk.floor, wall: desk.wall, items: desk.items };
@@ -372,9 +499,10 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
         set((state) => {
           const editor = state.decorEditor;
           if (!editor || editor.held === null || editor.replace !== null) return state;
-          const at = anchorFor(editor.held, cell);
+          const room = roomOfDesk(state.officeMap, editor.deskKey);
+          const at = anchorFor(editor.held, cell, room);
           if (!at) return state;
-          const plan = planPlace(editor.draft, editor.held, at);
+          const plan = planPlace(editor.draft, editor.held, at, room);
           if (plan.kind === 'place') return { decorEditor: { ...editor, draft: plan.decor, error: null } };
           if (plan.kind === 'replace') return { decorEditor: { ...editor, error: null, replace: { id: editor.held, at, replacing: plan.replacing } } };
           return { decorEditor: { ...editor, error: plan.error } };
@@ -384,7 +512,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           const editor = state.decorEditor;
           if (!editor?.replace) return state;
           // Le brouillon est recalculé : c'est celui d'aujourd'hui qui compte, et la pièce doit encore être valable.
-          const plan = planPlace(editor.draft, editor.replace.id, editor.replace.at);
+          const plan = planPlace(editor.draft, editor.replace.id, editor.replace.at, roomOfDesk(state.officeMap, editor.deskKey));
           if (plan.kind === 'refused') return { decorEditor: { ...editor, error: plan.error, replace: null } };
           return { decorEditor: { ...editor, draft: plan.decor, error: null, replace: null } };
         }),
@@ -409,6 +537,13 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
 
       setStatus: (id, status) => updatePlayer(id, (p) => ({ ...p, status })),
       setMedia: (id, m) => updatePlayer(id, (p) => ({ ...p, media: { mic: m.mic, cam: m.cam, screen: m.screen } })),
+      setSpeaking: (id, speaking) =>
+        updatePlayer(id, (p) => {
+          if (speaking) return { ...p, speaking: true };
+          const quiet = { ...p };
+          delete quiet.speaking;
+          return quiet;
+        }),
       setProfile: ({ id, name, avatarKey }) => updatePlayer(id, (p) => ({ ...p, name, avatarKey })),
       setReplaced: (replaced) => set({ replaced }),
       setReady: (ready) => set({ ready }),

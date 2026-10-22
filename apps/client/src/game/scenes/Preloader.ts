@@ -4,9 +4,12 @@ import { fr } from '../../i18n/fr';
 import { resolveAvatarKey } from '../avatars';
 import { decorAtlasImages, decorAtlasesLoaded, registerDecorFrames } from '../decor-textures';
 import { addSwitchTextures } from '../light-switch';
+import { addSignTexture } from '../map-signs';
 import { createLightTextures } from '../light-textures';
 import { tilesetImages } from '../map-layers';
 import { avatarLibraryOf } from '../objects/avatar-skin';
+import { registerDoorAnimations } from '../door-sprite';
+import { propSheets, registerPropAnimations } from '../prop-textures';
 import { useOfficeStore } from '../../state/office-store';
 
 // Largeur de la barre de chargement, et marge entre son contour et sa partie pleine.
@@ -60,6 +63,8 @@ export class Preloader extends Scene {
     });
     // Les éléments de la banque (meubles, objets, déco) : ceux de la carte, et ceux que les bureaux montrent.
     for (const { key, url } of decorAtlasImages()) this.load.image(key, url);
+    // Les objets animés de la carte : une planche d'images chacun. Une planche qui manque n'empêche pas le bureau de s'afficher.
+    for (const { key, url, frameWidth, frameHeight } of propSheets()) this.load.spritesheet(key, url, { frameWidth, frameHeight });
   }
 
   create() {
@@ -71,9 +76,12 @@ export class Preloader extends Scene {
       return;
     }
     registerDecorFrames(this.textures);
+    registerPropAnimations(this.anims, this.textures);
+    registerDoorAnimations(this.anims, this.textures);
     // La plaque de l'interrupteur de lumière : un dessin de quelques pixels, fait ici une fois (pas de fichier à charger). De même, les disques
     // de lumière de la nuit.
     addSwitchTextures(this.textures);
+    addSignTexture(this.textures);
     createLightTextures(this.textures);
     // Ceux qui sont là au moment d'entrer : on attend (au plus quelques secondes) que leurs personnages soient assemblés.
     const { self, players } = useOfficeStore.getState();

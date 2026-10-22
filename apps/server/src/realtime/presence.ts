@@ -8,7 +8,9 @@ import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from './io';
 import { loadPosition, savePositions } from './positions';
 import type { DeskController } from '../desks/desk-controller';
+import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
+import type { MusicService } from '../music/music-service';
 import { chooseSpawn } from './spawn';
 import type { World } from './world';
 
@@ -28,6 +30,10 @@ export interface PresenceDeps {
   desks: Pick<DeskController, 'assign' | 'initFor' | 'canStandAt'>;
   /** La lumière du bureau : chaque init la dit, une fois lue en base. */
   lights: Pick<LightsService, 'ready' | 'get'>;
+  /** La musique des pièces : chaque init la dit, une fois lue en base. */
+  music: Pick<MusicService, 'ready' | 'all'>;
+  /** Les tables de jeu : chaque init les dit ; la présence les prévient quand la dernière socket d'une personne tombe, qu'elle quitte le monde ou qu'un membre est retiré. */
+  games?: Pick<GamesController, 'initFor' | 'onSocketsGone' | 'onDepart' | 'onRemoved'>;
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -92,6 +98,16 @@ export function createPresence(d: PresenceDeps) {
     }
   }
 
+  // La musique des pièces est lue en base au démarrage : un init n'en part qu'une fois cette lecture finie. Illisible (la base est tombée), elle est journalisée
+  // et l'init la dit allumée partout : arriver au bureau ne dépend pas d'elle. Ne rejette jamais.
+  async function musicLoaded(userId: string): Promise<void> {
+    try {
+      await d.music.ready;
+    } catch (err) {
+      logServerError(d.logger, { err, userId }, 'Musique des pièces illisible');
+    }
+  }
+
   // Envoie l'état de départ à la socket (l'historique du chat est lu avant : `chatHistory`), puis annonce l'arrivée aux autres si c'en
   // est une (pas pour un onglet de plus ni pour un retour pendant le délai de grâce). La socket n'entre dans la salle du bureau qu'ici :
   // aucune diffusion ne lui parvient avant son init, ni message du chat, ni événement média. Puis onWelcome (sa room LiveKit).
@@ -99,13 +115,17 @@ export function createPresence(d: PresenceDeps) {
     const { userId } = socket.data;
     const self = d.world.get(userId)!;
     void socket.join(OFFICE_ROOM);
+    const music = d.music.all();
     socket.emit('init', {
       self,
       players: d.world.list().filter((p) => p.id !== userId),
       mapKey: d.mapKey,
       chatHistory,
       ...d.desks.initFor(socket),
+      ...d.games?.initFor(socket),
       lights: d.lights.get(),
+      // Seulement les pièces qu'on a réglées : sans réglage, le champ n'y est pas.
+      ...(Object.keys(music).length > 0 ? { music } : {}),
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
     d.onWelcome?.(socket);
@@ -122,6 +142,7 @@ export function createPresence(d: PresenceDeps) {
         isDisabled(d.db, userId),
         readChatHistory(userId),
         lightsLoaded(userId),
+        musicLoaded(userId),
       ]);
       if (halted || !socket.connected) return;
       // Retiré entre la lecture de sa session par le middleware et maintenant : member:removed n'a pas pu fermer cette socket,
@@ -153,7 +174,7 @@ export function createPresence(d: PresenceDeps) {
   async function rejoin(socket: TypedSocket): Promise<void> {
     const { userId } = socket.data;
     try {
-      const [chatHistory] = await Promise.all([readChatHistory(userId), lightsLoaded(userId)]);
+      const [chatHistory] = await Promise.all([readChatHistory(userId), lightsLoaded(userId), musicLoaded(userId)]);
       if (halted || !socket.connected) return;
       // Une socket enregistrée garde sa personne au monde (ni le délai de grâce ni member:removed ne la retirent alors) : ce cas ne
       // devrait pas se produire. Sans personne à montrer, le client se reconnecte et arrive pour de bon, au lieu d'attendre un init.
@@ -200,8 +221,12 @@ export function createPresence(d: PresenceDeps) {
       if (own.size > 0) return;   // remplacée : la nouvelle socket garde le joueur
       socketsByUser.delete(userId);
     }
+    // La dernière socket est tombée : ses parties de jeu comptent à rebours, le temps de revenir.
+    if (!halted) d.games?.onSocketsGone(userId);
     // À l'arrêt, stop() enregistre tout le monde. Hors du monde : arrivée interrompue, ou membre retiré.
     if (halted || !d.world.get(userId)) return;
+    // Sans connexion, elle ne parle plus à personne : sa bulle s'éteint chez les autres, sans attendre la fin du délai de grâce.
+    if (d.world.setSpeaking(userId, false)) d.io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: false });
     cancelGrace(userId);
     const timer = setTimeout(() => {
       depart(userId).catch((err: unknown) => logServerError(d.logger, { err, userId }, 'Départ du bureau impossible'));
@@ -217,6 +242,8 @@ export function createPresence(d: PresenceDeps) {
     if (socketsByUser.has(userId)) return;   // revenu (connect annule le minuteur : par précaution)
     const player = d.world.leave(userId);
     if (!player) return;
+    // Les chaises où elle attendait sont libres (une partie en cours garde son siège jusqu'à la fin de son délai).
+    d.games?.onDepart(userId);
     await queueSave([rowOf(player)]);
     // Revenu pendant l'écriture : c'est son retour qui a été annoncé (player:joined), pas un départ.
     if (halted || d.world.get(userId)) return;
@@ -230,6 +257,8 @@ export function createPresence(d: PresenceDeps) {
     const player = d.world.leave(userId);   // d'abord : la déconnexion de ses sockets ne trouve plus de joueur à faire attendre
     for (const socket of [...(socketsByUser.get(userId) ?? [])]) socket.disconnect(true);
     if (player) d.io.to(OFFICE_ROOM).emit('player:left', { id: userId });
+    // Il sort tout de suite de sa partie, et ses chaises et invitations tombent.
+    d.games?.onRemoved(userId);
   }
 
   // sessions:revoked (mot de passe réinitialisé) : ses sockets sont coupées, sans reconnexion automatique. Contrairement à un retrait,

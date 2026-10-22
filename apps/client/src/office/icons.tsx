@@ -1,13 +1,16 @@
 import {
   AudioLines,
+  BookOpen,
   ChevronRight,
   ChevronUp,
+  Coffee,
   DoorClosed,
   DoorOpen,
   Ellipsis,
   Eraser,
   FlaskConical,
   Focus,
+  Gamepad2,
   Lightbulb,
   LightbulbOff,
   LogOut,
@@ -85,6 +88,11 @@ export function ZoomResetIcon() {
 // L'épingle : un lieu.
 export function PlaceIcon() {
   return <MapPin />;
+}
+
+// Une tasse fumante : le café qu'on a pris.
+export function CoffeeIcon() {
+  return <Coffee />;
 }
 
 // Un chevron vers la droite : un groupe replié (il pivote quand on le déplie).
@@ -196,4 +204,14 @@ export function MusicIcon({ off = false }: { off?: boolean }) {
       <Music />
     </Struck>
   );
+}
+
+// Une manette : les jeux de la salle de jeu (le toast d'une invitation à une table).
+export function GamepadIcon() {
+  return <Gamepad2 />;
+}
+
+// Un livre ouvert : les règles d'un jeu.
+export function RulesIcon() {
+  return <BookOpen />;
 }

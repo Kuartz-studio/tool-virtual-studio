@@ -3,8 +3,8 @@ import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from 're
 import { fr } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
-import { ActivityMark } from './ActivityMark';
-import { LogOutIcon, PlusIcon, ShirtIcon } from './icons';
+import { LogOutIcon, ShirtIcon } from './icons';
+import { ModePresets } from './ModePresets';
 import type { PanelControls, PanelId } from './panels';
 import { StatusDot } from './StatusDot';
 import { AvatarPortrait } from './ui/AvatarPortrait';
@@ -33,8 +33,8 @@ export interface MeMenuProps {
 // Le menu « Moi » (spec §10 pour le statut), qui s'ouvre au-dessus de la puce :
 // - en haut, ton portrait, ton nom, ton e-mail et « Changer d'apparence » (le panneau du personnage) ;
 // - « Statut » : les quatre statuts, choisis à la main ; ce que le serveur confirme (`status:changed`) est ce que la puce affiche ;
-// - « Mode » : les états d'activité que tu as créés (chacun avec son icône, ou le point de sa couleur), « Aucun » (retour au statut), et « + »
-//   qui ouvre leur panneau ;
+// - « Mode » : des tuiles rondes à la manière d'Apple (ModePresets) : « Normal » (aucun mode : retour au statut), les modes tout prêts (Concentration, Sport),
+//   puis « Mes modes », les états d'activité que tu as créés (chacun avec son icône, ou le point de sa couleur), et « + Créer un mode » qui ouvre leur panneau ;
 // - Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu. Le bureau et le son sont dans le dock du
 //   milieu (MediaDock) : ce menu ne parle que de toi.
 //
@@ -204,29 +204,7 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
           <div className="me-label">
             <span id={modeLabelId}>{fr.me.mode}</span>
           </div>
-          <div className="mode-chips">
-            {myStates.map((state) => (
-              <button key={state.id} type="button" role="menuitemradio" aria-checked={activity?.id === state.id} tabIndex={-1} className="mode-chip" disabled={!enabled} onClick={() => chooseMode(state)}>
-                <ActivityMark activity={state} />
-                <span>{state.label}</span>
-              </button>
-            ))}
-            <button type="button" role="menuitemradio" aria-checked={activity === null} tabIndex={-1} className="mode-chip" disabled={!enabled} onClick={() => chooseMode(null)}>
-              <span>{fr.me.modeNone}</span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              aria-label={fr.me.modeManage}
-              title={fr.me.modeManage}
-              tabIndex={-1}
-              className="mode-chip is-add"
-              disabled={!enabled}
-              onClick={() => openPanel('states')}
-            >
-              <PlusIcon />
-            </button>
-          </div>
+          <ModePresets activity={activity} myStates={myStates} enabled={enabled} onChoose={chooseMode} onManage={() => openPanel('states')} />
         </div>
 
         <div className="menu-rule" role="separator" />

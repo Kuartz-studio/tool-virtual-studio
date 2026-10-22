@@ -971,6 +971,19 @@ svg.lucide.icon-s {
   transform-origin: bottom right;
 }
 
+/* Sous son bouton (la puce du lieu, en haut de la page) : elle s'ouvre vers le bas. */
+.popover[data-placement='bottom-start'] {
+  transform-origin: top left;
+  animation-name: pop-in-down;
+}
+
+@keyframes pop-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+
 @keyframes pop-in {
   from {
     opacity: 0;
@@ -1399,6 +1412,11 @@ svg.lucide.icon-s {
   width: min(400px, calc(100% - 2 * var(--bar-gap)));
 }
 
+/* Le panneau d'un jeu : 440 px, soit 408 de contenu, pour un plateau confortable. Sous 720 px, c'est la feuille du bas comme les autres. */
+.office-side[data-panel='game'] {
+  width: min(440px, calc(100% - 2 * var(--bar-gap)));
+}
+
 .office-side > * {
   flex: 1 1 0;
   min-height: 0;
@@ -1467,6 +1485,12 @@ svg.lucide.icon-s {
   box-shadow: 0 0 0 2px var(--surface);
 }
 
+/* Le bouton haut-parleur de la puce du lieu : la musique de la pièce où l'on est (RoomMusicButton). Il se resserre contre les portraits. */
+.dock-where .room-music-button {
+  flex: none;
+  margin: -4px -6px -4px 0;
+}
+
 .where-more {
   align-self: center;
   margin-left: 6px;
@@ -1474,6 +1498,32 @@ svg.lucide.icon-s {
   font-style: normal;
   font-weight: var(--weight-medium);
   font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+}
+
+/* Le café qu'on a pris : une petite pastille sous la puce du lieu, avec ce qu'il en reste en secondes. Elle ne reçoit pas la souris : elle ne fait que dire. */
+.coffee-pill {
+  position: absolute;
+  top: calc(var(--bar-gap) + 40px);
+  left: var(--bar-gap);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 4px 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  background: var(--surface);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-dock);
+  pointer-events: none;
+  transition: background-color var(--dur-theme) var(--ease-out), color var(--dur-theme) var(--ease-out), box-shadow var(--dur-theme) var(--ease-out);
+}
+
+.coffee-pill > svg.lucide {
+  width: 14px;
+  height: 14px;
   color: var(--text-soft);
 }
 
@@ -1528,6 +1578,19 @@ svg.lucide.icon-s {
 .dock-zoom svg.lucide {
   width: 16px;
   height: 16px;
+}
+
+/* Le pourcentage du zoom, entre − et + : il dit le niveau du moment, et un clic rétablit 100 %. */
+.dock-zoom .icon-btn.zoom-reset {
+  width: auto;
+  min-width: 52px;
+  padding: 0 6px;
+}
+
+.zoom-value {
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
 }
 
 /* La puce « Moi » : le dock de gauche est un seul bouton, qui ouvre le menu du profil. Son portrait (avec la pastille du statut), le nom, et
@@ -1716,7 +1779,8 @@ svg.lucide.icon-s {
   }
 
   .office-side,
-  .office-side[data-panel='decor'] {
+  .office-side[data-panel='decor'],
+  .office-side[data-panel='game'] {
     top: auto;
     left: var(--bar-gap);
     right: var(--bar-gap);
@@ -1739,6 +1803,10 @@ svg.lucide.icon-s {
 
   .dock-zoom .icon-btn {
     width: 34px;
+  }
+
+  .dock-zoom .icon-btn.zoom-reset {
+    min-width: 46px;
   }
 }
 
@@ -1849,8 +1917,7 @@ svg.lucide.icon-s {
 }
 
 /* Un statut : une tuile avec son point (son nom est dans `aria-label`, et à droite du titre quand il est choisi). */
-.status-tile,
-.mode-chip {
+.status-tile {
   color: var(--text-soft);
   background: var(--surface-soft);
   border: 0;
@@ -1866,60 +1933,105 @@ svg.lucide.icon-s {
   border-radius: 11px;
 }
 
-.status-tile .status-dot,
-.mode-chip .status-dot {
+.status-tile .status-dot {
   box-shadow: none;
 }
 
-.mode-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+/* Les modes à la manière d'Apple : des tuiles rondes (un disque de la couleur du mode, avec son icône, et son nom dessous). La tuile choisie est cerclée de sa couleur. */
+.mode-tiles {
+  display: grid;
+  /* Trois tuiles par ligne dans le menu : « Concentration » et « Créer un mode » tiennent entiers (quatre par ligne les tronquaient). */
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 6px 4px;
   padding: 6px 8px 8px;
 }
 
-/* Un mode : une pastille avec sa couleur (son icône, quand il en a une) et son nom. « Aucun » n'a que son nom ; « + », que le signe. */
-.mode-chip {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  max-width: 100%;
-  padding: 6px 10px 6px 8px;
-  font-size: 0.78rem;
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-  border-radius: var(--radius-pill);
+.mode-tile {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 4px 2px;
+  font-size: 0.72rem;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
 }
 
-.mode-chip > span:last-child {
+.mode-tile:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+
+.mode-tile-disc {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: #ffffff;
+  background: var(--tile, var(--text-soft));
+  border-radius: 50%;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.mode-tile-disc .status-dot {
+  width: 14px;
+  height: 14px;
+  background: #ffffff !important;
+  box-shadow: none;
+}
+
+.mode-tile-disc svg.lucide {
+  width: 22px;
+  height: 22px;
+  color: #ffffff;
+}
+
+.mode-tile-name {
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.mode-chip svg.lucide {
-  width: 15px;
-  height: 15px;
+.mode-tile[aria-checked='true'] .mode-tile-disc {
+  box-shadow: 0 0 0 2.5px var(--surface), 0 0 0 5px var(--tile, var(--accent));
 }
 
-.mode-chip.is-add {
-  padding: 6px 9px;
+.mode-tile[aria-checked='true'] .mode-tile-name {
+  font-weight: var(--weight-semibold);
 }
 
-.status-tile[aria-checked='false']:hover:not(:disabled),
-.mode-chip[aria-checked='false']:hover:not(:disabled),
-.mode-chip:not([aria-checked]):hover:not(:disabled) {
+/* « + » : un disque creux, qui ne porte que son signe. */
+.mode-tile.is-add .mode-tile-disc {
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 1.5px dashed var(--border);
+}
+
+.mode-tile.is-add .mode-tile-disc svg.lucide {
+  color: var(--text-soft);
+}
+
+.mode-tile:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.status-tile[aria-checked='false']:hover:not(:disabled) {
   background: var(--surface-sunk);
 }
 
-.status-tile[aria-checked='true'],
-.mode-chip[aria-checked='true'] {
+.status-tile[aria-checked='true'] {
   color: var(--accent);
   background: var(--accent-soft);
   box-shadow: inset 0 0 0 1.5px var(--accent);
 }
 
-.status-tile:disabled,
-.mode-chip:disabled {
+.status-tile:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
@@ -2385,7 +2497,7 @@ svg.lucide.icon-s {
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    Le juke-box (SoundPopover) : une fenêtre de 320 px au-dessus du bouton « Musique et ambiances », centrée sur lui. En haut la musique (son
-   interrupteur et son volume), puis le choix de l'ambiance : « Selon l'endroit », une carte large, et six cartes à pochette en pixel art ; en
+   interrupteur et son volume), puis le choix de l'ambiance : « Selon la pièce », une carte large, et six cartes à pochette en pixel art ; en
    bas les effets sonores, et les crédits. Les boutons radio sont de vrais boutons, invisibles, qui couvrent leur carte.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .popover[data-placement='top'] {
@@ -2505,7 +2617,7 @@ svg.lucide.icon-s {
   outline-offset: 2px;
 }
 
-/* « Selon l'endroit » : l'épingle du lieu, son titre, l'ambiance d'ici en dessous, et à droite sa pochette. */
+/* « Selon la pièce » : l'épingle du lieu, son titre, l'ambiance d'ici en dessous, et à droite sa pochette. */
 .juke-auto {
   display: flex;
   align-items: center;
@@ -2677,6 +2789,15 @@ svg.lucide.icon-s {
 
 .juke-fx > .volume .volume-slider {
   min-width: 0;
+}
+
+/* La musique de la pièce (RoomMusicButton) : la même fenêtre que le juke-box, sans volume ; qui l'a réglée en dernier, et la note du casque, en petit. */
+.room-music-by,
+.room-music-note {
+  margin: 0;
+  padding: 0 10px;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
 }
 
 .juke-credits {
@@ -3332,18 +3453,51 @@ svg.lucide.icon-s {
   gap: 6px;
 }
 
-/* Sans aucun état : trois suggestions, un clic en crée une (un bouton, son icône et son nom). */
-.state-suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
+/* Les modes prêts à l'emploi : des lignes comme celles de ses états, avec leur seul bouton « Dupliquer en mode perso ». */
+.state-presets {
+  display: grid;
+  gap: 8px;
 }
 
-.state-suggestion svg.lucide {
-  width: 16px;
-  height: 16px;
-  color: var(--text-soft);
+/* La mini-carte des pièces où un mode peut conduire : les destinations sont des boutons, les autres pièces un fond. */
+.place-picker {
+  width: 100%;
+  max-height: 240px;
+  background: var(--surface-soft);
+  border-radius: 12px;
+}
+
+.place-picker .place-room {
+  fill: var(--surface-sunk);
+}
+
+.place-picker .place-destination {
+  cursor: pointer;
+  outline: none;
+}
+
+.place-picker .place-destination rect {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 12;
+  transition: fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out);
+}
+
+.place-picker .place-destination text {
+  font-size: 76px;
+  font-weight: 600;
+  fill: var(--text);
+  pointer-events: none;
+}
+
+.place-picker .place-destination:hover rect,
+.place-picker .place-destination:focus-visible rect {
+  stroke: var(--accent);
+}
+
+.place-picker .place-destination[aria-pressed='true'] rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
 }
 
 .state-actions .bar-button {
@@ -3782,4 +3936,391 @@ svg.lucide.icon-s {
 .replace-arrow {
   font-size: 1.4rem;
   color: var(--text-muted);
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Les jeux de la salle de jeu : le panneau d'une table (le cadre commun aux quatre jeux), sa salle d'attente et son classement. Le plateau
+   de chaque jeu a sa propre feuille (games/<jeu>/<jeu>.css), dont les sélecteurs commencent tous par `.game-<jeu>`.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.game-drawer .drawer-header h2 {
+  margin-right: auto;
+}
+
+.game-frame,
+.game-match {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.game-tabpanel {
+  display: block;
+}
+
+/* Le bandeau « Partie interrompue » : un avertissement qu'on lit, puis qu'on écarte. */
+.game-interrupted {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  color: var(--warning-text);
+  background: var(--warning-background);
+  border-radius: var(--radius-m);
+}
+
+.game-interrupted p {
+  margin: 0;
+  font-size: var(--text-s);
+}
+
+/* L'aide des règles : une liste courte, sur un fond léger. */
+.game-rules {
+  padding: 10px 14px 12px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.game-rules h3 {
+  margin: 0 0 6px;
+}
+
+.game-rules ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+
+.game-rules li + li {
+  margin-top: 3px;
+}
+
+/* Les joueurs de la partie : une ligne par siège, le portrait, le nom, la couleur du jeu, le trait, le compte à rebours. Celui qui a le trait a un fond d'accent. */
+.game-players {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.game-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: var(--text-s);
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+  box-shadow: inset 0 0 0 1.5px transparent;
+  transition: box-shadow var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.game-player[data-turn] {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.game-player-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-you {
+  font-weight: var(--weight-medium);
+  color: var(--text-soft);
+}
+
+.game-seat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+.game-seat-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.game-turn {
+  padding: 1px 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+
+.game-clock {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--warning-text);
+  white-space: nowrap;
+}
+
+/* Le plateau : toute la largeur du panneau, sans défilement horizontal. Chaque jeu y met le sien. */
+.game-board {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+}
+
+.game-soon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 28px 18px;
+  text-align: center;
+  background: var(--surface-soft);
+  border: 1.5px dashed var(--border-strong);
+  border-radius: var(--radius-m);
+}
+
+.game-soon p {
+  margin: 0;
+}
+
+/* La ligne d'état : qui joue, ou comment la partie a fini. */
+.game-status {
+  margin: 0;
+  font-size: var(--text-m);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+
+.game-end {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+
+.game-end p {
+  margin: 0;
+}
+
+.game-ratings {
+  margin: 0;
+  padding: 0;
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-soft);
+  text-align: center;
+  list-style: none;
+}
+
+.game-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.game-actions p {
+  margin: 0;
+}
+
+.game-spectators {
+  margin: 0;
+  text-align: center;
+}
+
+.game-message {
+  margin: 0;
+}
+
+/* La salle d'attente : les chaises de la table, et l'invitation. */
+.game-lobby {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.game-lobby h3 {
+  margin: 0;
+}
+
+.game-chairs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.game-chair {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 6px 10px;
+  font-size: var(--text-s);
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.game-chair[data-free] {
+  background: transparent;
+  border: 1.5px dashed var(--border-strong);
+}
+
+.game-chair[data-mine] {
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.game-chair-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-chair-free {
+  flex: 1 1 auto;
+  color: var(--text-muted);
+}
+
+.game-chair-state {
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+.game-chair[data-ready] .game-chair-state {
+  font-weight: var(--weight-semibold);
+  color: var(--success-text);
+}
+
+.game-chair-actions {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.game-chair .bar-button {
+  min-height: 30px;
+  padding: 0 10px;
+}
+
+.game-lobby-hint {
+  margin: 0;
+}
+
+.game-invite {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.game-invite-list {
+  align-self: stretch;
+}
+
+.game-invite-list ul {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.game-invite-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-s);
+}
+
+.game-invite-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-invite-row .bar-button {
+  min-height: 28px;
+  padding: 0 10px;
+}
+
+/* Le classement : une table, les premiers en haut, et sa propre ligne en bas quand elle est au-delà. */
+.game-ladder {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.ladder {
+  width: 100%;
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+  border-collapse: collapse;
+}
+
+.ladder th,
+.ladder td {
+  padding: 6px 4px;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.ladder thead th {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+}
+
+.ladder .ladder-name,
+.ladder thead th:nth-child(2) {
+  text-align: left;
+}
+
+.ladder-rank {
+  width: 2.2em;
+  text-align: center !important;
+  color: var(--text-soft);
+}
+
+.ladder-name {
+  font-weight: var(--weight-semibold);
+}
+
+.ladder-rating {
+  font-weight: var(--weight-semibold);
+}
+
+.ladder-record {
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.ladder-row[data-mine] {
+  background: var(--accent-soft);
+}
+
+.ladder-gap td {
+  text-align: center;
+  color: var(--text-muted);
+  border-bottom: 0;
 }

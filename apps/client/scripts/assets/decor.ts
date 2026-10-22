@@ -2,6 +2,8 @@
 // (public/assets/decor/<catégorie>.png) et écrit la liste (packages/shared/src/decor/generated.ts) que lisent le client et le serveur.
 import { join } from 'node:path';
 import { DECOR_CATEGORIES, type DecorCategoryId, type DecorItem, type DecorKind } from '@bureau/shared';
+import { BASEMENT_ENTRIES } from './curation/basement';
+import { GYM_ENTRIES } from './curation/gym';
 import { INTERIOR_ENTRIES } from './curation/interiors';
 import { OFFICE_ENTRIES } from './curation/office';
 import { SHEETS, type Entry } from './curation/types';
@@ -9,7 +11,7 @@ import { Img, readImage } from './image';
 import { packImages } from './pack';
 import { segmentSheet, type Component } from './segment';
 
-export const ENTRIES: Entry[] = [...OFFICE_ENTRIES, ...INTERIOR_ENTRIES];
+export const ENTRIES: Entry[] = [...OFFICE_ENTRIES, ...INTERIOR_ENTRIES, ...GYM_ENTRIES, ...BASEMENT_ENTRIES];
 
 type Rect = readonly [number, number, number, number];
 export type ResolvedEntry = Entry & { rect: Rect };

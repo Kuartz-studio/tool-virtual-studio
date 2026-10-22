@@ -1,4 +1,4 @@
-import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
+import type { ChatMessage, GameInvite, GameNotice, GameTableView, InitPayload, PublicPlayer } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr, t } from '../i18n/fr';
 import { getSimRoom, resetSimRoom, subscribeSimConnectionLost } from '../sim/sim-room';
@@ -105,10 +105,34 @@ describe('connectOffice', () => {
     expect(bus.emittedOf('net:left')).toEqual([{ id: 'a' }]);
   });
 
+  test('speaking:changed : au magasin, puis au jeu (net:speaking) ; l\'init dit déjà qui parle', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    socket.receive('init', init([player('a', { speaking: true }), player('c')]));
+    expect(store.getState().players.a?.speaking).toBe(true);
+    expect(store.getState().players.c).not.toHaveProperty('speaking');
+
+    socket.receive('speaking:changed', { id: 'c', speaking: true });
+    expect(store.getState().players.c?.speaking).toBe(true);
+    socket.receive('speaking:changed', { id: 'a', speaking: false });
+    expect(store.getState().players.a).not.toHaveProperty('speaking');
+    // Quelqu'un que le magasin ne connaît pas : il ne change rien, mais le jeu en est prévenu (il le dessine peut-être déjà).
+    socket.receive('speaking:changed', { id: 'inconnu', speaking: true });
+    expect(Object.keys(store.getState().players)).toEqual(['a', 'c']);
+
+    expect(bus.emittedOf('net:speaking')).toEqual([
+      { id: 'c', speaking: true },
+      { id: 'a', speaking: false },
+      { id: 'inconnu', speaking: true },
+    ]);
+  });
+
   test('move:correct : au jeu (net:correct), qui recale l\'avatar local', () => {
     connectOffice(socket.asSocket(), store, bus);
     socket.receive('move:correct', { x: 80, y: 240 });
     expect(bus.emittedOf('net:correct')).toEqual([{ x: 80, y: 240 }]);
+    // Un voyage voulu (un mode) porte sa raison : le jeu en fait un anneau de lumière, le son un bruit de saut.
+    socket.receive('move:correct', { x: 300, y: 400, reason: 'teleport' });
+    expect(bus.emittedOf('net:correct').at(-1)).toEqual({ x: 300, y: 400, reason: 'teleport' });
   });
 
   test('session:replaced : le magasin le sait (un autre onglet a pris la place)', () => {
@@ -268,6 +292,173 @@ describe('connectOffice', () => {
       expect(store.getState().lights.on).toBe(true);
       socket.receive('lights:changed', OFF);
       expect(store.getState().lights.on).toBe(false);
+    });
+  });
+
+  describe('la musique des pièces', () => {
+    const OFF = { on: false, scene: null, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 } as const;
+
+    test('init : la musique des pièces réglées va au magasin ; sans musique dans l\'init, aucune pièce n\'a d\'état', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init(), music: { game: OFF } });
+      expect(store.getState().music).toEqual({ game: OFF });
+      socket.receive('init', init());
+      expect(store.getState().music).toEqual({});
+    });
+
+    test('music:changed : au magasin, pièce par pièce', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      socket.receive('music:changed', { place: 'game', state: OFF });
+      expect(store.getState().music).toEqual({ game: OFF });
+      const quest = { on: true, scene: 'quest', by: { id: 'moi', name: 'MOI' }, at: OFF.at + 5000 } as const;
+      socket.receive('music:changed', { place: 'gym', state: quest });
+      expect(store.getState().music).toEqual({ game: OFF, gym: quest });
+    });
+
+    test('local:music part au serveur (music:set) une fois l\'init reçu ; avant, et pendant une coupure, rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.connect();
+      bus.emit('local:music', { place: 'game', on: false });
+      socket.serverAccepts();
+      bus.emit('local:music', { place: 'game', on: false });
+      expect(socket.sentOf('music:set')).toEqual([]);
+
+      socket.receive('init', init());
+      bus.emit('local:music', { place: 'game', on: false });
+      bus.emit('local:music', { place: 'game', scene: 'dusk' });
+      expect(socket.sentOf('music:set')).toEqual([{ place: 'game', on: false }, { place: 'game', scene: 'dusk' }]);
+
+      // Pendant une coupure, Socket.io garderait le message pour le rendre au retour, périmé.
+      socket.connectionDrops();
+      bus.emit('local:music', { place: 'game', on: true });
+      socket.serverAccepts();
+      bus.emit('local:music', { place: 'game', on: true });
+      expect(socket.sentOf('music:set')).toHaveLength(2);
+    });
+
+    test('local:music n\'est qu\'une demande : le magasin ne change qu\'à la réponse du serveur (music:changed)', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      bus.emit('local:music', { place: 'game', on: false });
+      expect(store.getState().music).toEqual({});
+      socket.receive('music:changed', { place: 'game', state: OFF });
+      expect(store.getState().music).toEqual({ game: OFF });
+    });
+  });
+
+  describe('le café', () => {
+    beforeEach(() => {
+      vi.spyOn(performance, 'now').mockReturnValue(10_000);
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    test('init : le café en cours de chacun (boost) devient une échéance au magasin', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init([player('a', { boost: 20_000 })]), self: player('moi', { boost: 8_000 }) });
+      expect(store.getState().coffee).toEqual({ moi: 18_000, a: 30_000 });
+    });
+
+    test('coffee:changed : au magasin, puis au jeu, au son et à la pastille (coffee:changed sur le bus), qui y lisent déjà la nouvelle échéance', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init([A]));
+      let seenByGame: number | undefined;
+      bus.on('coffee:changed', () => {
+        seenByGame = store.getState().coffee.a;
+      });
+      socket.receive('coffee:changed', { id: 'a', ms: 30_000 });
+      expect(store.getState().coffee).toEqual({ a: 40_000 });
+      expect(bus.emittedOf('coffee:changed')).toEqual([{ id: 'a', ms: 30_000 }]);
+      expect(seenByGame).toBe(40_000);
+      // Fini (ms: 0) : l'échéance disparaît, et le bus le dit aussi.
+      socket.receive('coffee:changed', { id: 'a', ms: 0 });
+      expect(store.getState().coffee).toEqual({});
+      expect(bus.emittedOf('coffee:changed')).toEqual([{ id: 'a', ms: 30_000 }, { id: 'a', ms: 0 }]);
+    });
+
+    test('local:coffee part au serveur (coffee:take) une fois l\'init reçu ; avant, et pendant une coupure, rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.connect();
+      bus.emit('local:coffee');
+      socket.serverAccepts();
+      bus.emit('local:coffee');
+      expect(socket.sentOf('coffee:take')).toEqual([]);
+
+      socket.receive('init', init());
+      bus.emit('local:coffee');
+      expect(socket.sentOf('coffee:take')).toEqual([undefined]);
+
+      // Pendant une coupure, Socket.io garderait le message pour le rendre au retour, périmé.
+      socket.connectionDrops();
+      bus.emit('local:coffee');
+      socket.serverAccepts();
+      bus.emit('local:coffee');
+      expect(socket.sentOf('coffee:take')).toEqual([undefined]);
+    });
+
+    test('local:coffee n\'est qu\'une demande : le magasin ne change qu\'à la réponse du serveur (coffee:changed)', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      bus.emit('local:coffee');
+      expect(store.getState().coffee).toEqual({});
+      socket.receive('coffee:changed', { id: 'moi', ms: 30_000 });
+      expect(store.getState().coffee).toEqual({ moi: 40_000 });
+    });
+  });
+
+  describe('les jeux', () => {
+    const view = (version: number, over: Partial<GameTableView> = {}): GameTableView => ({ game: 'connect4', version, chairs: [null, null], spectators: [], match: null, ...over });
+    const invite: GameInvite = { id: 'i1', game: 'chess', from: { id: 'a', name: 'A', avatarKey: null }, ttlMs: 60_000 };
+
+    test('init : les tables et les invitations en attente vont au magasin', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init(), games: [view(2)], gameInvites: [invite] });
+      expect(store.getState().games.connect4?.version).toBe(2);
+      expect(store.getState().gameInvites).toEqual([{ ...invite, until: expect.any(Number) }]);
+      socket.receive('init', init());
+      expect(store.getState().games).toEqual({});
+      expect(store.getState().gameInvites).toEqual([]);
+    });
+
+    test('game:table : au magasin, par jeu ; une version plus ancienne ne remplace rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      socket.receive('game:table', view(1));
+      socket.receive('game:table', view(2, { spectators: [{ id: 'a', name: 'A' }] }));
+      socket.receive('game:table', view(1));
+      expect(store.getState().games.connect4?.version).toBe(2);
+      expect(store.getState().games.connect4?.spectators).toHaveLength(1);
+    });
+
+    test('game:invite : au magasin ; game:invite:gone la retire', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      socket.receive('game:invite', invite);
+      expect(store.getState().gameInvites).toEqual([{ ...invite, until: expect.any(Number) }]);
+      socket.receive('game:invite:gone', { id: 'i1', reason: 'expired' });
+      expect(store.getState().gameInvites).toEqual([]);
+    });
+
+    test('local:debug-game part au serveur (debug:game) une fois l\'init reçu ; avant, rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.connect();
+      bus.emit('local:debug-game', { game: 'connect4', state: {} });
+      socket.serverAccepts();
+      bus.emit('local:debug-game', { game: 'connect4', state: {} });
+      expect(socket.sentOf('debug:game')).toEqual([]);
+      socket.receive('init', init());
+      bus.emit('local:debug-game', { game: 'connect4', state: { a: 1 }, rolls: [6, 1] });
+      expect(socket.sentOf('debug:game')).toEqual([{ game: 'connect4', state: { a: 1 }, rolls: [6, 1] }]);
+    });
+
+    test('game:notice : sur le bus, pour les messages passagers ; le magasin n\'en garde rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      const notice: GameNotice = { kind: 'accepted', game: 'chess', user: { id: 'a', name: 'A' } };
+      socket.receive('game:notice', notice);
+      expect(bus.emittedOf('game:notice')).toEqual([notice]);
     });
   });
 

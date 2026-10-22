@@ -44,8 +44,8 @@ test('lumière : un changement par personne et par 800 ms, un interrupteur à 3 
 describe('états d\'activité : l\'icône', () => {
   const base = { label: 'Pause', color: '#F59E0B', allowEntry: true, hear: true, heard: true };
 
-  test('douze icônes, dans cet ordre (c\'est celui de la grille du formulaire)', () => {
-    expect(ACTIVITY_ICONS).toEqual(['headphones', 'users', 'coffee', 'utensils', 'phone', 'pen-tool', 'code', 'book-open', 'moon', 'plane', 'dumbbell', 'music']);
+  test('quinze icônes, dans cet ordre (c\'est celui de la grille du formulaire) : les douze du départ, puis celles des modes tout prêts', () => {
+    expect(ACTIVITY_ICONS).toEqual(['headphones', 'users', 'coffee', 'utensils', 'phone', 'pen-tool', 'code', 'book-open', 'moon', 'plane', 'dumbbell', 'music', 'check', 'waves', 'gamepad-2']);
   });
 
   test('le schéma accepte chacune d\'elles, et refuse un nom qui n\'en est pas une', () => {

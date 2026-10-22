@@ -5,14 +5,21 @@ import { defineConfig, devices } from '@playwright/test';
 // développement (dev-office). Un second serveur, sur le même build, a la vraie carte (office) et sa propre base : ses six bureaux sont tous
 // libres, ce que les tests de personnalisation (personnalisation.spec.ts : le builder, la déco du bureau) demandent, et dont les zones servent
 // à la musique par endroit (musique-lieux.spec.ts) et à la lumière (lumiere.spec.ts).
-const PORT = 3100;
+// Les ports se règlent (E2E_PORT et E2E_OFFICE_PORT) : plusieurs exécutions à la fois, chacune sur les siens, ne se marchent pas dessus (les agents qui codent un jeu en lancent
+// chacun une). Par défaut 3100 et 3101.
+const PORT = Number(process.env.E2E_PORT ?? 3100);
 const BASE_URL = `http://localhost:${PORT}`;
-const OFFICE_PORT = 3101;
+const OFFICE_PORT = Number(process.env.E2E_OFFICE_PORT ?? 3101);
 const OFFICE_URL = `http://localhost:${OFFICE_PORT}`;
 
-// Les tests qui veulent la vraie carte : la personnalisation (six bureaux libres), la musique par endroit (les zones de la grande carte) et
-// la lumière (l'interrupteur du couloir).
-const OFFICE_SPECS = /(personnalisation|musique-lieux|lumiere)\.spec\.ts/;
+// Les tests qui veulent la vraie carte : la personnalisation (six bureaux libres), la musique par endroit (les zones de la grande carte), la
+// lumière (l'interrupteur de la rue nord), les portes vitrées des bureaux, le café (la machine du bar) et la musique de chaque pièce.
+const OFFICE_SPECS = /(personnalisation|musique-lieux|musique-pieces|lumiere|portes|cafe|modes)\.spec\.ts/;
+
+// Les jeux de la salle de jeu, eux aussi sur la vraie carte (ses tables). Le spec de la plateforme (invitations, sièges, « prêt ») passe d'abord ; ceux des quatre jeux (une table
+// chacun : une partie jouée à deux navigateurs) viennent ensuite, et ne touchent qu'à leur table.
+const GAME_PLATFORM_SPEC = /jeux-plateforme\.spec\.ts/;
+const GAME_SPECS = /jeux-(chess|backgammon|connect4|ludo)\.spec\.ts/;
 
 // Les faux périphériques de Chromium : une caméra (une mire qui bouge) et un micro (un bip), accordés sans question. L'écran d'entrée
 // du bureau les montre, et les tests audio/vidéo (media.spec.ts) les publient. Le test du refus lance son propre navigateur.
@@ -40,8 +47,10 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    { name: 'chromium', testIgnore: OFFICE_SPECS, use: { ...devices['Desktop Chrome'], launchOptions: { args: FAKE_MEDIA_ARGS } } },
+    { name: 'chromium', testIgnore: [OFFICE_SPECS, GAME_PLATFORM_SPEC, GAME_SPECS], use: { ...devices['Desktop Chrome'], launchOptions: { args: FAKE_MEDIA_ARGS } } },
     { name: 'office', testMatch: OFFICE_SPECS, use: { ...devices['Desktop Chrome'], baseURL: OFFICE_URL, launchOptions: { args: FAKE_MEDIA_ARGS } } },
+    { name: 'jeux-plateforme', testMatch: GAME_PLATFORM_SPEC, use: { ...devices['Desktop Chrome'], baseURL: OFFICE_URL, launchOptions: { args: FAKE_MEDIA_ARGS } } },
+    { name: 'jeux', testMatch: GAME_SPECS, dependencies: ['jeux-plateforme'], use: { ...devices['Desktop Chrome'], baseURL: OFFICE_URL, launchOptions: { args: FAKE_MEDIA_ARGS } } },
   ],
   webServer: [
     {

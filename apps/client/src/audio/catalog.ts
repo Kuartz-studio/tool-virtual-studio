@@ -1,3 +1,4 @@
+import { MUSIC_SCENES } from '@bureau/shared';
 import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
 
 // Les sons de l'appli : des ambiances (de la musique en boucle) et des effets (tout ce qui n'est pas de la musique). Les fichiers sont
@@ -9,8 +10,9 @@ import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
 
 export type SceneId = keyof typeof MEASURED_MUSIC;
 
-// Dans l'ordre où le panneau Son les propose : de la plus calme à la plus rythmée, ou presque.
-export const SCENE_IDS = ['lobby', 'focus', 'sunny', 'dusk', 'drift', 'quest'] as const satisfies readonly SceneId[];
+// Dans l'ordre où le panneau Son les propose : de la plus calme à la plus rythmée, ou presque. La liste est celle du partage (le serveur et la carte
+// nomment les mêmes ambiances) ; `satisfies` fait échouer la compilation si l'une n'a pas son fichier mesuré.
+export const SCENE_IDS = MUSIC_SCENES satisfies readonly SceneId[];
 
 export interface Scene {
   id: SceneId;
@@ -74,6 +76,16 @@ export const SFX: Record<SfxId, Sfx> = {
   error: sfx('error', 0.8, 700),
   lost: sfx('lost', 0.8, 2000),
   knock: sfx('knock', 1, 120),
+  'door-open': sfx('door-open', 0.6, 200),
+  'door-close': sfx('door-close', 0.6, 200),
+  lock: sfx('lock', 0.6, 300),
+  unlock: sfx('unlock', 0.6, 300),
+  coffee: sfx('coffee', 0.7, 1000),
+  boost: sfx('boost', 0.7, 1000),
+  teleport: sfx('teleport', 0.8, 600),
+  dice: sfx('dice', 0.8, 300),
+  piece: sfx('piece', 0.8, 120),
+  win: sfx('win', 0.9, 2000),
 };
 
 export const SFX_IDS = Object.keys(SFX) as SfxId[];

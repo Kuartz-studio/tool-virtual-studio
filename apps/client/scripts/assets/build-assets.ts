@@ -2,12 +2,14 @@
 //   public/assets/characters/   les pièces du builder de personnage (corps, yeux, tenues, coiffures, accessoires, personnages prêts)
 //   public/assets/decor/        la banque d'éléments, un atlas par catégorie
 //   public/assets/tiles/        le jeu de tuiles de la carte (sols et murs des thèmes, piscine)
-//   packages/shared/src/        la liste de tout cela (decor/generated*.ts, character/generated.ts), que lisent le client et le serveur
+//   public/assets/props/        les objets animés (portes vitrées, machine à café, cheminée, tapis de course…), une planche chacun
+//   packages/shared/src/        la liste de tout cela (decor/generated*.ts, character/generated.ts, props/generated.ts), que lisent le client et le serveur
 // Les images du pack ne sont pas dans le dépôt (sa licence interdit de les redistribuer) : ce script les lit là où elles sont, et ce
 // qu'il écrit est commité. Le dossier se donne en argument, ou par LIMEZU_SRC ; à défaut, celui du dossier Téléchargements.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
+import { buildAnimated, renderPropsSource } from './animated';
 import { buildCharacters, renderCharactersSource } from './characters';
 import { Sheets, buildDecor, renderCatalogSource } from './decor';
 import { writeImage } from './image';
@@ -40,6 +42,11 @@ export function generateAssets(source: string, log: (line: string) => void = () 
   writeImage(join(ASSETS_DIR, 'tiles/office.png'), tileset.image);
   writeText(join(SHARED_SRC, 'decor/generated-themes.ts'), renderThemesSource(tileset));
   log(`tuiles : ${tileset.tileCount} (dont ${tileset.floors.length} sols et ${tileset.walls.length} murs à choisir)`);
+
+  const animated = buildAnimated(source);
+  for (const { path, image } of animated.files) writeImage(join(ASSETS_DIR, 'props', path), image);
+  writeText(join(SHARED_SRC, 'props/generated.ts'), renderPropsSource(animated.props));
+  log(`objets animés : ${animated.props.length} planches`);
 }
 
 // `tsx scripts/assets/build-assets.ts` s'exécute directement ; importé par un test, ce module n'écrit rien.

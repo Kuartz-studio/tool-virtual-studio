@@ -1,11 +1,11 @@
-import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
+import { AUDIO_SILENT_DISTANCE_PX, DEFAULT_ROOM_MUSIC, type ChatMessage, type DeskInfo, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
 import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { emitOnBus } from '../net/office-connection';
 import { createOfficeStore } from '../state/office-store';
 import type { SfxId } from './catalog';
 import type { SfxOptions } from './engine';
-import { bindSfx, LOST_AFTER_MS, uiSoundFor } from './sfx-events';
+import { bindSfx, COFFEE_BOOST_DELAY_MS, LOST_AFTER_MS, uiSoundFor } from './sfx-events';
 
 const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => ({
   id,
@@ -35,15 +35,18 @@ let played: Played[];
 let store: ReturnType<typeof createOfficeStore>;
 let bus: EventEmitter;
 let unbind: () => void;
+// La pièce réglable où sont les pieds de la personne (celle de l'audio), que les tests posent.
+let place: string | null;
 
 const ids = () => played.map(([id]) => id);
 
 beforeEach(() => {
   vi.useFakeTimers();
   played = [];
+  place = null;
   store = createOfficeStore();
   bus = new EventEmitter();
-  unbind = bindSfx({ playSfx: (id, options) => void played.push(options === undefined ? [id] : [id, options]) }, { bus, store });
+  unbind = bindSfx({ playSfx: (id, options) => void played.push(options === undefined ? [id] : [id, options]) }, { bus, store, placeKey: () => place });
 });
 
 afterEach(() => {
@@ -279,12 +282,170 @@ describe('ce qui se passe au bureau', () => {
     expect(ids()).toEqual(['toggle-on']);
   });
 
+  describe('la musique de la pièce où l\'on est', () => {
+    const by = (id: string) => ({ id, name: id.toUpperCase() });
+    const room = (over: Partial<RoomMusic>, at = 1): RoomMusic => ({ ...DEFAULT_ROOM_MUSIC, by: by('a'), at, ...over });
+
+    beforeEach(() => {
+      place = 'game';
+      store.getState().applyInit(init(player('moi'), [player('a')]));
+      played.length = 0;
+    });
+
+    test('un autre la coupe : le bruit d\'un interrupteur qui s\'éteint ; il la relance : celui qui se rallume', () => {
+      store.getState().setRoomMusic('game', room({ on: false }));
+      store.getState().setRoomMusic('game', room({ on: true }, 2));
+      expect(played).toEqual([['toggle-off'], ['toggle-on']]);
+    });
+
+    test('un autre change son ambiance, allumée : un clic', () => {
+      store.getState().setRoomMusic('game', room({ scene: 'quest' }));
+      expect(played).toEqual([['click']]);
+    });
+
+    test('éteinte, son ambiance qu\'un autre change ne se voit pas : aucun bruit', () => {
+      store.getState().setRoomMusic('game', room({ on: false }));
+      played.length = 0;
+      store.getState().setRoomMusic('game', room({ on: false, scene: 'quest' }, 2));
+      expect(played).toEqual([]);
+    });
+
+    test('ce qu\'on règle soi-même ne sonne pas (le clic a déjà son bruit)', () => {
+      store.getState().setRoomMusic('game', room({ on: false, by: by('moi') }));
+      expect(played).toEqual([]);
+    });
+
+    test('la musique d\'une autre pièce que la sienne ne sonne pas', () => {
+      store.getState().setRoomMusic('lounge', room({ on: false }));
+      expect(played).toEqual([]);
+    });
+
+    test('sans pièce réglable sous les pieds (la rue, la place), aucun bruit', () => {
+      place = null;
+      store.getState().setRoomMusic('game', room({ on: false }));
+      expect(played).toEqual([]);
+    });
+
+    test('« Ne pas déranger » : la musique qu\'un autre règle ne sonne pas', () => {
+      store.getState().applyInit(init(player('moi', { status: 'dnd' }), [player('a')]));
+      played.length = 0;
+      store.getState().setRoomMusic('game', room({ on: false }));
+      expect(played).toEqual([]);
+    });
+
+    test('l\'état des pièces à l\'arrivée (l\'init) n\'est pas un changement ; une pièce déjà éteinte qu\'on rallume l\'est', () => {
+      store.getState().setReady(false);
+      store.getState().applyInit({ ...init(player('moi'), [player('a')]), music: { game: room({ on: false }) } });
+      expect(ids()).toEqual([]);
+      store.getState().setRoomMusic('game', room({ on: true }, 2));
+      expect(played).toEqual([['toggle-on']]);
+    });
+
+    test('une demande qui ne change rien (le même état annoncé deux fois) ne sonne qu\'une fois', () => {
+      store.getState().setRoomMusic('game', room({ on: false }));
+      store.getState().setRoomMusic('game', room({ on: false }, 2));
+      expect(played).toEqual([['toggle-off']]);
+    });
+  });
+
+  test('le café qu\'on se sert : le bruit de la machine, puis le coup de fouet du café un instant après ; celui des autres, et la fin du sien, ne sonnent pas', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'coffee:changed', { id: 'a', ms: 30_000 });
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 0 });
+    expect(played).toEqual([]);
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 30_000 });
+    expect(played).toEqual([['coffee'], ['boost', { delayMs: COFFEE_BOOST_DELAY_MS }]]);
+  });
+
+  test('le café qu\'on se sert sonne même en « Ne pas déranger » : c\'est sa propre action', () => {
+    store.getState().applyInit(init(player('moi', { status: 'dnd' }), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 30_000 });
+    expect(ids()).toEqual(['coffee', 'boost']);
+  });
+
+  test('le café de l\'init (on arrive pendant qu\'on en a un) n\'est pas une prise : aucun bruit', () => {
+    store.getState().applyInit(init(player('moi', { boost: 12_000 }), [player('a', { boost: 30_000 })]));
+    expect(ids()).toEqual(['welcome']);
+  });
+
+  test('un voyage voulu (un mode qui conduit à la salle de sport) fait le bruit du saut ; une simple correction ne sonne pas', () => {
+    store.getState().applyInit(init(player('moi'), []));
+    played.length = 0;
+    emitOnBus(bus, 'net:correct', { x: 10, y: 20 });
+    expect(played).toEqual([]);
+    emitOnBus(bus, 'net:correct', { x: 10, y: 20, reason: 'teleport' });
+    expect(played).toEqual([['teleport']]);
+  });
+
   test('débrancher : plus rien ne sonne', () => {
     unbind();
     click('<button type="button">Chat</button>');
     emitOnBus(bus, 'net:joined', player('a'));
     emitOnBus(bus, 'lights:changed', { on: false, by: null, at: 1 });
+    emitOnBus(bus, 'coffee:changed', { id: 'moi', ms: 30_000 });
+    emitOnBus(bus, 'net:correct', { x: 1, y: 2, reason: 'teleport' });
     store.getState().applyInit(init(player('moi')));
     expect(ids()).toEqual([]);
+  });
+});
+
+describe('les portes des bureaux', () => {
+  const door = (over: Partial<{ key: string; open: boolean; ownerId: string | null; distancePx: number }> = {}) => ({ key: 'A1', open: false, ownerId: 'a', distancePx: 0, ...over });
+  const level = (index: number) => (played[index]?.[1] as { level: number } | undefined)?.level;
+
+  test('une porte qui se ferme joue door-close, une porte qui s\'ouvre door-open : plein volume de près', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'door:moved', door({ open: false }));
+    emitOnBus(bus, 'door:moved', door({ open: true }));
+    expect(ids()).toEqual(['door-close', 'door-open']);
+    expect([level(0), level(1)]).toEqual([1, 1]);
+  });
+
+  test('plus la porte est loin, plus le bruit est faible ; à 14 cases et au-delà, rien', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'door:moved', door({ distancePx: AUDIO_SILENT_DISTANCE_PX - 64 }));
+    expect(level(0)).toBeGreaterThan(0);
+    expect(level(0)).toBeLessThan(1);
+    emitOnBus(bus, 'door:moved', door({ distancePx: AUDIO_SILENT_DISTANCE_PX }));
+    emitOnBus(bus, 'door:moved', door({ distancePx: AUDIO_SILENT_DISTANCE_PX * 3 }));
+    expect(ids()).toEqual(['door-close']);
+  });
+
+  test('« Ne pas déranger » : la porte d\'un autre ne sonne pas, la sienne si', () => {
+    store.getState().applyInit(init(player('moi', { status: 'dnd' }), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'door:moved', door({ ownerId: 'a' }));
+    expect(ids()).toEqual([]);
+    emitOnBus(bus, 'door:moved', door({ ownerId: 'moi', open: true }));
+    expect(ids()).toEqual(['door-open']);
+  });
+
+  const desk = (over: Partial<DeskInfo> = {}): DeskInfo => ({ key: 'A1', ownerId: 'moi', ownerName: 'MOI', name: null, locked: false, closedByState: false, floor: 'sable', wall: 'creme', items: [], ...over });
+
+  test('verrouiller son bureau joue lock, le déverrouiller unlock', () => {
+    store.getState().applyInit({ ...init(player('moi'), [player('a')]), desks: [desk()] });
+    played.length = 0;
+    store.getState().setDesk(desk({ locked: true }));
+    store.getState().setDesk(desk({ locked: false }));
+    expect(ids()).toEqual(['lock', 'unlock']);
+  });
+
+  test('le verrou d\'un autre bureau ne sonne pas ; ni un changement de nom, ni l\'arrivée avec un bureau déjà verrouillé', () => {
+    store.getState().applyInit({ ...init(player('moi'), [player('a')]), desks: [desk(), desk({ key: 'A2', ownerId: 'a', ownerName: 'A' })] });
+    played.length = 0;
+    store.getState().setDesk(desk({ key: 'A2', ownerId: 'a', ownerName: 'A', locked: true }));
+    store.getState().setDesk(desk({ name: 'Le QG' }));
+    expect(ids()).toEqual([]);
+    const locked = createOfficeStore();
+    const quietBus = new EventEmitter();
+    const heard: SfxId[] = [];
+    const off = bindSfx({ playSfx: (id) => void heard.push(id) }, { bus: quietBus, store: locked });
+    locked.getState().applyInit({ ...init(player('moi'), []), desks: [desk({ locked: true })] });
+    expect(heard).toEqual(['welcome']);
+    off();
   });
 });

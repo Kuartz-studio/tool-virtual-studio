@@ -5,11 +5,15 @@ export const TILE_SIZE = 32;
 // de la physique Arcade (feetBody, dans le client), et l'extrapolation des autres avatars ne la fait pas entrer dans un mur
 // (avatarBodyFits).
 export const AVATAR_BODY = { width: 20, height: 12, belowFeet: 1 } as const;
-// La marche, et la course (Maj enfoncée) : trois fois plus vite. Le serveur n'a pas à savoir laquelle des deux on fait ; il refuse ce qui
-// dépasse la course (MAX_SPEED_PX_PER_S), la plus grande vitesse qu'une personne puisse avoir.
-export const WALK_SPEED_PX_PER_S = 160;
-export const SPRINT_FACTOR = 3;
-export const MAX_SPEED_PX_PER_S = WALK_SPEED_PX_PER_S * SPRINT_FACTOR;
+// La marche, la course (Maj enfoncée) et le café. La marche fait 320 px/s ; Maj la multiplie par 1,5 (480 px/s, la vitesse qu'avait la course avant la
+// mise à jour : elle n'a pas doublé, elle irait sinon plus vite que le café) ; un café la multiplie par 2 (640 px/s, soit quatre fois la marche
+// d'avant), et Maj en plus donne 960 px/s. Le serveur ne sait pas si l'on court : il refuse ce qui dépasse NORMAL_MAX_SPEED_PX_PER_S (la course),
+// ou MAX_SPEED_PX_PER_S (la course sous café) tant que la personne a un café, ce qu'il sait puisque c'est lui qui le donne (World.maxSpeedOf).
+export const WALK_SPEED_PX_PER_S = 320;
+export const SPRINT_FACTOR = 1.5;
+export const COFFEE_SPEED_FACTOR = 2;
+export const NORMAL_MAX_SPEED_PX_PER_S = WALK_SPEED_PX_PER_S * SPRINT_FACTOR;
+export const MAX_SPEED_PX_PER_S = NORMAL_MAX_SPEED_PX_PER_S * COFFEE_SPEED_FACTOR;
 export const MOVE_TOLERANCE = 1.5;
 export const MOVE_JITTER_MS = 250;
 export const MOVE_SEGMENT_STEP_PX = 8;
@@ -24,10 +28,14 @@ export const WORLD_TICK_MS = 100;
 export const REMOTE_RENDER_DELAY_MS = 150;
 // Quand l'heure de rendu dépasse la dernière position reçue d'une personne qui marche, son avatar continue sur sa lancée au plus
 // pendant ce temps, puis attend là (jamais pour une personne arrêtée). 60 ms couvrent les 50 ms sans position que laisse encore un
-// tick vide avec 150 ms de retard (deux positions à 200 ms d'écart), sans dépasser de plus de 9,6 px (60 ms de marche) le point où
-// la personne s'est peut-être arrêtée. WorkAdventure extrapole de même, jusqu'à 100 ms.
+// tick vide avec 150 ms de retard (deux positions à 200 ms d'écart), sans dépasser de plus de 19,2 px (60 ms de marche, à
+// WALK_SPEED_PX_PER_S) le point où la personne s'est peut-être arrêtée. WorkAdventure extrapole de même, jusqu'à 100 ms.
 export const EXTRAPOLATION_MAX_MS = 60;
-export const TELEPORT_SNAP_PX = 3 * TILE_SIZE;
+// Un autre avatar saute au lieu de glisser quand la distance entre deux positions reçues dépasse de TELEPORT_SNAP_PX ce que la plus grande vitesse
+// (MAX_SPEED_PX_PER_S, le café) explique en ce temps-là. Le serveur annonce ses téléportations (`tp` dans le tick) : ce seuil ne sert plus qu'au
+// reste (un retour au point d'apparition, une position venue d'une autre version de la carte). 8 cases : assez large pour qu'un tick manqué
+// sous café ne fasse pas sauter, assez court pour qu'un vrai saut se voie.
+export const TELEPORT_SNAP_PX = 8 * TILE_SIZE;
 export const GROUPS_TICK_MS = 100;
 // Le son des espaces ouverts s'éteint avec la distance : à 100 % dans un grand rayon autour de soi (AUDIO_FULL_DISTANCE_PX), puis de plus
 // en plus faible jusqu'au silence (AUDIO_SILENT_DISTANCE_PX). Dans une zone (un bureau, une salle), rien de tel : tout le monde s'entend
@@ -56,6 +64,13 @@ export const SOCKET_CONNECT_RATE = { max: 10, windowMs: 60_000 };
 export const MOVE_RATE = { max: 20, windowMs: 1_000 };          // au-delà, les `move` d'une socket sont ignorés
 export const STATUS_RATE = { max: 10, windowMs: 1_000 };        // de même pour ses `status:set`, diffusés à tout le bureau
 export const MEDIA_STATE_RATE = { max: 10, windowMs: 1_000 };   // et ses `media:state`
+// La parole : « je parle » (`speaking:set`) fait paraître une bulle au-dessus de l'avatar chez tout le monde, même loin de lui et hors de sa
+// conversation. SPEAKING_RATE : au plus ce nombre de messages par socket et par fenêtre, le reste est ignoré. Sans nouvelle de lui pendant
+// SPEAKING_TTL_MS, le serveur éteint la bulle (un client qui plante ne la laisse pas allumée) ; tant qu'il parle, le client redit « je parle »
+// toutes les SPEAKING_HEARTBEAT_MS : un message perdu sur deux ne la coupe pas.
+export const SPEAKING_RATE = { max: 8, windowMs: 2_000 };
+export const SPEAKING_TTL_MS = 6_000;
+export const SPEAKING_HEARTBEAT_MS = 3_000;
 export const INVITATION_TTL_MS = 7 * 24 * 3600 * 1000;
 // Comment les liens d'invitation et de mot de passe parviennent aux gens (MAILER, côté serveur) : resend les envoie par e-mail ; none
 // n'envoie rien, l'admin copie les liens depuis l'appli et les transmet lui-même ; memory (développement, tests) les garde en mémoire.
@@ -81,6 +96,42 @@ export const DESK_KNOCK_COOLDOWN_MS = 5_000;
 // (withinSwitchReach, la même règle pour le serveur et pour le client).
 export const LIGHTS_RATE_MS = 800;
 export const LIGHT_SWITCH_REACH_TILES = 3;
+// Le café : une prise à la machine donne COFFEE_DURATION_MS de vitesse doublée (COFFEE_SPEED_FACTOR). On la prend de près, à COFFEE_REACH_TILES
+// cases ou moins de la case de service que la carte déclare (withinCoffeeReach, la même règle pour le serveur et pour le client), et une
+// personne n'en prend pas plus d'une par COFFEE_RATE_MS : un café de plus, passé ce délai, remet le compte à COFFEE_DURATION_MS.
+export const COFFEE_DURATION_MS = 30_000;
+export const COFFEE_REACH_TILES = 2;
+export const COFFEE_RATE_MS = 2_000;
+// La musique de chaque pièce, que ceux qui y sont règlent pour tous : une personne la change au plus une fois par MUSIC_RATE_MS (le serveur ignore ce qui
+// vient avant).
+export const MUSIC_RATE_MS = 800;
+// Les jeux de la salle de jeu (échecs, backgammon, Puissance 4, petits chevaux). Les délais courent sur l'horloge monotone du monde, jamais sur celle du mur.
+// - GAME_TURN_TIMEOUT_MS : sans action du siège qui doit agir, il sort de la partie (défaite) ; elle repart à chaque action acceptée, un lancer de dés compris.
+//   GAME_TURN_WARNING_MS : le compte à rebours ne s'affiche que dans la dernière minute.
+// - GAME_RECONNECT_MS : un joueur sans connexion garde sa place aussi longtemps, puis il sort (défaite) ; plus long que le délai de grâce du monde.
+// - GAME_INVITE_TTL_MS : une invitation sans réponse expire ; au plus GAME_INVITES_PER_USER en attente par invitante.
+// - GAME_CHAIR_IDLE_MS : une chaise occupée sans partie se libère après ce temps, compté depuis le dernier geste (s'asseoir, la fin d'une partie, « prêt »).
+// - GAME_SWEEP_MS : la période du balayage des délais ci-dessus.
+// - GAME_MIN_RANKED_MOVES : une partie compte pour le classement à partir de ce nombre de coups (les coups du jeu : un lancer de dés n'en est pas un).
+// - GAME_DRAW_OFFER_MIN_MOVES : une nulle ne se propose qu'à partir de ce nombre de coups (un de chaque camp) ; le serveur refuse avant (`too_early`), le bouton le dit avant.
+// - GAME_RATE : les commandes d'une socket (`game:do`) ; GAME_INVITE_RATE : les invitations d'un compte ; GAME_LADDER_RATE : les lectures du classement.
+// - GAME_LADDER_TOP : le nombre de lignes du classement.
+// - GAME_ARRIVAL_RING_TILES : l'anneau autour de la table où l'on pose qui accepte une invitation ; GAME_TABLE_REACH_TILES : la portée de la touche E autour d'une table.
+export const GAME_TURN_TIMEOUT_MS = 300_000;
+export const GAME_TURN_WARNING_MS = 60_000;
+export const GAME_RECONNECT_MS = 90_000;
+export const GAME_INVITE_TTL_MS = 60_000;
+export const GAME_CHAIR_IDLE_MS = 600_000;
+export const GAME_SWEEP_MS = 1_000;
+export const GAME_MIN_RANKED_MOVES = 2;
+export const GAME_DRAW_OFFER_MIN_MOVES = 2;
+export const GAME_INVITES_PER_USER = 3;
+export const GAME_RATE = { max: 20, windowMs: 2_000 };
+export const GAME_INVITE_RATE = { max: 6, windowMs: 60_000 };
+export const GAME_LADDER_RATE = { max: 10, windowMs: 10_000 };
+export const GAME_LADDER_TOP = 10;
+export const GAME_ARRIVAL_RING_TILES = 2;
+export const GAME_TABLE_REACH_TILES = 2;
 export const SESSION_TTL_S = 30 * 24 * 3600;
 export const LIVEKIT_TOKEN_TTL_S = 600;
 export const OFFICE_ROOM = 'office';
