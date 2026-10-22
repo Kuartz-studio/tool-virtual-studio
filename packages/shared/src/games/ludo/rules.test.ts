@@ -398,7 +398,11 @@ describe('petits chevaux : avancer, prendre, passer par-dessus', () => {
 
     const stacked = roll(fab({ horses: [[56, 56, 54, 50], STABLE] }), 2);
     expect(ludo.legalMoves(stacked.state, 0)).toEqual([{ type: 'move', horse: 2 }, { type: 'move', horse: 3 }]);
-    expect(play(stacked.state, 2).state.horses[0]).toEqual([56, 56, 56, 50]);
+    // Trois chevaux à l'arrivée ne font pas gagner : il faut les quatre.
+    const third = play(stacked.state, 2);
+    expect(third.state.horses[0]).toEqual([56, 56, 56, 50]);
+    expect(third.state).toMatchObject({ result: null, phase: 'roll', turn: 1 });
+    expect(third.events).toEqual([{ type: 'move', seat: 0, horse: 2, from: 54, to: 56 }, turnTo(1)]);
   });
 
   test('C21 : trois chevaux à l\'écurie et un 6 : legalMoves n\'a qu\'une sortie, celle du premier cheval à l\'écurie', () => {
@@ -526,6 +530,8 @@ describe('petits chevaux : un siège sort de la partie', () => {
     expect(ludo.result(second.state)).toEqual({ ranking: [[0], [2], [1]], reason: 'disconnect', detail: { scores: [32, 0, 0] } });
     expect(second.state).toMatchObject({ phase: 'over', die: null, out: [{ seat: 1, reason: 'timeout' }, { seat: 2, reason: 'disconnect' }] });
     expect(ludo.turn(second.state)).toBeNull();
+    // À la fin, le champ turn de l'état désigne le gagnant : le dernier resté, pas le siège qui vient de sortir (c'était à lui de jouer).
+    expect(second.state.turn).toBe(0);
     expect(ludo.invariants(second.state)).toEqual([]);
   });
 
@@ -533,6 +539,7 @@ describe('petits chevaux : un siège sort de la partie', () => {
     const start = fab({ horses: [[10, -1, -1, -1], [5, -1, -1, -1]] });
     expect(ludo.forfeit(start, 1, 'timeout').state.result).toMatchObject({ ranking: [[0], [1]], reason: 'timeout' });
     const turnHolderLeaves = ludo.forfeit(start, 0, 'resign');
+    expect(turnHolderLeaves.state.turn).toBe(1);
     expect(turnHolderLeaves.state.result).toMatchObject({ ranking: [[1], [0]], reason: 'resign' });
     expect(turnHolderLeaves.events).toEqual([{ type: 'forfeit', seat: 0, reason: 'resign' }, { type: 'end', ranking: [[1], [0]] }]);
     for (const reason of FORFEIT_REASONS) expect(ludo.forfeit(start, 1, reason).state.result?.reason).toBe(reason);
