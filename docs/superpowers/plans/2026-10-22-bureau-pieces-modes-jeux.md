@@ -529,16 +529,13 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   - vue d'un autre : une porte verrouillée s'ouvre quand **le propriétaire** est à 1,5 case ;
   - le propriétaire verrouille ou déverrouille : tout le monde voit l'animation, ceux qui sont à moins de 14 cases l'entendent (plus faible avec la distance).
 
-**Étapes**
-- [ ] Tests, qui échouent :
-  - `doorTarget` : « ouverte, elle reste ouverte » ; « fermée pour soi, elle reste fermée même de près » ; « verrouillée mais autorisée : s'ouvre de près, se ferme de loin » ; « d'un autre : s'ouvre quand le propriétaire est près » ;
-  - `nextPhase` : « open → closing → closed » et « closed → opening → open », pas de saut ;
-  - sfx : « fermer la porte joue `door-close`, la rouvrir `door-open` ; le verrou `lock` / `unlock` en plus pour son propriétaire » ; « plus de 14 cases : silence » ; « Ne pas déranger : pas le bruit des autres » ;
-  - `DoorSprite` : « mouvement réduit : saute à l'image finale » ;
-  - **seuil :** « verrouiller pendant qu'une personne est sur le seuil la repousse côté rue, elle n'est pas coincée » (collision, test e2e `portes.spec.ts`).
-- [ ] Implémenter : animations Phaser `door-open` (images 0 à 4) et `door-close` (4 à 7 puis 0) ; porte dessinée au bas de la bande de mur ; repos « ouvert » = image 4.
-- [ ] e2e `portes.spec.ts` (projet `office`) : « le propriétaire ferme, l'autre bute, toque, le propriétaire rouvre » + capture des cinq états.
-- [ ] Commit : `feat(client): des portes vitrées qui s'ouvrent et se ferment, avec le son`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `door-state.test.ts` (`doorTarget`, `nextPhase` sans demi-tour, `nearDoor` à 1,5 case, `doorSoundLevel` jusqu'à 14 cases, et `watchDoor` : elle s'ouvre tout de suite, reste ouverte 600 ms après le départ, ne se ferme pas si on revient, se ferme sans attendre quand personne ne l'avait ouverte) ; `door-sprite.test.ts` (placement au bas de la bande de mur, phases `open → closing → closed → opening`, la cible qui change en pleine fermeture, `instant`, mouvement réduit : image finale mais bruit fait, les deux animations `door:open` et `door:close`) ; `sfx-events.test.ts` (`door-close` / `door-open` avec le volume qui baisse, silence à 14 cases, « Ne pas déranger » : pas le bruit des autres, `lock` / `unlock` pour son propre bureau seulement) ; serveur `realtime-desks.test.ts` (**le seuil** : verrouiller pendant qu'une personne est dans le cadre de la porte la repousse dans la rue et son navigateur s'y replace ; ni le propriétaire, ni celui qui est dans la rue ou dans la pièce ne bougent).
+- [x] Implémenté : `DoorSprite` (le prop `door-glass-double`, image 0 fermée, 4 ouverte, 1 à 3 l'ouverture, 5 à 7 la fermeture), `DeskLayer` (une porte vitrée par bureau à la place du rectangle de couleur, qui s'ouvre devant soi ou devant le propriétaire qu'on voit, avec la collision statique et le « toc toc » d'avant), son crochet `ownerAt` et `onDoorMoved` (événement `door:moved` du bus, lu par `sfx-events`), `tick()` à chaque image, `RemotePlayer.position`, `window.__office.doors()` pour les tests ; côté serveur `evictFromThresholds` après tout changement d'accès.
+- [x] e2e `portes.spec.ts` (projet `office`, ajouté à `OFFICE_SPECS`) : Alice ferme sa porte (elle se ferme chez les deux, le verrou et la porte sonnent), Bruno bute et lit « porte fermée », clique sur la porte, Alice le laisse entrer, la porte s'ouvre devant lui, Alice la rouvre. Captures des cinq états (ouverte, se ferme, fermée, s'ouvre devant le propriétaire, ouverte) envoyées avec `SendUserFile`.
+- [x] Commit : `feat(client): des portes vitrées qui s'ouvrent et se ferment, avec le son`.
+
+**Tel que livré** (écarts au plan, au registre) : `watchDoor` (retient « quelqu'un était près » et l'heure de fermeture) s'ajoute à `doorTarget` et `nextPhase` ; verrouiller efface la liste des admis (règle existante), l'admission d'une personne qui attend sur le seuil se fait donc après son éviction.
 
 ### Tâche 11 : le café (P0, M)
 

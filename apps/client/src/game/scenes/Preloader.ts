@@ -8,6 +8,7 @@ import { addSignTexture } from '../map-signs';
 import { createLightTextures } from '../light-textures';
 import { tilesetImages } from '../map-layers';
 import { avatarLibraryOf } from '../objects/avatar-skin';
+import { registerDoorAnimations } from '../door-sprite';
 import { propSheets, registerPropAnimations } from '../prop-textures';
 import { useOfficeStore } from '../../state/office-store';
 
@@ -76,6 +77,7 @@ export class Preloader extends Scene {
     }
     registerDecorFrames(this.textures);
     registerPropAnimations(this.anims, this.textures);
+    registerDoorAnimations(this.anims, this.textures);
     // La plaque de l'interrupteur de lumière : un dessin de quelques pixels, fait ici une fois (pas de fichier à charger). De même, les disques
     // de lumière de la nuit.
     addSwitchTextures(this.textures);

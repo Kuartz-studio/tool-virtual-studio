@@ -46,6 +46,8 @@ export interface OfficeDebug {
   // La nuit en ce moment, de 0 (la lumière est allumée : la couche de nuit n'est pas à l'écran) à 1 (pleine nuit) ; entre les deux pendant le
   // fondu ou le clignotement.
   nightLevel(): number;
+  // La phase de chaque porte de bureau, par clé de place : `open`, `closing`, `closed` ou `opening` (door-state.ts). Vide sur une carte sans portes.
+  doors(): Record<string, 'open' | 'closing' | 'closed' | 'opening'>;
   // L'avatar local marche-t-il tout seul (« Aller à mon bureau », voir auto-walk.ts) ? Faux dès qu'il est arrivé, qu'une touche de déplacement
   // l'a interrompu, ou qu'il est bloqué.
   autoWalking(): boolean;

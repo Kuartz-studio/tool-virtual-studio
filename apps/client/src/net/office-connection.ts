@@ -29,6 +29,9 @@ export interface OfficeBusEvents {
   'local:move': (p: MovePayload) => void;
   // Le jeu : la personne a cliqué sur la porte fermée de ce bureau, près de elle. La connexion toque pour elle (`desk:do`, knock).
   'local:knock': (p: { key: string }) => void;
+  // Le jeu : la porte de ce bureau se met en mouvement (`open` : elle s'ouvre ; sinon elle se ferme), à `distancePx` de la personne qui joue ; `ownerId` :
+  // à qui est le bureau. Le son des portes (audio/sfx-events.ts) en dépend.
+  'door:moved': (p: { key: string; open: boolean; ownerId: string | null; distancePx: number }) => void;
   // Le jeu : la personne actionne l'interrupteur de la lumière, de près. La connexion demande l'état voulu au serveur (`lights:set`) ; la
   // lumière ne change qu'à son annonce (`lights:changed`).
   'local:lights': (p: { on: boolean }) => void;

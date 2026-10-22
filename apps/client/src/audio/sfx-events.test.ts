@@ -1,4 +1,4 @@
-import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
+import { AUDIO_SILENT_DISTANCE_PX, type ChatMessage, type DeskInfo, type InitPayload, type PublicPlayer } from '@bureau/shared';
 import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { emitOnBus } from '../net/office-connection';
@@ -286,5 +286,64 @@ describe('ce qui se passe au bureau', () => {
     emitOnBus(bus, 'lights:changed', { on: false, by: null, at: 1 });
     store.getState().applyInit(init(player('moi')));
     expect(ids()).toEqual([]);
+  });
+});
+
+describe('les portes des bureaux', () => {
+  const door = (over: Partial<{ key: string; open: boolean; ownerId: string | null; distancePx: number }> = {}) => ({ key: 'A1', open: false, ownerId: 'a', distancePx: 0, ...over });
+  const level = (index: number) => (played[index]?.[1] as { level: number } | undefined)?.level;
+
+  test('une porte qui se ferme joue door-close, une porte qui s\'ouvre door-open : plein volume de près', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'door:moved', door({ open: false }));
+    emitOnBus(bus, 'door:moved', door({ open: true }));
+    expect(ids()).toEqual(['door-close', 'door-open']);
+    expect([level(0), level(1)]).toEqual([1, 1]);
+  });
+
+  test('plus la porte est loin, plus le bruit est faible ; à 14 cases et au-delà, rien', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'door:moved', door({ distancePx: AUDIO_SILENT_DISTANCE_PX - 64 }));
+    expect(level(0)).toBeGreaterThan(0);
+    expect(level(0)).toBeLessThan(1);
+    emitOnBus(bus, 'door:moved', door({ distancePx: AUDIO_SILENT_DISTANCE_PX }));
+    emitOnBus(bus, 'door:moved', door({ distancePx: AUDIO_SILENT_DISTANCE_PX * 3 }));
+    expect(ids()).toEqual(['door-close']);
+  });
+
+  test('« Ne pas déranger » : la porte d\'un autre ne sonne pas, la sienne si', () => {
+    store.getState().applyInit(init(player('moi', { status: 'dnd' }), [player('a')]));
+    played.length = 0;
+    emitOnBus(bus, 'door:moved', door({ ownerId: 'a' }));
+    expect(ids()).toEqual([]);
+    emitOnBus(bus, 'door:moved', door({ ownerId: 'moi', open: true }));
+    expect(ids()).toEqual(['door-open']);
+  });
+
+  const desk = (over: Partial<DeskInfo> = {}): DeskInfo => ({ key: 'A1', ownerId: 'moi', ownerName: 'MOI', name: null, locked: false, closedByState: false, floor: 'sable', wall: 'creme', items: [], ...over });
+
+  test('verrouiller son bureau joue lock, le déverrouiller unlock', () => {
+    store.getState().applyInit({ ...init(player('moi'), [player('a')]), desks: [desk()] });
+    played.length = 0;
+    store.getState().setDesk(desk({ locked: true }));
+    store.getState().setDesk(desk({ locked: false }));
+    expect(ids()).toEqual(['lock', 'unlock']);
+  });
+
+  test('le verrou d\'un autre bureau ne sonne pas ; ni un changement de nom, ni l\'arrivée avec un bureau déjà verrouillé', () => {
+    store.getState().applyInit({ ...init(player('moi'), [player('a')]), desks: [desk(), desk({ key: 'A2', ownerId: 'a', ownerName: 'A' })] });
+    played.length = 0;
+    store.getState().setDesk(desk({ key: 'A2', ownerId: 'a', ownerName: 'A', locked: true }));
+    store.getState().setDesk(desk({ name: 'Le QG' }));
+    expect(ids()).toEqual([]);
+    const locked = createOfficeStore();
+    const quietBus = new EventEmitter();
+    const heard: SfxId[] = [];
+    const off = bindSfx({ playSfx: (id) => void heard.push(id) }, { bus: quietBus, store: locked });
+    locked.getState().applyInit({ ...init(player('moi'), []), desks: [desk({ locked: true })] });
+    expect(heard).toEqual(['welcome']);
+    off();
   });
 });

@@ -279,6 +279,39 @@ describe('la vie des bureaux', () => {
   });
 });
 
+describe('le seuil : une porte qui se ferme ne coince personne', () => {
+  // Le point de sortie devant la porte de A1, côté rue : le centre de la case (5, 11).
+  const STREET = { x: 160, y: 368 };
+
+  test('verrouiller pendant que quelqu\'un est sur le seuil : il est repoussé dans la rue, devant la porte, et son navigateur s\'y replace', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');   // A1
+    const b = await person(srv, 'b@x.fr');   // A2
+    await teleport(b, DOORWAY);
+    expect(posOf(srv, b)).toEqual(DOORWAY);
+    const corrected = nextEvent(b.socket, 'move:correct');
+    expect(await run(a.socket, { type: 'lock', locked: true })).toEqual({ ok: true });
+    expect(await corrected).toEqual(STREET);
+    expect(posOf(srv, b)).toEqual(STREET);
+  });
+
+  test('ni le propriétaire sur son seuil, ni celui qui est dans la rue, ni celui qui est dans la pièce (même admis) ne bougent', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');   // A1
+    const b = await person(srv, 'b@x.fr');
+    const c = await person(srv, 'c@x.fr');
+    await teleport(a, DOORWAY);
+    await teleport(b, OUTSIDE);
+    await teleport(c, INSIDE);
+    expect(await run(a.socket, { type: 'admit', userId: c.id })).toEqual({ ok: true });
+    expect(await run(a.socket, { type: 'lock', locked: true })).toEqual({ ok: true });
+    await sleep(100);
+    expect(posOf(srv, a)).toEqual(DOORWAY);
+    expect(posOf(srv, b)).toEqual(OUTSIDE);
+    expect(posOf(srv, c)).toEqual(INSIDE);
+  });
+});
+
 describe('le décor d\'un bureau', () => {
   test('decor : accepté, enregistré, et rediffusé à tout le bureau (émetteur compris) ; un arrivant le voit dans l\'init', async () => {
     const srv = await startOffice();

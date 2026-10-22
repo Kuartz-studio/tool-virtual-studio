@@ -123,6 +123,11 @@ export class RemotePlayer {
     return this.drawn;
   }
 
+  // Là où ses pieds sont dessinés à la dernière image (avec son retard) : ce que les portes regardent pour s'ouvrir devant lui.
+  get position(): { x: number; y: number } {
+    return { x: this.drawn.x, y: this.drawn.y };
+  }
+
   // Le milieu de l'avatar tel qu'il est dessiné à cette image (avec son retard), pour son halo la nuit ; null quand il est caché.
   lightPoint(): { x: number; y: number } | null {
     return this.sprite.visible ? { x: this.sprite.x, y: this.sprite.y - this.sprite.displayHeight / 2 } : null;

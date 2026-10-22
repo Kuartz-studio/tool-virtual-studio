@@ -1,7 +1,8 @@
 import type { ChatMessage } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
+import { doorSoundLevel } from '../game/door-state';
 import { listenOnBus, type OfficeBus } from '../net/office-connection';
-import type { OfficeState } from '../state/office-store';
+import { selectDeskOf, type OfficeState } from '../state/office-store';
 import { SFX, type SfxId } from './catalog';
 import type { SfxOptions } from './engine';
 
@@ -90,6 +91,13 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDe
       if (!quiet()) engine.playSfx('arrive', { rate: 0.8, level: 0.6 });
     }),
     listenOnBus(bus, 'local:knock', knock),
+    // Une porte de bureau se met en mouvement : le bruit d'une porte qui s'ouvre ou se ferme, plus faible avec la distance (le silence à 14 cases). Celui
+    // d'un autre ne sonne pas en « Ne pas déranger » ; celui de son propre bureau, toujours.
+    listenOnBus(bus, 'door:moved', ({ open, ownerId, distancePx }) => {
+      if (ownerId !== state().selfId && quiet()) return;
+      const level = doorSoundLevel(distancePx);
+      if (level > 0) engine.playSfx(open ? 'door-open' : 'door-close', { level });
+    }),
     // La lumière du bureau change : le bruit d'un interrupteur, qui s'éteint (`toggle-off`) ou se rallume (`toggle-on`). Celui d'un autre ne
     // sonne pas en « Ne pas déranger » ; le sien, toujours.
     listenOnBus(bus, 'lights:changed', ({ on, by }) => {
@@ -132,6 +140,12 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDe
         if (next?.type === 'join' && !(previous?.type === 'join' && previous.p.room === next.p.room)) engine.playSfx('conversation-start');
         else if (next?.type === 'leave' && previous?.type === 'join' && !now.replaced) engine.playSfx('conversation-end');
       }
+
+      // Le verrou de son propre bureau : on le ferme (`lock`) ou on le rouvre (`unlock`) ; celui d'un autre bureau, ou un bureau déjà verrouillé à
+      // l'arrivée, ne sonne pas.
+      const mine = selectDeskOf(now, now.selfId);
+      const mineBefore = selectDeskOf(before, before.selfId);
+      if (mine !== undefined && mineBefore !== undefined && mine.key === mineBefore.key && mine.locked !== mineBefore.locked) engine.playSfx(mine.locked ? 'lock' : 'unlock');
 
       // La déco du bureau est enregistrée.
       if (now.decorEditor !== null && before.decorEditor !== null && now.decorEditor.saved !== before.decorEditor.saved) engine.playSfx('success');

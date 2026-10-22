@@ -124,6 +124,7 @@ export class Office extends Scene {
       zoom: () => this.cameras.main.zoom,
       nightLevel: () => this.lighting?.level ?? 0,
       autoWalking: () => this.autoWalk?.walking ?? false,
+      doors: () => this.deskLayer?.phases() ?? {},
     };
     exposeDebug(this.debug);
 
@@ -153,11 +154,14 @@ export class Office extends Scene {
     this.physics.add.collider(this.player, collisions);
     this.debug.self = { id: me.id, ...this.feet() };
     this.moveSender = new MoveSender();
-    // Les noms des bureaux et leurs portes : celles qui sont fermées pour soi sont des obstacles pour l'avatar local.
+    // Les noms des bureaux et leurs portes vitrées : celles qui sont fermées pour soi sont des obstacles pour l'avatar local ; elles s'ouvrent devant qui s'en
+    // approche (la sienne, ou son propriétaire qu'on voit y entrer), et le son des portes en est prévenu.
     this.deskLayer = new DeskLayer(this, this.officeMap, {
       feet: () => this.feet(),
+      ownerAt: (id) => (id === this.selfId ? this.feet() : (this.remotes.get(id)?.position ?? null)),
       onKnock: (key) => emitOnBus(EventBus, 'local:knock', { key }),
       onBlocked: (key) => this.deskBlocked(key),
+      onDoorMoved: (move) => emitOnBus(EventBus, 'door:moved', move),
     });
     this.deskLayer.collideWith(this.player);
     this.decorLayer.collideWith(this.player);
@@ -299,6 +303,8 @@ export class Office extends Scene {
       }
       this.simDrag?.arrived(remote.id, drawn);
     }
+    // Les portes s'ouvrent devant qui s'en approche, avec les positions de cette image.
+    this.deskLayer.tick();
   }
 
   // Après la physique de l'image (POST_UPDATE, où Arcade, abonné avant nous, vient de déplacer l'avatar) : l'état de l'avatar local

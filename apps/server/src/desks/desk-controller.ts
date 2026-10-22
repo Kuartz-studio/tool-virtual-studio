@@ -60,9 +60,26 @@ export function createDeskController(d: DeskControllerDeps) {
     socket.emit('desk:access', { closed });
   }
 
-  // Les portes fermées de chacun, relues : après tout changement qui peut en ouvrir ou en fermer une.
+  // Les portes fermées de chacun, relues : après tout changement qui peut en ouvrir ou en fermer une. Ceux qui se tiennent dans le cadre d'une porte qui vient
+  // de se fermer pour eux sont repoussés dans la rue (evictFromThresholds).
   function pushAccess(): void {
     for (const userId of d.connectedUsers()) for (const socket of d.socketsOf(userId)) sendAccess(socket);
+    evictFromThresholds();
+  }
+
+  // Une porte qui se ferme ne coince personne : qui est dans son cadre et ne peut plus y passer est posé devant elle, côté rue, comme celui qu'on exclut. La
+  // pièce, elle, garde ceux qui y sont (ils y restent libres de leurs pas).
+  function evictFromThresholds(): void {
+    for (const slot of d.desks.slots) {
+      const { door } = slot;
+      if (!door) continue;
+      for (const userId of d.connectedUsers()) {
+        const player = d.world.get(userId);
+        if (!player || d.desks.canEnter(userId, slot.key)) continue;
+        const inDoorway = player.x >= door.x && player.x < door.x + door.width && player.y >= door.y && player.y < door.y + door.height;
+        if (inDoorway) moveTo(userId, slot.exit);
+      }
+    }
   }
 
   function pushBans(userId: string): void {
