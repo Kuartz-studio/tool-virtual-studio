@@ -1,6 +1,3 @@
-// Le tsconfig de ce paquet ne charge pas les types de Node (`types` n'y est pas déclaré, alors que celui du serveur déclare « node ») : `process`, `node:fs` et
-// `import.meta.dirname` n'existeraient pas pour le typage. Cette ligne les charge pour ce fichier seulement, sans toucher au tsconfig de la plateforme.
-/// <reference types="node" />
 import { describe, expect, test } from 'vitest';
 import { runGameConformance } from '../conformance';
 import { pickIndex, scriptedRng, seededRng, type Rng } from '../rng';
