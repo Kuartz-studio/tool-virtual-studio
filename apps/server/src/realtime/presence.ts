@@ -202,6 +202,8 @@ export function createPresence(d: PresenceDeps) {
     }
     // À l'arrêt, stop() enregistre tout le monde. Hors du monde : arrivée interrompue, ou membre retiré.
     if (halted || !d.world.get(userId)) return;
+    // Sans connexion, elle ne parle plus à personne : sa bulle s'éteint chez les autres, sans attendre la fin du délai de grâce.
+    if (d.world.setSpeaking(userId, false)) d.io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: false });
     cancelGrace(userId);
     const timer = setTimeout(() => {
       depart(userId).catch((err: unknown) => logServerError(d.logger, { err, userId }, 'Départ du bureau impossible'));

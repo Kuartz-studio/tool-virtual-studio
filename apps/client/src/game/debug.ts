@@ -15,7 +15,7 @@ export interface OfficeDebug {
   players: Record<string, { x: number; y: number; avatarKey: string | null }>;
   // L'audio et la vidéo : la room LiveKit où l'on est, ou que l'on rejoint (null hors conversation), et le nombre de vignettes
   // (tâche 20). C'est l'objet mediaDebug, ci-dessous.
-  media: { room: string | null; tiles: number };
+  media: { room: string | null; tiles: number; speak(on: boolean): void };
   // Place l'avatar local à cet endroit (en pixels) et le dit au serveur, qui l'accepte si la case est praticable (événement
   // `debug:teleport`, que le serveur n'enregistre qu'avec E2E=1 ; refusé, le `move` qui suit est corrigé).
   teleport(x: number, y: number): void;
@@ -30,6 +30,8 @@ export interface OfficeDebug {
   // Montre ou cache les autres joueurs (ils restent dans `players`). Les tests qui regardent l'avatar local à l'écran cachent ceux
   // des autres tests, qui tournent en même temps sur le même serveur.
   showOthers(visible: boolean): void;
+  // Ceux dont la bulle de parole est allumée en ce moment (identifiants, soi compris).
+  bubbles(): string[];
   // Le nombre d'avatars que la scène dessine pour ce joueur, local ou distant : 1 s'il est là (jamais de doublon), 0 sinon.
   avatarsOf(id: string): number;
   // L'avatar local : celui qu'il doit avoir (sa clé) et la texture qu'il montre (la même quand son personnage est assemblé, sinon la silhouette).
@@ -68,9 +70,10 @@ declare global {
   }
 }
 
-// La part audio/vidéo de window.__office. Elle vit avec la connexion média (media/use-media.ts tient `room` à jour), et non avec la
+// La part audio/vidéo de window.__office. Elle vit avec la connexion média (media/use-media.ts tient `room` et `speak` à jour), et non avec la
 // scène, qui n'existe qu'une fois le jeu chargé et que la page recrée pour une autre carte : la scène met cet objet-là dans le sien.
-export const mediaDebug: OfficeDebug['media'] = { room: null, tiles: 0 };
+// `speak(true)` : l'avatar local parle, comme si la détection de la room l'entendait (sans room audio, les tests n'ont pas de voix) ; `speak(false)`, il se tait.
+export const mediaDebug: OfficeDebug['media'] = { room: null, tiles: 0, speak: () => {} };
 
 // Expose l'objet sous window.__office dans le build des tests de bout en bout, et ne fait rien dans les autres.
 export function exposeDebug(h: OfficeDebug): void {

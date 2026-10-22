@@ -64,6 +64,13 @@ export const SOCKET_CONNECT_RATE = { max: 10, windowMs: 60_000 };
 export const MOVE_RATE = { max: 20, windowMs: 1_000 };          // au-delà, les `move` d'une socket sont ignorés
 export const STATUS_RATE = { max: 10, windowMs: 1_000 };        // de même pour ses `status:set`, diffusés à tout le bureau
 export const MEDIA_STATE_RATE = { max: 10, windowMs: 1_000 };   // et ses `media:state`
+// La parole : « je parle » (`speaking:set`) fait paraître une bulle au-dessus de l'avatar chez tout le monde, même loin de lui et hors de sa
+// conversation. SPEAKING_RATE : au plus ce nombre de messages par socket et par fenêtre, le reste est ignoré. Sans nouvelle de lui pendant
+// SPEAKING_TTL_MS, le serveur éteint la bulle (un client qui plante ne la laisse pas allumée) ; tant qu'il parle, le client redit « je parle »
+// toutes les SPEAKING_HEARTBEAT_MS : un message perdu sur deux ne la coupe pas.
+export const SPEAKING_RATE = { max: 8, windowMs: 2_000 };
+export const SPEAKING_TTL_MS = 6_000;
+export const SPEAKING_HEARTBEAT_MS = 3_000;
 export const INVITATION_TTL_MS = 7 * 24 * 3600 * 1000;
 // Comment les liens d'invitation et de mot de passe parviennent aux gens (MAILER, côté serveur) : resend les envoie par e-mail ; none
 // n'envoie rien, l'admin copie les liens depuis l'appli et les transmet lui-même ; memory (développement, tests) les garde en mémoire.

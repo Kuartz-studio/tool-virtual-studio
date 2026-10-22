@@ -6,6 +6,7 @@ import {
   MOVE_RATE,
   OFFICE_ROOM,
   DESK_RATE,
+  SPEAKING_RATE,
   STATUS_RATE,
   activityIdSchema,
   chatSendSchema,
@@ -15,6 +16,7 @@ import {
   lightsSetSchema,
   mediaStateSchema,
   moveSchema,
+  speakingSchema,
   statusSchema,
   withinSwitchReach,
   type ChatAck,
@@ -78,6 +80,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   // chaque init et à chaque changement de micro, caméra ou partage.
   const statusLimiter = createRateLimiter({ ...STATUS_RATE, now: d.now });
   const mediaLimiter = createRateLimiter({ ...MEDIA_STATE_RATE, now: d.now });
+  const speakingLimiter = createRateLimiter({ ...SPEAKING_RATE, now: d.now });
   const deskLimiter = createRateLimiter({ ...DESK_RATE, now: d.now });
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
@@ -122,6 +125,21 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     if (!media.success || !d.world.get(userId)) return;
     d.world.setMedia(userId, media.data);
     io.to(OFFICE_ROOM).emit('media:changed', { id: userId, media: media.data });
+    // Un micro coupé ne parle plus : la bulle s'éteint chez tout le monde, sans attendre le « je me tais » du client.
+    if (!media.data.mic && d.world.setSpeaking(userId, false)) io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: false });
+  });
+
+  // « Je parle » ou « je me tais », pour la bulle au-dessus de l'avatar : à tout le bureau, émetteur compris, mais seulement quand l'état change
+  // (le client redit « je parle » toutes les SPEAKING_HEARTBEAT_MS : cela remet le délai de SPEAKING_TTL_MS à zéro, sans rien rediffuser). « Je parle »
+  // est ignoré quand le micro est coupé, ou que l'état d'activité porté ne laisse pas entendre (`heard` faux) : aucun son ne part alors de cette
+  // personne. « Je me tais » passe toujours. Même limite de débit que le statut, par socket.
+  socket.on('speaking:set', (payload) => {
+    if (!speakingLimiter.take(socket.id)) return;
+    const speaking = speakingSchema.safeParse(payload);
+    const me = d.world.get(userId);
+    if (!speaking.success || !me) return;
+    if (speaking.data && (!me.media.mic || me.activity?.heard === false)) return;
+    if (d.world.setSpeaking(userId, speaking.data)) io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: speaking.data });
   });
 
   // Le chat, avec accusé de réception. Une socket dont le joueur n'est pas (encore, ou plus) au monde est ignorée sans réponse, comme
@@ -256,6 +274,8 @@ function every(ms: number, logger: Logger, failure: string, fn: () => void): () 
 // ticks, pas à dire l'heure. Le minuteur ne retient pas le processus ; la fonction rendue l'arrête.
 export function startWorldTicks(io: TypedServer, world: World, tickMs: number, now: () => number, logger: Logger): () => void {
   return every(tickMs, logger, 'Envoi du world:tick impossible', () => {
+    // Une bulle de parole que plus rien ne tient (SPEAKING_TTL_MS sans nouveau « je parle ») s'éteint pour tout le monde.
+    for (const id of world.expireSpeaking()) io.to(OFFICE_ROOM).emit('speaking:changed', { id, speaking: false });
     const moves = world.drainMoves();
     if (moves.length === 0) return;
     io.to(OFFICE_ROOM).volatile.emit('world:tick', { t: Math.round(now()), moves });

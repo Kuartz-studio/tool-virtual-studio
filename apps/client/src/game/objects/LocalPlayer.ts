@@ -145,6 +145,11 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
     this.tag.setSpeaking(speaking);
   }
 
+  // À chaque image : les points de la bulle de parole montent l'un après l'autre.
+  tick(now: number): void {
+    this.tag.tick(now);
+  }
+
   setZoom(zoom: number): void {
     this.tag.setZoom(zoom);
   }

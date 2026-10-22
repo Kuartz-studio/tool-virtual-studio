@@ -22,6 +22,8 @@ export function createActivityController(d: ActivityControllerDeps) {
   function announce(userId: string, activity: ActivityState | null): void {
     d.io.to(OFFICE_ROOM).emit('activity:changed', { id: userId, activity });
     d.desks.refreshOwner(userId);
+    // Un état où l'on n'est pas entendu (`heard` faux) retire le micro : la bulle de parole s'éteint chez tout le monde.
+    if (activity?.heard === false && d.world.setSpeaking(userId, false)) d.io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: false });
   }
 
   return {

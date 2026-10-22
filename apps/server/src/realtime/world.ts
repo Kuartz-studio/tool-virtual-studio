@@ -2,6 +2,7 @@ import {
   MAX_SPEED_PX_PER_S,
   MOVE_JITTER_MS,
   NORMAL_MAX_SPEED_PX_PER_S,
+  SPEAKING_TTL_MS,
   isWalkablePoint,
   validateMove,
   type ActivityState,
@@ -22,6 +23,8 @@ type Move = WorldTick['moves'][number];
 interface Entry {
   player: PublicPlayer;
   at: number;
+  // Jusqu'à quelle heure (ms, horloge du monde) sa parole tient sans nouveau « je parle » : le serveur éteint la bulle ensuite (expireSpeaking).
+  speakingUntil?: number;
 }
 
 // Ce joueur peut-il se trouver là ? Décide de l'entrée d'un lieu fermé (un bureau dont la porte lui est fermée) : appelé pour chaque
@@ -94,6 +97,37 @@ export class World {
     this.pendingMoves.delete(id);
     this.boosts.delete(id);
     return copy(entry.player);
+  }
+
+  // « Je parle » (true) ou « je me tais » (false) d'une personne présente, pour la bulle au-dessus de son avatar. Chaque « je parle » remet le délai
+  // de SPEAKING_TTL_MS à zéro. Rend vrai si l'état a changé (à diffuser), faux s'il était déjà celui-là (le battement du client) ou si la
+  // personne n'est pas au monde. La parole ne survit pas à la personne : leave et join la remettent à zéro.
+  setSpeaking(id: string, speaking: boolean): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    const was = entry.player.speaking === true;
+    if (speaking) {
+      entry.player.speaking = true;
+      entry.speakingUntil = this.now() + SPEAKING_TTL_MS;
+    } else {
+      delete entry.player.speaking;
+      delete entry.speakingUntil;
+    }
+    return was !== speaking;
+  }
+
+  // Éteint la parole de ceux qui n'ont rien redit depuis SPEAKING_TTL_MS, et rend leurs identifiants (à diffuser).
+  expireSpeaking(): string[] {
+    const now = this.now();
+    const expired: string[] = [];
+    for (const [id, entry] of this.entries) {
+      if (entry.player.speaking === true && entry.speakingUntil !== undefined && now >= entry.speakingUntil) {
+        delete entry.player.speaking;
+        delete entry.speakingUntil;
+        expired.push(id);
+      }
+    }
+    return expired;
   }
 
   get(id: string): PublicPlayer | undefined {

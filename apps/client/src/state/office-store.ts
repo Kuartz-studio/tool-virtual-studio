@@ -165,6 +165,8 @@ export interface OfficeState {
   removeMyState(id: string): void;
   setChosenActivity(id: string | null): void;
   setMedia(id: string, m: MediaState): void;
+  // Cette personne se met à parler (vrai), ou se tait (faux : la clé disparaît, comme dans les messages du serveur) : `speaking:changed`.
+  setSpeaking(id: string, speaking: boolean): void;
   setProfile(p: { id: string; name: string; avatarKey: string | null }): void;
   setReplaced(v: boolean): void;
   // La connexion coupée : setReady(false). (L'`init` la rend prête : applyInit.)
@@ -410,6 +412,13 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
 
       setStatus: (id, status) => updatePlayer(id, (p) => ({ ...p, status })),
       setMedia: (id, m) => updatePlayer(id, (p) => ({ ...p, media: { mic: m.mic, cam: m.cam, screen: m.screen } })),
+      setSpeaking: (id, speaking) =>
+        updatePlayer(id, (p) => {
+          if (speaking) return { ...p, speaking: true };
+          const quiet = { ...p };
+          delete quiet.speaking;
+          return quiet;
+        }),
       setProfile: ({ id, name, avatarKey }) => updatePlayer(id, (p) => ({ ...p, name, avatarKey })),
       setReplaced: (replaced) => set({ replaced }),
       setReady: (ready) => set({ ready }),

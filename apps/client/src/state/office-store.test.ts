@@ -81,6 +81,21 @@ test('removePlayer : retire ; un inconnu, ou soi-même, ne change rien', () => {
   expect(store.getState()).toBe(before);
 });
 
+test('setSpeaking : la parole d\'un autre, ou la sienne ; se taire retire la clé ; un inconnu est ignoré', () => {
+  store.getState().applyInit(init(SELF, [A, B]));
+  const { setSpeaking } = store.getState();
+  setSpeaking('a', true);
+  setSpeaking('moi', true);
+  expect(store.getState().players.a?.speaking).toBe(true);
+  expect(store.getState().self?.speaking).toBe(true);
+  expect(store.getState().players.b).not.toHaveProperty('speaking');
+  setSpeaking('a', false);
+  expect(store.getState().players.a).not.toHaveProperty('speaking');
+  const before = store.getState().players;
+  setSpeaking('inconnu', true);
+  expect(store.getState().players).toBe(before);
+});
+
 test('setStatus, setMedia, setProfile : pour un autre joueur, et pour soi-même', () => {
   store.getState().applyInit(init(SELF, [A]));
   const { setStatus, setMedia, setProfile } = store.getState();

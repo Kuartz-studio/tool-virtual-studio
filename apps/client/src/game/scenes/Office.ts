@@ -33,7 +33,7 @@ import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { MoveSender } from '../move-sender';
 import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
-import { SpeakingRings } from '../objects/NameTag';
+import { SpeakingBubbles } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
 import { prefersReducedMotion } from '../reduced-motion';
 import { cameraBounds, cameraZoom, easeZoom, ZOOM_BUTTON_STEP } from '../zoom';
@@ -52,7 +52,8 @@ const clock = () => performance.now();
 // Le jeu ne démarre qu'après le premier `init` du serveur (OfficePage) : la scène lit au magasin où le serveur l'a placée et qui est
 // là, puis suit le bus (office-connection.ts) : positions des autres, arrivées, départs, statuts, profils, corrections, et un nouvel
 // `init` à chaque reconnexion. Elle envoie l'état de l'avatar local sur le bus (`local:move`), au rythme de MoveSender. Qui parle dans
-// la conversation (`media:speaking`, de l'audio et de la vidéo) entoure le point de son étiquette. L'interrupteur de la lumière (une
+// la conversation (`media:speaking`, de l'audio et de la vidéo), ou dans le bureau (`net:speaking`, même loin de soi), fait paraître une bulle de
+// parole au-dessus de son étiquette (SpeakingBubbles). L'interrupteur de la lumière (une
 // plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
 // il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). Lumière éteinte, c'est la nuit (LightingLayer) :
 // l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. Ce qu'on actionne
@@ -74,7 +75,7 @@ export class Office extends Scene {
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
   private othersVisible = true;
-  private rings: SpeakingRings;
+  private bubbles: SpeakingBubbles;
   private deskLayer: DeskLayer;
   private decorLayer: DecorLayer;
   // Les interrupteurs de lumière de la carte (un seul sur la grande carte, aucun sur celle de développement).
@@ -109,6 +110,7 @@ export class Office extends Scene {
       boosted: () => this.boosted(),
       speed: () => this.player?.currentSpeed() ?? 0,
       showOthers: (visible) => this.showOthers(visible),
+      bubbles: () => this.bubbles?.ids() ?? [],
       avatarsOf: (id) => this.children.list.filter((object) => object.name === avatarObjectName(id)).length,
       selfAvatar: () => (this.player ? { wanted: this.player.avatarWanted, shown: this.player.avatarShown } : null),
       toScreen: (x, y) => {
@@ -163,7 +165,9 @@ export class Office extends Scene {
     };
     showDesks();
     this.decorEditor.sync(useOfficeStore.getState().decorEditor);
-    this.rings = new SpeakingRings((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
+    this.bubbles = new SpeakingBubbles((id) => (id === this.selfId ? this.player : this.remotes.get(id)));
+    // Ceux que le serveur dit parler déjà (le magasin les a suivis, même avant le jeu) ont leur bulle d'emblée.
+    this.bubbles.resetServer(Object.values(players).filter((player) => player.speaking).map((player) => player.id));
 
     // Ce qu'on actionne de près : la portée est celle des pieds de l'avatar, relue à chaque appui (la touche E, ou un clic).
     this.interactions = new Interactions({ feet: () => this.feet() });
@@ -217,7 +221,11 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:status', ({ id, status }) => this.onStatus(id, status)),
       listenOnBus(EventBus, 'net:activity', ({ id, activity }) => this.onActivity(id, activity)),
       listenOnBus(EventBus, 'net:profile', (p) => this.onProfile(p)),
-      listenOnBus(EventBus, 'media:speaking', (ids) => this.rings.update(ids)),
+      listenOnBus(EventBus, 'media:speaking', (ids) => this.bubbles.updateMedia(ids)),
+      // La parole des autres, d'après le serveur. La sienne vient de la room (media:speaking), tout de suite : l'écho du serveur la ferait durer.
+      listenOnBus(EventBus, 'net:speaking', ({ id, speaking }) => {
+        if (id !== this.selfId) this.bubbles.setServer(id, speaking);
+      }),
       listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
       listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
       useOfficeStore.subscribe((state, previous) => {
@@ -274,6 +282,7 @@ export class Office extends Scene {
     const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
     if (autoDirection !== null) this.player.step(autoDirection);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
+    this.player.tick(now);
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];
@@ -384,6 +393,8 @@ export class Office extends Scene {
     for (const id of [...this.remotes.keys()]) {
       if (!present.has(id)) this.removeRemote(id);
     }
+    // Ce que le serveur dit de la parole remplace tout ce qu'il disait avant cet init.
+    this.bubbles.resetServer(p.players.filter((player) => player.speaking).map((player) => player.id));
     for (const player of p.players) this.placeRemote(player, now);
   }
 
@@ -396,6 +407,7 @@ export class Office extends Scene {
   }
 
   private onJoined(p: PublicPlayer): void {
+    if (p.speaking) this.bubbles.setServer(p.id, true);
     this.placeRemote(p, clock());
   }
 
@@ -450,7 +462,7 @@ export class Office extends Scene {
     const remote = new RemotePlayer(this, p, now, { zoom: this.cameras.main.zoom, bodyFits: this.bodyFits });
     remote.setVisible(this.othersVisible);
     if (isSimBot(p.id)) this.simDrag?.attach(remote);
-    remote.setSpeaking(this.rings.isSpeaking(p.id));
+    remote.setSpeaking(this.bubbles.isSpeaking(p.id));
     this.remotes.set(p.id, remote);
     this.lighting.track(p.id, () => remote.lightPoint());
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };
@@ -460,6 +472,7 @@ export class Office extends Scene {
     this.simDrag?.clear(id);
     this.remotes.get(id)?.destroy();
     this.remotes.delete(id);
+    this.bubbles.forget(id);
     this.lighting.untrack(id);
     delete this.debug.players[id];
   }

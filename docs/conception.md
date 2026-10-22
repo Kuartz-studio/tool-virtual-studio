@@ -244,7 +244,7 @@ Le paquet partagé garantit que le client et le serveur appliquent les mêmes r�
   - les panneaux chat, personnes et admin.
 - **Communication Phaser ↔ React :** par un bus d'événements, déjà fourni par le modèle officiel.
 - **Les autres avatars :** affichés avec environ 100 ms de retard, en glissant d'une position reçue à la suivante. Ils sautent directement à la bonne place après une téléportation ou un retour sur l'onglet.
-- **Au-dessus de chaque tête :** le nom, un point de statut, et un indicateur quand la personne parle.
+- **Au-dessus de chaque tête :** le nom, un point de statut, et une petite bulle de parole (trois points qui montent) quand la personne parle, que tout le bureau voit, même de loin et hors de sa conversation.
 
 ### 7.5 Serveur temps réel
 

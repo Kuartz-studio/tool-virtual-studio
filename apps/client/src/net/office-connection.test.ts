@@ -105,6 +105,27 @@ describe('connectOffice', () => {
     expect(bus.emittedOf('net:left')).toEqual([{ id: 'a' }]);
   });
 
+  test('speaking:changed : au magasin, puis au jeu (net:speaking) ; l\'init dit déjà qui parle', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    socket.receive('init', init([player('a', { speaking: true }), player('c')]));
+    expect(store.getState().players.a?.speaking).toBe(true);
+    expect(store.getState().players.c).not.toHaveProperty('speaking');
+
+    socket.receive('speaking:changed', { id: 'c', speaking: true });
+    expect(store.getState().players.c?.speaking).toBe(true);
+    socket.receive('speaking:changed', { id: 'a', speaking: false });
+    expect(store.getState().players.a).not.toHaveProperty('speaking');
+    // Quelqu'un que le magasin ne connaît pas : il ne change rien, mais le jeu en est prévenu (il le dessine peut-être déjà).
+    socket.receive('speaking:changed', { id: 'inconnu', speaking: true });
+    expect(Object.keys(store.getState().players)).toEqual(['a', 'c']);
+
+    expect(bus.emittedOf('net:speaking')).toEqual([
+      { id: 'c', speaking: true },
+      { id: 'a', speaking: false },
+      { id: 'inconnu', speaking: true },
+    ]);
+  });
+
   test('move:correct : au jeu (net:correct), qui recale l\'avatar local', () => {
     connectOffice(socket.asSocket(), store, bus);
     socket.receive('move:correct', { x: 80, y: 240 });

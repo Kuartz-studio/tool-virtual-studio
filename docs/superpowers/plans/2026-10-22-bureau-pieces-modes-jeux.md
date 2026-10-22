@@ -308,30 +308,32 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   - tests : `NameTag.test.ts`, `use-media.test.tsx`, `apps/server/test/realtime-media.test.ts`, `e2e/media.spec.ts` ou un spec à part.
 
 **Interfaces**
-- Produit :
+- Produit, tel que livré :
   ```ts
   // constants.ts
   export const SPEAKING_RATE = { max: 8, windowMs: 2_000 };
   export const SPEAKING_TTL_MS = 6_000;        // sans nouvelle de lui, le serveur éteint la bulle
   export const SPEAKING_HEARTBEAT_MS = 3_000;  // le client redit « je parle » tant qu'il parle
   // protocol.ts
-  'speaking:set': (speaking: boolean) => void;                                    // client → serveur
-  'speaking:changed': (p: { id: string; speaking: boolean }) => void;             // serveur → tout le bureau
-  PublicPlayer.speaking?: boolean;                                                // init et player:joined
-  // speaking-reporter.ts
-  export function createSpeakingReporter(send: (speaking: boolean) => void, now?: () => number): { feed(speaking: boolean): void; stop(): void };
+  export const speakingSchema = z.boolean();
+  'speaking:set': (speaking: boolean) => void;                          // client → serveur
+  'speaking:changed': (p: { id: string; speaking: boolean }) => void;   // serveur → tout le bureau
+  PublicPlayer.speaking?: boolean;                                      // init et player:joined
+  // serveur : World.setSpeaking(id, speaking): boolean (vrai si l'état change) · World.expireSpeaking(): string[]
+  // client : net/speaking-reporter.ts  createSpeakingReporter(send): { feed(speaking), stop() }  (SPEAKING_ON_DELAY_MS 150, SPEAKING_OFF_DELAY_MS 700)
+  //          bus 'net:speaking' · store.setSpeaking(id, speaking) · window.__office.bubbles() · window.__office.media.speak(on)
+  //          game/objects/SpeechBubble.ts  (BUBBLE_PIXELS 14 × 11, bubbleScale(zoom), dotLift(now, i), SpeechBubble)
+  //          NameTag.setSpeaking / tick(now) / setZoom ; SpeakingBubbles (remplace SpeakingRings) : updateMedia, setServer, resetServer, forget, ids
   ```
-- Règles : le reporter allume après 150 ms de parole, éteint après 700 ms de silence, et redit « vrai » toutes les 3 s. Le serveur ignore `speaking:set` quand le micro est coupé (`media.mic` faux) ou que le mode porté ne laisse pas entendre (`heard` faux), éteint à la déconnexion et à `SPEAKING_TTL_MS`, et limite le débit comme `status:set`.
+- Règles, telles que livrées : le reporter allume après 150 ms de parole, éteint après 700 ms de silence, redit « vrai » toutes les 3 s. Le serveur ignore « je parle » quand le micro est coupé ou que l'état porté ne laisse pas entendre (`heard` faux) ; « je me tais » passe toujours. Il éteint la bulle à la déconnexion (sans attendre le délai de grâce), quand le micro se coupe, quand on prend un état où l'on n'est pas entendu, et à `SPEAKING_TTL_MS` ; il limite le débit par socket comme `status:set`, et ne rediffuse pas un « je parle » répété.
 
-**Étapes**
-- [ ] Tests, qui échouent :
-  - reporter : « allume après 150 ms, éteint après 700 ms » ; « le heartbeat redit vrai toutes les 3 s » ; « un silence court ne coupe pas la bulle » ;
-  - serveur : « `speaking:set` est ignoré micro coupé » ; « …et mode sans être entendu » ; « éteint à la déconnexion » ; « éteint après 6 s sans heartbeat » ; « le débit est limité » ;
-  - `NameTag` : « `setSpeaking(true)` montre la bulle, `false` la cache » ; « la bulle ne descend jamais sous 16 px à l'écran (dézoom) » ; « mouvement réduit : pas de pulsation » ;
-  - e2e : « quand Alice parle (`debug` du média), Bastien, loin d'elle et hors de sa conversation, voit sa bulle ».
-- [ ] Implémenter : la parole locale vient du média (LiveKit : `isSpeaking` du participant local) ; la **bulle de soi** s'allume sans attendre le serveur.
-- [ ] La bulle : pixel art tracé en code (comme `ambiance-covers.ts`), 14 × 11 px, trois points qui montent l'un après l'autre ; au-dessus de l'étiquette.
-- [ ] Commit : `feat: une bulle au-dessus de celui qui parle, visible de loin`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `speaking.test.ts` (shared), `world.test.ts` (`setSpeaking`, `expireSpeaking`, `leave`, `join`), `realtime-speaking.test.ts` (13 : micro allumé, micro coupé, deux états sans être entendu, prendre un tel état, couper le micro, charge invalide, battement, débit, déconnexion, TTL) avec un test de mutation (sept tests échouent quand les règles sont neutralisées), `speaking-reporter.test.ts` (15), `use-media.test.tsx` (+7 : parole locale, délais, quitter la room, démonté, coupure, crochet de test), `office-store.test.ts` et `office-connection.test.ts` (`speaking:changed`, `net:speaking`), `SpeechBubble.test.ts` (dessin, texture, échelle jamais sous 16 px, points qui montent, mouvement réduit), `NameTag.test.ts` (`SpeakingBubbles` à deux sources, la bulle dans l'étiquette, plus d'anneau).
+- [x] Implémenté. Hors du brief : `window.__office.media.speak(on)` (les tests de bout en bout n'ont pas de room audio, donc pas de voix) et `window.__office.bubbles()`.
+- [x] La bulle : pixel art tracé en code (14 × 11 px), au-dessus de l'étiquette, trois points qui montent l'un après l'autre (200 ms chacun, puis un temps de repos) ; l'anneau disparaît.
+- [x] E2E (`multiplayer.spec.ts`) : A parle (crochet), sa bulle est allumée chez elle tout de suite et chez B, à l'autre bout de la carte, dans les secondes qui suivent ; elle s'éteint quand A se tait. Captures de la bulle à 100 % et à 25 % : lisible de loin.
+- [x] `pnpm typecheck` vert ; `pnpm test` : 144 fichiers, 2 636 tests ; `pnpm e2e multiplayer.spec.ts presence.spec.ts world.spec.ts --project=chromium` : 38 tests.
+- [x] Commit : `feat: une bulle au-dessus de celui qui parle, visible de loin`.
 
 ---
 

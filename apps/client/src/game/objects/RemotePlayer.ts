@@ -119,6 +119,7 @@ export class RemotePlayer {
     this.sprite.anims.timeScale = moving ? REMOTE_STEP_SCALE : 1;
     placeShadow(this.shadow, x, y);
     this.tag.placeAbove(x, y - this.spec.height);
+    this.tag.tick(now);
     return this.drawn;
   }
 

@@ -17,6 +17,8 @@ export const directionSchema = z.enum(DIRECTIONS);
 export const statusSchema = z.enum(STATUSES);
 export const moveSchema = z.object({ x: z.number().int(), y: z.number().int(), dir: directionSchema, moving: z.boolean() });
 export const mediaStateSchema = z.object({ mic: z.boolean(), cam: z.boolean(), screen: z.boolean() });
+// « Je parle » (vrai) ou « je me tais » (faux) : l'événement `speaking:set`.
+export const speakingSchema = z.boolean();
 export const chatSendSchema = z.object({ channel: z.enum(['all', 'nearby']), text: z.string().trim().min(1).max(CHAT_MAX_LENGTH) });
 export const displayNameSchema = z.string().trim().min(1).max(DISPLAY_NAME_MAX_LENGTH);
 
@@ -90,8 +92,8 @@ export type LightsSetPayload = z.infer<typeof lightsSetSchema>;
 
 export interface ActivityState extends ActivityInput { id: string }
 // `activity` : l'état d'activité qu'elle a choisi (absent ou null : un statut ordinaire, `status`). Il passe avant `status` pour le point
-// de couleur et le texte.
-export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null }
+// de couleur et le texte. `speaking` : elle parle en ce moment (absent : non), pour la bulle au-dessus de son avatar.
+export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean }
 // Entrée du calcul des groupes. `excluded` : hors de toute conversation (un état d'activité sans entendre ni être entendu), comme en Ne pas déranger.
 export interface ProximityPlayer { id: string; x: number; y: number; moving: boolean; status: Status; excluded?: boolean }
 export interface ChatMessage { id: string; channel: ChatChannel; userId: string; name: string; text: string; sentAt: string }
@@ -156,6 +158,7 @@ export interface ServerToClientEvents {
   'status:changed': (p: { id: string; status: Status }) => void;
   'activity:changed': (p: { id: string; activity: ActivityState | null }) => void;
   'media:changed': (p: { id: string; media: MediaState }) => void;
+  'speaking:changed': (p: { id: string; speaking: boolean }) => void;   // à tout le bureau : quelqu'un se met à parler, ou se tait (la bulle au-dessus de lui)
   'profile:changed': (p: { id: string; name: string; avatarKey: AvatarKey | null }) => void;
   'chat:message': (p: ChatMessage) => void;
   'desk:changed': (p: DeskInfo) => void;                  // à tout le bureau : une place a changé de main, de nom ou de verrou
@@ -174,6 +177,7 @@ export interface ClientToServerEvents {
   'status:set': (s: Status) => void;
   'state:set': (activityId: string | null) => void;   // prendre un de ses états d'activité, ou null : un statut ordinaire
   'media:state': (m: MediaState) => void;
+  'speaking:set': (speaking: boolean) => void;   // « je parle » / « je me tais » ; redit toutes les SPEAKING_HEARTBEAT_MS tant qu'on parle ; ignoré micro coupé, ou sans être entendu
   'chat:send': (p: ChatSendPayload, ack: (r: ChatAck) => void) => void;
   'desk:do': (p: DeskCommand, ack: (r: DeskAck) => void) => void;
   'lights:set': (p: LightsSetPayload) => void;   // allumer ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé

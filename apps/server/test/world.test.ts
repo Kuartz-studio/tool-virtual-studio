@@ -1,4 +1,4 @@
-import { DEV_OFFICE, MAX_SPEED_PX_PER_S, MOVE_JITTER_MS, NORMAL_MAX_SPEED_PX_PER_S, buildTiledMap, parseOfficeMap } from '@bureau/shared';
+import { DEV_OFFICE, MAX_SPEED_PX_PER_S, MOVE_JITTER_MS, NORMAL_MAX_SPEED_PX_PER_S, SPEAKING_TTL_MS, buildTiledMap, parseOfficeMap } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { World } from '../src/realtime/world';
 
@@ -581,5 +581,84 @@ describe('état d\'activité', () => {
     expect(world.editActivity('a', 's1', null)).toEqual({ activity: null });
     expect(world.rememberedActivity('a')).toBeNull();
     expect(world.editActivity('a', 's1', null)).toBeUndefined();
+  });
+});
+
+describe('la parole', () => {
+  test('setSpeaking : la personne parle, le monde le dit dans sa copie ; elle se tait, la clé disparaît', () => {
+    const { world, join } = setup();
+    join('a');
+    expect(world.get('a')).not.toHaveProperty('speaking');
+    expect(world.setSpeaking('a', true)).toBe(true);
+    expect(world.get('a')?.speaking).toBe(true);
+    expect(world.list()[0]?.speaking).toBe(true);
+    expect(world.setSpeaking('a', false)).toBe(true);
+    expect(world.get('a')).not.toHaveProperty('speaking');
+  });
+
+  test('setSpeaking rend vrai quand l\'état change, faux quand il est déjà celui-là : le « je parle » répété ne se rediffuse pas', () => {
+    const { world, join } = setup();
+    join('a');
+    expect(world.setSpeaking('a', false)).toBe(false);
+    expect(world.setSpeaking('a', true)).toBe(true);
+    expect(world.setSpeaking('a', true)).toBe(false);
+    expect(world.setSpeaking('a', false)).toBe(true);
+  });
+
+  test('un identifiant absent du monde : ignoré', () => {
+    const { world } = setup();
+    expect(world.setSpeaking('inconnu', true)).toBe(false);
+    expect(world.expireSpeaking()).toEqual([]);
+  });
+
+  test('expireSpeaking éteint, et rend, ceux qui n\'ont pas redit « je parle » depuis SPEAKING_TTL_MS', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    join('b');
+    world.setSpeaking('a', true);
+    clock.t = 1000;
+    world.setSpeaking('b', true);
+    clock.t = SPEAKING_TTL_MS - 1;
+    expect(world.expireSpeaking()).toEqual([]);
+    // a a parlé il y a SPEAKING_TTL_MS : éteint ; b, il y a un peu moins : encore là.
+    clock.t = SPEAKING_TTL_MS;
+    expect(world.expireSpeaking()).toEqual(['a']);
+    expect(world.get('a')).not.toHaveProperty('speaking');
+    expect(world.get('b')?.speaking).toBe(true);
+    clock.t = 1000 + SPEAKING_TTL_MS;
+    expect(world.expireSpeaking()).toEqual(['b']);
+    expect(world.expireSpeaking()).toEqual([]);
+  });
+
+  test('chaque « je parle » remet le délai à zéro : celui qui le redit toutes les 3 s ne s\'éteint pas', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    world.setSpeaking('a', true);
+    for (let t = 3000; t <= 30_000; t += 3000) {
+      clock.t = t;
+      expect(world.setSpeaking('a', true)).toBe(false);
+      expect(world.expireSpeaking()).toEqual([]);
+    }
+    expect(world.get('a')?.speaking).toBe(true);
+    clock.t = 30_000 + SPEAKING_TTL_MS;
+    expect(world.expireSpeaking()).toEqual(['a']);
+  });
+
+  test('quitter le monde, ou y revenir, ne laisse pas parler : la parole ne survit pas à la personne', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setSpeaking('a', true);
+    expect(world.leave('a')?.speaking).toBe(true);
+    expect(join('a')).not.toHaveProperty('speaking');
+    expect(world.get('a')).not.toHaveProperty('speaking');
+    expect(world.expireSpeaking()).toEqual([]);
+  });
+
+  test('un second join du même identifiant remplace le joueur : il ne parle plus', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setSpeaking('a', true);
+    join('a');
+    expect(world.get('a')).not.toHaveProperty('speaking');
   });
 });

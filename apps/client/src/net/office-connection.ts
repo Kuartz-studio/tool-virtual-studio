@@ -20,6 +20,9 @@ export interface OfficeBusEvents {
   'net:status': (p: { id: string; status: Status }) => void;
   'net:activity': (p: { id: string; activity: ActivityState | null }) => void;
   'net:profile': (p: { id: string; name: string; avatarKey: string | null }) => void;
+  // Quelqu'un se met à parler, ou se tait, d'après le serveur (`speaking:changed`) : la bulle au-dessus de son avatar, même loin de soi et hors de
+  // sa conversation. Le magasin le dit déjà à jour (pour ceux qu'il connaît) quand l'événement part.
+  'net:speaking': (p: { id: string; speaking: boolean }) => void;
   // La lumière du bureau vient d'être allumée ou éteinte, par quelqu'un (soi-même compris) : le serveur l'annonce à tout le bureau. Le magasin
   // la dit déjà à jour quand l'événement part. Pas à l'arrivée : l'état d'un `init` n'est pas un changement.
   'lights:changed': (p: LightsState) => void;
@@ -138,6 +141,10 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       emitOnBus(bus, 'net:activity', p);
     },
     'media:changed': (p) => state().setMedia(p.id, p.media),
+    'speaking:changed': (p) => {
+      state().setSpeaking(p.id, p.speaking);
+      emitOnBus(bus, 'net:speaking', p);
+    },
     'profile:changed': (p) => {
       state().setProfile(p);
       emitOnBus(bus, 'net:profile', p);

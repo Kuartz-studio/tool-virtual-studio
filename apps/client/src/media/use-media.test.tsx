@@ -274,6 +274,105 @@ describe('ce que le hook rend et annonce', () => {
   });
 });
 
+describe('la parole, dite au serveur (speaking:set)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // La room rejointe (avec des timers vrais : le faux client attend des promesses), puis les timers à la main.
+  async function inRoom() {
+    const ctx = setup();
+    await serverSays(ctx.socket, ctx.client, 'r1');
+    act(() => ctx.client.addRemote({ id: 'ana', name: 'Ana' }));
+    vi.useFakeTimers();
+    return ctx;
+  }
+
+  test('je parle dans la room : « je parle » part après 150 ms ; je me tais : « je me tais » part après 700 ms', async () => {
+    const { socket, client } = await inRoom();
+    act(() => client.setSpeaking('moi'));
+    act(() => void vi.advanceTimersByTime(149));
+    expect(socket.sentOf('speaking:set')).toEqual([]);
+    act(() => void vi.advanceTimersByTime(1));
+    expect(socket.sentOf('speaking:set')).toEqual([true]);
+
+    act(() => client.setSpeaking());
+    act(() => void vi.advanceTimersByTime(699));
+    expect(socket.sentOf('speaking:set')).toEqual([true]);
+    act(() => void vi.advanceTimersByTime(1));
+    expect(socket.sentOf('speaking:set')).toEqual([true, false]);
+  });
+
+  test('les autres qui parlent ne font rien partir : seule ma parole compte', async () => {
+    const { socket, client } = await inRoom();
+    act(() => client.setSpeaking('ana'));
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(socket.sentOf('speaking:set')).toEqual([]);
+  });
+
+  test('quitter la room en parlant : « je me tais » part après 700 ms (plus personne ne m\'entend)', async () => {
+    const { socket, client } = await inRoom();
+    act(() => client.setSpeaking('moi'));
+    act(() => void vi.advanceTimersByTime(150));
+    await act(() => client.leave());
+    act(() => void vi.advanceTimersByTime(699));
+    expect(socket.sentOf('speaking:set')).toEqual([true]);
+    act(() => void vi.advanceTimersByTime(1));
+    expect(socket.sentOf('speaking:set')).toEqual([true, false]);
+  });
+
+  test('démonté en parlant : « je me tais » part tout de suite, et plus rien ensuite', async () => {
+    const { socket, client, hook } = await inRoom();
+    act(() => client.setSpeaking('moi'));
+    act(() => void vi.advanceTimersByTime(150));
+    hook.unmount();
+    expect(socket.sentOf('speaking:set')).toEqual([true, false]);
+    act(() => void vi.advanceTimersByTime(60_000));
+    expect(socket.sentOf('speaking:set')).toEqual([true, false]);
+  });
+
+  test('pendant une coupure, rien ne part ; la connexion revenue, le battement redit « je parle » au serveur, qui l\'avait oublié', async () => {
+    const { socket, client } = await inRoom();
+    act(() => client.setSpeaking('moi'));
+    act(() => void vi.advanceTimersByTime(150));
+    expect(socket.sentOf('speaking:set')).toEqual([true]);
+    act(() => socket.connectionDrops());
+    act(() => void vi.advanceTimersByTime(10_000));
+    expect(socket.sentOf('speaking:set')).toEqual([true]);
+    act(() => {
+      socket.serverAccepts();
+      socket.receive('init', INIT);
+    });
+    act(() => void vi.advanceTimersByTime(3_000));
+    expect(socket.sentOf('speaking:set').length).toBeGreaterThan(1);
+    expect(new Set(socket.sentOf('speaking:set'))).toEqual(new Set([true]));
+  });
+
+  test('window.__office.media.speak (tests de bout en bout) : l\'avatar local parle sans voix ; sa bulle s\'allume tout de suite sur le bus, « je parle » part au serveur après 150 ms', async () => {
+    const speaking = speakingOnBus();
+    const { socket } = await inRoom();
+    act(() => useOfficeStore.getState().applyInit(INIT));
+    act(() => mediaDebug.speak(true));
+    expect(speaking.at(-1)).toEqual(['moi']);
+    expect(socket.sentOf('speaking:set')).toEqual([]);
+    act(() => void vi.advanceTimersByTime(150));
+    expect(socket.sentOf('speaking:set')).toEqual([true]);
+
+    act(() => mediaDebug.speak(false));
+    expect(speaking.at(-1)).toEqual([]);
+    act(() => void vi.advanceTimersByTime(700));
+    expect(socket.sentOf('speaking:set')).toEqual([true, false]);
+  });
+
+  test('sans socket : rien ne part', async () => {
+    const client = new FakeMediaClient();
+    const hook = renderHook(() => useMedia(client, null));
+    cleanups.push(() => hook.unmount());
+    act(() => client.setSpeaking('moi'));
+    expect(hook.result.current.local.mic).toBe(true);
+  });
+});
+
 describe('le cycle de vie', () => {
   test('démonté : plus aucun écouteur, la room est quittée, et plus personne ne parle', async () => {
     const speaking = speakingOnBus();
