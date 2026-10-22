@@ -36,7 +36,7 @@ export function AudioDirector({ engine = audioEngine }: { engine?: AudioEngine }
   useEngineState(engine);
   usePlaceScene();
   useDucking(engine);
-  useEffect(() => bindSfx(engine, { bus: EventBus, store: useOfficeStore }), [engine]);
+  useEffect(() => bindSfx(engine, { bus: EventBus, store: useOfficeStore, placeKey: () => useAudioStore.getState().placeKey }), [engine]);
   useOutputDevice(engine);
   return null;
 }

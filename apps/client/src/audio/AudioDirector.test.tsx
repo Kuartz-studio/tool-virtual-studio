@@ -236,6 +236,23 @@ describe('la musique de chaque pièce', () => {
     expect(musicNow()).toEqual([url('quest')]);
   });
 
+  test('quelqu\'un d\'autre règle la musique de la pièce où l\'on est : le bruit d\'un interrupteur s\'ajoute ; celle d\'une autre pièce, ou la nôtre, ne sonne pas', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    enterAt(middleOf('game'));
+    await settle();
+    // Les effets joués depuis l'arrivée au bureau (le jingle de bienvenue n'est pas compté).
+    const welcome = audio.context.sources.filter((source) => !source.loop).length;
+    const effects = () => audio.context.sources.filter((source) => !source.loop).length - welcome;
+
+    setMusic('gym', OFF);
+    expect(effects()).toBe(0);
+    setMusic('game', { ...OFF, by: { id: 'moi', name: 'Moi' }, at: 3 });
+    expect(effects()).toBe(0);
+    setMusic('game', { ...QUEST, at: 4 });
+    expect(effects()).toBe(1);
+  });
+
   test('entrer dans une pièce éteinte coupe la musique, mais seulement après PLACE_SETTLE_MS : on ne coupe pas en longeant sa porte', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
