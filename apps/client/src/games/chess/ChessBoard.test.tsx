@@ -527,6 +527,43 @@ describe('le clavier : le motif « grid » (§ 9.5.3)', () => {
     }
   });
 
+  test('les raccourcis du navigateur ne sont pas pris : Alt + flèche (précédent), Ctrl + Début, ⌘ + Entrée passent, et le focus ne bouge pas', () => {
+    const seen = vi.fn();
+    document.addEventListener('keydown', seen);
+    try {
+      render(<ChessBoard {...boardProps()} />);
+      const target = square('e2');
+      target.focus();
+      for (const modifier of ['altKey', 'ctrlKey', 'metaKey'] as const) {
+        for (const key of ['ArrowLeft', 'Home', 'Enter']) {
+          seen.mockClear();
+          expect(fireEvent.keyDown(target, { key, [modifier]: true }), `${modifier} + ${key} : intacte`).toBe(true);
+          expect(seen, `${modifier} + ${key} : remonte`).toHaveBeenCalledTimes(1);
+        }
+      }
+      expect(document.activeElement).toBe(target);
+      expect(target.getAttribute('aria-label')).toBe('e2, pion blanc');
+    } finally {
+      document.removeEventListener('keydown', seen);
+    }
+  });
+
+  test('Espace agit à l\'enfoncement : son relâchement est arrêté aussi (certains navigateurs en feraient un second clic), celui des autres touches passe', () => {
+    const seen = vi.fn();
+    document.addEventListener('keyup', seen);
+    try {
+      render(<ChessBoard {...boardProps()} />);
+      const target = square('e2');
+      expect(fireEvent.keyUp(target, { key: ' ' })).toBe(false);
+      expect(seen).not.toHaveBeenCalled();
+      expect(fireEvent.keyUp(target, { key: 'Enter' })).toBe(true);
+      expect(fireEvent.keyUp(target, { key: 'a' })).toBe(true);
+      expect(seen).toHaveBeenCalledTimes(2);
+    } finally {
+      document.removeEventListener('keyup', seen);
+    }
+  });
+
   test('les flèches sur le plateau ne font pas marcher l\'avatar ; la même touche hors des flèches, si', async () => {
     const user = userEvent.setup();
     const directions = new DirectionInput();
