@@ -1,5 +1,6 @@
 import {
   AudioLines,
+  BookOpen,
   ChevronRight,
   ChevronUp,
   Coffee,
@@ -9,6 +10,7 @@ import {
   Eraser,
   FlaskConical,
   Focus,
+  Gamepad2,
   Lightbulb,
   LightbulbOff,
   LogOut,
@@ -202,4 +204,14 @@ export function MusicIcon({ off = false }: { off?: boolean }) {
       <Music />
     </Struck>
   );
+}
+
+// Une manette : les jeux de la salle de jeu (le toast d'une invitation à une table).
+export function GamepadIcon() {
+  return <Gamepad2 />;
+}
+
+// Un livre ouvert : les règles d'un jeu.
+export function RulesIcon() {
+  return <BookOpen />;
 }
