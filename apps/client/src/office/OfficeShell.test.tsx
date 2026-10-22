@@ -151,7 +151,7 @@ describe('la mise en page', () => {
   test('la barre du bas : la puce « Moi », micro, caméra, partage d\'écran et musique, le zoom, puis Chat, Personnes et Plus ; le nom et le statut sont dans la puce', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
     expect(within(meChip()).getByText('Léa')).toBeTruthy();
     expect(within(meChip()).getByText(fr.status.available)).toBeTruthy();
   });

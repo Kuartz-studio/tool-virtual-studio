@@ -109,17 +109,19 @@ async function findColor(page: Page, png: Buffer, color: Rgb): Promise<ColorSpre
 }
 
 // Pour cette capture, dans ce rectangle (x0, y0, x1, y1) : parmi les endroits où un pixel d'une de ces couleurs touche un pixel
-// d'une autre de ces couleurs (de n'importe quelles couleurs : null), combien sont sur un x pair ou impair (à gauche d'un pixel qui
-// change), puis sur un y pair ou impair. Un décor ou un personnage agrandi ×2 sans défaut a des pixels de 2 × 2 px à l'écran : ses
-// changements de couleur tombent tous sur la même parité. Des pixels de 1 ou de 3 px de large, qui papillotent, en mélangent les deux.
+// d'une autre de ces couleurs (de n'importe quelles couleurs : null), combien tombent sur chaque reste de x modulo `scale` (à gauche d'un
+// pixel qui change), puis de y. Un décor ou un personnage agrandi à un zoom entier (200 % : ×3) sans défaut a des pixels de 3 × 3 px à
+// l'écran : ses changements de couleur tombent tous sur le même reste. Des pixels de 2 ou de 4 px de large, qui papillotent, en mélangent
+// plusieurs.
 async function colorChanges(
   page: Page,
   png: Buffer,
   region: [number, number, number, number],
   colors: readonly Rgb[] | null,
-): Promise<{ x: [number, number]; y: [number, number] }> {
+  scale: number,
+): Promise<{ x: number[]; y: number[] }> {
   return page.evaluate(
-    async ({ base64, region, colors }) => {
+    async ({ base64, region, colors, scale }) => {
       const image = await createImageBitmap(await (await fetch(`data:image/png;base64,${base64}`)).blob());
       const context = new OffscreenCanvas(image.width, image.height).getContext('2d')!;
       context.drawImage(image, 0, 0);
@@ -130,32 +132,35 @@ async function colorChanges(
         return `${data[i]},${data[i + 1]},${data[i + 2]}`;
       };
       const [x0, y0, x1, y1] = region;
-      const x: [number, number] = [0, 0];
-      const y: [number, number] = [0, 0];
+      const x = new Array<number>(scale).fill(0);
+      const y = new Array<number>(scale).fill(0);
       for (let row = y0; row < y1; row++) {
         for (let col = x0 + 1; col < x1; col++) {
           const [here, before] = [colorAt(col, row), colorAt(col - 1, row)];
-          if (here !== before && (!known || (known.has(here) && known.has(before)))) x[col % 2]!++;
+          if (here !== before && (!known || (known.has(here) && known.has(before)))) x[col % scale]!++;
         }
       }
       for (let col = x0; col < x1; col++) {
         for (let row = y0 + 1; row < y1; row++) {
           const [here, above] = [colorAt(col, row), colorAt(col, row - 1)];
-          if (here !== above && (!known || (known.has(here) && known.has(above)))) y[row % 2]!++;
+          if (here !== above && (!known || (known.has(here) && known.has(above)))) y[row % scale]!++;
         }
       }
       return { x, y };
     },
-    { base64: png.toString('base64'), region, colors },
+    { base64: png.toString('base64'), region, colors, scale },
   );
 }
+
+// Tous les changements de couleur sont sur le même reste : les pixels ont tous la même largeur.
+const onOneResidue = (counts: number[]): boolean => counts.filter((count) => count > 0).length <= 1;
 
 // Un point de la carte, juste dedans puis juste dehors, de chaque côté : x et y sont ceux du pixel dedans, dx et dy la direction
 // de la sortie. Loin des commandes du bureau (barre du bas, vignettes), qui cachent ce qui est dessous.
 const edge = (x: number, y: number, dx: number, dy: number): [[number, number], [number, number]] => [[x, y], [x + dx, y + dy]];
 
 test('la carte s\'affiche', async ({ page }, testInfo) => {
-  // 1600 × 1100 : assez grand pour le zoom ×2 et pour voir toute la carte (24 × 16 cases de 32 px : 1536 × 1024 px à l'écran).
+  // 1600 × 1100 : assez grand pour le zoom de départ (×1,5 à 100 %) et pour voir toute la carte (24 × 16 cases de 32 px : 1152 × 768 px à l'écran).
   await page.setViewportSize({ width: 1600, height: 1100 });
   await inviteAndJoin(page, { email: uniqueEmail('carla'), name: 'Carla', password: 'motdepasse-de-carla' });
   await page.waitForFunction(() => window.__office?.ready);
@@ -168,25 +173,27 @@ test('la carte s\'affiche', async ({ page }, testInfo) => {
   // Et la barre du bureau est par-dessus : elle ne prend pas de place au canevas, qui garde la taille de la fenêtre (ci-dessus).
   await expectInOffice(page, 'Carla');
 
-  // Zoom ×2, la carte au milieu : 32 px de marge à gauche et à droite, 38 en haut et en bas.
-  const edgesX2 = [edge(32, 600, -1, 0), edge(1567, 600, 1, 0), edge(800, 38, 0, -1), edge(800, 1061, 0, 1)];
-  const x2 = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-x2', HIDE_OVERLAY), MAP_COLORS, edgesX2.flat());
-  edgesX2.forEach((_, side) => {
-    expect(x2.at[side * 2], `dedans, bord ${side}`).not.toEqual(BACKGROUND);
-    expect(x2.at[side * 2 + 1], `dehors, bord ${side}`).toEqual(BACKGROUND);
+  // Zoom ×1,5 (100 %), la carte au milieu : 224 px de marge à gauche et à droite, 166 en haut et en bas.
+  expect(await page.evaluate(() => window.__office!.zoom())).toBe(1.5);
+  const edgesBig = mapEdges({ width: 1600, height: 1100 }, 1.5);
+  const big = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-150', HIDE_OVERLAY), MAP_COLORS, edgesBig.flat());
+  edgesBig.forEach((_, side) => {
+    expect(big.at[side * 2], `dedans, bord ${side}`).not.toEqual(BACKGROUND);
+    expect(big.at[side * 2 + 1], `dehors, bord ${side}`).toEqual(BACKGROUND);
   });
   // Murs, sols, bureaux, sol de la salle de réunion, sol des espaces de bureau et étiquette sont tous dessinés.
-  for (const [name, count] of Object.entries(x2.counts)) expect(count, name).toBeGreaterThan(name.startsWith('texte') ? 20 : 1000);
+  for (const [name, count] of Object.entries(big.counts)) expect(count, name).toBeGreaterThan(name.startsWith('texte') ? 20 : 1000);
 
-  // Le zoom est recalculé quand la fenêtre change de taille : sous 1280 × 720, retour au zoom ×1, et la carte reste au milieu
-  // (166 px de marge à gauche et à droite, 124 en haut et en bas).
+  // Le zoom est recalculé quand la fenêtre change de taille : sous 1280 × 720, le zoom de départ est ×1 (donc ×0,75 à 100 %), et la carte
+  // reste au milieu (262 px de marge à gauche et à droite, 188 en haut et en bas).
   await page.setViewportSize({ width: 1100, height: 760 });
   await expect.poll(async () => (await canvas.boundingBox())?.width).toBe(1100);
-  const edgesX1 = [edge(166, 400, -1, 0), edge(933, 400, 1, 0), edge(550, 124, 0, -1), edge(550, 635, 0, 1)];
-  const x1 = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-x1', HIDE_OVERLAY), MAP_COLORS, edgesX1.flat());
-  edgesX1.forEach((_, side) => {
-    expect(x1.at[side * 2], `dedans, bord ${side}`).not.toEqual(BACKGROUND);
-    expect(x1.at[side * 2 + 1], `dehors, bord ${side}`).toEqual(BACKGROUND);
+  await expect.poll(() => page.evaluate(() => window.__office!.zoom())).toBe(0.75);
+  const edgesSmall = mapEdges({ width: 1100, height: 760 }, 0.75);
+  const small = await readPixels(page, await screenshot(page, testInfo, 'carte-zoom-75', HIDE_OVERLAY), MAP_COLORS, edgesSmall.flat());
+  edgesSmall.forEach((_, side) => {
+    expect(small.at[side * 2], `dedans, bord ${side}`).not.toEqual(BACKGROUND);
+    expect(small.at[side * 2 + 1], `dehors, bord ${side}`).toEqual(BACKGROUND);
   });
 });
 
@@ -261,6 +268,24 @@ async function joinOfficeAlone(page: Page, name: string): Promise<void> {
 // La carte de développement, en pixels.
 const MAP_SIZE = { width: 24 * 32, height: 16 * 32 };
 
+// Les quatre bords de la carte à l'écran (le pixel dedans, puis celui dehors), quand la vue est plus grande qu'elle : elle est au milieu, à
+// une marge entière de pixels (cameraBounds). Loin des commandes du bureau, qui cachent ce qui est dessous.
+function mapEdges(canvas: { width: number; height: number }, zoom: number): Array<[[number, number], [number, number]]> {
+  const left = Math.floor((canvas.width - MAP_SIZE.width * zoom) / 2);
+  const top = Math.floor((canvas.height - MAP_SIZE.height * zoom) / 2);
+  const right = left + MAP_SIZE.width * zoom - 1;
+  const bottom = top + MAP_SIZE.height * zoom - 1;
+  const [middleX, middleY] = [Math.floor(canvas.width / 2), Math.floor(canvas.height / 2)];
+  return [edge(left, middleY, -1, 0), edge(right, middleY, 1, 0), edge(middleX, top, 0, -1), edge(middleX, bottom, 0, 1)];
+}
+
+// 200 % : au plus près, le zoom est entier (×3 à partir de 1280 × 720) : un pixel de la carte est un carré de 3 × 3 pixels de l'écran, ce
+// que vérifient les tests de netteté. À 100 %, le zoom (×1,5) ne l'est pas.
+async function zoomToMax(page: Page): Promise<void> {
+  for (let i = 0; i < 10; i++) await page.keyboard.press('+');
+  await expect.poll(() => page.evaluate(() => window.__office!.zoom())).toBe(3);
+}
+
 // Où est l'avatar à l'écran, sur un axe, selon les règles de la caméra : elle regarde `target`, sans sortir de la carte. Une vue (la
 // longueur du canevas divisée par le zoom) plus petite que la carte se déplace avec lui, entre sa moitié et la carte moins sa moitié
 // (la caméra est alors contre le bord de la carte, et l'avatar n'est plus au centre). Une vue plus grande montre la carte entière,
@@ -281,10 +306,11 @@ function shirtOnScreen(feet: { x: number; y: number }, canvas: { width: number; 
 }
 
 test('l\'avatar apparaît sur le point d\'apparition, pieds en (80, 240), avec son ombre', async ({ page }, testInfo) => {
-  // Même fenêtre que « la carte s'affiche » : zoom ×2, la carte entière au milieu, à 32 px de marge à gauche et 38 en haut. Un
-  // point de la carte (x, y) est donc à l'écran en (32 + 2x, 38 + 2y).
+  // Même fenêtre que « la carte s'affiche » : zoom ×1,5, la carte entière au milieu, à 224 px de marge à gauche et 166 en haut. Un point
+  // de la carte (x, y) est donc à l'écran en (224 + 1,5 x, 166 + 1,5 y) : on lit le pixel du milieu de chaque pixel de la carte.
   await page.setViewportSize({ width: 1600, height: 1100 });
   await joinOfficeAlone(page, 'Zoé');
+  const middleOf = (x: number, y: number): [number, number] => [Math.floor(224 + 1.5 * (x + 0.5)), Math.floor(166 + 1.5 * (y + 0.5))];
 
   // C'est le compte connecté : son identifiant est celui de la session.
   const session = (await (await page.request.get('/api/auth/get-session')).json()) as { user: { id: string } };
@@ -292,9 +318,9 @@ test('l\'avatar apparaît sur le point d\'apparition, pieds en (80, 240), avec s
 
   const png = await screenshot(page, testInfo, 'avatar-apparition', HIDE_OVERLAY);
   // L'image du personnage (32 × 64 px) a ses pieds au bas, au milieu : son coin haut-gauche est en (80 − 16, 240 − 64).
-  const shirt: [number, number] = [32 + 2 * (64 + shirtAt.pixel.x) + 1, 38 + 2 * (176 + shirtAt.pixel.y) + 1];   // un pixel de la chemise
-  const shadow: [number, number] = [32 + 2 * 80 + 1, 38 + 2 * 241 + 1];   // 1 px sous les pieds, au milieu de l'ombre
-  const floorBesideShadow: [number, number] = [32 + 2 * 80 + 1, 38 + 2 * 244 + 1];   // 4 px sous les pieds, hors de l'ombre (6 px de haut)
+  const shirt = middleOf(64 + shirtAt.pixel.x, 176 + shirtAt.pixel.y);   // un pixel de la chemise
+  const shadow = middleOf(80, 241);   // 1 px sous les pieds, au milieu de l'ombre
+  const floorBesideShadow = middleOf(80, 244);   // 4 px sous les pieds, hors de l'ombre (6 px de haut)
   const { at } = await readPixels(page, png, {}, [shirt, shadow, floorBesideShadow]);
 
   // Le personnage des tests, face à nous.
@@ -391,56 +417,138 @@ test('le café : 640 px/s, 960 avec Maj en plus ; le serveur le laisse faire, et
   }
 });
 
-test('zoom : la molette, les boutons et les touches, jusqu\'à ×2 plus près et ×4 plus loin que la vue de départ', async ({ page }) => {
+test('zoom : la molette et le pincement au pas de 5 %, les boutons et les touches au pas de 10 %, de 25 % à 200 %', async ({ page }) => {
   await joinOfficeAlone(page, 'Rosa');
   const zoom = () => page.evaluate(() => window.__office!.zoom());
-  const start = await zoom();
+  const base = await zoom();
+  // 1280 × 720 : le zoom de départ du canevas est ×2, aux trois quarts à 100 %.
+  expect(base).toBe(1.5);
+  // Le zoom de la caméra à ce pourcentage : celui de 100 % fois le pourcentage, une fois que la caméra y a glissé.
+  const expectZoom = (percent: number) => expect.poll(zoom).toBeCloseTo((base * percent) / 100, 6);
+  const readout = page.locator('.dock-zoom .zoom-value');
+  const zoomIn = page.getByRole('button', { name: 'Zoom avant' });
+  const zoomOut = page.getByRole('button', { name: 'Zoom arrière' });
   const [width, height] = [page.viewportSize()!.width, page.viewportSize()!.height];
   await page.mouse.move(width / 2, height / 2);
-  const wheel = async (deltaY: number) => {
-    await page.mouse.wheel(0, deltaY);
-    // Au-delà de l'attente entre deux crans de molette.
-    await page.waitForTimeout(300);
-  };
+  await expect(readout).toHaveText('100 %');
 
-  // La molette vers le haut rapproche, au plus ×2 ; encore un cran, et rien ne change.
-  await wheel(-100);
-  await expect.poll(zoom).toBe(start * 2);
-  await wheel(-100);
-  expect(await zoom()).toBe(start * 2);
+  // Un cran de molette (100 px) fait 5 % : vers le haut plus près, vers le bas plus loin.
+  await page.mouse.wheel(0, -100);
+  await expect(readout).toHaveText('105 %');
+  await expectZoom(105);
+  await page.mouse.wheel(0, 100);
+  await expect(readout).toHaveText('100 %');
+  await expectZoom(100);
 
-  // Vers le bas : la vue de départ, puis ×1/2, ×1/4 au plus loin, et pas au-delà.
-  await wheel(100);
-  await expect.poll(zoom).toBe(start);
-  await wheel(100);
-  await expect.poll(zoom).toBe(start / 2);
-  await wheel(100);
-  await expect.poll(zoom).toBe(start / 4);
-  await wheel(100);
-  expect(await zoom()).toBe(start / 4);
+  // Un pavé tactile envoie de petits deltas, qui s'additionnent : cinq fois 5 px font un cran.
+  for (let i = 0; i < 5; i++) await page.mouse.wheel(0, -5);
+  await expect(readout).toHaveText('105 %');
 
-  // Les boutons : le menu « Plus » dit 25 %, + remonte, « Rétablir le zoom » dans ce menu rend la vue de départ.
+  // Un pincement, vu comme Ctrl + molette, zoome le jeu et ne zoome pas la page : l'événement est arrêté avant d'arriver à la page.
+  await page.evaluate(() => {
+    const seen: boolean[] = [];
+    (window as unknown as { __wheelPrevented: boolean[] }).__wheelPrevented = seen;
+    window.addEventListener('wheel', (event) => seen.push(event.defaultPrevented), { passive: true });
+  });
+  const pixelRatio = await page.evaluate(() => window.devicePixelRatio);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -100);
+  await page.keyboard.up('Control');
+  await expect(readout).toHaveText('110 %');
+  expect(await page.evaluate(() => (window as unknown as { __wheelPrevented: boolean[] }).__wheelPrevented)).toEqual([true]);
+  expect(await page.evaluate(() => window.devicePixelRatio)).toBe(pixelRatio);
+
+  // Jusqu'à 200 % : encore un cran, et rien ne change ; le bouton « Zoom avant » s'éteint.
+  for (let i = 0; i < 30; i++) await page.mouse.wheel(0, -100);
+  await expect(readout).toHaveText('200 %');
+  await expectZoom(200);
+  await expect(zoomIn).toBeDisabled();
+  // Et jusqu'à 25 %, pas au-delà.
+  for (let i = 0; i < 50; i++) await page.mouse.wheel(0, 100);
+  await expect(readout).toHaveText('25 %');
+  await expectZoom(25);
+  await expect(zoomOut).toBeDisabled();
+
+  // Les boutons font 10 % : depuis 25 %, + va à 30 %. Le pourcentage du milieu rétablit 100 %.
+  await zoomIn.click();
+  await expect(readout).toHaveText('30 %');
+  await page.getByRole('button', { name: 'Rétablir le zoom (100 %)' }).click();
+  await expect(readout).toHaveText('100 %');
+  await expectZoom(100);
+  // Le menu « Plus » dit le pourcentage du moment, et le rétablit aussi.
+  await zoomOut.click();
+  await expect(readout).toHaveText('90 %');
   const resetZoom = async () => (await openMoreMenu(page)).getByRole('menuitem', { name: 'Rétablir le zoom (100 %)' });
-  await expect(await resetZoom()).toContainText('25 %');
+  await expect(await resetZoom()).toContainText('90 %');
   await page.keyboard.press('Escape');
-  await page.getByRole('button', { name: 'Zoom avant' }).click();
-  await expect.poll(zoom).toBe(start / 2);
   await (await resetZoom()).click();
-  await expect.poll(zoom).toBe(start);
+  await expect(readout).toHaveText('100 %');
+  await expectZoom(100);
 
-  // Le clavier : + rapproche, 0 rétablit, - éloigne.
+  // Le clavier : + rapproche de 10 %, 0 rétablit, - éloigne de 10 %.
   await page.keyboard.press('+');
-  await expect.poll(zoom).toBe(start * 2);
+  await expect(readout).toHaveText('110 %');
   await page.keyboard.press('0');
-  await expect.poll(zoom).toBe(start);
+  await expect(readout).toHaveText('100 %');
   await page.keyboard.press('-');
-  await expect.poll(zoom).toBe(start / 2);
+  await expect(readout).toHaveText('90 %');
+  await expectZoom(90);
 
   // L'avatar suit toujours la caméra : on marche, il avance (la page n'est pas figée par le zoom).
   const x0 = (await selfAt(page)).x;
   await page.keyboard.down('ArrowRight');
   await expect.poll(async () => (await selfAt(page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(x0);
   await page.keyboard.up('ArrowRight');
+});
+
+// Le zoom de la caméra à chaque image, depuis cet appel (window.__zoomSeen) : de quoi voir si la caméra glisse ou saute.
+async function recordZoomPerFrame(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const seen: number[] = [];
+    (window as unknown as { __zoomSeen: number[] }).__zoomSeen = seen;
+    const tick = () => {
+      seen.push(window.__office!.zoom());
+      requestAnimationFrame(tick);
+    };
+    tick();
+  });
+}
+const zoomsSeen = (page: Page) => page.evaluate(() => (window as unknown as { __zoomSeen: number[] }).__zoomSeen);
+
+test('zoom : la caméra glisse d\'un pourcentage à l\'autre, sans saut ni dépassement', async ({ page }) => {
+  await joinOfficeAlone(page, 'Rosa');
+  const zoom = () => page.evaluate(() => window.__office!.zoom());
+  const base = await zoom();
+  const target = base * 1.05;
+  await page.mouse.move(640, 360);
+  await recordZoomPerFrame(page);
+
+  await page.mouse.wheel(0, -100);
+  await expect.poll(zoom).toBeCloseTo(target, 9);
+  const seen = await zoomsSeen(page);
+
+  // Elle part de la vue de départ, arrive à la cible, et ne recule ni ne dépasse jamais.
+  expect(seen[0]).toBeCloseTo(base, 9);
+  expect(seen.at(-1)).toBeCloseTo(target, 9);
+  for (let i = 1; i < seen.length; i++) expect(seen[i]!, `image ${i}`).toBeGreaterThanOrEqual(seen[i - 1]!);
+  expect(Math.max(...seen)).toBeLessThanOrEqual(target + 1e-9);
+  // Et elle passe par des zooms intermédiaires, au moins trois : un glissement, pas un saut.
+  expect(seen.filter((z) => z > base + 1e-6 && z < target - 1e-6).length).toBeGreaterThanOrEqual(3);
+});
+
+test('zoom : si la personne demande moins de mouvement, la caméra saute au nouveau zoom', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await joinOfficeAlone(page, 'Rosa');
+  const zoom = () => page.evaluate(() => window.__office!.zoom());
+  const base = await zoom();
+  const target = base * 1.05;
+  await page.mouse.move(640, 360);
+  await recordZoomPerFrame(page);
+
+  await page.mouse.wheel(0, -100);
+  await expect.poll(zoom).toBeCloseTo(target, 9);
+  // Entre la vue de départ et la cible, aucune image intermédiaire.
+  expect((await zoomsSeen(page)).filter((z) => z > base + 1e-6 && z < target - 1e-6)).toEqual([]);
 });
 
 test('un mur arrête : depuis l\'apparition, ArrowUp enfoncée 2 s', async ({ page }) => {
@@ -573,36 +681,39 @@ const expectNear = (value: number, expected: number, tolerance = 8) => expect(Ma
 
 test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, testInfo) => {
   test.slow();
-  // 1280 × 720 : zoom ×2, la vue (640 × 360 px de carte) est plus petite que la carte (768 × 512).
+  // 1280 × 720 à 200 % : zoom ×3, la vue (426,7 × 240 px de carte) est plus petite que la carte (768 × 512).
   await joinOfficeAlone(page, 'Lou');
+  await zoomToMax(page);
   expect(page.viewportSize()).toEqual({ width: 1280, height: 720 });
   const canvas = { width: 1280, height: 720 };
+  const half = 1280 / 3 / 2;
 
   // La caméra regarde le milieu de l'avatar sans quitter la carte : horizontalement, le centre de la vue ne peut pas aller plus à
-  // gauche que x = 320 (la moitié de la vue) ni plus à droite que x = 448 (768 − 320). À l'apparition (x = 80), la caméra est donc
-  // contre le bord gauche, et l'avatar à gauche du centre : 640 + 2 × (80 − 320) = 160. Verticalement, la vue (360) tient dans la
-  // carte (512) et l'avatar est au milieu de l'écran : le milieu de sa chemise est à 360 + 2 × SHIRT_DY.
+  // gauche que x = 213,3 (la moitié de la vue) ni plus à droite que x = 554,7 (768 − 213,3). À l'apparition (x = 80), la caméra est donc
+  // contre le bord gauche, et l'avatar à gauche du centre : 640 + 3 × (80 − 213,3) = 240. Verticalement, la vue (240) tient dans la
+  // carte (512) et l'avatar est au milieu de l'écran : le milieu de sa chemise est à 360 + 3 × SHIRT_DY.
   const spawn = await findColor(page, await screenshot(page, testInfo, 'camera-apparition', HIDE_OVERLAY), SHIRT);
   expect(spawn.count).toBeGreaterThan(50);
-  const [spawnX, spawnY] = shirtOnScreen(await selfAt(page), canvas, 2);
-  expect([spawnX, spawnY]).toEqual([160 + 2 * SHIRT_DX, 360 + 2 * SHIRT_DY]);
+  const [spawnX, spawnY] = shirtOnScreen(await selfAt(page), canvas, 3);
+  expect(spawnX).toBeCloseTo(240 + 3 * SHIRT_DX, 6);
+  expect(spawnY).toBeCloseTo(360 + 3 * SHIRT_DY, 6);
   expect((spawn.minX + spawn.maxX) / 2).toBeCloseTo(spawnX, -1);   // à 5 px près
   expectNear((spawn.minY + spawn.maxY) / 2, spawnY);
 
-  // Plus loin dans la carte (de x = 320 à 448), la caméra le suit : l'avatar reste au centre de l'écran, x = 640.
+  // Plus loin dans la carte (de x = 213,3 à 554,7), la caméra le suit : l'avatar reste au centre de l'écran, x = 640.
   await page.keyboard.down('KeyD');
   await expect.poll(async () => (await selfAt(page)).x, { intervals: [50], timeout: WALK_TIMEOUT }).toBeGreaterThanOrEqual(380);
   await page.keyboard.up('KeyD');
   const middleAt = await restingAt(page);
   const pngMiddle = await screenshot(page, testInfo, 'camera-milieu', HIDE_OVERLAY);
   const middle = await findColor(page, pngMiddle, SHIRT);
-  const [middleX, middleY] = shirtOnScreen(middleAt, canvas, 2);
+  const [middleX, middleY] = shirtOnScreen(middleAt, canvas, 3);
   expect((middle.minX + middle.maxX) / 2).toBeCloseTo(middleX, -1);
   expectNear((middle.minY + middle.maxY) / 2, middleY);
   // La vue est entièrement dans la carte : pas un pixel du fond du jeu.
   expect((await readPixels(page, pngMiddle, { fond: BACKGROUND })).counts.fond).toBe(0);
 
-  // Près du bord droit, la caméra s'arrête avec la carte (centre de la vue en x = 448) : l'avatar quitte le centre de l'écran, et le
+  // Près du bord droit, la caméra s'arrête avec la carte (centre de la vue en x = 554,7) : l'avatar quitte le centre de l'écran, et le
   // bord de la carte est celui de l'écran, sans le vide du fond autour.
   await page.keyboard.down('KeyD');
   await expect.poll(async () => (await selfAt(page)).x, { intervals: [50], timeout: WALK_TIMEOUT }).toBeGreaterThanOrEqual(600);
@@ -610,8 +721,8 @@ test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, test
   const rightAt = await restingAt(page);
   const pngRight = await screenshot(page, testInfo, 'camera-bord-droit', HIDE_OVERLAY);
   const right = await findColor(page, pngRight, SHIRT);
-  const [rightX, rightY] = shirtOnScreen(rightAt, canvas, 2);
-  expect(rightX).toBeCloseTo(640 + 2 * (rightAt.x - 448) + 2 * SHIRT_DX, 5);
+  const [rightX, rightY] = shirtOnScreen(rightAt, canvas, 3);
+  expect(rightX).toBeCloseTo(640 + 3 * (rightAt.x - (768 - half)) + 3 * SHIRT_DX, 5);
   expect((right.minX + right.maxX) / 2).toBeCloseTo(rightX, -1);
   expectNear((right.minY + right.maxY) / 2, rightY);
   const { at, counts } = await readPixels(page, pngRight, { fond: BACKGROUND }, [[1279, 360], [1279, 5], [1279, 714]]);
@@ -622,8 +733,10 @@ test('la caméra suit l\'avatar, sans sortir de la carte', async ({ page }, test
 test('la caméra continue de suivre l\'avatar quand la fenêtre change de taille', async ({ page }) => {
   test.slow();
   await joinOfficeAlone(page, 'Eva');
+  // 200 % : le pourcentage reste le même quand la fenêtre change de taille, le zoom de départ du canevas change.
+  await zoomToMax(page);
   // L'avatar s'arrête vers x = 370, loin des bords : à 1280 × 720 comme dans les deux fenêtres qui suivent, la caméra le suit (au
-  // centre de la vue de x = 320 à 448, puis de 350 à 418), même s'il dépasse un peu avant que la touche soit relâchée.
+  // centre de la vue de x = 213 à 555, puis de 233 à 535), même s'il dépasse un peu avant que la touche soit relâchée.
   await page.keyboard.down('KeyD');
   await expect.poll(async () => (await selfAt(page)).x, { intervals: [50], timeout: WALK_TIMEOUT }).toBeGreaterThanOrEqual(365);
   await page.keyboard.up('KeyD');
@@ -635,24 +748,25 @@ test('la caméra continue de suivre l\'avatar quand la fenêtre change de taille
   };
   // La chemise est à l'écran là où les règles de la caméra la mettent, dans cette fenêtre, une fois dessinée à sa taille.
   const expectShirtAt = async (canvas: { width: number; height: number }, zoom: number) => {
+    await expect.poll(() => page.evaluate(() => window.__office!.zoom()), { timeout: WALK_TIMEOUT }).toBeCloseTo(zoom, 9);
     const [x, y] = shirtOnScreen(resting, canvas, zoom);
     await expect.poll(async () => (await shirtCenter())[0], { timeout: WALK_TIMEOUT }).toBeCloseTo(x, -1);
     expectNear((await shirtCenter())[1], y);
     return [x, y];
   };
 
-  // Plus grande, toujours au zoom ×2 (la vue : 700 × 400 px de carte) : l'avatar est au centre de l'écran, x = 700 tant que x est
-  // entre 350 et 418, et y = 400 + 2 × SHIRT_DY.
+  // Plus grande, toujours au zoom ×3 (la vue : 466,7 × 266,7 px de carte) : l'avatar est au centre de l'écran, x = 700 tant que x est
+  // entre 233 et 535, et y = 400 + 3 × SHIRT_DY.
   await page.setViewportSize({ width: 1400, height: 800 });
-  const [, bigY] = await expectShirtAt({ width: 1400, height: 800 }, 2);
-  expect(bigY).toBe(400 + 2 * SHIRT_DY);
+  const [, bigY] = await expectShirtAt({ width: 1400, height: 800 }, 3);
+  expect(bigY).toBeCloseTo(400 + 3 * SHIRT_DY, 6);
 
-  // Plus petite que 1280 × 720 : zoom ×1, la vue (700 × 480 px de carte) est plus petite que la carte (768 × 512). Horizontalement,
-  // l'avatar est toujours suivi. Verticalement, la caméra ne descend pas sous y = 240 (la moitié de la vue) : le milieu de l'avatar
-  // (y = 208) est 32 px au-dessus du centre de l'écran, et la chemise à 240 − 32 + SHIRT_DY.
-  await page.setViewportSize({ width: 700, height: 480 });
-  const [, smallY] = await expectShirtAt({ width: 700, height: 480 }, 1);
-  expect(smallY).toBe(208 + SHIRT_DY);
+  // Plus petite que 1280 × 720 : le zoom de départ du canevas est ×1, donc ×1,5 à 200 % (la vue : 466,7 × 426,7 px de carte, plus petite que
+  // la carte, 768 × 512). Horizontalement, l'avatar est toujours suivi. Verticalement, la caméra ne descend pas sous y = 213,3 (la moitié de
+  // la vue) : le milieu de l'avatar (y = 208) est un peu au-dessus du centre de l'écran.
+  await page.setViewportSize({ width: 700, height: 640 });
+  const [, smallY] = await expectShirtAt({ width: 700, height: 640 }, 1.5);
+  expect(smallY).toBeCloseTo(320 + 1.5 * (208 - 640 / 1.5 / 2) + 1.5 * SHIRT_DY, 6);
 
   // Et il ne s'est pas déplacé pendant ce temps.
   expect(await selfAt(page)).toEqual(resting);
@@ -660,12 +774,13 @@ test('la caméra continue de suivre l\'avatar quand la fenêtre change de taille
 
 test('les pixels restent nets pour un avatar arrêté à x entier, dans une fenêtre de largeur impaire', async ({ page }) => {
   test.slow();
-  // 1283 × 727 : zoom ×2, et le centre de l'écran est entre deux pixels (641,5). Quand la caméra suit l'avatar à un x entier, un
-  // pixel de la carte tombe pile entre deux pixels de l'écran : sans arrondi à l'affichage, des pixels de 1 et de 3 px de large.
+  // 1283 × 727 à 200 % : zoom ×3, et le centre de l'écran est entre deux pixels (641,5). Quand la caméra suit l'avatar à un x entier, un
+  // pixel de la carte tombe sur un tiers de pixel de l'écran : sans arrondi à l'affichage, des pixels de 2 et de 4 px de large.
   await page.setViewportSize({ width: 1283, height: 727 });
   await joinOfficeAlone(page, 'Ida');
+  await zoomToMax(page);
 
-  // Un x entier, au milieu de la zone que la caméra suit (x de 320 à 448) : l'avatar contre la face est du bureau du milieu (les
+  // Un x entier, au milieu de la zone que la caméra suit (x de 214 à 554) : l'avatar contre la face est du bureau du milieu (les
   // colonnes 11 et 12, x de 352 à 416, y de 288 à 320). Le corps (de x − 10 à x + 10, de y − 11 à y + 1) s'y arrête en
   // x = 416 + 10 = 426, s'il est en face du bureau : y de 288 à 330. L'avatar est posé à droite du bureau, au milieu de cette bande
   // (window.__office.teleport), puis marche vers la gauche jusqu'au bureau.
@@ -681,38 +796,61 @@ test('les pixels restent nets pour un avatar arrêté à x entier, dans une fen�
 
   const png = await page.screenshot({ style: HIDE_OVERLAY });
   const shirt = await findColor(page, png, SHIRT);
-  const avatar = await colorChanges(page, png, [shirt.minX - 40, shirt.minY - 90, shirt.maxX + 40, shirt.maxY + 70], AVATAR_COLORS);
+  const avatar = await colorChanges(page, png, [shirt.minX - 60, shirt.minY - 135, shirt.maxX + 60, shirt.maxY + 105], AVATAR_COLORS, 3);
   // Un coin de l'écran qui n'a que de la carte : ni l'avatar, ni l'étiquette.
-  const map = await colorChanges(page, png, [1283 - 420, 40, 1283 - 20, 330], null);
+  const map = await colorChanges(page, png, [1283 - 420, 40, 1283 - 20, 330], null, 3);
 
   for (const [name, { x, y }] of Object.entries({ avatar, carte: map })) {
-    expect(x[0] + x[1], `${name} : des changements de couleur`).toBeGreaterThan(100);
-    expect(Math.min(...x), `${name}, x pair/impair : ${x}`).toBe(0);
-    expect(Math.min(...y), `${name}, y pair/impair : ${y}`).toBe(0);
+    expect(x.reduce((total, count) => total + count, 0), `${name} : des changements de couleur`).toBeGreaterThan(100);
+    expect(onOneResidue(x), `${name}, x modulo 3 : ${x}`).toBe(true);
+    expect(onOneResidue(y), `${name}, y modulo 3 : ${y}`).toBe(true);
   }
   expect((await readPixels(page, png, { fond: BACKGROUND })).counts.fond).toBe(0);
 });
 
 test('les pixels restent nets quand la caméra suit l\'avatar, même dans une fenêtre de taille impaire', async ({ page }) => {
   test.slow();
-  // 1283 × 727 : zoom ×2, et le centre de l'écran est entre deux pixels (641,5) : la caméra, qui suit l'avatar à des positions
+  // 1283 × 727 à 200 % : zoom ×3, et le centre de l'écran est entre deux pixels (641,5) : la caméra, qui suit l'avatar à des positions
   // quelconques, n'est presque jamais sur un pixel de l'écran. Les objets de la carte et l'avatar sont arrondis à l'affichage.
   await page.setViewportSize({ width: 1283, height: 727 });
   await joinOfficeAlone(page, 'Ugo');
+  await zoomToMax(page);
 
-  // La caméra commence à suivre l'avatar à x = 320 : on regarde la marche de 330 à 700 environ.
+  // La caméra commence à suivre l'avatar à x = 214 : on regarde la marche de 330 à 700 environ.
   await page.keyboard.down('KeyD');
   await expect.poll(async () => (await selfAt(page)).x, { intervals: [20], timeout: WALK_TIMEOUT }).toBeGreaterThan(330);
   for (let i = 0; i < 8; i++) {
     await page.waitForTimeout(23 + i * 7);
     const png = await page.screenshot({ style: HIDE_OVERLAY });
     const shirt = await findColor(page, png, SHIRT);
-    const { x, y } = await colorChanges(page, png, [shirt.minX - 40, shirt.minY - 90, shirt.maxX + 40, shirt.maxY + 70], AVATAR_COLORS);
-    expect(x[0] + x[1], 'le personnage a des changements de couleur').toBeGreaterThan(100);
-    expect(Math.min(...x), `x pair/impair : ${x}`).toBe(0);
-    expect(Math.min(...y), `y pair/impair : ${y}`).toBe(0);
+    const { x, y } = await colorChanges(page, png, [shirt.minX - 60, shirt.minY - 135, shirt.maxX + 60, shirt.maxY + 105], AVATAR_COLORS, 3);
+    expect(x.reduce((total, count) => total + count, 0), 'le personnage a des changements de couleur').toBeGreaterThan(100);
+    expect(onOneResidue(x), `x modulo 3 : ${x}`).toBe(true);
+    expect(onOneResidue(y), `y modulo 3 : ${y}`).toBe(true);
     // Ni couture entre les tuiles de la carte, qui laisserait voir le fond.
     expect((await readPixels(page, png, { fond: BACKGROUND })).counts.fond).toBe(0);
+  }
+  await page.keyboard.up('KeyD');
+});
+
+test('à 100 %, au zoom ×1,5, la carte n\'a pas de couture entre ses tuiles quand la caméra suit l\'avatar', async ({ page }) => {
+  test.slow();
+  // Le zoom de départ n'est pas entier : un pixel de la carte fait tantôt 1, tantôt 2 pixels de l'écran. Aucune couture entre les tuiles
+  // ne laisse voir le fond du jeu dans la carte (1152 px de large à l'écran, au milieu des 1283 px : 65 px de fond de chaque côté).
+  await page.setViewportSize({ width: 1283, height: 727 });
+  await joinOfficeAlone(page, 'Léo');
+  expect(await page.evaluate(() => window.__office!.zoom())).toBe(1.5);
+  const insideMap: Array<[number, number]> = [];
+  for (let x = 70; x < 1210; x += 9) for (let y = 4; y < 723; y += 9) insideMap.push([x, y]);
+
+  await page.keyboard.down('KeyD');
+  await expect.poll(async () => (await selfAt(page)).x, { intervals: [20], timeout: WALK_TIMEOUT }).toBeGreaterThan(330);
+  for (let i = 0; i < 6; i++) {
+    await page.waitForTimeout(23 + i * 7);
+    const png = await page.screenshot({ style: HIDE_OVERLAY });
+    const { at } = await readPixels(page, png, {}, insideMap);
+    expect(at.filter((pixel) => pixel.join(',') === BACKGROUND.join(',')).length, `image ${i} : des points de fond dans la carte`).toBe(0);
+    expect((await findColor(page, png, SHIRT)).count, `image ${i} : la chemise est dessinée`).toBeGreaterThan(20);
   }
   await page.keyboard.up('KeyD');
 });
@@ -727,8 +865,8 @@ test('la marche s\'anime sur place, et l\'avatar immobile ne bouge plus', async 
   await page.keyboard.down('ArrowUp');
   await expect.poll(async () => (await selfAt(page)).y, { intervals: [50], timeout: WALK_TIMEOUT }).toBe(203);
 
-  // L'avatar (64 px de haut, ses pieds en (192, 444) à l'écran), et son ombre.
-  const clip = { x: 160, y: 310, width: 64, height: 156 };
+  // L'avatar (96 px de haut à ×1,5, ses pieds en (344, 470) à l'écran), et son ombre.
+  const clip = { x: 312, y: 366, width: 64, height: 124 };
   // Des captures à intervalles inégaux : le cycle de marche dure 600 ms (6 images de 100 ms), et des captures à intervalles réguliers,
   // d'une demi-période par exemple, tomberaient toujours sur la même image.
   const gaps = [0, 37, 71, 113, 29, 97, 53, 131, 17, 89, 61, 43];

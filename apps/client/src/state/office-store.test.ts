@@ -1,6 +1,6 @@
 import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer } from '@bureau/shared';
 import { beforeEach, describe, expect, test } from 'vitest';
-import { DEFAULT_ZOOM_LEVEL, MAX_ZOOM_LEVEL } from '../game/zoom';
+import { ZOOM_BUTTON_STEP, ZOOM_DEFAULT_PERCENT, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
 
 // Le réglage de la pièce d'un bureau qui n'a rien de particulier.
@@ -454,26 +454,46 @@ describe('zoom', () => {
   beforeEach(() => {
     useOfficeStore.getState().reset();
   });
+  const store = () => useOfficeStore.getState();
 
-  test('au départ, la vue de départ ; un cran plus près ou plus loin, arrêté aux bornes', () => {
-    const store = () => useOfficeStore.getState();
-    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
+  test('au départ, 100 % ; chaque cran fait 5 %, arrêté à 25 % et à 200 %', () => {
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
     store().stepZoom(1);
-    store().stepZoom(1);
-    expect(store().zoomLevel).toBe(MAX_ZOOM_LEVEL);
-    for (let i = 0; i < 10; i++) store().stepZoom(-1);
-    expect(store().zoomLevel).toBe(0);
+    expect(store().zoomPercent).toBe(105);
+    store().stepZoom(-3);
+    expect(store().zoomPercent).toBe(90);
+    store().stepZoom(1000);
+    expect(store().zoomPercent).toBe(ZOOM_MAX_PERCENT);
+    store().stepZoom(-1000);
+    expect(store().zoomPercent).toBe(ZOOM_MIN_PERCENT);
   });
 
-  test('setZoomLevel ramène un niveau hors bornes aux bornes ; resetZoom et reset() rétablissent la vue de départ', () => {
-    const store = () => useOfficeStore.getState();
-    store().setZoomLevel(99);
-    expect(store().zoomLevel).toBe(MAX_ZOOM_LEVEL);
+  test('un cran de 10 % (les boutons) va au cran voisin de la grille de 10, y compris depuis le minimum', () => {
+    store().stepZoom(1, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(110);
+    store().stepZoom(-2, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(90);
+    store().setZoomPercent(ZOOM_MIN_PERCENT);
+    store().stepZoom(1, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(30);
+  });
+
+  test('setZoomPercent ramène un pourcentage hors bornes aux bornes, et un pourcentage entre deux crans au cran de 5 % le plus proche', () => {
+    store().setZoomPercent(999);
+    expect(store().zoomPercent).toBe(ZOOM_MAX_PERCENT);
+    store().setZoomPercent(103);
+    expect(store().zoomPercent).toBe(105);
+    store().setZoomPercent(Number.NaN);
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
+  });
+
+  test('resetZoom et reset() rétablissent 100 %', () => {
+    store().setZoomPercent(30);
     store().resetZoom();
-    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
-    store().setZoomLevel(0);
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
+    store().setZoomPercent(30);
     store().reset();
-    expect(store().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
   });
 });
 

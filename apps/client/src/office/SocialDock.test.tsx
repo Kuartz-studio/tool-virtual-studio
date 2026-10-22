@@ -2,7 +2,7 @@ import type { DeskInfo, PublicPlayer } from '@bureau/shared';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
-import { DEFAULT_ZOOM_LEVEL } from '../game/zoom';
+import { ZOOM_DEFAULT_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { fr } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
 import type { PanelControls } from './panels';
@@ -135,14 +135,11 @@ describe('le menu « Plus »', () => {
   test('« Rétablir le zoom (100 %) » : son nom ne change pas, il dit le niveau du moment à droite, et rend le zoom de départ', async () => {
     const user = userEvent.setup();
     renderDock();
-    act(() => {
-      useOfficeStore.getState().stepZoom(-1);
-      useOfficeStore.getState().stepZoom(-1);
-    });
+    act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MIN_PERCENT));
     await user.click(more());
     expect(entry(fr.zoom.reset).textContent).toContain('25 %');
     await user.click(entry(fr.zoom.reset));
-    expect(useOfficeStore.getState().zoomLevel).toBe(DEFAULT_ZOOM_LEVEL);
+    expect(useOfficeStore.getState().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
     // Rien n'ouvre de panneau : le focus revient au bouton.
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(more());

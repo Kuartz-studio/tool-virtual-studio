@@ -13,6 +13,7 @@ class FakeText {
   resolution = 1;
   destroyed = false;
   setTextCalls = 0;
+  resolutionCalls = 0;
   readonly origin = { x: 0, y: 0 };
   constructor(
     x: number,
@@ -30,7 +31,7 @@ class FakeText {
   setVertexRoundMode() { return this; }
   setPosition(x: number, y: number) { this.x = x; this.y = y; return this; }
   setText(text: string) { this.text = text; this.setTextCalls++; return this; }
-  setResolution(resolution: number) { this.resolution = resolution; return this; }
+  setResolution(resolution: number) { this.resolution = resolution; this.resolutionCalls++; return this; }
   destroy() { this.destroyed = true; }
 }
 
@@ -114,12 +115,24 @@ describe("l'étiquette « [E] … »", () => {
     expect(label().style).toMatchObject({ fontSize: '10px', color: '#ffffff', backgroundColor: 'rgba(29, 32, 48, 0.75)', padding: { x: 3, y: 1 } });
   });
 
-  test('setZoom : le texte est dessiné à la taille où on le voit, jamais en dessous de 1', () => {
+  test('setZoom : le texte est dessiné à la taille où on le voit, au quart de zoom au-dessus, jamais en dessous de 1', () => {
     const { prompt, label } = setup();
     prompt.setZoom(2);
     expect(label().resolution).toBe(2);
+    prompt.setZoom(1.51);
+    expect(label().resolution).toBe(1.75);
     prompt.setZoom(0.5);
     expect(label().resolution).toBe(1);
+  });
+
+  test('setZoom : pendant un glissement de la caméra, le texte n\'est redessiné que lorsque sa résolution change (Phaser refait tout le canevas)', () => {
+    const { prompt, label } = setup();
+    prompt.setZoom(1.5);
+    const before = label().resolutionCalls;
+    for (let zoom = 1.5; zoom <= 1.575; zoom += 0.005) prompt.setZoom(zoom);
+    // De 1,5 à 1,575 : 1,5 (déjà là), puis 1,75 une seule fois.
+    expect(label().resolutionCalls - before).toBe(1);
+    expect(label().resolution).toBe(1.75);
   });
 
   test('destroy : l\'étiquette disparaît', () => {

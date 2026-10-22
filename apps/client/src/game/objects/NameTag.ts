@@ -3,6 +3,7 @@ import type { GameObjects, Scene } from 'phaser';
 import { indicatorRgb } from '../../lib/status';
 import { DEPTH } from '../map-layers';
 import { snapToPixels } from '../pixel-snap';
+import { textResolution } from '../zoom';
 
 // Le nom affiché au-dessus d'une tête : 20 caractères au plus, puis « … ».
 export const NAME_MAX_LENGTH = 20;
@@ -54,7 +55,7 @@ export class NameTag {
     this.background = snapToPixels(scene.add.rectangle(0, 0, 1, 1, TAG_BACKGROUND.color, TAG_BACKGROUND.alpha).setOrigin(0, 0));
     this.ring = snapToPixels(scene.add.circle(0, 0, RING_RADIUS).setStrokeStyle(1, RING_COLOR).setVisible(false));
     this.dot = snapToPixels(scene.add.circle(0, 0, DOT_RADIUS, indicatorRgb(status, activity)));
-    this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TAG_TEXT_STYLE, resolution: Math.max(1, zoom) }).setOrigin(0, 0.5));
+    this.label = snapToPixels(scene.add.text(0, 0, displayName(name), { ...TAG_TEXT_STYLE, resolution: textResolution(zoom) }).setOrigin(0, 0.5));
     this.container = scene.add.container(0, 0, [this.background, this.ring, this.dot, this.label]).setDepth(DEPTH.nameTags);
     this.layout();
   }
@@ -85,10 +86,10 @@ export class NameTag {
     this.ring.setVisible(speaking);
   }
 
-  // Le zoom de la caméra a changé : le texte est redessiné à la nouvelle taille.
+  // Le zoom de la caméra a changé : le texte est redessiné à la nouvelle taille, mais seulement quand sa résolution change (au quart de zoom
+  // au-dessus, jamais en dessous de 1 : textResolution), pas à chaque image d'un glissement.
   setZoom(zoom: number): void {
-    // Jamais en dessous de 1 : de loin, le texte est dessiné à sa taille puis réduit, pas pixellisé d'avance.
-    const resolution = Math.max(1, zoom);
+    const resolution = textResolution(zoom);
     if (this.label.style.resolution === resolution) return;
     this.label.setResolution(resolution);
     this.layout();

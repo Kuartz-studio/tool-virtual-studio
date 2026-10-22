@@ -2,6 +2,7 @@ import type { GameObjects, Scene } from 'phaser';
 import type { Interactable } from '../interactions';
 import { DEPTH } from '../map-layers';
 import { snapToPixels } from '../pixel-snap';
+import { textResolution } from '../zoom';
 import { TAG_BACKGROUND, TAG_PAD_X, TAG_PAD_Y, TAG_TEXT_STYLE } from './NameTag';
 
 // L'étiquette « [E] … » : une seule pour tout le jeu, posée au-dessus de la cible que le gestionnaire (interactions.ts) retient. C'est une pastille
@@ -12,6 +13,7 @@ const PROMPT_STYLE = { ...TAG_TEXT_STYLE, backgroundColor: BACKGROUND, padding: 
 export class InteractionPrompt {
   private readonly label: GameObjects.Text;
   private shown = '';
+  private resolution = 1;
 
   constructor(scene: Scene) {
     this.label = snapToPixels(scene.add.text(0, 0, '', { ...PROMPT_STYLE, resolution: 1 }).setOrigin(0.5, 1))
@@ -36,9 +38,13 @@ export class InteractionPrompt {
     this.label.setVisible(true);
   }
 
-  // Le zoom de la caméra a changé : le texte est redessiné à la nouvelle taille (jamais en dessous de 1, comme celui des noms).
+  // Le zoom de la caméra a changé : le texte est redessiné à la nouvelle taille, comme celui des noms (au quart de zoom au-dessus, jamais en
+  // dessous de 1), et seulement quand sa résolution change : Phaser refait tout le canevas du texte à chaque setResolution.
   setZoom(zoom: number): void {
-    this.label.setResolution(Math.max(1, zoom));
+    const resolution = textResolution(zoom);
+    if (resolution === this.resolution) return;
+    this.resolution = resolution;
+    this.label.setResolution(resolution);
   }
 
   destroy(): void {

@@ -284,7 +284,7 @@ export const fr = {
       generic: 'Cette action a échoué. Réessaie.',
     },
   },
-  // Les boutons de zoom du jeu, en bas à gauche : jusqu'à ×2 plus près, ×4 plus loin que la vue de départ.
+  // Les boutons de zoom du jeu, en bas à droite : de 25 % à 200 %, 100 % au départ ; le pourcentage du milieu le rétablit.
   zoom: {
     group: 'Zoom',
     in: 'Zoom avant',

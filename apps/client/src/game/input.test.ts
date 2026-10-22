@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { bindKeyboard, bindUseKey, bindZoomKeys, DirectionInput } from './input';
+import { bindKeyboard, bindUseKey, bindWheelZoom, bindZoomKeys, DirectionInput } from './input';
 
 describe('DirectionInput', () => {
   test('la dernière touche enfoncée gagne', () => {
@@ -411,6 +411,70 @@ describe('bindZoomKeys', () => {
   test('le débranchement retire l\'écouteur', () => {
     unbind();
     press('+');
+    expect(steps).toEqual([]);
+  });
+});
+
+// La molette sur le jeu, et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette.
+describe('bindWheelZoom', () => {
+  let target: HTMLElement;
+  let steps: number[];
+  let unbind: () => void;
+  const wheel = (init: WheelEventInit): WheelEvent => {
+    const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init });
+    // happy-dom fait descendre WheelEvent de UIEvent et non de MouseEvent : sans modificateurs. Dans un navigateur, `ctrlKey` y est.
+    Object.defineProperty(event, 'ctrlKey', { value: init.ctrlKey === true });
+    target.dispatchEvent(event);
+    return event;
+  };
+
+  beforeEach(() => {
+    target = document.body.appendChild(document.createElement('canvas'));
+    steps = [];
+    unbind = bindWheelZoom(target, (n) => steps.push(n));
+  });
+  afterEach(() => {
+    unbind();
+    document.body.replaceChildren();
+  });
+
+  test('un cran de molette vers le haut rapproche d\'un cran (5 %), vers le bas éloigne d\'un cran', () => {
+    wheel({ deltaY: -100 });
+    wheel({ deltaY: 100 });
+    expect(steps).toEqual([1, -1]);
+  });
+
+  test('la molette sur le jeu ne fait pas défiler la page', () => {
+    expect(wheel({ deltaY: -100 }).defaultPrevented).toBe(true);
+    expect(wheel({ deltaY: 100 }).defaultPrevented).toBe(true);
+  });
+
+  test('Ctrl + molette (le pincement d\'un pavé tactile) ne fait pas zoomer la page : l\'événement est arrêté, et le jeu zoome', () => {
+    const event = wheel({ deltaY: -30, ctrlKey: true });
+    expect(event.defaultPrevented).toBe(true);
+    // 30 px de pincement : trois crans de 8 px.
+    expect(steps).toEqual([3]);
+  });
+
+  test('un petit delta de pavé tactile ne fait pas encore de cran, mais la page ne défile pas pour autant', () => {
+    expect(wheel({ deltaY: -5 }).defaultPrevented).toBe(true);
+    expect(steps).toEqual([]);
+  });
+
+  test('les petits deltas s\'additionnent : cinq fois 5 px font un cran', () => {
+    for (let i = 0; i < 5; i++) wheel({ deltaY: -5 });
+    expect(steps).toEqual([1]);
+  });
+
+  test('une molette lue en lignes est une molette crantée : un cran par événement', () => {
+    wheel({ deltaY: -3, deltaMode: 1 });
+    wheel({ deltaY: 3, deltaMode: 1 });
+    expect(steps).toEqual([1, -1]);
+  });
+
+  test('le débranchement retire l\'écouteur : la molette redevient celle de la page', () => {
+    unbind();
+    expect(wheel({ deltaY: -100 }).defaultPrevented).toBe(false);
     expect(steps).toEqual([]);
   });
 });

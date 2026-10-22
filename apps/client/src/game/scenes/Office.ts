@@ -24,7 +24,7 @@ import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
-import { bindKeyboard, bindUseKey, bindZoomKeys, DirectionInput } from '../input';
+import { bindKeyboard, bindUseKey, bindWheelZoom, bindZoomKeys, DirectionInput } from '../input';
 import { Interactions } from '../interactions';
 import { sourcesFromItems } from '../light-sources';
 import { LightSwitch } from '../light-switch';
@@ -35,7 +35,8 @@ import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingRings } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
-import { cameraBounds, cameraZoom, WheelZoom } from '../zoom';
+import { prefersReducedMotion } from '../reduced-motion';
+import { cameraBounds, cameraZoom, easeZoom, ZOOM_BUTTON_STEP } from '../zoom';
 import { SimDrag } from '../../sim/sim-drag';
 
 // La largeur du panneau de déco (à droite de l'écran), en pixels de l'écran : la pièce se centre dans le reste.
@@ -85,6 +86,9 @@ export class Office extends Scene {
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
   private editingRoom: Zone | null = null;
+  // Le zoom que la caméra montre en ce moment, et celui où elle va : elle glisse de l'un à l'autre quand la personne change de pourcentage.
+  private zoomShown = 1;
+  private zoomTarget = 1;
   // Le faux live (VITE_SIM=1) : le glisser-déposer des personnes fictives. Absent d'un build normal.
   private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
@@ -189,19 +193,12 @@ export class Office extends Scene {
     const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
 
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
-    // pas prendre pour le zoom de la page), et les touches + - 0. Le niveau est au magasin ; layoutCamera le lit.
-    const wheelZoom = new WheelZoom();
-    const onWheel = (event: WheelEvent) => {
-      event.preventDefault();
-      const step = wheelZoom.feed(event.deltaY, event.deltaMode, event.ctrlKey, event.timeStamp);
-      if (step !== 0) useOfficeStore.getState().stepZoom(step);
-    };
-    const canvas = this.game.canvas;
-    canvas.addEventListener('wheel', onWheel, { passive: false });
+    // pas prendre pour le zoom de la page), et les touches + - 0. Le pourcentage est au magasin ; la caméra y glisse (glideZoom).
+    const unbindWheel = bindWheelZoom(this.game.canvas, (steps) => useOfficeStore.getState().stepZoom(steps));
     const unbindZoomKeys = bindZoomKeys((step) => {
       const store = useOfficeStore.getState();
       if (step === 0) store.resetZoom();
-      else store.stepZoom(step);
+      else store.stepZoom(step, ZOOM_BUTTON_STEP);
     });
 
     // La caméra suit l'avatar, dans les bornes de la carte. Le décalage met le milieu de l'avatar au centre de l'écran, et non ses
@@ -231,7 +228,7 @@ export class Office extends Scene {
           // Le brouillon de l'éditeur montre peut-être une lampe de plus, ou de moins.
           this.showLightSources();
         }
-        if (state.zoomLevel !== previous.zoomLevel) this.layoutCamera();
+        if (state.zoomPercent !== previous.zoomPercent) this.retargetZoom();
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -246,7 +243,7 @@ export class Office extends Scene {
       unbindKeyboard();
       unbindUse();
       unbindZoomKeys();
-      canvas.removeEventListener('wheel', onWheel);
+      unbindWheel();
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
@@ -293,6 +290,8 @@ export class Office extends Scene {
   // position dans les sprites qu'après ; lu dans update(), l'arrêt partirait un pas de physique avant l'endroit où l'avatar s'arrête
   // vraiment, et les autres le verraient s'arrêter 2 ou 3 px trop tôt.
   private afterPhysics(): void {
+    // La caméra glisse vers son zoom avant que la nuit ne se dessine : elle la dessine à la vue de cette image.
+    this.glideZoom();
     this.sendLocalState(clock());
     const feet = this.feet();
     if (this.debug.self) Object.assign(this.debug.self, feet);
@@ -507,13 +506,41 @@ export class Office extends Scene {
     this.sendLocalState(clock());
   };
 
-  // Le zoom et les bornes de la caméra dépendent de la taille du canevas et du niveau de zoom choisi : on les refait à chaque
-  // redimensionnement et à chaque cran de zoom. Où elle regarde, en revanche, n'est pas à régler ici : elle suit l'avatar, et continue
-  // après le redimensionnement (sauf devant la pièce que l'éditeur montre : on la recentre, le panneau n'occupant pas la même part de
-  // l'écran à un autre zoom). Les étiquettes des avatars suivent le zoom.
+  // Le zoom et les bornes de la caméra dépendent de la taille du canevas et du pourcentage de zoom choisi. Au démarrage et à chaque
+  // redimensionnement, la caméra prend tout de suite le zoom du moment ; à chaque changement de pourcentage, elle y glisse (retargetZoom,
+  // puis glideZoom à chaque image).
   private layoutCamera = (): void => {
+    this.zoomTarget = this.targetZoom();
+    this.zoomShown = this.zoomTarget;
+    this.applyZoom(this.zoomShown);
+  };
+
+  // Le zoom que la caméra doit avoir : celui du pourcentage choisi, pour la taille du canevas.
+  private targetZoom(): number {
     const { width, height } = this.scale.gameSize;
-    const zoom = cameraZoom(width, height, useOfficeStore.getState().zoomLevel);
+    return cameraZoom(width, height, useOfficeStore.getState().zoomPercent);
+  }
+
+  // La personne a changé de pourcentage : la caméra glisse vers le nouveau zoom, ou y saute si elle demande moins de mouvement.
+  private retargetZoom(): void {
+    this.zoomTarget = this.targetZoom();
+    if (!prefersReducedMotion()) return;
+    this.zoomShown = this.zoomTarget;
+    this.applyZoom(this.zoomShown);
+  }
+
+  // À chaque image : un pas du glissement, tant que la caméra n'est pas au zoom voulu.
+  private glideZoom(): void {
+    if (this.zoomShown === this.zoomTarget) return;
+    this.zoomShown = easeZoom(this.zoomShown, this.zoomTarget, this.game.loop.delta);
+    this.applyZoom(this.zoomShown);
+  }
+
+  // Le zoom de la caméra, ses bornes, et la résolution des étiquettes à ce zoom. Où elle regarde, en revanche, n'est pas à régler ici : elle
+  // suit l'avatar, et continue (sauf devant la pièce que l'éditeur montre : on la recentre, le panneau n'occupant pas la même part de l'écran
+  // à un autre zoom).
+  private applyZoom(zoom: number): void {
+    const { width, height } = this.scale.gameSize;
     const bounds = cameraBounds({ width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels }, { width, height }, zoom);
     const camera = this.cameras.main;
     camera.setZoom(zoom);
@@ -523,5 +550,5 @@ export class Office extends Scene {
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);
     this.prompt?.setZoom(zoom);
-  };
+  }
 }

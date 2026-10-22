@@ -4,6 +4,7 @@ import type { LightSource } from './light-sources';
 import { LIGHT_TEXTURE_SIZE, LIGHT_TEXTURES } from './light-textures';
 import { DEPTH } from './map-layers';
 import { snapToPixels } from './pixel-snap';
+import { prefersReducedMotion } from './reduced-motion';
 
 // La nuit : quand la lumière du bureau est éteinte, une obscurité bleu nuit couvre la carte. Elle est trouée en paliers nets autour des lampes,
 // du feu et des écrans (light-sources.ts), et en douceur autour de chaque personne ; les lampes, le feu et les écrans brillent en plus d'un halo
@@ -88,14 +89,11 @@ export function viewRect(camera: ViewCamera): ViewRect {
 const sameRect = (a: ViewRect, b: ViewRect | null): boolean =>
   b !== null && a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
 
-// prefers-reduced-motion, relu à chaque bascule et à chaque image de feu : la personne peut le changer pendant qu'elle joue.
-let reducedMotionQuery: MediaQueryList | null | undefined;
-function prefersReducedMotion(): boolean {
-  if (reducedMotionQuery === undefined) {
-    reducedMotionQuery = typeof window.matchMedia === 'function' ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
-  }
-  return reducedMotionQuery?.matches ?? false;
-}
+// La taille de la texture de l'obscurité est arrondie au-dessus à ce pas, en pixels de la couche : la vue change de taille à chaque image d'un
+// glissement du zoom, et Phaser refait la texture (et son framebuffer) à chaque changement de taille. Le surplus, à droite et en bas de la
+// vue, reste hors de l'écran.
+export const NIGHT_SIZE_STEP = 64;
+const sizeFor = (pixels: number): number => Math.ceil(pixels / NIGHT_SIZE_STEP) * NIGHT_SIZE_STEP;
 
 export interface LightingOptions {
   // L'heure, en ms (performance.now par défaut) : les transitions et le vacillement du feu.
@@ -304,10 +302,10 @@ export class LightingLayer {
     this.drawnAt = rect;
     this.veil.setVisible(false);
     // Un pixel de la couche est un pixel de la carte (le grain des tuiles) ; vue de loin (zoom < 1), un pixel de l'écran, pour que la
-    // texture ne dépasse jamais la taille de l'écran.
+    // texture ne dépasse jamais la taille de l'écran (à un pas de NIGHT_SIZE_STEP près).
     const resolution = Math.min(1, (this.camera.zoomX + this.camera.zoomY) / 2);
-    const width = Math.ceil(rect.width * resolution);
-    const height = Math.ceil(rect.height * resolution);
+    const width = sizeFor(rect.width * resolution);
+    const height = sizeFor(rect.height * resolution);
     if (width !== this.size.width || height !== this.size.height) {
       darkness.resize(width, height);
       this.size = { width, height };

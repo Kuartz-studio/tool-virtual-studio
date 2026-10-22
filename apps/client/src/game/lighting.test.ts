@@ -2,7 +2,7 @@ import { TILE_SIZE } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import type { LightSource } from './light-sources';
 import { LIGHT_TEXTURE_SIZE, LIGHT_TEXTURES } from './light-textures';
-import { FALLBACK_ALPHA, GLOW_ALPHA, LightingLayer, NIGHT_ALPHA, NIGHT_COLOR, PERSON_RADIUS_TILES, tintOf, VIEW_MARGIN, viewRect } from './lighting';
+import { FALLBACK_ALPHA, GLOW_ALPHA, LightingLayer, NIGHT_ALPHA, NIGHT_COLOR, NIGHT_SIZE_STEP, PERSON_RADIUS_TILES, tintOf, VIEW_MARGIN, viewRect } from './lighting';
 import { DEPTH } from './map-layers';
 
 // Les modes de mélange de Phaser (BlendModes) : l'ajout (les halos), la multiplication (les teintes) et l'effacement (les trous dans l'obscurité).
@@ -276,7 +276,28 @@ describe('LightingLayer', () => {
     expect(rt.scaleX).toBe(2);
     expect(rt.width * rt.scaleX).toBeGreaterThanOrEqual(rect.width);
     expect(rt.height * rt.scaleY).toBeGreaterThanOrEqual(rect.height);
-    expect(rt.width).toBeLessThanOrEqual(Math.ceil(rect.width / 2) + 1);
+    expect(rt.width).toBeLessThanOrEqual(Math.ceil(rect.width / 2) + NIGHT_SIZE_STEP);
+  });
+
+  test('la texture change de taille par paliers de NIGHT_SIZE_STEP : un glissement du zoom ne la refait pas à chaque image, et elle couvre toujours la vue', () => {
+    const { layer, darkness, camera } = setup();
+    layer.setOn(false, { instant: true });
+    camera.setZoom(1.5);
+    layer.update();
+    const rt = darkness()!;
+    const resizes = () => rt.calls.filter(([name]) => name === 'resize').length;
+    const before = resizes();
+    for (let zoom = 1.5; zoom <= 1.575; zoom += 0.005) {
+      camera.setZoom(zoom);
+      layer.update();
+      const rect = viewRect(camera);
+      expect(rt.width).toBeGreaterThanOrEqual(rect.width);
+      expect(rt.height).toBeGreaterThanOrEqual(rect.height);
+      expect(rt.width % NIGHT_SIZE_STEP).toBe(0);
+      expect(rt.height % NIGHT_SIZE_STEP).toBe(0);
+    }
+    // 15 tailles de vue différentes sur ce glissement, une seule fois la texture refaite.
+    expect(resizes() - before).toBeLessThanOrEqual(1);
   });
 
   test('les lampes gagnent un halo chaud en ADD, juste au-dessus de l\'obscurité ; il suit le niveau', () => {

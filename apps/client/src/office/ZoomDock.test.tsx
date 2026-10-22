@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test } from 'vitest';
-import { DEFAULT_ZOOM_LEVEL, MAX_ZOOM_LEVEL } from '../game/zoom';
+import { ZOOM_DEFAULT_PERCENT, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { fr } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
 import { ZoomDock } from './ZoomDock';
@@ -10,35 +10,74 @@ beforeEach(() => {
   act(() => useOfficeStore.getState().reset());
 });
 
-const level = () => useOfficeStore.getState().zoomLevel;
+const percent = () => useOfficeStore.getState().zoomPercent;
 const button = (name: string) => screen.getByRole('button', { name }) as HTMLButtonElement;
+// Le pourcentage écrit sur le bouton du milieu (et non son infobulle, qui est dans le même bouton).
+const readout = () => button(fr.zoom.reset).querySelector('.zoom-value')?.textContent;
 
-test('deux boutons dans un groupe « Zoom » : plus loin, puis plus près ; au départ on peut aller dans les deux sens', () => {
+test('trois boutons dans un groupe « Zoom » : plus loin, le pourcentage (qui le rétablit), plus près ; au départ on peut aller dans les deux sens', () => {
   render(<ZoomDock />);
   const group = screen.getByRole('group', { name: fr.zoom.group });
-  expect([...group.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual([fr.zoom.out, fr.zoom.in]);
+  expect([...group.querySelectorAll('button')].map((b) => b.getAttribute('aria-label'))).toEqual([fr.zoom.out, fr.zoom.reset, fr.zoom.in]);
   expect(button(fr.zoom.in).disabled).toBe(false);
   expect(button(fr.zoom.out).disabled).toBe(false);
-  expect(level()).toBe(DEFAULT_ZOOM_LEVEL);
+  expect(percent()).toBe(ZOOM_DEFAULT_PERCENT);
 });
 
-test('+ rapproche jusqu\'à 200 %, où il s\'éteint ; − éloigne jusqu\'à 25 %, où il s\'éteint', async () => {
+test('le milieu écrit le pourcentage du moment, et le suit', () => {
+  render(<ZoomDock />);
+  expect(readout()).toBe('100 %');
+  act(() => useOfficeStore.getState().stepZoom(3));
+  expect(readout()).toBe('115 %');
+  act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MIN_PERCENT));
+  expect(readout()).toBe('25 %');
+});
+
+test('un clic sur le pourcentage rétablit 100 %', async () => {
+  const user = userEvent.setup();
+  render(<ZoomDock />);
+  act(() => useOfficeStore.getState().setZoomPercent(60));
+  await user.click(button(fr.zoom.reset));
+  expect(percent()).toBe(ZOOM_DEFAULT_PERCENT);
+  expect(readout()).toBe('100 %');
+});
+
+test('+ rapproche de 10 % jusqu\'à 200 %, où il s\'éteint ; − éloigne de 10 % jusqu\'à 25 %, où il s\'éteint', async () => {
   const user = userEvent.setup();
   render(<ZoomDock />);
   await user.click(button(fr.zoom.in));
-  expect(level()).toBe(MAX_ZOOM_LEVEL);
+  expect(percent()).toBe(110);
+  act(() => useOfficeStore.getState().setZoomPercent(195));
+  await user.click(button(fr.zoom.in));
+  expect(percent()).toBe(ZOOM_MAX_PERCENT);
   expect(button(fr.zoom.in).disabled).toBe(true);
+  expect(button(fr.zoom.out).disabled).toBe(false);
 
   act(() => useOfficeStore.getState().resetZoom());
   await user.click(button(fr.zoom.out));
+  expect(percent()).toBe(90);
+  act(() => useOfficeStore.getState().setZoomPercent(30));
   await user.click(button(fr.zoom.out));
-  expect(level()).toBe(0);
+  expect(percent()).toBe(ZOOM_MIN_PERCENT);
   expect(button(fr.zoom.out).disabled).toBe(true);
+  expect(button(fr.zoom.in).disabled).toBe(false);
+});
+
+test('depuis 25 %, + repasse par les dizaines : 30, 40 … jusqu\'à 100 %', async () => {
+  const user = userEvent.setup();
+  render(<ZoomDock />);
+  act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MIN_PERCENT));
+  const seen: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    await user.click(button(fr.zoom.in));
+    seen.push(percent());
+  }
+  expect(seen).toEqual([30, 40, 50, 60, 70, 80, 90, 100]);
 });
 
 test('le niveau vient du magasin : un changement venu d\'ailleurs (molette, clavier) s\'y voit', () => {
   render(<ZoomDock />);
-  act(() => useOfficeStore.getState().stepZoom(1));
+  act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MAX_PERCENT));
   expect(button(fr.zoom.in).disabled).toBe(true);
   act(() => useOfficeStore.getState().resetZoom());
   expect(button(fr.zoom.in).disabled).toBe(false);
@@ -48,4 +87,5 @@ test('les touches du clavier sont dites dans l\'infobulle', () => {
   render(<ZoomDock />);
   expect(button(fr.zoom.in).querySelector('.icon-tip kbd')?.textContent).toBe('+');
   expect(button(fr.zoom.out).querySelector('.icon-tip kbd')?.textContent).toBe('−');
+  expect(button(fr.zoom.reset).querySelector('.icon-tip kbd')?.textContent).toBe('0');
 });

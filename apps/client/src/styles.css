@@ -1530,6 +1530,19 @@ svg.lucide.icon-s {
   height: 16px;
 }
 
+/* Le pourcentage du zoom, entre − et + : il dit le niveau du moment, et un clic rétablit 100 %. */
+.dock-zoom .icon-btn.zoom-reset {
+  width: auto;
+  min-width: 52px;
+  padding: 0 6px;
+}
+
+.zoom-value {
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
 /* La puce « Moi » : le dock de gauche est un seul bouton, qui ouvre le menu du profil. Son portrait (avec la pastille du statut), le nom, et
    dessous le mode en cours (sinon le statut), puis le chevron du menu, qui s'ouvre vers le haut. */
 .me-chip {
@@ -1739,6 +1752,10 @@ svg.lucide.icon-s {
 
   .dock-zoom .icon-btn {
     width: 34px;
+  }
+
+  .dock-zoom .icon-btn.zoom-reset {
+    min-width: 46px;
   }
 }
 

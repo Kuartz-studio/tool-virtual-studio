@@ -1,6 +1,7 @@
-// Le zoom de départ de la caméra est entier : un pixel de la carte devient 1 ou 2 pixels carrés de l'écran, jamais un pixel et
-// demi, qui flouterait les tuiles. Le zoom de la personne (ZOOM_FACTORS) ne fait que le doubler ou le diviser par 2 ou 4, des
-// puissances de 2 : les tuiles restent nettes (32 px deviennent 64, 16 ou 8 px de l'écran).
+// Le zoom de départ de la caméra est entier : un pixel de la carte devient 1 ou 2 pixels carrés de l'écran (chooseZoom). La personne le règle
+// ensuite en pourcentage, de 25 % à 200 % : 100 %, la vue de départ, est l'ancienne vue de départ aux trois quarts (ZOOM_BASE_FACTOR), soit ×1,5
+// à partir de 1280 × 720 et ×0,75 en dessous. Un cran de molette fait 5 %, et la caméra glisse d'un pourcentage à l'autre (easeZoom) au lieu de
+// sauter.
 
 // Le canevas le plus petit qui reçoit le zoom ×2.
 const ZOOM_X2_MIN_WIDTH = 1280;
@@ -42,59 +43,101 @@ export function cameraBounds(map: Size, canvas: Size, zoom: number): Bounds {
   return { x, y, width, height };
 }
 
-// Les niveaux de zoom, comme multiples de la vue de départ (chooseZoom) : au plus ×2 plus près, au plus ×4 plus loin, pas davantage (un
-// zoom abusif perd la carte ou la rend illisible). Le niveau de départ est celui de 1 : DEFAULT_ZOOM_LEVEL.
-export const ZOOM_FACTORS = [0.25, 0.5, 1, 2] as const;
-export const DEFAULT_ZOOM_LEVEL = 2;
-export const MAX_ZOOM_LEVEL = ZOOM_FACTORS.length - 1;
+// Les pourcentages de zoom : de 25 % (de loin, au plus) à 200 % (de près, au plus), pas davantage (un zoom abusif perd la carte ou la rend
+// illisible). 100 % est la vue de départ : l'ancienne, aux trois quarts. Un cran de molette (ou de pincement) fait 5 %, un clic sur un bouton ou
+// une touche + - 10 %.
+export const ZOOM_BASE_FACTOR = 0.75;
+export const ZOOM_MIN_PERCENT = 25;
+export const ZOOM_MAX_PERCENT = 200;
+export const ZOOM_DEFAULT_PERCENT = 100;
+export const ZOOM_WHEEL_STEP = 5;
+export const ZOOM_BUTTON_STEP = 10;
 
-// Un niveau illisible (NaN) est la vue de départ.
-export const clampZoomLevel = (level: number): number => (Number.isNaN(level) ? DEFAULT_ZOOM_LEVEL : Math.min(MAX_ZOOM_LEVEL, Math.max(0, Math.round(level))));
+// Un pourcentage hors bornes est ramené aux bornes, un pourcentage entre deux crans au cran de 5 % le plus proche, un pourcentage illisible
+// (NaN) à la vue de départ.
+export const clampZoomPercent = (percent: number): number =>
+  Number.isNaN(percent) ? ZOOM_DEFAULT_PERCENT : Math.min(ZOOM_MAX_PERCENT, Math.max(ZOOM_MIN_PERCENT, Math.round(percent / ZOOM_WHEEL_STEP) * ZOOM_WHEEL_STEP));
 
-// Un cran de plus près (+1) ou de plus loin (−1), jamais au-delà des bornes.
-export const stepZoomLevel = (level: number, step: 1 | -1): number => clampZoomLevel(level + step);
+// `steps` crans de plus près (positif) ou de plus loin (négatif), chacun de `size` %. Un cran va au pourcentage voisin de la grille de `size`
+// dans le sens demandé : 10 % depuis 105 % donne 110 %, depuis 25 % donne 30 %, ce qui ramène à 100 % en remontant du minimum (25, 35, 45
+// n'y passeraient jamais). Jamais au-delà des bornes.
+export function stepZoomPercent(percent: number, steps: number, size: number = ZOOM_WHEEL_STEP): number {
+  const current = clampZoomPercent(percent);
+  const count = Math.trunc(steps);
+  if (count === 0 || Number.isNaN(count)) return current;
+  const next = count > 0 ? (Math.floor(current / size) + count) * size : (Math.ceil(current / size) + count) * size;
+  return clampZoomPercent(next);
+}
 
-// Le zoom de la caméra : celui de départ du canevas, multiplié par le niveau choisi.
-export const cameraZoom = (width: number, height: number, level: number): number => chooseZoom(width, height) * ZOOM_FACTORS[clampZoomLevel(level)]!;
+// Le zoom de la caméra : celui de départ du canevas, aux trois quarts, multiplié par le pourcentage choisi.
+export const cameraZoom = (width: number, height: number, percent: number): number => (chooseZoom(width, height) * ZOOM_BASE_FACTOR * clampZoomPercent(percent)) / 100;
 
-// Le niveau, tel qu'on le montre : 100 % au départ, 200 % au plus près, 25 % au plus loin.
-export const zoomPercent = (level: number): number => ZOOM_FACTORS[clampZoomLevel(level)]! * 100;
+// Le quart de zoom au-dessus : la résolution d'un texte. Redessiné à chaque quart, et non à chaque image d'un glissement : changer la
+// résolution d'un texte le redessine tout entier.
+export const ceilToQuarter = (zoom: number): number => Math.ceil(zoom * 4) / 4;
 
-// Les crans que fait la molette (ou le pincement sur un pavé tactile) : un événement `wheel` peut venir d'une molette crantée (un cran, de
-// l'ordre de 100) ou d'un pavé tactile (des dizaines d'événements, de quelques unités chacun, plus l'inertie qui suit le geste). On somme
-// ce qui arrive et on ne fait un cran qu'à partir d'un seuil, puis on attend avant le suivant : un geste fait un cran, pas dix.
-const WHEEL_STEP_THRESHOLD = 60;
-const PINCH_STEP_THRESHOLD = 24;
-const WHEEL_STEP_COOLDOWN_MS = 220;
-// deltaMode d'un événement `wheel` : 0 pixels, 1 lignes, 2 pages.
-const DELTA_LINE_PX = 16;
-const DELTA_PAGE_PX = 100;
+// La résolution d'un texte du monde (l'étiquette d'un nom, celle de la touche E) à ce zoom : au quart de zoom au-dessus, jamais en dessous de 1
+// (de loin, le texte est dessiné à sa taille puis réduit, pas pixellisé d'avance).
+export const textResolution = (zoom: number): number => Math.max(1, ceilToQuarter(zoom));
+
+// Le glissement de la caméra d'un zoom à l'autre : exponentiel, de constante de temps ZOOM_GLIDE_MS (en cette durée, elle fait 1 − 1/e du
+// chemin ; en trois fois plus, 95 %). Il se fait sur le rapport des zooms, et non sur leur différence : de 25 % à 100 % comme de 100 % à 200 %, la vue
+// grandit au même rythme. Il ne dépend pas du rythme des images (deux pas de 8 ms valent un pas de 16 ms), ne dépasse jamais la cible, et s'y
+// pose pour de bon à 0,1 % près, que l'image suivante n'ait plus rien à bouger.
+export const ZOOM_GLIDE_MS = 80;
+const ZOOM_SETTLE_RATIO = 0.001;
+
+// Le zoom d'après, `dtMs` plus tard, quand la caméra va de `current` vers `target`. Sans temps écoulé (zéro, négatif, illisible), elle reste ;
+// un zoom de départ nul ou illisible, dont le rapport avec la cible n'existe pas, y va tout de suite.
+export function easeZoom(current: number, target: number, dtMs: number): number {
+  if (!Number.isFinite(current) || !Number.isFinite(target) || current <= 0 || target <= 0) return target;
+  if (current === target) return target;
+  if (!(dtMs > 0)) return current;
+  // La distance qui reste, en rapport de zooms (un logarithme), décroît de moitié tous les ZOOM_GLIDE_MS × ln 2.
+  const remaining = Math.log(target / current) * Math.exp(-dtMs / ZOOM_GLIDE_MS);
+  return Math.abs(remaining) < ZOOM_SETTLE_RATIO ? target : target * Math.exp(-remaining);
+}
+
+// Les crans que fait la molette (ou le pincement sur un pavé tactile) : un événement `wheel` peut venir d'une molette crantée (un cran, d'un
+// seul événement : 100 px sous Windows, 53 sous Linux, plus quand on la lance) ou d'un pavé tactile (des dizaines d'événements de quelques
+// pixels, plus l'inertie qui suit le geste). Un cran de molette fait un cran de 5 % ; un pavé tactile cumule ses petits deltas, un cran
+// tous les 25 px, un pincement tous les 8 px (ses deltas sont plus petits). Le reste d'un cran est gardé pour l'événement suivant, jusqu'à
+// ce que le geste s'arrête (GESTURE_GAP_MS) ou change de sens.
+const WHEEL_NOTCH_MIN_PX = 40;
+const TOUCHPAD_PX_PER_STEP = 25;
+const PINCH_PX_PER_STEP = 8;
+const GESTURE_GAP_MS = 250;
 
 export class WheelZoom {
   private total = 0;
-  private lastStepAt = Number.NEGATIVE_INFINITY;
+  private lastAt = Number.NEGATIVE_INFINITY;
 
-  // `deltaY` et `deltaMode` : ceux de l'événement ; `pinch` : Ctrl enfoncée (un pincement de pavé tactile, vu comme Ctrl + molette) ;
-  // `now` : l'heure, en ms. Renvoie +1 (plus près : la molette vers le haut, ou les doigts qui s'écartent), −1 (plus loin) ou 0 (pas encore un cran).
-  feed(deltaY: number, deltaMode: number, pinch: boolean, now: number): 1 | -1 | 0 {
-    const pixels = deltaMode === 1 ? deltaY * DELTA_LINE_PX : deltaMode === 2 ? deltaY * DELTA_PAGE_PX : deltaY;
-    if (!Number.isFinite(pixels) || pixels === 0) return 0;
-    // Un geste dans l'autre sens repart de zéro.
-    if (this.total !== 0 && Math.sign(this.total) !== Math.sign(pixels)) this.total = 0;
-    this.total += pixels;
-    if (now - this.lastStepAt < WHEEL_STEP_COOLDOWN_MS) {
-      // Pendant l'attente, on garde la direction mais pas la somme : l'inertie d'un geste fini ne prépare pas un cran de plus.
-      this.total = Math.sign(this.total) * Math.min(Math.abs(this.total), (pinch ? PINCH_STEP_THRESHOLD : WHEEL_STEP_THRESHOLD) / 2);
-      return 0;
+  // `deltaY` et `deltaMode` : ceux de l'événement (0 pixels, 1 lignes, 2 pages : les lignes et les pages sont toujours celles d'une molette
+  // crantée) ; `pinch` : Ctrl enfoncée (un pincement de pavé tactile, vu comme Ctrl + molette) ; `now` : l'heure, en ms. Renvoie les crans de 5 %
+  // à faire : positifs vers le plus près (la molette vers le haut, ou les doigts qui s'écartent), négatifs vers le plus loin, 0 tant que le
+  // geste n'a pas fait un cran.
+  feed(deltaY: number, deltaMode: number, pinch: boolean, now: number): number {
+    if (!Number.isFinite(deltaY) || deltaY === 0) return 0;
+    const direction = deltaY < 0 ? 1 : -1;
+    // Une molette crantée : un cran par événement, quelle que soit la taille de son delta ; ce qu'un pavé tactile avait cumulé s'efface.
+    if (deltaMode !== 0 || Math.abs(deltaY) >= WHEEL_NOTCH_MIN_PX) {
+      this.total = 0;
+      this.lastAt = now;
+      return direction;
     }
-    if (Math.abs(this.total) < (pinch ? PINCH_STEP_THRESHOLD : WHEEL_STEP_THRESHOLD)) return 0;
-    const step = this.total < 0 ? 1 : -1;
-    this.total = 0;
-    this.lastStepAt = now;
-    return step;
+    // Un geste fini (une pause) ou dans l'autre sens repart de zéro.
+    if (now - this.lastAt > GESTURE_GAP_MS || Math.sign(this.total) === -Math.sign(deltaY)) this.total = 0;
+    this.lastAt = now;
+    this.total += deltaY;
+    const perStep = pinch ? PINCH_PX_PER_STEP : TOUCHPAD_PX_PER_STEP;
+    const steps = Math.trunc(Math.abs(this.total) / perStep);
+    if (steps === 0) return 0;
+    this.total -= Math.sign(this.total) * steps * perStep;
+    return direction * steps;
   }
 
   reset(): void {
     this.total = 0;
+    this.lastAt = Number.NEGATIVE_INFINITY;
   }
 }

@@ -232,23 +232,29 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   - tests : `zoom.test.ts`, `office-store.test.ts`, `ZoomDock.test.tsx`, `input.test.ts`, `e2e/world.spec.ts` (tests de pixels et de zoom).
 
 **Interfaces**
-- Produit :
+- Produit, tel que livré :
   ```ts
-  export const ZOOM_BASE_FACTOR = 0.75;      // 100 % = l'ancienne vue de départ × 0,75
-  export const ZOOM_MIN_PERCENT = 25, ZOOM_MAX_PERCENT = 200, ZOOM_DEFAULT_PERCENT = 100;
-  export const ZOOM_WHEEL_STEP = 5, ZOOM_BUTTON_STEP = 10;
-  export const clampZoomPercent = (percent: number): number;
-  export const cameraZoom = (width: number, height: number, percent: number): number;   // chooseZoom(...) × 0,75 × percent / 100
-  export class WheelZoom { feed(deltaY: number, deltaMode: number, pinch: boolean, now: number): number }   // crans signés, plusieurs possibles
-  export function easeZoom(current: number, target: number, dtMs: number): number;     // glissement exponentiel, ~80 ms
+  // game/zoom.ts
+  ZOOM_BASE_FACTOR 0.75 · ZOOM_MIN_PERCENT 25 · ZOOM_MAX_PERCENT 200 · ZOOM_DEFAULT_PERCENT 100 · ZOOM_WHEEL_STEP 5 · ZOOM_BUTTON_STEP 10 · ZOOM_GLIDE_MS 80
+  clampZoomPercent(percent): number                  // bornes, cran de 5 %, NaN → 100
+  stepZoomPercent(percent, steps, size = 5): number  // `steps` crans de `size` % sur la grille de `size` (10 % depuis 25 % donne 30 %, puis 40 … 100)
+  cameraZoom(width, height, percent): number         // chooseZoom(...) × 0,75 × percent / 100
+  easeZoom(current, target, dtMs): number            // exponentiel, constante de temps 80 ms, en rapport de zooms ; se pose à 0,1 % près
+  ceilToQuarter(zoom) · textResolution(zoom) = max(1, ceilToQuarter(zoom))
+  class WheelZoom { feed(deltaY, deltaMode, pinch, now): number; reset(): void }   // crans signés de 5 % : molette crantée = 1 cran, pavé tactile 25 px/cran, pincement 8 px/cran
+  // game/input.ts : bindWheelZoom(target: HTMLElement, onSteps: (steps: number) => void): () => void   (arrête toujours l'événement) ; bindZoomKeys inchangé (+1 | −1 | 0)
+  // state/office-store.ts : zoomPercent · setZoomPercent(p) · stepZoom(steps, size = 5) · resetZoom()
+  // game/reduced-motion.ts : prefersReducedMotion()   (partagé par lighting.ts et Office.ts)
+  // game/lighting.ts : NIGHT_SIZE_STEP = 64   (la texture de la nuit change de taille par paliers)
   ```
 
-**Étapes**
-- [ ] Tests, qui échouent : « un cran de molette (100 px) fait 5 % » ; « un pavé tactile cumule ses petits deltas : 5 % par 25 px » ; « un pincement (Ctrl) cumule par 8 px » ; « jamais sous 25 % ni au-dessus de 200 % » ; « `cameraZoom(1280, 720, 100)` vaut 1,5 et `cameraZoom(1000, 600, 100)` vaut 0,75 » ; « `easeZoom` converge sans dépasser la cible » ; « le magasin part à 100 % » ; « Ctrl + molette ne fait pas zoomer la page ».
-- [ ] Le glissement : `layoutCamera` suit `easeZoom` à chaque image ; la **résolution du texte** des étiquettes et celle de la **couche de nuit** sont arrondies au quart (`Math.ceil(zoom * 4) / 4`) pour ne pas redessiner à chaque image du glissement. Mouvement réduit : saut direct.
-- [ ] Les tests e2e de pixels lisent le zoom réel (`window.__office.zoom()`) au lieu de supposer ×2.
-- [ ] Capture à 75 %, 100 % et 150 % : si les pixels scintillent en marchant, arrondir le défilement de la caméra au pixel d'écran (`pixel-snap.ts`).
-- [ ] Commit : `feat(client): zoom fluide au pas de 5 %, la vue de départ passe à l'ancien 75 %`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `zoom.test.ts` (pourcentages, bornes, `cameraZoom` 1,5 et 0,75, grille de 5 et de 10 %, `easeZoom` converge sans dépasser, indépendant du rythme des images, `WheelZoom` : cran de molette, pavé tactile, pincement, reste, pause, sens inverse), `office-store.test.ts` (part à 100 %), `ZoomDock.test.tsx` (trois boutons, le pourcentage), `SocialDock.test.tsx`, `input.test.ts` (`bindWheelZoom` : Ctrl + molette est arrêté), `InteractionPrompt.test.ts` (résolution au quart, un seul redessin pendant un glissement), `lighting.test.ts` (texture par paliers de 64 px), `ControlBar` et `OfficeShell` (le bouton du milieu).
+- [x] Implémenté : `Office.glideZoom()` à chaque image (dans `afterPhysics`, avant la nuit), `retargetZoom()` à chaque changement de pourcentage, `layoutCamera()` (démarrage, redimensionnement) prend le zoom tout de suite ; mouvement réduit : saut direct. Résolution du texte au quart (`NameTag`, `InteractionPrompt`) ; texture de la nuit par paliers de 64 px.
+- [x] E2E (`world.spec.ts`, 23 tests) : la molette, le pincement (Ctrl + molette arrêté, pas de zoom de la page), les boutons, le menu « Plus » et les touches ; la caméra glisse (zooms intermédiaires, jamais de recul ni de dépassement) ; mouvement réduit : aucun zoom intermédiaire ; la carte et l'avatar aux zooms ×1,5 et ×0,75 ; les tests de netteté passent à 200 % (×3, le seul zoom entier atteignable : restes modulo 3 au lieu de la parité), plus un test de couture à 100 %.
+- [x] Captures à 75 %, 100 % et 150 % (×1,125, ×1,5, ×2,25) : la forme d'un même bureau (rectangle et colonnes de pixels) est identique sur 14 images de marche à chaque zoom, la caméra suivant l'avatar dans une fenêtre de largeur impaire. Pas de scintillement : le défilement de la caméra n'est pas arrondi (`pixel-snap.ts` suffit).
+- [x] `pnpm typecheck` vert ; `pnpm test` : 140 fichiers, 2 547 tests ; `pnpm e2e world.spec.ts --project=chromium` : 23 tests.
+- [x] Commit : `feat(client): zoom fluide au pas de 5 %, la vue de départ passe à l'ancien 75 %`.
 
 ### Tâche 4 : la lumière selon la source (P0, S)
 
