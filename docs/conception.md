@@ -63,7 +63,7 @@ Un bureau virtuel pour ton équipe, dans l'esprit de Gather **[ton choix]** :
 - Rejoindre quelqu'un depuis la liste des personnes (téléportation à côté de lui).
 - Un volume qui baisse avec la distance pendant une conversation.
 - Des messages privés.
-- Les lumières, faites : une lumière commune au bureau, que l'interrupteur du couloir éteint et rallume pour tout le monde (la nuit est dessinée dans une RenderTexture, avec le halo des lampes et celui des personnes). Un cycle jour/nuit automatique reste à faire.
+- Les lumières, faites : une lumière commune au bureau, que l'interrupteur du couloir éteint et rallume pour tout le monde (la nuit est dessinée dans une RenderTexture, avec le halo des lumières, chacune à sa force : un écran très faible, une lampe de bureau faible et petite, un lampadaire moyen, une cheminée forte et large ; et celui des personnes). Un cycle jour/nuit automatique reste à faire.
 - Absent automatique quand l'ordinateur est inactif, en option. Cette détection n'existe que dans Chrome et Edge, et demande une autorisation.
 
 ### Non-objectifs (hors projet, sauf si on le redécide)

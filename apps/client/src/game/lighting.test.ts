@@ -108,7 +108,7 @@ function setup(options: { reducedMotion?: boolean; renderer?: { type: number; co
 }
 
 // Les lumières de la carte : une lampe dans la vue (la caméra de poche montre x 1360-2080, y 725-1175), une autre loin de là.
-const lamp = (x: number, y: number): LightSource => ({ x, y, kind: 'lamp', radius: 4 * TILE_SIZE, color: 0xffc56b });
+const lamp = (x: number, y: number): LightSource => ({ x, y, kind: 'lamp', radius: 4 * TILE_SIZE, color: 0xffc56b, strength: 0.8 });
 const IN_VIEW = lamp(1700, 950);
 const FAR = lamp(9000, 9000);
 const stamps = (calls: Call[]) => calls.filter(([name]) => name === 'stamp') as Array<[string, string, number, number, Record<string, number>]>;
@@ -316,12 +316,12 @@ describe('LightingLayer', () => {
     clock.now = 225;
     layer.update();
     expect(glow!.visible).toBe(true);
-    expect(glow!.alpha).toBeCloseTo(GLOW_ALPHA * layer.level);
+    expect(glow!.alpha).toBeCloseTo(GLOW_ALPHA * IN_VIEW.strength * layer.level);
   });
 
   test('ce qu\'éclaire une lampe prend sa couleur : une teinte chaude multipliée, sur toute sa portée, par les mêmes paliers que sa lumière', () => {
     const { layer, glows } = setup();
-    layer.setStatic([IN_VIEW, { ...IN_VIEW, kind: 'screen', color: 0x8cbeff }]);
+    layer.setStatic([IN_VIEW, { ...IN_VIEW, kind: 'screen', color: 0x8cbeff, strength: 0.22 }]);
     layer.setOn(false, { instant: true });
     layer.update();
     const tints = glows().filter((image) => image.blendMode === MULTIPLY);
@@ -329,10 +329,48 @@ describe('LightingLayer', () => {
     // Chaude pour la lampe, froide pour l'écran : leur couleur, éclaircie.
     expect(tints.map((tint) => tint.tint)).toEqual([tintOf(0xffc56b), tintOf(0x8cbeff)]);
     expect(tintOf(0xffc56b)).toBe(0xffd99f);
-    expect(tints.every((tint) => tint.visible && tint.alpha === 1)).toBe(true);
+    expect(tints.every((tint) => tint.visible)).toBe(true);
+    // Leur force dit à quel point elles teintent : la lampe à 0,8, l'écran à 0,22.
+    expect(tints.map((tint) => tint.alpha)).toEqual([0.8, 0.22]);
     expect(tints[0]!.scaleX * LIGHT_TEXTURE_SIZE).toBeCloseTo(2 * IN_VIEW.radius);
     expect(tints[0]!.depth).toBeGreaterThan(DEPTH.night);
     expect(tints[0]!.depth).toBeLessThan(glows().find((image) => image.blendMode === ADD)!.depth);
+  });
+
+  test('le trou est tamponné avec la force de la lumière : une lumière faible laisse de l\'obscurité même à son centre', () => {
+    const { layer, darkness } = setup();
+    const screen: LightSource = { ...lamp(1600, 900), kind: 'screen', strength: 0.22 };
+    layer.setOn(false, { instant: true });
+    layer.setStatic([IN_VIEW, screen]);
+    layer.track('moi', () => ({ x: 1800, y: 1000 }));
+    layer.update();
+    const holes = stamps(darkness()!.calls);
+    // La lampe (0,8), l'écran (0,22), puis la personne, dont le halo efface tout : elle n'a pas de force.
+    expect(holes.map(([, key]) => key)).toEqual([LIGHT_TEXTURES.banded, LIGHT_TEXTURES.banded, LIGHT_TEXTURES.soft]);
+    expect(holes.slice(0, 2).map(([, , , , config]) => config.alpha)).toEqual([0.8, 0.22]);
+    expect(holes[2]![4].alpha ?? 1).toBe(1);
+    expect(holes.every(([, , , , config]) => config.blendMode === ERASE)).toBe(true);
+  });
+
+  test('la teinte et le halo suivent la force : une source à 0,22 les a à 0,22 du niveau de nuit', () => {
+    const { layer, glows, clock } = setup();
+    layer.setStatic([{ ...IN_VIEW, kind: 'screen', color: 0x8cbeff, strength: 0.22 }]);
+    layer.setOn(true, { instant: true });
+    // Au milieu du fondu : le niveau n'est ni 0 ni 1.
+    layer.setOn(false);
+    clock.now = 225;
+    layer.update();
+    expect(layer.level).toBeGreaterThan(0.3);
+    expect(layer.level).toBeLessThan(1);
+    const tint = glows().find((image) => image.blendMode === MULTIPLY)!;
+    const glow = glows().find((image) => image.blendMode === ADD)!;
+    expect(tint.alpha).toBeCloseTo(0.22 * layer.level);
+    expect(glow.alpha).toBeCloseTo(GLOW_ALPHA * 0.22 * layer.level);
+    // En pleine nuit : à 0,22 de la teinte et du halo d'une lumière pleine.
+    layer.setOn(false, { instant: true });
+    layer.update();
+    expect(tint.alpha).toBeCloseTo(0.22);
+    expect(glow.alpha).toBeCloseTo(GLOW_ALPHA * 0.22);
   });
 
   test('de nouvelles lumières (un bureau a changé) remplacent les anciennes ; les mêmes ne recréent rien', () => {
@@ -385,25 +423,38 @@ describe('LightingLayer', () => {
     expect(stamps(darkness()!.calls)).toHaveLength(1);
   });
 
-  test('la cheminée vacille (son rayon bouge de ±4 % au plus), sauf en mouvement réduit', () => {
-    const fire: LightSource = { ...IN_VIEW, kind: 'fire' };
-    const radii = (reducedMotion: boolean) => {
-      const { layer, darkness, clock } = setup({ reducedMotion });
-      layer.setOn(false, { instant: true });
-      layer.setStatic([fire]);
-      const seen = new Set<number>();
-      for (let ms = 0; ms < 500; ms += 16) {
-        clock.now = ms;
-        layer.update();
-        const config = stamps(darkness()!.calls).at(-1)![4];
-        seen.add((config.scale! * LIGHT_TEXTURE_SIZE) / 2);
-      }
-      return [...seen];
-    };
-    const flickering = radii(false);
-    expect(flickering.length).toBeGreaterThan(5);
-    for (const radius of flickering) expect(Math.abs(radius / fire.radius - 1)).toBeLessThanOrEqual(0.04 + 1e-9);
-    expect(radii(true)).toEqual([fire.radius]);
+  // Les portées avec lesquelles la lumière a troué l'obscurité, en une demi-seconde d'images à 60 par seconde.
+  const radiiOf = (source: LightSource, reducedMotion: boolean) => {
+    const { layer, darkness, clock } = setup({ reducedMotion });
+    layer.setOn(false, { instant: true });
+    layer.setStatic([source]);
+    const seen = new Set<number>();
+    for (let ms = 0; ms < 500; ms += 16) {
+      clock.now = ms;
+      layer.update();
+      const config = stamps(darkness()!.calls).at(-1)![4];
+      seen.add((config.scale! * LIGHT_TEXTURE_SIZE) / 2);
+    }
+    return [...seen];
+  };
+
+  test.each([
+    ['la cheminée, ±5 % à 8 Hz', { amplitude: 0.05, hz: 8 }],
+    ['une télévision, ±6 % à 6 Hz', { amplitude: 0.06, hz: 6 }],
+    ['un vacillement lent et large, ±12 % à 3 Hz', { amplitude: 0.12, hz: 3 }],
+  ])('le vacillement ne dépasse jamais son amplitude, et l\'atteint presque : %s ; en mouvement réduit, la portée ne bouge pas', (_name, flicker) => {
+    const source: LightSource = { ...IN_VIEW, kind: 'fire', flicker };
+    const moving = radiiOf(source, false);
+    expect(moving.length).toBeGreaterThan(5);
+    const swings = moving.map((radius) => Math.abs(radius / source.radius - 1));
+    for (const swing of swings) expect(swing).toBeLessThanOrEqual(flicker.amplitude + 1e-9);
+    expect(Math.max(...swings)).toBeGreaterThan(flicker.amplitude / 2);
+    expect(radiiOf(source, true)).toEqual([source.radius]);
+  });
+
+  test('une lumière dont les données ne donnent pas de vacillement garde sa portée, de quelque sorte qu\'elle soit', () => {
+    expect(radiiOf({ ...IN_VIEW, kind: 'lamp' }, false)).toEqual([IN_VIEW.radius]);
+    expect(radiiOf({ ...IN_VIEW, kind: 'fire' }, false)).toEqual([IN_VIEW.radius]);
   });
 
   test('sans WebGL (rendu Canvas) : un voile sombre uni sur toute la vue, à 0,6 × level, sans trous', () => {

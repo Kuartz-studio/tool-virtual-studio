@@ -1,40 +1,83 @@
 import { TILE_SIZE } from '@bureau/shared';
 
-// Les lumières de la nuit : les éléments posés qui éclairent quand la lumière du bureau est éteinte (lampes, cheminée, écrans), ceux de la carte
-// comme ceux des bureaux. La couche de nuit (LightingLayer) troue l'obscurité autour de chacun et y ajoute un halo de sa couleur.
+// Les lumières de la nuit : les éléments posés qui éclairent quand la lumière du bureau est éteinte (lampes, cheminée, écrans, télévisions), ceux
+// de la carte comme ceux des bureaux. La couche de nuit (LightingLayer) troue l'obscurité autour de chacun, et y ajoute une teinte et un halo de sa
+// couleur. Toutes ne se valent pas : un écran n'éclaire presque rien, un lampadaire un peu plus, une cheminée toute la pièce.
 
-export type LightKind = 'lamp' | 'screen' | 'fire';
+export type LightKind = 'lamp' | 'screen' | 'fire' | 'tv' | 'glow' | 'candle' | 'water';
+
+// Le vacillement d'une lumière : sa portée bouge de ± `amplitude` (une part de la portée), au rythme de `hz` battements par seconde.
+export interface LightFlicker {
+  amplitude: number;
+  hz: number;
+}
+
+// Ce que donne une sorte de lumière, quand l'élément n'a rien de plus précis.
+export interface LightProfile {
+  // Jusqu'où porte la lumière, en cases.
+  radiusTiles: number;
+  // De 0 à 1 : la part d'obscurité qu'elle efface en son centre (l'opacité du trou, qui tombe ensuite par paliers jusqu'au bord). Sa teinte et
+  // son halo la suivent : à 0,2, la lumière est faible, la teinte et le halo aussi.
+  strength: number;
+  // La couleur de son halo : chaude pour une lampe ou un feu, froide pour un écran ou l'eau.
+  color: number;
+  flicker?: LightFlicker;
+}
 
 export interface LightEmitter {
   kind: LightKind;
-  // Jusqu'où porte la lumière, en cases.
-  radiusTiles: number;
-  // La couleur de son halo : chaude pour une lampe ou un feu, froide pour un écran.
-  color: number;
+  // La portée et la force propres à cet élément, quand elles ne sont pas celles du profil de sa sorte : un lampadaire porte plus loin qu'une lampe de
+  // bureau, qui est le profil des lampes.
+  radiusTiles?: number;
+  strength?: number;
   // Où elle brille dans l'image de l'élément, en pixels depuis le haut de l'image (toujours au milieu de sa largeur) : l'abat-jour d'une
   // lampe, le feu d'une cheminée, le milieu d'un écran. Le haut de l'image est souvent vide : un lampadaire de 3 cases a son abat-jour dans la
   // deuxième.
   bulbY: number;
 }
 
-// Une lumière posée dans la carte, en pixels de la carte : son centre, sa portée.
+// Une lumière posée dans la carte, en pixels de la carte : son centre, sa portée, sa force, et son vacillement s'il en a un.
 export interface LightSource {
   x: number;
   y: number;
   kind: LightKind;
   radius: number;
   color: number;
+  strength: number;
+  flicker?: LightFlicker;
 }
 
-// Les couleurs : la lampe (l'ambre de la nuit de l'interface), le feu, plus orangé, et l'écran, bleu froid.
+// Les couleurs : la lampe (l'ambre de la nuit de l'interface), la bougie et le feu, plus orangés, l'écran et la télévision, bleu froid, l'eau,
+// aqua, et le point d'une LED, d'un blanc froid.
 const WARM = 0xffc56b;
+const CANDLE = 0xffb061;
 const FIRE = 0xff9a4a;
 const COLD = 0x8cbeff;
+const AQUA = 0x6fd8e8;
+const LED = 0xbfeeff;
 
-const floorLamp = (bulbY: number): LightEmitter => ({ kind: 'lamp', radiusTiles: 4, color: WARM, bulbY });
-const DESK_LAMP: LightEmitter = { kind: 'lamp', radiusTiles: 2.5, color: WARM, bulbY: 10 };
-const BEDSIDE_LAMP: LightEmitter = { kind: 'lamp', radiusTiles: 2.25, color: WARM, bulbY: 32 };
-const screen = (radiusTiles: number, bulbY: number): LightEmitter => ({ kind: 'screen', radiusTiles, color: COLD, bulbY });
+// Un profil par sorte, d'après les chiffres de départ du plan (docs/superpowers/plans), réglés à l'œil sur une capture de nuit.
+export const LIGHT_PROFILES: Readonly<Record<LightKind, LightProfile>> = {
+  // Un écran d'ordinateur ou un portable : très faible et très petit, froid.
+  screen: { radiusTiles: 1.5, strength: 0.22, color: COLD },
+  // Une lampe de bureau, articulée : faible et petite (le lampadaire et la lampe de chevet ont la leur plus bas).
+  lamp: { radiusTiles: 2, strength: 0.55, color: WARM },
+  // Une télévision murale : froide, qui vacille à 6 Hz.
+  tv: { radiusTiles: 3, strength: 0.35, color: COLD, flicker: { amplitude: 0.06, hz: 6 } },
+  // Une bougie : une flamme minuscule qui vacille.
+  candle: { radiusTiles: 1.5, strength: 0.4, color: CANDLE, flicker: { amplitude: 0.08, hz: 9 } },
+  // Une cheminée : forte et large, qui vacille de ±5 %.
+  fire: { radiusTiles: 6, strength: 0.95, color: FIRE, flicker: { amplitude: 0.05, hz: 8 } },
+  // La LED d'une enceinte ou d'une machine à café : à peine un point.
+  glow: { radiusTiles: 0.9, strength: 0.15, color: LED },
+  // Une piscine : aqua, sans vacillement.
+  water: { radiusTiles: 5, strength: 0.35, color: AQUA },
+};
+
+const floorLamp = (bulbY: number): LightEmitter => ({ kind: 'lamp', radiusTiles: 4, strength: 0.8, bulbY });
+const DESK_LAMP: LightEmitter = { kind: 'lamp', bulbY: 10 };
+const BEDSIDE_LAMP: LightEmitter = { kind: 'lamp', radiusTiles: 1.75, strength: 0.5, bulbY: 32 };
+const screenAt = (bulbY: number): LightEmitter => ({ kind: 'screen', bulbY });
 
 // Les éléments de la banque qui éclairent, par clé.
 export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
@@ -62,11 +105,37 @@ export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
   'of-8-26': DESK_LAMP,
   'of-14-26': DESK_LAMP,
   // La cheminée : le feu, en bas de l'image.
-  'lr-4-24': { kind: 'fire', radiusTiles: 4.5, color: FIRE, bulbY: 76 },
-  // Les écrans au mur : une petite lumière froide, au milieu de l'écran.
-  'tv-10-3': screen(2.5, 22),
-  'of-9-14': screen(2, 36),
-  'tv-10-1': screen(2, 22),
+  'lr-4-24': { kind: 'fire', bulbY: 76 },
+  // Les télévisions au mur : une lumière froide qui vacille, au milieu de l'écran.
+  'tv-10-3': { kind: 'tv', bulbY: 22 },
+  'tv-10-1': { kind: 'tv', bulbY: 22 },
+  // L'écran de présentation, au mur : une lumière froide, très faible.
+  'of-9-14': screenAt(36),
+  // Les écrans d'ordinateur allumés, au milieu de l'écran de leur image (les écrans noirs et blancs de la banque sont éteints, ils n'éclairent
+  // pas) : les écrans bleus, ceux sur pied et les moniteurs compacts, les doubles écrans (celui du haut est allumé), les portables et les
+  // postes complets.
+  'of-13-12': screenAt(11),
+  'of-14-12': screenAt(11),
+  'of-15-12': screenAt(11),
+  'of-13-13': screenAt(11),
+  'of-14-13': screenAt(11),
+  'of-15-13': screenAt(11),
+  'of-12-35': screenAt(11),
+  'of-12-36': screenAt(11),
+  'of-8-44': screenAt(11),
+  'of-9-44': screenAt(11),
+  'of-10-35': screenAt(15),
+  'of-11-35': screenAt(15),
+  'of-10-44': screenAt(15),
+  'of-11-44': screenAt(15),
+  'of-13-15': screenAt(24),
+  'of-14-15': screenAt(24),
+  'of-15-15': screenAt(24),
+  'of-13-17': screenAt(24),
+  'of-14-17': screenAt(24),
+  'of-15-17': screenAt(24),
+  'of-10-30': screenAt(24),
+  'of-10-32': screenAt(24),
 };
 
 // Les lumières de ces éléments (le rectangle de leur image, en pixels de la carte : DecorLayer.placedImages). Un élément qui n'éclaire pas, ou
@@ -74,6 +143,18 @@ export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
 export function sourcesFromItems(items: readonly { id: string; x: number; y: number; w: number; h: number }[]): LightSource[] {
   return items.flatMap(({ id, x, y, w }) => {
     const emitter = LIGHT_EMITTERS[id];
-    return emitter ? [{ x: x + w / 2, y: y + emitter.bulbY, kind: emitter.kind, radius: emitter.radiusTiles * TILE_SIZE, color: emitter.color }] : [];
+    if (!emitter) return [];
+    const profile = LIGHT_PROFILES[emitter.kind];
+    return [
+      {
+        x: x + w / 2,
+        y: y + emitter.bulbY,
+        kind: emitter.kind,
+        radius: (emitter.radiusTiles ?? profile.radiusTiles) * TILE_SIZE,
+        color: profile.color,
+        strength: emitter.strength ?? profile.strength,
+        ...(profile.flicker && { flicker: profile.flicker }),
+      },
+    ];
   });
 }

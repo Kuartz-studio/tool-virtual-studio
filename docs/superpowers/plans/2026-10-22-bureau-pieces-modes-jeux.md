@@ -262,18 +262,17 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
 - Modifier : `apps/client/src/game/light-sources.ts` (profils), `game/lighting.ts` (la force), `game/light-sources.test.ts`, `game/lighting.test.ts`, `game/light-textures.ts` (si le motif de palier demande un second jeu de textures).
 
 **Interfaces**
-- Produit :
+- Produit, tel que livré :
   ```ts
   export type LightKind = 'lamp' | 'screen' | 'fire' | 'tv' | 'glow' | 'candle' | 'water';
-  export interface LightProfile {
-    radiusTiles: number;
-    strength: number;        // 0 à 1 : part d'obscurité effacée au centre (alpha du trou) ; la teinte et le halo suivent
-    color: number;
-    flicker?: { amplitude: number; hz: number };
-  }
-  export const LIGHT_PROFILES: Readonly<Record<LightKind, LightProfile>>;
+  export interface LightFlicker { amplitude: number; hz: number }          // la portée bouge de ± amplitude, autour de hz
+  export interface LightProfile { radiusTiles: number; strength: number; color: number; flicker?: LightFlicker }
+  export const LIGHT_PROFILES: Readonly<Record<LightKind, LightProfile>>;   // `lamp` = la lampe de bureau
+  export interface LightEmitter { kind: LightKind; radiusTiles?: number; strength?: number; bulbY: number }   // portée et force propres : le lampadaire, la lampe de chevet
+  export interface LightSource { x; y; kind; radius; color; strength: number; flicker?: LightFlicker }        // `sourcesFromItems` les résout depuis le profil
+  // lighting.ts : le trou est tamponné avec `alpha: strength` ; teinte et halo à `level × strength` ; le vacillement vient des données (flickerFactor)
   ```
-  `LightEmitter` garde `bulbY` et un rayon propre (lampadaire ou lampe de bureau) ; la force et la couleur viennent du profil de sa sorte. `LightSource` gagne `strength`.
+  La force et la couleur viennent du profil de la sorte, **sauf** celles qu'un élément dit lui-même : le tableau ci-dessous a plusieurs lignes `lamp` (bureau, chevet, sol) et deux `fire` (cheminée, poêle), qu'un profil par sorte ne peut pas porter seul.
 
 **Profils de départ**
 
@@ -290,11 +289,12 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
 | `glow` | LED des enceintes, machine à café | 0,9 | 0,15 | à peine un point |
 | `water` | piscine (3 sources le long du bassin) | 5 | 0,35 | aqua, sans vacillement |
 
-**Étapes**
-- [ ] Tests, qui échouent : « la force suit l'ordre feu > lampadaire > lampe de bureau > écran » ; « chaque élément de `LIGHT_EMITTERS` a un profil » ; « le trou est tamponné avec `alpha = strength` (stub de Phaser) » ; « la teinte et le halo d'une source à 0,22 sont à 0,22 du niveau de nuit » ; « le vacillement ne dépasse pas son amplitude » ; « `reducedMotion` : pas de vacillement ».
-- [ ] Implémenter ; les lumières posées sur la carte (cheminée, enceintes…) viendront de leur `Prop` en T8.
-- [ ] Capture de nuit sur la carte actuelle (bureau avec lampe et écran, salon avec cheminée) : on règle les chiffres à l'œil, on les range dans les profils.
-- [ ] Commit : `feat(client): la nuit éclaire selon la source (écran, lampe, cheminée…)`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `light-sources.test.ts` (les sept profils, le feu le plus fort et le plus large, une LED n'est qu'un point, le vacillement, chaud et froid ; chaque élément a un profil ; l'ordre feu > lampadaire > lampe de bureau > écran ; les écrans d'ordinateur très faibles, les écrans éteints n'éclairent pas), `lighting.test.ts` (le trou tamponné à `alpha = strength` ; teinte et halo à `0,22 × niveau` ; le vacillement ne dépasse pas son amplitude à 8, 6 et 3 Hz ; pas de vacillement en mouvement réduit ni sans donnée).
+- [x] Implémenté. Hors du brief : les écrans d'ordinateur allumés de la banque (22 éléments : écrans bleus, sur pied, moniteurs compacts, doubles écrans, portables, postes complets) deviennent des sources `screen`, ce que l'intention d'origine demandait (« un écran très faible ») ; les écrans noirs et blancs de la banque sont éteints. Les deux télévisions murales passent en `tv`.
+- [x] Captures de nuit sur la vraie carte (salon avec cheminée, salle de réunion, bureau avec lampe et écran, grande salle, toute la carte) : les chiffres de départ du tableau gardent leur ordre et leur taille à l'œil, aucun n'est changé.
+- [x] `pnpm typecheck` vert ; `pnpm test` : 140 fichiers, 2 563 tests ; `pnpm e2e lumiere.spec.ts --project=office` : 1 test.
+- [x] Commit : `feat(client): la nuit éclaire selon la source (écran, lampe, cheminée…)`.
 
 ### Tâche 5 : la bulle de parole (P0, M)
 
