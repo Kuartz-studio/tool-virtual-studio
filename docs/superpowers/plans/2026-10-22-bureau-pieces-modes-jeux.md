@@ -39,7 +39,7 @@
 ## Questions pour toi
 
 1. **Branche et dossier.** Le PM2 de ton ordinateur sert le dossier principal en direct, avec ta vraie base `.data/dev`. Je propose un `git worktree` dédié (`../bureau-virtuel-pieces`, branche `update-pieces-jeux`) : ta carte et ton schéma ne changent qu'à la fusion. OK ?
-2. **Les échecs et `chess.js`.** Je propose de laisser l'agent d'analyse trancher entre une dépendance (`chess.js`, MIT, sans dépendance, très testé) et des règles écrites à la main validées par des « perft ». Il te faut dire oui avant toute dépendance.
+2. **Les échecs et `chess.js`.** L'agent d'analyse recommande `chess.js` 1.4.0 (licence **BSD-2**, et non MIT comme je l'avais écrit ; 11,7 ko gzip, aucune dépendance). Sans ton oui, ce sont des règles écrites à la main, prouvées par des « perft » ; le contrat accepte les deux. Aucune dépendance ne s'ajoute sans ton accord.
 3. **Pendule aux échecs.** Par défaut, pas de pendule : une partie inactive depuis 5 minutes est perdue par celui qui doit jouer. Une pendule se rajoute plus tard.
 4. **Budget.** Tu n'as fixé aucun plafond ici. Je propose de mesurer (`get_usage`) après chaque vague et de te prévenir à chaque palier à fixer ensemble. Le plus gros poste : les 5 agents en effort max.
 5. **Qui règle la musique d'une pièce.** Tous ceux qui y sont (par défaut), sauf dans un bureau : le propriétaire seul.
@@ -133,13 +133,15 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
 
 ### Étape 0 : préalable
 
-- [ ] Tu valides ce plan, ses 10 choix par défaut et les 6 questions.
-- [ ] Les 115 lignes non commitées de `docs/superpowers/plans/2026-10-21-refonte-ui-nuit.md` (tâche 11a documentée par la conversation précédente) : commit à part avec ton accord, `docs: tâche 11a du plan de la refonte`.
-- [ ] Ce plan et sa maquette sont commités : `docs: plan des pièces, modes et jeux`.
-- [ ] `git worktree add ../bureau-virtuel-pieces -b update-pieces-jeux` depuis `refonte-ui-nuit`, puis `pnpm install` dans le worktree.
-- [ ] `pnpm typecheck && pnpm test` passent. On note les échecs déjà présents. La suite e2e (`pnpm e2e`, environ 3 minutes) a 1 à 2 tests lourds qui expirent parfois (`personnalisation.spec.ts:38`, `multiplayer.spec.ts:240`) et passent seuls : on les relance seuls avant d'y voir une régression.
-- [ ] `get_usage` : on note le point de départ.
-- [ ] **G1 est lancé tout de suite** (voir plus bas) : lecture seule, un seul fichier écrit, il tourne pendant les vagues 1 à 5.
+**Fait le 22 oct. 2026**, avec trois écarts par rapport à ce qui était écrit : les 115 lignes de l'ancien plan étaient déjà commitées par Andrea (`a32e6ef`), la branche `refonte-ui-nuit` n'existe plus (`main` la contient), et le plan est commité sur la branche d'intégration plutôt que sur `main`.
+
+- [x] Tu valides ce plan, ses 10 choix par défaut et les 6 questions.
+- [x] Les 115 lignes non commitées de `docs/superpowers/plans/2026-10-21-refonte-ui-nuit.md` : déjà commitées (`a32e6ef`), rien à faire.
+- [x] Ce plan et sa maquette sont commités : `b347019`, `docs: plan des pièces, modes et jeux`, sur `update-pieces-jeux`.
+- [x] `git worktree add ../bureau-virtuel-pieces -b update-pieces-jeux` depuis `main` (`a32e6ef`), puis `pnpm install` dans le worktree. La session travaille dans ce dossier.
+- [x] `pnpm typecheck && pnpm test` passent : 136 fichiers, 2 453 tests, 3 min 30. La suite e2e (`pnpm e2e`, environ 3 minutes) n'a pas été lancée ; elle a 1 à 2 tests lourds qui expirent parfois (`personnalisation.spec.ts:38`, `multiplayer.spec.ts:240`) et passent seuls : on les relance seuls avant d'y voir une régression.
+- [x] `get_usage` au départ : 28 % de l'hebdo (toutes versions), 0 % sur les 5 heures.
+- [x] **G1 lancé** (Opus, effort max), il a livré son document en 66 min (voir la tâche G1).
 
 ---
 
@@ -667,43 +669,26 @@ Les jeux : échecs, backgammon, puissance 4, petits chevaux (2 à 4 joueurs). Po
 Termine par un résumé de 15 lignes des décisions que le propriétaire doit valider (dont l'usage ou non de la dépendance chess.js).
 ```
 
-- [ ] L'agent rend son document ; je le relis, je te le résume, et je corrige le plan de G2 si besoin. **Rien n'est codé tant que tu n'as pas validé ses choix de règles.**
+- [x] **Fait le 22 oct. 2026.** Document livré : `docs/superpowers/specs/2026-10-22-jeux-regles-et-integration.md` (19 sections, 13 décisions à valider placées en tête). Relu : les valeurs de perft et leurs décomptes détaillés sont celles que publie le Chess Programming Wiki, chaque règle cite sa source ou est marquée « choix de variante ». Le plan de G2 est corrigé plus bas (contrat, événement unique `game:do`, morpion, e2e).
+- [ ] **Rien n'est codé tant que tu n'as pas validé ses 13 décisions.**
 
 ### Tâche G2 : la plateforme des jeux (P0, L) — dans la session principale
 
-**Fichiers** (la liste sera arrêtée avec le document de G1)
+**Fichiers** (la liste arrêtée est aux § 1.3 et 12.1 du document de G1 ; ce qui suit en est le résumé)
 - Créer :
   - `packages/shared/src/games/{types.ts, registry.ts, elo.ts, rng.ts}` + tests ;
   - `apps/server/src/games/{games-service.ts, games-controller.ts, ladder-service.ts}` + tests, `apps/server/drizzle/0008_games.sql` ;
   - `apps/client/src/games/{GamePanel.tsx, GameLobby.tsx, InviteToast.tsx, Ladder.tsx, GameFrame.tsx}` + tests ;
-  - un jeu de test **jetable** (le morpion) dans `packages/shared/test/` seulement, pour prouver la plateforme avant les vrais jeux ;
+  - un jeu de test **jetable** (le morpion) dans `packages/shared/src/games/testing/`, jamais au registre, pour prouver la plateforme avant les vrais jeux (le serveur doit pouvoir l'importer) ;
   - `e2e/jeux-plateforme.spec.ts`.
 - Modifier : `protocol.ts`, `constants.ts`, `apps/server/src/db/schema.ts`, `index.ts`, `realtime/handlers.ts`, `state/office-store.ts`, `net/office-connection.ts`, `office/OfficeShell.tsx`, `office/panels.ts`, `game/scenes/Office.ts` (les tables sont des `Interactable`, la caméra se centre sur la table), `fr.ts`, `styles.css`.
 
-**Contrat proposé** (G1 le confirme ou le corrige)
-```ts
-export type GameId = 'chess' | 'backgammon' | 'connect4' | 'ludo';
-export type Rng = () => number;                             // [0, 1), tiré côté serveur
-export interface GameDefinition<State, Move> {
-  id: GameId;
-  label: string;                                            // « Échecs »
-  minPlayers: number;
-  maxPlayers: number;
-  create(playerIds: string[], rng: Rng): State;
-  turn(state: State): number | null;                        // siège qui doit jouer ; null : partie finie
-  legalMoves(state: State, seat: number): Move[];           // interface et tests ; le serveur valide avec apply
-  apply(state: State, seat: number, move: Move, rng: Rng): { ok: true; state: State; events: GameEvent[] } | { ok: false; error: string };
-  result(state: State): GameResult | null;                  // { ranking: number[][] } (sièges, meilleur d'abord, ex æquo groupés) ou nulle
-  moveSchema: z.ZodType<Move>;
-}
-// Socket.IO (à confirmer par G1)
-'game:join' | 'game:leave' | 'game:watch' | 'game:ready' | 'game:move' | 'game:resign' | 'game:draw' | 'game:invite' | 'game:invite:answer'   // client → serveur
-'game:table' | 'game:invite' | 'game:ended' | 'game:error'                                                                                    // serveur → client
-// ladder
-game_match(id, game, started_at, ended_at, players jsonb, result jsonb, moves jsonb, ranked bool)
-game_rating(user_id, game, rating int default 1200, games, wins, losses, draws, updated_at) pk (user_id, game)
-```
-Règles de plateforme : une table par jeu (une partie à la fois, spectateurs illimités) ; on s'assoit (`game:join`) ou on regarde ; **inviter** une personne connectée (hors « Ne pas déranger ») → toast « X t'invite aux échecs » (60 s) ; **accepter** = le serveur la **téléporte** sur une case libre autour de la table (`freeSpotIn`) et l'assoit si un siège est libre, sinon spectateur ; une personne ne joue qu'à une table à la fois ; une partie en cours n'est pas conservée au redémarrage du serveur (v1) ; seul le serveur tire les dés et valide les coups.
+**Contrat arrêté** (document de G1, § 2 à § 12, qui fait foi ; si le code fusionné de G2 s'en écarte, c'est le code qui gagne et l'agent le dit dans son rapport)
+- `GameDefinition<S, M, E>` : `create({ seats, first }, rng) → { state, events }`, `turn`, `legalMoves`, `apply`, `forfeit(state, seat, reason)`, `agreeDraw?` (échecs), `result` (`{ ranking, reason, detail? }`), `countedMoves`, `invariants`, `moveSchema`, `drawOffers`. Les règles sont pures et en JSON ; elles reçoivent des **sièges**, jamais des comptes.
+- Socket.IO : **un seul événement `game:do`** à commandes typées (sur le modèle de `desk:do`), plus `game:ladder`. Serveur vers client : `game:table` (la table entière, à tout le bureau : rien n'est caché dans ces jeux), `game:invite`, `game:invite:gone`, `game:notice`.
+- Base : `game_match` et `game_rating` (`0008_games.sql`). Elo : départ 1200, K 32 puis 20 après 30 parties, nulle 0,5, par paires à plusieurs joueurs, note entière arrondie une fois par partie.
+- Délais : 5 min par coup, 90 s pour revenir, 60 s pour répondre à une invitation, **et** une chaise occupée sans partie se libère au bout de 10 min.
+Règles de plateforme : une table par jeu (une partie à la fois, spectateurs illimités) ; on s'assoit (commande `join` de `game:do`) ou on regarde ; **inviter** une personne connectée (hors « Ne pas déranger » et hors d'un mode qui ferme la porte ou téléporte) → toast « X t'invite aux échecs » (60 s) ; **accepter** = le serveur la **téléporte** sur une case libre autour de la table (`freeSpotIn`) et l'assoit si un siège est libre, sinon spectateur ; une personne ne joue qu'à une table à la fois ; une partie en cours n'est pas conservée au redémarrage du serveur (v1) ; seul le serveur tire les dés et valide les coups.
 
 **Étapes**
 - [ ] Tests, qui échouent :
@@ -711,7 +696,7 @@ Règles de plateforme : une table par jeu (une partie à la fois, spectateurs il
   - `games-service` (avec le morpion de test) : « deux sièges, la partie démarre quand les deux sont prêts » ; « un coup hors tour est refusé » ; « le même coup envoyé deux fois ne compte qu'une fois » ; « une table se reprend après 90 s de reconnexion, sinon défaite » ; « 5 min sans jouer : défaite » ; « un classement est écrit une fois à la fin, pas deux » ; « une partie de moins de 2 coups n'est pas classée » ; « un spectateur ne reçoit jamais plus que ce que reçoit un joueur » ;
   - invitations : « accepter téléporte autour de la table et assoit » ; « une invitation expire à 60 s » ; « on n'invite pas quelqu'un en Ne pas déranger » ; « on ne peut pas être assis à deux tables » ;
   - client : « `GameLobby` montre les sièges, les spectateurs et le bouton Inviter » ; « `Ladder` trie par note et montre mon rang » ;
-  - e2e : « Alice invite Bastien, il accepte, apparaît à la table, ils jouent un morpion jusqu'au bout, le classement est à jour ».
+  - e2e (`jeux-plateforme`) : « Alice invite Bastien, il accepte, apparaît à la table, ils sont assis et prêts ». La partie jouée jusqu'au bout, avec le classement à jour, vient avec G5 (puissance 4) et G7 : le morpion n'a pas d'interface.
 - [ ] La salle de jeu s'ouvre sur la table (E ou clic) : la caméra se centre sur elle, comme l'éditeur de déco le fait pour un bureau.
 - [ ] Commit : `feat: plateforme des jeux (tables, invitations, classement Elo)`.
 
