@@ -112,6 +112,13 @@ describe('backgammon : le lancer d\'ouverture', () => {
     expect(calls).toBe(2 * MAX_OPENING_ROLLS);
   });
 
+  test('le plateau d\'aperçu de la plateforme (create avec seededRng(1), avant la première partie) est une partie légale qui s\'ouvre sans relancer sans fin', () => {
+    const { state } = backgammon.create({ seats: 2, first: 0 }, seededRng(1));
+    expect(backgammon.invariants(state)).toEqual([]);
+    expect(state.opening.length).toBeLessThan(MAX_OPENING_ROLLS);
+    expect(backgammon.legalMoves(state, state.turn).length).toBeGreaterThan(0);
+  });
+
   test('une partie à trois ou à un joueur n\'existe pas : create le dit', () => {
     expect(() => backgammon.create({ seats: 3, first: 0 }, seededRng(1))).toThrow(/à deux/);
     expect(() => backgammon.create({ seats: 1, first: 0 }, seededRng(1))).toThrow(/à deux/);
@@ -209,6 +216,45 @@ describe('backgammon : lancer, jouer et leurs événements', () => {
     expect(error(backgammon.apply(finished, 0, { type: 'roll' }, noDraw))).toBe('game_over');
     const smaller = position({ white: { 9: 1 }, whiteOff: 14, red: { 24: 2, 6: 13 }, dice: [6, 2] });
     expect(error(backgammon.apply(smaller, 0, play([9, 7, 2]), noDraw))).toBe('larger_die');
+  });
+});
+
+describe('backgammon : la barre et la sortie, au-delà des cas nommés', () => {
+  test('R9 : un pion qui entre depuis la barre sur un pion adverse seul le frappe ; sur un point libre, non', () => {
+    // Les Rouges ont un pion seul sur leur point 4, qui est le point 21 des Blancs : le dé 4 entre sur 25 − 4 = 21. Le dé 2 entre sur le point 23, libre.
+    const state = position({ white: { 6: 5, 8: 3, 13: 6 }, whiteBar: 1, red: { 4: 1, 6: 14 }, dice: [4, 2] });
+    const hitting = mustApply(state, 0, play(['bar', 21, 4], [13, 11, 2]));
+    expect(hitting.events[0]).toEqual({ type: 'step', seat: 0, from: 'bar', to: 21, die: 4, hit: true });
+    expect(hitting.state.bar).toEqual([0, 1]);
+    expect(hitting.state.points[20]).toBe(1);
+    const quiet = mustApply(state, 0, play(['bar', 23, 2], [13, 9, 4]));
+    expect(quiet.events[0]).toEqual({ type: 'step', seat: 0, from: 'bar', to: 23, die: 2, hit: false });
+    expect(quiet.state.bar).toEqual([0, 0]);
+    // Le 6 de la barre (point 19) serait fermé : les Rouges y tiennent 14 pions.
+    expect(backgammon.apply(position({ white: { 6: 5, 8: 3, 13: 6 }, whiteBar: 1, red: { 4: 1, 6: 14 }, dice: [6, 2] }), 0, play(['bar', 19, 6], [13, 11, 2]), noDraw).ok).toBe(false);
+  });
+
+  test('R10 : un pion frappé pendant la sortie doit entrer et rentrer à la maison avant que la sortie reprenne', () => {
+    // Les Blancs sortaient : dix pions sortis, quatre dans la maison, et un pion frappé, sur la barre. Les Rouges ne tiennent aucun point de l'entrée : elle est libre.
+    const state = position({ white: { 5: 2, 3: 2 }, whiteBar: 1, whiteOff: 10, red: { 13: 15 }, dice: [4, 2] });
+    const found = backgammon.legalMoves(state, 0).filter((move): move is Play => move.type === 'play');
+    expect(found.length).toBeGreaterThan(0);
+    // Le pion de la barre entre d'abord ; pas une seule sortie pendant ce tour, même avec le dé juste (le 3 et le 5 sont là, mais un pion est dehors).
+    for (const move of found) {
+      expect(move.steps[0]!.from).toBe('bar');
+      expect(move.steps.some((step) => step.to === 'off')).toBe(false);
+    }
+    expect(backgammon.apply(state, 0, play([3, 'off', 4]), noDraw).ok).toBe(false);
+  });
+
+  test('R10 : une fois tous les pions à la maison, un dé plus fort que le point le plus haut sort le pion de ce point', () => {
+    // Le plus haut point est le 4 : le 6 et le 5 sortent le pion du 4, puis celui du 2.
+    const state = position({ white: { 4: 1, 2: 1 }, whiteOff: 13, red: { 6: 15 }, dice: [6, 5] });
+    const { state: ended } = mustApply(state, 0, play([4, 'off', 6], [2, 'off', 5]));
+    expect(ended.off[0]).toBe(15);
+    // Avec 3-1, le pion du 4 ne sort pas (3 < 4) : on joue 4→1 puis le dé 1 sort le pion rentré ; le pion du 2 reste.
+    const smaller = position({ white: { 4: 1, 2: 1 }, whiteOff: 13, red: { 6: 15 }, dice: [3, 1] });
+    expect(backgammon.legalMoves(smaller, 0).flatMap((move) => (move.type === 'play' ? move.steps : [])).some((step) => step.from === 4 && step.to === 'off')).toBe(false);
   });
 });
 
@@ -319,6 +365,11 @@ describe('backgammon : les aides de l\'interface', () => {
     expect(previewSteps(state, [{ from: 24, to: 18, die: 6 }, { from: 18, to: 17, die: 1 }])).toBeNull();
     expect(previewSteps(start(), [{ from: 13, to: 7, die: 6 }])).toBeNull();
     expect(state.points[6]).toBe(0);
+    // Une partie finie garde les dés de son dernier tour, mais ils sont déjà joués : rien n'est à prévisualiser.
+    const over = backgammon.forfeit(state, 1, 'resign').state;
+    expect(over.dice).toEqual([6, 1]);
+    expect(previewSteps(over, [{ from: 13, to: 7, die: 6 }])).toBeNull();
+    expect(previewSteps(over, [])).toEqual({ points: state.points, bar: state.bar, off: state.off });
   });
 
   test('previewSteps rend la barre et les sorties : un pion frappé part sur la barre, un pion sorti compte', () => {
