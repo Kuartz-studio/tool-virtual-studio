@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { GameBoardProps, GamePlayerView } from '../types';
 import { Board } from './Board';
+import { layoutFor, pointCell, stackSlot } from './geometry';
 
 // Le plateau du backgammon monté seul, comme la plateforme le monte : avec l'état, le siège, les événements, `canAct`, `onMove`, le mouvement réduit et l'aperçu. Chaque point du
 // § 9.5 du document des jeux (largeur du conteneur, cibles de 24 px, clavier, noms accessibles, mouvement réduit, spectateur) a ses tests ici, puis la manière dont un tour se construit.
@@ -159,6 +160,19 @@ describe('ce que le dessin montre en plus des cases', () => {
     expect(container.querySelectorAll('.game-backgammon-dot')).toHaveLength(2);
     click('Point 8 : 3 pions blancs, sélectionné');
     expect(container.querySelectorAll('.game-backgammon-dot')).toHaveLength(0);
+  });
+
+  test('le point d\'arrivée est à la place du prochain pion : sur un point vide au bord, sur un point à soi au-dessus de ses pions', () => {
+    const layout = layoutFor(408);
+    const { container } = mount();
+    const dots = () => [...container.querySelectorAll('.game-backgammon-dot')].map((dot) => ({ x: Number(dot.getAttribute('cx')), y: Number(dot.getAttribute('cy')) }));
+    click('Point 8 : 3 pions blancs, jouable');
+    // 8→5 : le point 5 est vide, le point est à la place du premier pion.
+    expect(dots()).toContainEqual(stackSlot(layout, pointCell(layout, 5), 0));
+    click('Point 5 : vide, arrivée possible');
+    click(/^Point 6 : 5 pions blancs, jouable/);
+    // 6→5 : le point 5 a un pion à soi, le point est à la place du deuxième.
+    expect(dots()).toEqual([stackSlot(layout, pointCell(layout, 5), 1)]);
   });
 
   test('les pions jouables sont soulignés dans le dessin, le pion choisi est cerclé', () => {
@@ -759,6 +773,16 @@ describe('le clavier : le motif « grille » (§ 9.5.3)', () => {
     act(() => button('Point 13 : 5 pions blancs, jouable').focus());
     for (const key of ['e', 'z', '+', '-', 'Shift']) expect(fireEvent.keyDown(document.activeElement!, { key })).toBe(true);
     expect(keys.seen).toHaveBeenCalledTimes(5);
+    keys.stop();
+  });
+
+  test('un raccourci du navigateur (Ctrl, Alt ou ⌘ avec une flèche) n\'est pas pour le plateau : il passe', () => {
+    mount();
+    const keys = windowKeys();
+    act(() => button('Point 13 : 5 pions blancs, jouable').focus());
+    for (const modifier of [{ ctrlKey: true }, { altKey: true }, { metaKey: true }]) expect(fireEvent.keyDown(document.activeElement!, { key: 'ArrowRight', ...modifier })).toBe(true);
+    expect(focused()).toBe('Point 13 : 5 pions blancs, jouable');
+    expect(keys.seen).toHaveBeenCalledTimes(3);
     keys.stop();
   });
 
