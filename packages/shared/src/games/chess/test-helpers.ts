@@ -7,9 +7,8 @@ import { chess, positionKey, START_FEN, type ChessMove, type ChessState, type Pr
 // Les échecs n'ont aucun hasard : un générateur qui lève dès qu'on le tire le prouve à chaque test.
 export const noRandom = scriptedRng([]);
 
-// L'environnement des tests (JEUX_FUZZ, JEUX_LONG). Les types de Node ne sont pas chargés dans ce paquet, dont le code tourne aussi dans le navigateur : on lit
-// `process.env` sans le typer, et on rend un objet vide là où `process` n'existe pas.
-export const env: Record<string, string | undefined> = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {};
+// L'environnement des tests (JEUX_FUZZ, JEUX_LONG : le nombre de parties au hasard, les perft longs).
+export const env: Record<string, string | undefined> = process.env;
 
 // « e2e4 » → { from: 'e2', to: 'e4' } ; « a7a8q » → avec la pièce de promotion (la notation des cas nommés du document).
 export function moveOf(text: string): ChessMove {

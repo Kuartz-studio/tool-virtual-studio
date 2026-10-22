@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import { deepFreeze } from '../conformance';
 import { GAMES } from '../index';
-import { chess, chessMoveSchema, MAX_PLIES_KEPT, positionKey, START_FEN, stateFromFen, type ChessState } from './index';
+import { chess, chessMoveSchema, checkedKing, MAX_PLIES_KEPT, positionKey, START_FEN, stateFromFen, type ChessState } from './index';
 import { fields, legalTexts, moveOf, noRandom, play, playSan, randomPlayout, startState, stateOf, textOf } from './test-helpers';
 
-// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à A32) : ce que le
+// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à A33) : ce que le
 // document ne nomme pas mais que les règles, le contrat et le SAN exigent aussi. Les coups s'écrivent de+vers(+pièce) : `e2e4`, `a7a8q`.
 
 // Le siège qui a le trait, qui doit exister.
@@ -572,7 +572,7 @@ describe('cas ajoutés par l\'agent (A1 à A21)', () => {
 
 // Des parties réelles, jouées en SAN : chaque coup du texte doit être retrouvé parmi les coups légaux par l'écriture que le moteur lui donne (lettres, prises,
 // désambiguïsation, roque, échec, mat). Ce sont des données que l'agent n'a pas fabriquées : si le moteur ou le SAN se trompent quelque part, un coup manque.
-describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notation (A22 à A25), symétries et bords (A26 à A32)', () => {
+describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notation (A22 à A25), symétries et bords (A26 à A33)', () => {
   const sans = (state: ChessState): string[] => state.plies.map((ply) => ply.san);
 
   test('A22 : l\'Opéra de Morphy (Paris, 1858) : 33 demi-coups, un grand roque, Nbd7, et le mat Rd8#', () => {
@@ -695,7 +695,16 @@ describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notati
     expect(legalTexts(state)).toContain('d4d5');
   });
 
-  test('A32 : un siège qui n\'existe pas ne peut ni abandonner ni jouer', () => {
+  test('A32 : checkedKing donne la case du roi en échec du camp au trait, lue sur le FEN, et rien sinon', () => {
+    expect(checkedKing(START_FEN)).toBeNull();
+    expect(checkedKing(play(startState(), 'e2e4 e7e5 f1c4 b8c6 d1h5 g8f6 h5f7').fen)).toBe('e8');
+    expect(checkedKing(play(startState(), 'f2f3 e7e5 g2g4 d8h4').fen)).toBe('e1');
+    // Une position posée à la main, sans demi-coup : le roi blanc est en échec par la tour, le noir ne l'est pas.
+    expect(checkedKing('4k3/8/8/8/8/8/8/r3K3 w - - 0 1')).toBe('e1');
+    expect(checkedKing('4k3/8/8/8/8/8/8/R3K3 b - - 0 1')).toBeNull();
+  });
+
+  test('A33 : un siège qui n\'existe pas ne peut ni abandonner ni jouer', () => {
     const state = play(startState(), 'e2e4');
     expect(chess.forfeit(state, 5, 'resign')).toEqual({ state, events: [] });
     expect(chess.forfeit(state, -1, 'timeout')).toEqual({ state, events: [] });

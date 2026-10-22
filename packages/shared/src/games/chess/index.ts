@@ -21,7 +21,7 @@ import {
   type Color,
 } from './position';
 import { sanOf } from './san';
-import { MAX_PLIES_KEPT, SQUARES, START_FEN, type ChessEvent, type ChessMove, type ChessPly, type ChessState, type PieceType, type Promotion } from './types';
+import { MAX_PLIES_KEPT, SQUARES, START_FEN, type ChessEvent, type ChessMove, type ChessPly, type ChessState, type PieceType, type Promotion, type Square } from './types';
 
 export * from './types';
 export { positionKey, stateFromFen };
@@ -111,6 +111,13 @@ function plyOf(before: Analysis, packed: number, after: Analysis): ChessPly {
 // La clé de répétition d'un FEN (R10, § 13.3) : placement, trait, droits de roque, puis la case de prise en passant seulement si une prise en passant est légale.
 function positionKey(fen: string): string {
   return analyse(fen).key;
+}
+
+// La case du roi du camp au trait quand il est en échec, sinon null : l'interface la cerne en rouge. Lue sur le FEN et non sur le dernier demi-coup, donc juste aussi pour une
+// position posée à la main (les tests de bout en bout), sans demi-coup joué.
+export function checkedKing(fen: string): Square | null {
+  const analysis = analyse(fen);
+  return analysis.inCheck ? SQUARES[analysis.position.kings[analysis.position.turn]]! : null;
 }
 
 // Un état de partie posé sur n'importe quel FEN légal : sans demi-coups joués, la position courante comptée une fois. Si la position est déjà finie (mat, pat,
