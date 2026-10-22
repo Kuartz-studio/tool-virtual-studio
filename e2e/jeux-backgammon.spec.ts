@@ -92,6 +92,45 @@ async function watchRolling(page: Page): Promise<() => Promise<string[]>> {
   return () => page.evaluate(() => [...(window as unknown as { __rolling: string[] }).__rolling]);
 }
 
+interface Overflow {
+  page: number;
+  board: number;
+  panel: number;
+  rootWidth: number;
+  // Ce qui dépasse à droite du tablier, s'il y a quelque chose : de quoi trouver le coupable.
+  beyond: Array<{ tag: string; cls: string | null; right: number; width: number }>;
+}
+
+// Ce qui déborde à l'horizontale : de la page, du tablier, du corps du panneau (0 partout quand tout tient).
+const measureOverflow = (page: Page): Promise<Overflow> =>
+  page.evaluate(() => {
+    const root = document.querySelector('.game-backgammon') as HTMLElement;
+    const body = root.closest('.drawer-body') as HTMLElement | null;
+    const box = root.getBoundingClientRect();
+    const beyond = [...root.querySelectorAll('*')]
+      .map((element) => ({ tag: element.tagName, cls: element.getAttribute('class'), right: Math.round(element.getBoundingClientRect().right - box.right), width: Math.round(element.getBoundingClientRect().width) }))
+      .filter((found) => found.right > 0.5)
+      .slice(0, 8);
+    return {
+      page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      board: root.scrollWidth - root.clientWidth,
+      panel: body ? body.scrollWidth - body.clientWidth : 0,
+      rootWidth: box.width,
+      beyond,
+    };
+  });
+
+// Mesure le débordement image après image jusqu'à ce qu'il soit nul, 5 s au plus, et rend la dernière mesure : juste après un changement de taille, le conteneur a déjà sa nouvelle
+// largeur mais le tablier (mesuré par un ResizeObserver) n'a pas encore été redessiné, et il déborde pour une image ; un vrai débordement, lui, dure.
+async function settledOverflow(page: Page): Promise<Overflow> {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
+    const found = await measureOverflow(page);
+    if ((found.page === 0 && found.board === 0 && found.panel === 0) || Date.now() > deadline) return found;
+  }
+}
+
 test('une partie de bout en bout : invitation, un tour à la souris, une fin en gammon, le classement, la revanche, le mouvement réduit et le téléphone', async ({ browser }) => {
   test.setTimeout(300_000);
   const { alice, bastien } = await startMatch(browser);
@@ -105,11 +144,13 @@ test('une partie de bout en bout : invitation, un tour à la souris, une fin en 
   // Le lancer d'ouverture a décidé qui commence ; pour la suite on pose le départ, au tour d'Alice, avec un 3 et un 1 au prochain lancer.
   await debugGame(alice, 'backgammon', startState(), [3, 1]);
   await waitForTable(alice, 'backgammon', (view) => (view.match?.state as { phase: string; turns: number }).phase === 'roll');
+  const firstRoll = await watchRolling(alice);
   await action(alice, 'Lancer les dés').click();
-  // Les dés roulent environ 600 ms, puis se posent sur les valeurs du serveur : 3 et 1.
-  await expect(diceOf(alice)).toHaveAttribute('data-rolling', 'true');
+  // Les dés roulent environ 600 ms, puis se posent sur les valeurs du serveur : 3 et 1. Le roulement est noté par l'observateur, pas guetté en boucle : sur une machine chargée,
+  // une boucle peut passer à côté d'une demi-seconde.
   await expect(diceOf(alice)).toHaveAttribute('data-rolling', 'false');
   await expect(diceOf(alice)).toHaveAttribute('data-values', '3,1');
+  expect(await firstRoll()).toContain('true');
   await expect(panel(alice).getByText('Dés : 3 et 1')).toHaveCount(1);
   // Le pion du point 8 : il est jouable, il se prend, ses arrivées s'éclairent.
   await cell(alice, /^Point 8 : 3 pions blancs, jouable$/).click();
@@ -193,16 +234,11 @@ test('une partie de bout en bout : invitation, un tour à la souris, une fin en 
   await shoot(alice, panel(alice), '03-ouverture-440');
   await alice.setViewportSize({ width: 375, height: 812 });
   await expect(panel(alice).locator('.game-backgammon')).toHaveAttribute('data-layout', 'compact');
-  const overflow = await alice.evaluate(() => {
-    const root = document.querySelector('.game-backgammon') as HTMLElement;
-    const body = root.closest('.drawer-body') as HTMLElement | null;
-    return {
-      page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      board: root.scrollWidth - root.clientWidth,
-      panel: body ? body.scrollWidth - body.clientWidth : 0,
-    };
-  });
-  expect(overflow).toEqual({ page: 0, board: 0, panel: 0 });
+  // Le tablier se recalcule une image après la fenêtre : on attend qu'il se soit posé (5 s au plus) avant de mesurer, puis les captures, qui servent même si une vérification échoue.
+  const overflow = await settledOverflow(alice);
+  await shoot(alice, panel(alice).locator('.game-backgammon'), '04-tablier-375');
+  await shoot(alice, panel(alice), '05-panneau-375');
+  expect(overflow, JSON.stringify(overflow)).toMatchObject({ page: 0, board: 0, panel: 0 });
   const targets = await alice.locator('.game-backgammon button').evaluateAll((buttons) =>
     buttons.map((element) => {
       const box = element.getBoundingClientRect();
@@ -219,8 +255,6 @@ test('une partie de bout en bout : invitation, un tour à la souris, une fin en 
     expect(target.width, JSON.stringify(target)).toBeGreaterThanOrEqual(24);
     expect(target.height, JSON.stringify(target)).toBeGreaterThanOrEqual(24);
   }
-  await shoot(alice, panel(alice).locator('.game-backgammon'), '04-tablier-375');
-  await shoot(alice, panel(alice), '05-panneau-375');
   await alice.setViewportSize({ width: 1280, height: 720 });
   await alice.emulateMedia({ reducedMotion: 'no-preference' });
 

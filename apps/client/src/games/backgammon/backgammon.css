@@ -168,8 +168,11 @@
   cursor: default;
 }
 
-.game-backgammon-button:hover:not([aria-disabled='true']) {
-  background: rgb(255 255 255 / 12%);
+/* La teinte au survol : seulement avec une vraie souris. Sur un écran tactile, `:hover` reste collé à la dernière case touchée et la laisserait éclaircie pour rien. */
+@media (hover: hover) {
+  .game-backgammon-button:hover:not([aria-disabled='true']) {
+    background: rgb(255 255 255 / 12%);
+  }
 }
 
 .game-backgammon-button:focus-visible {
