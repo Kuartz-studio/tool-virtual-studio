@@ -17,6 +17,8 @@ export const ludoFr = {
     positionTitle: 'Position des chevaux',
     positionSeat: '{color}, {name} : {horses}.',
     positionSeatMine: '{color}, {name} (toi) : {horses}.',
+    // Un siège dont on ne connaît pas le nom (l'aperçu d'avant la partie).
+    positionSeatAnonymous: '{color} : {horses}.',
     positionOut: '{color}, {name} : a quitté la partie.',
     positionJoin: ' ; ',
     horseStable: 'cheval {n} à l\'écurie',
