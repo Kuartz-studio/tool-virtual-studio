@@ -98,6 +98,11 @@
   stroke-width: 0.1;
 }
 
+/* Le siège qui a le trait : le cadre de son écurie est plus épais. */
+.game-ludo .ludo-yard[data-turn] .ludo-yard-bg {
+  stroke-width: 0.26;
+}
+
 /* Une couleur qui ne joue pas (à deux ou trois joueurs) : son écurie s'efface. Un siège sorti : son écurie est grisée. */
 .game-ludo .ludo-yard[data-unused] {
   opacity: 0.4;
@@ -257,6 +262,11 @@
 
 .game-ludo .ludo-die-pip {
   fill: var(--ludo-frame);
+}
+
+/* Un dé qui n'a pas encore de valeur : estompé. */
+.game-ludo .ludo-die:not([data-value]) {
+  opacity: 0.45;
 }
 
 .game-ludo .ludo-marks {

@@ -154,4 +154,10 @@ describe('§ 9.5 : ce que tout plateau respecte', () => {
     expect(capture.get('stroke-dasharray')).toBe('none');
     expect(px(capture.get('stroke-width')?.replace(/$/, 'px'))).toBeGreaterThan(px(step.get('stroke-width')?.replace(/$/, 'px')));
   });
+
+  test('le trait est marqué par un cadre plus épais autour de l\'écurie, et un dé sans valeur est estompé', () => {
+    const turn = ruleFor('.game-ludo .ludo-yard[data-turn] .ludo-yard-bg');
+    expect(Number(turn.get('stroke-width'))).toBeGreaterThan(Number(ruleFor('.game-ludo .ludo-yard-bg').get('stroke-width')));
+    expect(Number(ruleFor('.game-ludo .ludo-die:not([data-value])').get('opacity'))).toBeLessThan(1);
+  });
 });

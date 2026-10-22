@@ -576,6 +576,73 @@ describe('les repères du dé et les chevaux arrivés', () => {
   });
 });
 
+describe('le dessin : la taille des chevaux, les chevaux arrivés, le dé, le trait', () => {
+  // La taille d'une tête de cheval à l'écran, en pixels : l'échelle de son dessin (12 × 12), fois la case.
+  const horsePixels = (container: HTMLElement): number => {
+    const sprite = container.querySelector('.ludo-horse > g')!;
+    const scale = Number(/scale\(([\d.]+)\)/.exec(sprite.getAttribute('transform')!)![1]);
+    return scale * 12 * Number(container.querySelector('.game-ludo')!.getAttribute('data-cell'));
+  };
+
+  test('une tête de cheval fait 24 px sur un panneau de 408 px (deux pixels d\'écran par pixel du dessin, des bords nets) et 16 px sur téléphone', () => {
+    const observer = stubResizeObserver();
+    const { container } = mount(ludo.create({ seats: 2, first: 0 }, () => 0.5).state, { mySeat: null, canAct: false });
+    expect(horsePixels(container)).toBeCloseTo(24);
+    observer.resizeTo(311);
+    expect(horsePixels(container)).toBeCloseTo(16);
+  });
+
+  test('les nombres de chevaux arrivés restent chacun dans le triangle de leur couleur, loin des autres chevaux et des autres nombres', () => {
+    const state = fabricateLudo({ horses: [[56, 56, 56, 10], [56, 56, -1, -1], [56, -1, -1, -1], [56, 56, 56, -1]], turn: 0 });
+    const { container } = mount(state, { mySeat: null, canAct: false });
+    const point = (element: Element) => ({ x: Number(element.getAttribute('x')), y: Number(element.getAttribute('y')) });
+    const triangle = (color: number) => (container.querySelector(`.ludo-home[data-color="${color}"]`)!.getAttribute('points')!.split(' ').map((pair) => pair.split(',').map(Number)) as number[][]);
+    const inside = (p: { x: number; y: number }, [a, b, c]: number[][]) => {
+      const side = (u: number[], v: number[]) => (v[0]! - u[0]!) * (p.y - u[1]!) - (v[1]! - u[1]!) * (p.x - u[0]!);
+      const signs = [side(a!, b!), side(b!, c!), side(c!, a!)];
+      return signs.every((value) => value >= 0) || signs.every((value) => value <= 0);
+    };
+    const groups = [...container.querySelectorAll('.ludo-arrived')];
+    expect(groups).toHaveLength(4);
+    const digits = groups.map((group) => point(group.querySelector('.ludo-arrived-count')!));
+    const sprites = groups.map((group) => {
+      const [, x, y] = /translate\(([\d.-]+) ([\d.-]+)\)/.exec(group.firstElementChild!.getAttribute('transform')!)!.map(Number);
+      return { x: x!, y: y! };
+    });
+    groups.forEach((group, i) => {
+      const color = Number(group.getAttribute('data-color'));
+      expect(inside(digits[i]!, triangle(color)), `le nombre de la couleur ${color}`).toBe(true);
+      expect(inside(sprites[i]!, triangle(color)), `le cheval de la couleur ${color}`).toBe(true);
+      for (let j = 0; j < groups.length; j++) {
+        if (j === i) continue;
+        expect(Math.hypot(digits[i]!.x - digits[j]!.x, digits[i]!.y - digits[j]!.y), `nombres ${i} et ${j}`).toBeGreaterThan(0.9);
+        expect(Math.hypot(digits[i]!.x - sprites[j]!.x, digits[i]!.y - sprites[j]!.y), `nombre ${i}, cheval ${j}`).toBeGreaterThan(0.8);
+      }
+    });
+  });
+
+  test('un dé sans valeur est dessiné sans point ; en fin de partie, sans valeur, il n\'est plus dessiné du tout', () => {
+    const waiting = mount(fabricateLudo({ horses: [[10, -1, -1, -1], [5, -1, -1, -1]] }));
+    const die = waiting.container.querySelector('.ludo-die')!;
+    expect(die.getAttribute('data-value')).toBeNull();
+    expect(die.querySelectorAll('.ludo-die-pip')).toHaveLength(0);
+    waiting.unmount();
+    const ended = ludo.forfeit(fabricateLudo({ horses: [[10, -1, -1, -1], [5, -1, -1, -1]] }), 1, 'resign').state;
+    const over = mount(ended, { mySeat: 0, canAct: false });
+    expect(over.container.querySelector('.ludo-die')).toBeNull();
+  });
+
+  test('le siège qui a le trait a son écurie marquée, et personne n\'en a plus à la fin', () => {
+    const four = ludo.create({ seats: 4, first: 2 }, () => 0.5).state;
+    const { container, unmount } = mount(four, { mySeat: null, canAct: false });
+    expect([0, 1, 2, 3].map((color) => yard(container, color).getAttribute('data-turn'))).toEqual([null, null, 'true', null]);
+    unmount();
+    const ended = ludo.forfeit(fabricateLudo({ horses: [STABLE, STABLE] }), 1, 'resign').state;
+    const over = mount(ended, { mySeat: null, canAct: false });
+    expect(over.container.querySelectorAll('.ludo-yard[data-turn]')).toHaveLength(0);
+  });
+});
+
 describe('un siège sorti, la fin de la partie', () => {
   test('un siège sorti : son écurie est grisée, ses chevaux ne sont plus dessinés', () => {
     const state = fabricateLudo({ horses: [[10, -1, -1, -1], STABLE, [3, -1, -1, -1]], out: [{ seat: 1, reason: 'resign' }] });

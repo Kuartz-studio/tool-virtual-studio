@@ -128,7 +128,7 @@ export function LudoBoard({ state, mySeat, players, events, canAct, onMove, redu
         onPreview={setPreviewHorse}
       />
 
-      {!preview && (
+      {!preview && (state.phase !== 'over' || die.value !== null) && (
         <div className="ludo-dice-row">
           <Die value={die.value} rolling={die.rolling} face={die.face} />
           {marks.length > 0 && (

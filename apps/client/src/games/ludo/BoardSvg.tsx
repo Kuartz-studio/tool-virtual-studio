@@ -18,34 +18,37 @@ import {
 } from './geometry';
 import { HORSE_SIZE, horsePaths } from './horse-art';
 import type { MoveOption } from './moves';
-import { hitSizeFor } from './sizing';
+import { hitSizeFor, horseSizeFor } from './sizing';
 
 // Le dessin du plateau : un SVG de 15 × 15 unités (une case = une unité), aux bords nets, où tout est dessiné en code (§ 9.5.6) : la piste, les allées, les écuries, l'arrivée et les
 // chevaux. Les couleurs sont celles de l'illustration (ludo.css), le jour comme la nuit. Tout est dit pour « rouge en haut à gauche » (geometry.ts), puis tourné par quarts de tour (`turns`)
 // pour que l'écurie de celui qui joue soit en bas à gauche ; le texte, lui, n'est jamais tourné.
 
-// Ce que mesure le dessin, en cases.
-const HORSE_FILL = 0.8;
+// Ce que mesure le dessin, en cases (la taille d'une tête de cheval dépend de la case : sizing.ts).
 const SLOT_RADIUS = 0.55;
 const TARGET_RADIUS = 0.52;
 const LAST_INSET = 0.06;
 // Le nom du joueur, écrit dans son écurie sous son bord haut ; au-delà de 10 lettres, il est coupé.
 const NAME_ROW = 0.85;
 const NAME_MAX = 10;
-// Le nombre de chevaux arrivés, écrit à côté du cheval du triangle, du côté du centre du plateau.
-const COUNT_OFFSET = 0.62;
+// Le nombre de chevaux arrivés, écrit à côté du cheval du triangle, sur le côté (pas vers le centre : les quatre nombres s'y toucheraient) : les quatre tournent autour du centre,
+// chacun dans son triangle, à cette distance du cheval.
+const COUNT_OFFSET = 0.75;
 const BOARD_CENTER: Point = { x: BOARD_CELLS / 2, y: BOARD_CELLS / 2 };
-// Un cheval jouable est souligné et numéroté (le numéro de son bouton).
-const UNDERLINE = { x: -0.4, y: HORSE_FILL / 2 + 0.06, width: 0.8, height: 0.1 };
-const NUMBER_AT = { x: 0.36, y: -0.3 };
+// Un cheval jouable est souligné (un trait sous lui) et numéroté (le numéro de son bouton, en haut à droite), à ces fractions de sa taille.
+const UNDERLINE_GAP = 0.06;
+const UNDERLINE_THICKNESS = 0.1;
+const NUMBER_AT = { x: 0.45, y: -0.38 };
 
 const PATHS = horsePaths();
-const SPRITE_TRANSFORM = `translate(${-HORSE_FILL / 2} ${-HORSE_FILL / 2}) scale(${HORSE_FILL / HORSE_SIZE})`;
+
+// Le dessin d'une tête de cheval (12 × 12), mis à l'échelle pour faire `size` cases de côté, centré sur l'origine.
+const spriteTransform = (size: number): string => `translate(${-size / 2} ${-size / 2}) scale(${size / HORSE_SIZE})`;
 
 // Une tête de cheval, en pixel art : un chemin par lettre de la grille, que la feuille de style colore selon le joueur (`.ludo-tone-N .px-b`…).
-function Sprite({ transform = SPRITE_TRANSFORM }: { transform?: string }) {
+function Sprite({ size }: { size: number }) {
   return (
-    <g transform={transform}>
+    <g transform={spriteTransform(size)}>
       {PATHS.map(({ key, d }) => (
         <path key={key} className={`px-${key}`} d={d} />
       ))}
@@ -89,6 +92,8 @@ export function BoardSvg({ state, horses, sliding, names, turns, cell, described
   const seatOfColor = (color: number): number => state.colors.indexOf(color);
   const isOut = (seat: number): boolean => state.out.some((entry) => entry.seat === seat);
   const hit = hitSizeFor(cell);
+  // La taille d'une tête de cheval, en cases.
+  const horseSize = horseSizeFor(cell) / cell;
 
   const drawn = state.colors.flatMap((color, seat) =>
     isOut(seat) ? [] : (horses[seat] ?? []).flatMap((advance, index) => (advance >= LUDO_HOME ? [] : [{ seat, index, color, advance, option: seat === mySeat ? playable.get(index) : undefined }])),
@@ -111,10 +116,11 @@ export function BoardSvg({ state, horses, sliding, names, turns, cell, described
         const seat = seatOfColor(color);
         const used = seat !== -1;
         const gone = used && isOut(seat);
+        const hasTurn = used && state.phase !== 'over' && state.turn === seat;
         const center = turn({ x: col + YARD_SIZE / 2, y: row + YARD_SIZE / 2 });
         const corner = { x: center.x - YARD_SIZE / 2, y: center.y - YARD_SIZE / 2 };
         return (
-          <g key={color} className={`ludo-yard ludo-tone-${color}`} data-color={color} data-out={gone || undefined} data-unused={!used || undefined}>
+          <g key={color} className={`ludo-yard ludo-tone-${color}`} data-color={color} data-out={gone || undefined} data-unused={!used || undefined} data-turn={hasTurn || undefined}>
             <rect className="ludo-yard-bg" x={corner.x} y={corner.y} width={YARD_SIZE} height={YARD_SIZE} />
             {used &&
               !gone &&
@@ -165,13 +171,15 @@ export function BoardSvg({ state, horses, sliding, names, turns, cell, described
         const count = isOut(seat) ? 0 : (horses[seat] ?? []).filter((advance) => advance >= LUDO_HOME).length;
         if (count === 0) return null;
         const anchor = turn(HOME_ANCHORS[color]!);
-        const away = { x: BOARD_CENTER.x - anchor.x, y: BOARD_CENTER.y - anchor.y };
-        const length = Math.hypot(away.x, away.y) || 1;
-        const digit = { x: anchor.x + (away.x / length) * COUNT_OFFSET, y: anchor.y + (away.y / length) * COUNT_OFFSET };
+        const toCenter = { x: BOARD_CENTER.x - anchor.x, y: BOARD_CENTER.y - anchor.y };
+        const length = Math.hypot(toCenter.x, toCenter.y) || 1;
+        // Un quart de tour de la direction du centre : le nombre est sur le côté du cheval, dans le triangle.
+        const aside = { x: -toCenter.y / length, y: toCenter.x / length };
+        const digit = { x: anchor.x + aside.x * COUNT_OFFSET, y: anchor.y + aside.y * COUNT_OFFSET };
         return (
           <g key={color} className={`ludo-arrived ludo-tone-${color}`} data-color={color} data-count={count}>
             <g transform={`translate(${anchor.x} ${anchor.y})`}>
-              <Sprite />
+              <Sprite size={horseSize} />
             </g>
             <text className="ludo-arrived-count" x={digit.x} y={digit.y} textAnchor="middle" dominantBaseline="central">
               {count}
@@ -199,10 +207,12 @@ export function BoardSvg({ state, horses, sliding, names, turns, cell, described
             data-sliding={slides ? 'true' : undefined}
             style={{ transform: `translate(${at.x}px, ${at.y}px)`, transitionDuration: slides ? `${CAPTURE_MS}ms` : undefined }}
           >
-            <Sprite />
-            {option && <rect className="ludo-underline" x={UNDERLINE.x} y={UNDERLINE.y} width={UNDERLINE.width} height={UNDERLINE.height} rx={UNDERLINE.height / 2} />}
+            <Sprite size={horseSize} />
             {option && (
-              <text className="ludo-horse-number" x={NUMBER_AT.x} y={NUMBER_AT.y} textAnchor="middle" dominantBaseline="central">
+              <rect className="ludo-underline" x={-horseSize / 2} y={horseSize / 2 + UNDERLINE_GAP} width={horseSize} height={UNDERLINE_THICKNESS} rx={UNDERLINE_THICKNESS / 2} />
+            )}
+            {option && (
+              <text className="ludo-horse-number" x={horseSize * NUMBER_AT.x} y={horseSize * NUMBER_AT.y} textAnchor="middle" dominantBaseline="central">
                 {index + 1}
               </text>
             )}

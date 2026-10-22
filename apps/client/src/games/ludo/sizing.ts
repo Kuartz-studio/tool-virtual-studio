@@ -20,3 +20,14 @@ export function cellSizeFor(width: number): number {
 export function hitSizeFor(cell: number): number {
   return Math.max(1, HIT_MIN_PX / cell);
 }
+
+// La tête de cheval est dessinée en 12 × 12 pixels. Dès que la case fait 26 px, elle fait 24 px à l'écran : deux pixels d'écran par pixel du dessin, des bords parfaitement nets. En
+// dessous (un téléphone, 20 px la case), elle fait 80 % de la case (16 px) : le dessin est un peu inégal, mais lisible.
+export const HORSE_DOUBLE_FROM = 26;
+export const HORSE_DOUBLE_PX = 24;
+export const HORSE_RATIO = 0.8;
+
+// Le côté d'une tête de cheval, en pixels entiers.
+export function horseSizeFor(cell: number): number {
+  return cell >= HORSE_DOUBLE_FROM ? HORSE_DOUBLE_PX : Math.round(cell * HORSE_RATIO);
+}
