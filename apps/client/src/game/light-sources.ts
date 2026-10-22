@@ -49,13 +49,14 @@ export interface LightSource {
 }
 
 // Les couleurs : la lampe (l'ambre de la nuit de l'interface), la bougie et le feu, plus orangés, l'écran et la télévision, bleu froid, l'eau,
-// aqua, et le point d'une LED, d'un blanc froid.
+// aqua, le point d'une LED, d'un blanc froid, et le panneau de sortie, d'un vert de signalisation.
 const WARM = 0xffc56b;
 const CANDLE = 0xffb061;
 const FIRE = 0xff9a4a;
 const COLD = 0x8cbeff;
 const AQUA = 0x6fd8e8;
 const LED = 0xbfeeff;
+const EXIT = 0x5cf29a;
 
 // Un profil par sorte, d'après les chiffres de départ du plan (docs/superpowers/plans), réglés à l'œil sur une capture de nuit.
 export const LIGHT_PROFILES: Readonly<Record<LightKind, LightProfile>> = {
@@ -73,12 +74,16 @@ export const LIGHT_PROFILES: Readonly<Record<LightKind, LightProfile>> = {
   glow: { radiusTiles: 0.9, strength: 0.15, color: LED },
   // Une piscine : aqua, sans vacillement.
   water: { radiusTiles: 5, strength: 0.35, color: AQUA },
+  // Un panneau de sortie : un halo vert, petit, qui scintille doucement (3 Hz).
+  exit: { radiusTiles: 2.5, strength: 0.3, color: EXIT, flicker: { amplitude: 0.1, hz: 3 } },
 };
 
 const floorLamp = (bulbY: number): LightEmitter => ({ kind: 'lamp', radiusTiles: 4, strength: 0.8, bulbY });
 const DESK_LAMP: LightEmitter = { kind: 'lamp', bulbY: 10 };
 const BEDSIDE_LAMP: LightEmitter = { kind: 'lamp', radiusTiles: 1.75, strength: 0.5, bulbY: 32 };
 const screenAt = (bulbY: number): LightEmitter => ({ kind: 'screen', bulbY });
+// Un panneau de sortie : un seul carreau, le panneau dans sa moitié haute.
+const EXIT_SIGN: LightEmitter = { kind: 'exit', bulbY: 6 };
 
 // Les éléments de la banque qui éclairent, par clé.
 export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
@@ -112,6 +117,11 @@ export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
   'tv-10-1': { kind: 'tv', bulbY: 22 },
   // L'écran de présentation, au mur : une lumière froide, très faible.
   'of-9-14': screenAt(36),
+  // Les panneaux de sortie (vert vif et citron, vers la droite et vers la gauche).
+  'mu-14-111': EXIT_SIGN,
+  'mu-14-111-m': EXIT_SIGN,
+  'mu-15-111': EXIT_SIGN,
+  'mu-15-111-m': EXIT_SIGN,
   // Les écrans d'ordinateur allumés, au milieu de l'écran de leur image (les écrans noirs et blancs de la banque sont éteints, ils n'éclairent
   // pas) : les écrans bleus, ceux sur pied et les moniteurs compacts, les doubles écrans (celui du haut est allumé), les portables et les
   // postes complets.

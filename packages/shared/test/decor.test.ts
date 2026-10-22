@@ -228,13 +228,21 @@ describe('checkDecor avec une porte au nord', () => {
   });
 });
 
+const DEFAULT_ROOMS: Array<[string, DeskRoomSpec]> = [
+  ['standard, porte au sud', STANDARD],
+  ['standard, porte au nord', NORTH_STANDARD],
+  ['compacte, porte au sud', COMPACT],
+  ['compacte, porte au nord', NORTH_COMPACT],
+];
+
 describe('defaultDeskDecor', () => {
-  test.each([
-    ['standard, porte au sud', STANDARD],
-    ['standard, porte au nord', NORTH_STANDARD],
-    ['compacte, porte au sud', COMPACT],
-    ['compacte, porte au nord', NORTH_COMPACT],
-  ])('la pièce par défaut (%s) passe checkDecor de sa pièce', (_name, room) => {
+  test.each(DEFAULT_ROOMS)('le poste par défaut (%s) : chaque siège est vu de dos, il regarde le bureau (la chaise, le canapé)', (_name, room) => {
+    const seats = defaultDeskDecor(room).items.map((placed) => decorItem(placed.id)!).filter((item) => item.cat === 'sieges');
+    expect(seats.length).toBeGreaterThanOrEqual(1);
+    for (const seat of seats) expect(seat.name, seat.id).toContain('(de dos)');
+  });
+
+  test.each(DEFAULT_ROOMS)('la pièce par défaut (%s) passe checkDecor de sa pièce', (_name, room) => {
     const fitted = defaultDeskDecor(room);
     expect(checkDecor(fitted, room)).toEqual({ ok: true });
     // Un vrai poste : un bureau, un écran et une chaise.

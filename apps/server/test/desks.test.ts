@@ -35,15 +35,15 @@ describe('les places de la carte', () => {
       else expect(slot.exit.y, `sortie de ${slot.key}`).toBeLessThan(slot.door!.y);
       expect(isWalkablePoint(map, slot.exit.x, slot.exit.y), `sortie de ${slot.key}`).toBe(true);
     }
-    // Les portes de A1 et A2 sont au sud (cases 4-5 et 15-16, au centre de la porte) : on sort vers le bas, dans la rue nord. Celles de A3, A4 et A6 sont au
-    // nord de leur pièce : on sort vers le haut, dans la même rue.
+    // Les portes de A5, A1 et A2 sont au sud (cases 3-4, 12-13 et 23-24, au centre de la porte) : on sort vers le bas, dans la rue nord. Celles de A6, A3 et A4
+    // sont au nord de leur pièce : on sort vers le haut, dans la même rue. Les petits bureaux (A5, A6) sont tout à l'ouest de leur rangée.
     const exit = (key: string) => slots.find((slot) => slot.key === key)!.exit;
-    expect(exit('A1')).toEqual({ x: 160, y: 368 });
-    expect(exit('A2')).toEqual({ x: 160 + 11 * 32, y: 368 });
-    expect(exit('A5')).toEqual({ x: 26 * 32, y: 368 });
-    expect(exit('A3')).toEqual({ x: 160, y: 15 * 32 - 16 });
-    expect(exit('A4')).toEqual({ x: 160 + 11 * 32, y: 15 * 32 - 16 });
-    expect(exit('A6')).toEqual({ x: 26 * 32, y: 15 * 32 - 16 });
+    expect(exit('A5')).toEqual({ x: 4 * 32, y: 368 });
+    expect(exit('A1')).toEqual({ x: 13 * 32, y: 368 });
+    expect(exit('A2')).toEqual({ x: 24 * 32, y: 368 });
+    expect(exit('A6')).toEqual({ x: 4 * 32, y: 15 * 32 - 16 });
+    expect(exit('A3')).toEqual({ x: 13 * 32, y: 15 * 32 - 16 });
+    expect(exit('A4')).toEqual({ x: 24 * 32, y: 15 * 32 - 16 });
   });
 });
 

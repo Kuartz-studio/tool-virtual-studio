@@ -5,25 +5,26 @@ import { DECOR_CATEGORIES, type DecorCategoryId, type DecorItem, type DecorKind 
 import { BASEMENT_ENTRIES } from './curation/basement';
 import { GYM_ENTRIES } from './curation/gym';
 import { INTERIOR_ENTRIES } from './curation/interiors';
+import { MUSEUM_ENTRIES } from './curation/museum';
 import { OFFICE_ENTRIES } from './curation/office';
 import { SHEETS, type Entry } from './curation/types';
 import { Img, readImage } from './image';
 import { packImages } from './pack';
 import { segmentSheet, type Component } from './segment';
 
-export const ENTRIES: Entry[] = [...OFFICE_ENTRIES, ...INTERIOR_ENTRIES, ...GYM_ENTRIES, ...BASEMENT_ENTRIES];
+export const ENTRIES: Entry[] = [...OFFICE_ENTRIES, ...INTERIOR_ENTRIES, ...GYM_ENTRIES, ...BASEMENT_ENTRIES, ...MUSEUM_ENTRIES];
 
 type Rect = readonly [number, number, number, number];
 export type ResolvedEntry = Entry & { rect: Rect };
 
-// Un meuble arrête l'avatar s'il est gros, et se traverse s'il est petit : les petites plantes (même hautes), les petites tables, les
-// imprimantes de bureau ne gênent pas la marche (les sièges non plus, et les objets posés sur un meuble ne comptent pas). Gros, c'est :
-// - une plante qui prend au moins 2 cases au sol (un palmier, un ficus) ; une plante d'une seule case, même haute, se traverse ;
-// - pour tout autre meuble, 2 cases au sol au moins, ou 3 cases d'image (largeur × hauteur) : un bureau, une table, une bibliothèque, un
-//   frigo, une fontaine à eau.
-// Une entrée de la curation peut toujours dire `solid` elle-même, pour un meuble qui sort de la règle (la cheminée, la borne tactile).
+// Ce qui arrête l'avatar : les tables et les bureaux, les murs, les cheminées, les équipements de sport et les gros meubles
+// (armoires, bibliothèques, frigos, comptoirs, distributeurs, pianos). Rien d'autre : ni les chaises, canapés, fauteuils, bancs et tabourets, ni les
+// plantes (même un palmier), ni les lampes, les écrans, les tapis, la déco, ni les objets posés sur un meuble. Un élément est donc solide s'il est
+// d'une de ces catégories ET gros : 2 cases au sol au moins, ou 3 cases d'image (largeur × hauteur). Une entrée de la curation peut toujours dire
+// `solid` elle-même, pour un élément qui sort de la règle (la cheminée, la borne tactile, un banc rangé avec les tables).
 export const BIG_ITEM_TILES = 3;
 export const BIG_FOOTPRINT_CELLS = 2;
+export const SOLID_CATEGORIES: ReadonlySet<DecorCategoryId> = new Set<DecorCategoryId>(['bureaux', 'rangement', 'cafe', 'sport', 'detente']);
 
 // La taille de l'élément en cases : celle de son rectangle, ou de son découpage au pixel près (`crop`, multiple de 32 px) quand la curation en
 // donne un. `fit` : le résultat de fitOnFootprint (largeur et profondeur au sol ramenées à ce que le dessin couvre).
@@ -46,14 +47,14 @@ export function defaultsOf(entry: ResolvedEntry, fit?: Pick<FittedSprite, 'w' | 
   const [w, h] = fit ? [fit.w, fit.h] : [cellsW, cellsH];
   const kind: DecorKind = entry.kind ?? (entry.cat === 'ecrans' || entry.cat === 'papeterie' ? 'onTop' : 'object');
   const claim = Math.min(entry.claim ?? (kind === 'wall' ? 0 : kind === 'floor' ? h : entry.cat === 'bureaux' ? h : 1), h);
-  const wide = w * claim >= BIG_FOOTPRINT_CELLS;
-  const big = entry.cat === 'plantes' ? wide : wide || w * h >= BIG_ITEM_TILES;
-  const solid = entry.solid ?? (kind === 'object' && entry.cat !== 'sieges' && big);
+  const big = w * claim >= BIG_FOOTPRINT_CELLS || w * h >= BIG_ITEM_TILES;
+  const solid = entry.solid ?? (kind === 'object' && SOLID_CATEGORIES.has(entry.cat) && big);
   return { kind, claim, solid };
 }
 
+// L'identifiant : la planche et la case du coin haut-gauche de l'objet, plus « -m » pour sa version retournée.
 export function itemId(entry: ResolvedEntry): string {
-  return `${entry.sheet}-${entry.rect[0]}-${entry.rect[1]}`;
+  return `${entry.sheet}-${entry.rect[0]}-${entry.rect[1]}${entry.flip ? '-m' : ''}`;
 }
 
 export interface BuiltDecor {
@@ -141,7 +142,8 @@ export function buildDecor(sheets: Sheets, entries: Entry[] = ENTRIES): BuiltDec
     const id = itemId(entry);
     if (sprites.has(id)) throw new Error(`Deux éléments portent l'identifiant ${id} (« ${entry.name} »).`);
     const [px, py, pw, ph] = pixelRect(entry);
-    const image = sheets.image(entry.sheet).crop(px, py, pw, ph);
+    const cut = sheets.image(entry.sheet).crop(px, py, pw, ph);
+    const image = entry.flip ? cut.mirrorX() : cut;
     if (image.isEmpty()) throw new Error(`« ${entry.name} » (${id}) : le rectangle est vide.`);
     const fit = fitOnFootprint(image, entry, defaultsOf(entry).kind);
     fits.set(id, fit);

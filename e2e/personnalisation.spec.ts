@@ -219,21 +219,21 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
 });
 
-// Seuls les gros meubles arrêtent : dans la rue nord, un arbuste (20, 14) se traverse, et la fontaine à eau (12, 14) qui le suit arrête. On part à
-// droite de l'arbuste, on marche vers la gauche.
+// Seuls les gros meubles arrêtent : dans la rue nord, un arbuste (27, 11) se traverse, et la fontaine à eau (29, 11) qui le suit arrête (le test
+// « l'agencement » de office.test.ts garde ces deux positions). On part à gauche de l'arbuste, on marche vers la droite.
 test('la marche : une petite plante se traverse, un gros meuble arrête', async ({ browser }) => {
   test.slow();   // l'arrivée marche jusqu'au bureau libre, qui peut être à l'autre bout de la carte : 30 s ne suffisent pas sur une machine chargée
   const a = await arrive(browser, 'Alma');
-  await a.page.evaluate(() => window.__office!.teleport(22 * 32 + 16, 14 * 32 + 16));
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(22 * 32 + 16);
+  await a.page.evaluate(() => window.__office!.teleport(25 * 32 + 16, 11 * 32 + 16));
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(25 * 32 + 16);
 
-  await a.page.keyboard.down('ArrowLeft');
-  // L'arbuste occupe les x de 640 à 672 : l'avatar le traverse, puis butte contre la fontaine (bord droit à 416, plus la demi-largeur du corps).
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeLessThan(630);
+  await a.page.keyboard.down('ArrowRight');
+  // L'arbuste occupe les x de 864 à 896 : l'avatar le traverse, puis butte contre la fontaine (bord gauche à 928, moins la demi-largeur du corps).
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(900);
   await a.page.waitForTimeout(800);
-  await a.page.keyboard.up('ArrowLeft');
+  await a.page.keyboard.up('ArrowRight');
   const stopped = (await selfAt(a.page)).x;
-  expect(stopped).toBeGreaterThanOrEqual(416 + 9);
-  expect(stopped).toBeLessThan(450);
+  expect(stopped).toBeLessThanOrEqual(928 - 9);
+  expect(stopped).toBeGreaterThan(900);
 });
 

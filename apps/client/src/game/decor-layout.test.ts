@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { DECOR_DEPTH, drawnAt, layoutDecor } from './decor-layout';
+import { DECOR_DEPTH, drawnAt, layoutDecor, namedProperty, placedFromObjects } from './decor-layout';
 
 // Quelques éléments de la banque : un bureau (3 × 2, solide, occupe ses 2 rangées), un écran à poser dessus (1 × 1), une chaise (1 × 2, une
 // rangée), un tapis (1 × 2 au sol) et un tableau mural (2 × 2).
@@ -40,8 +40,58 @@ describe('layoutDecor', () => {
     expect(alone!.depth).toBeLessThan(below!.depth);
   });
 
+  test('un décalage vertical descend l\'image, sans changer ni sa profondeur ni son empreinte : une chaise rentrée sous sa table', () => {
+    const [plain, nudged] = layoutDecor([{ id: CHAIR, x: 5, y: 4 }, { id: CHAIR, x: 6, y: 4, offsetY: 16 }]);
+    expect(nudged!.bottom).toBe(plain!.bottom + 16);
+    expect(nudged!.depth).toBe(plain!.depth);
+    expect(nudged!.footprint).toEqual({ ...plain!.footprint, x: 6 });
+    expect(nudged!.left).toBe(6 * 32);
+  });
+
   test('un élément inconnu est laissé de côté', () => {
     expect(layoutDecor([{ id: 'nope', x: 0, y: 0 }, { id: DESK, x: 0, y: 0 }])).toHaveLength(1);
+  });
+});
+
+describe('placedFromObjects : les objets du calque de la carte', () => {
+  test('le nom est la clé de l\'élément, la position (en pixels) devient le coin haut-gauche de son empreinte, en cases', () => {
+    expect(placedFromObjects([{ name: DESK, x: 4 * 32, y: 5 * 32 }, { name: CHAIR, x: 6 * 32 + 1, y: 7 * 32 - 1 }])).toEqual([
+      { id: DESK, x: 4, y: 5 },
+      { id: CHAIR, x: 6, y: 7 },
+    ]);
+  });
+
+  test('la propriété offsetY (la liste de Tiled, ou une table) devient le décalage ; absente ou nulle, l\'élément n\'en a pas', () => {
+    const [listed, tabled, zero, plain, other] = placedFromObjects([
+      { name: CHAIR, x: 0, y: 0, properties: [{ name: 'offsetY', value: 16 }] },
+      { name: CHAIR, x: 32, y: 0, properties: { offsetY: 8 } },
+      { name: CHAIR, x: 64, y: 0, properties: [{ name: 'offsetY', value: 0 }] },
+      { name: CHAIR, x: 96, y: 0 },
+      { name: CHAIR, x: 128, y: 0, properties: [{ name: 'depth', value: 160.5 }, { name: 'offsetY', value: '16' }] },
+    ]);
+    expect(listed).toEqual({ id: CHAIR, x: 0, y: 0, offsetY: 16 });
+    expect(tabled).toEqual({ id: CHAIR, x: 1, y: 0, offsetY: 8 });
+    expect(zero).toEqual({ id: CHAIR, x: 2, y: 0 });
+    expect(plain).toEqual({ id: CHAIR, x: 3, y: 0 });
+    expect(other, 'une valeur qui n\'est pas un nombre est ignorée').toEqual({ id: CHAIR, x: 4, y: 0 });
+  });
+
+  test('un objet sans nom, ou qui n\'est pas dans la banque, est laissé de côté', () => {
+    expect(placedFromObjects([{ x: 0, y: 0 }, { name: 'nope', x: 0, y: 0 }, { name: DESK, x: 0, y: 0 }])).toEqual([{ id: DESK, x: 0, y: 0 }]);
+  });
+
+  test('un décalage lu sur la carte descend l\'image : de bout en bout, jusqu\'au bas dessiné', () => {
+    const [plain, nudged] = layoutDecor(placedFromObjects([{ name: CHAIR, x: 0, y: 128 }, { name: CHAIR, x: 32, y: 128, properties: [{ name: 'offsetY', value: 16 }] }]));
+    expect(nudged!.bottom - plain!.bottom).toBe(16);
+  });
+});
+
+describe('namedProperty', () => {
+  test('lit une propriété d\'un objet de la carte, dans la liste de Tiled comme dans une table ; undefined si elle manque', () => {
+    expect(namedProperty({ properties: [{ name: 'depth', value: 160.5 }] }, 'depth')).toBe(160.5);
+    expect(namedProperty({ properties: { depth: 7 } }, 'depth')).toBe(7);
+    expect(namedProperty({ properties: [{ name: 'depth', value: 1 }] }, 'offsetY')).toBeUndefined();
+    expect(namedProperty({}, 'depth')).toBeUndefined();
   });
 });
 

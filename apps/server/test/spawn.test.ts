@@ -87,8 +87,8 @@ describe('chooseSpawn : la grande carte', () => {
   const centre = (tx: number, ty: number) => ({ x: tx * 32 + 16, y: ty * 32 + 16 });
 
   test('une position enregistrée dans un mur de la nouvelle carte : l\'apparition, à l\'accueil', () => {
-    // La case (10, 5) est un pan de mur entre les bureaux A1 et A2.
-    expect(chooseSpawn(office, centre(10, 5), new Set())).toEqual(office.spawn);
+    // La case (18, 5) est le pan de mur de l'est du bureau A1, contre celui de A2.
+    expect(chooseSpawn(office, centre(18, 5), new Set())).toEqual(office.spawn);
     expect(placeAt(office, office.spawn.x, office.spawn.y)?.key).toBe('reception');
   });
 
@@ -98,7 +98,7 @@ describe('chooseSpawn : la grande carte', () => {
   });
 
   test('un bureau occupé, quand on y a laissé sa position : l\'accueil aussi', () => {
-    const desk = office.zones.find((zone) => zone.type === 'desk' && zone.name === 'A6')!;
+    const desk = office.zones.find((zone) => zone.type === 'desk' && zone.name === 'A4')!;
     expect(chooseSpawn(office, centre(25, 20), new Set([desk.id]))).toEqual(office.spawn);
   });
 });

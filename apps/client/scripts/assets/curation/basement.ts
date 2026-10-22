@@ -11,20 +11,24 @@ const baDeco = on('ba', 'deco');
 
 export const BASEMENT_ENTRIES: Entry[] = [
   // ---- Canapés (trois places) : la découpe en a fusionné plusieurs, d'où les rectangles
-  baSeat('Canapé bleu-gris', [3, 0, 3, 2], { claim: 2 }),
-  baSeat('Canapé perle', [6, 0, 3, 2], { claim: 2 }),
-  baSeat('Canapé orange', [9, 0, 3, 2], { claim: 2 }),
-  baSeat('Canapé lilas clair', [9, 2, 3, 2], { claim: 2 }),
+  baSeat('Canapé bleu-gris (de face)', [3, 0, 3, 2], { claim: 2 }),
+  baSeat('Canapé perle (de face)', [6, 0, 3, 2], { claim: 2 }),
+  baSeat('Canapé orange (de face)', [9, 0, 3, 2], { claim: 2 }),
+  baSeat('Canapé lilas clair (de face)', [9, 2, 3, 2], { claim: 2 }),
 
-  // ---- Fauteuils, de face puis de profil
-  baSeat('Fauteuil bleu clair', [6, 33]),
-  baSeat('Fauteuil jaune', [8, 33]),
-  baSeat('Fauteuil rouge', [6, 35]),
-  baSeat('Fauteuil blanc', [8, 35]),
-  baSeat('Fauteuil blanc, de profil', [2, 33]),
-  baSeat('Fauteuil bleu clair, de profil', [4, 33]),
-  baSeat('Fauteuil jaune, de profil', [2, 35]),
-  baSeat('Fauteuil rouge, de profil', [4, 35]),
+  // ---- Fauteuils : de face, puis de profil vers la gauche (la planche) et vers la droite (la même image retournée)
+  baSeat('Fauteuil bleu clair (de face)', [6, 33]),
+  baSeat('Fauteuil jaune (de face)', [8, 33]),
+  baSeat('Fauteuil rouge (de face)', [6, 35]),
+  baSeat('Fauteuil blanc (de face)', [8, 35]),
+  baSeat('Fauteuil blanc (vers la gauche)', [2, 33]),
+  baSeat('Fauteuil bleu clair (vers la gauche)', [4, 33]),
+  baSeat('Fauteuil jaune (vers la gauche)', [2, 35]),
+  baSeat('Fauteuil rouge (vers la gauche)', [4, 35]),
+  baSeat('Fauteuil blanc (vers la droite)', [2, 33], { flip: true }),
+  baSeat('Fauteuil bleu clair (vers la droite)', [4, 33], { flip: true }),
+  baSeat('Fauteuil jaune (vers la droite)', [2, 35], { flip: true }),
+  baSeat('Fauteuil rouge (vers la droite)', [4, 35], { flip: true }),
 
   // ---- Tabourets
   baSeat('Tabouret rembourré bleu', [14, 13]),

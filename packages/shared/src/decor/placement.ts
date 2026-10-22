@@ -160,10 +160,10 @@ export const DEFAULT_DESK_ITEMS: readonly PlacedItem[] = [
   { id: 'of-14-12', x: 4, y: 1 },
   { id: 'of-11-15', x: 5, y: 1 },
   { id: 'of-12-8', x: 3, y: 2 },
-  { id: 'of-12-43', x: 4, y: 3 },
+  { id: 'of-0-8', x: 4, y: 3 },
   { id: 'of-7-12', x: 7, y: 0 },
   { id: 'lr-13-21', x: 0, y: 4 },
-  { id: 'of-0-17', x: 6, y: 4 },
+  { id: 'of-0-19', x: 6, y: 4 },
   { id: 'of-6-10', x: 0, y: 1 },
 ];
 
@@ -177,9 +177,9 @@ const STANDARD_NORTH_ITEMS: readonly PlacedItem[] = [
   { id: 'of-14-12', x: 6, y: 1 },
   { id: 'of-11-15', x: 7, y: 1 },
   { id: 'of-12-8', x: 5, y: 2 },
-  { id: 'of-12-43', x: 6, y: 3 },
+  { id: 'of-0-8', x: 6, y: 3 },
   { id: 'lr-13-21', x: 0, y: 4 },
-  { id: 'of-0-17', x: 6, y: 4 },
+  { id: 'of-0-19', x: 6, y: 4 },
   { id: 'of-6-10', x: 0, y: 1 },
 ];
 
@@ -190,7 +190,7 @@ const COMPACT_SOUTH_ITEMS: readonly PlacedItem[] = [
   { id: 'of-0-34', x: 3, y: 1 },
   { id: 'of-14-12', x: 3, y: 1 },
   { id: 'of-12-8', x: 3, y: 2 },
-  { id: 'of-12-43', x: 4, y: 3 },
+  { id: 'of-0-8', x: 4, y: 3 },
   { id: 'of-6-10', x: 0, y: 1 },
   { id: 'lr-13-21', x: 0, y: 4 },
 ];
@@ -202,7 +202,7 @@ const COMPACT_NORTH_ITEMS: readonly PlacedItem[] = [
   { id: 'of-0-34', x: 4, y: 1 },
   { id: 'of-14-12', x: 4, y: 1 },
   { id: 'of-12-8', x: 4, y: 2 },
-  { id: 'of-12-43', x: 5, y: 3 },
+  { id: 'of-0-8', x: 5, y: 3 },
   { id: 'of-6-10', x: 0, y: 1 },
   { id: 'lr-13-21', x: 0, y: 4 },
 ];

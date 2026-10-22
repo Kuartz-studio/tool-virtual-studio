@@ -51,7 +51,7 @@ describe('la liste des objets animés', () => {
     expect(propByKey('nope')).toBeUndefined();
   });
 
-  test('ceux dont l\'appli a besoin : portes, café, cheminée, enceintes, sport, bougies, aquarium', () => {
+  test('ceux dont l\'appli a besoin : portes, café, cheminée, enceintes, sport, accueil, bougies, aquarium', () => {
     const shape = (key: string) => {
       const p = propByKey(key) as Prop;
       return [p.frames, p.frameWidth, p.frameHeight, p.light ?? null];
@@ -67,6 +67,10 @@ describe('la liste des objets animés', () => {
     expect(shape('candle')).toEqual([3, 32, 64, 'candle']);
     expect(shape('wall-candle')).toEqual([3, 32, 64, 'candle']);
     expect(shape('fishtank')).toEqual([8, 64, 64, 'water']);
+    // Les deux personnes de l'accueil : un module d'une case, qui bloque comme le comptoir qu'il est.
+    expect(shape('receptionist')).toEqual([7, 32, 64, null]);
+    expect(shape('receptionist-2')).toEqual([7, 32, 64, null]);
+    for (const key of ['receptionist', 'receptionist-2']) expect([propByKey(key)!.claim, propByKey(key)!.solid], key).toEqual([1, true]);
   });
 
   test('la porte vitrée ne boucle pas (on s\'arrête sur l\'image où elle est ouverte ou fermée) ; le reste tourne en boucle', () => {

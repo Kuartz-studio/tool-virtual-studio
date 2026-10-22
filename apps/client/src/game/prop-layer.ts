@@ -1,6 +1,6 @@
 import { propByKey, type Prop } from '@bureau/shared';
 import type { GameObjects, Tilemaps } from 'phaser';
-import { DECOR_DEPTH } from './decor-layout';
+import { DECOR_DEPTH, namedProperty } from './decor-layout';
 import { prefersReducedMotion } from './reduced-motion';
 import { snapToPixels } from './pixel-snap';
 import { propAnimationKey, propTextureKey } from './prop-textures';
@@ -33,11 +33,9 @@ export function layoutProps(objects: readonly PropObject[]): PropPlacement[] {
   return objects.flatMap((object) => {
     const prop = propByKey(object.name);
     if (!prop) return [];
-    const named = (name: string): unknown =>
-      Array.isArray(object.properties) ? object.properties.find((p) => p.name === name)?.value : (object.properties as Record<string, unknown> | undefined)?.[name];
-    const offsetY = named('offsetY');
+    const offsetY = namedProperty(object, 'offsetY');
     const bottom = (object.y ?? 0) + (object.height ?? 0) + (typeof offsetY === 'number' ? offsetY : 0);
-    const given = named('depth');
+    const given = namedProperty(object, 'depth');
     const depth = typeof given === 'number' ? given : prop.claim === 0 ? DECOR_DEPTH.wall : bottom;
     return [{ key: prop.key, prop, left: object.x ?? 0, bottom, depth }];
   });

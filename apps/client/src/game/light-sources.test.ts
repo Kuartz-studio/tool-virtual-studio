@@ -26,6 +26,8 @@ const COMPUTER_SCREENS = [
 const SWITCHED_OFF_SCREENS = ['of-14-8', 'of-15-8', 'of-14-10', 'of-15-10'];
 const SCREENS = ['of-9-14', ...COMPUTER_SCREENS];
 const TVS = ['tv-10-3', 'tv-10-1'];
+// Les panneaux de sortie : vert vif et citron, la flèche à droite et (l'image retournée) à gauche.
+const EXIT_SIGNS = ['mu-14-111', 'mu-14-111-m', 'mu-15-111', 'mu-15-111-m'];
 const FIREPLACE = 'lr-4-24';
 
 // La lumière que donne cet élément, posé n'importe où.
@@ -35,8 +37,8 @@ const warmth = (color: number) => ((color >> 16) & 255) - (color & 255);
 describe('LIGHT_PROFILES', () => {
   const kinds = Object.keys(LIGHT_PROFILES) as LightKind[];
 
-  test('sept sortes de lumière, chacune avec une portée, une force entre 0 et 1 et une couleur', () => {
-    expect([...kinds].sort()).toEqual(['candle', 'fire', 'glow', 'lamp', 'screen', 'tv', 'water']);
+  test('huit sortes de lumière, chacune avec une portée, une force entre 0 et 1 et une couleur', () => {
+    expect([...kinds].sort()).toEqual(['candle', 'exit', 'fire', 'glow', 'lamp', 'screen', 'tv', 'water']);
     for (const kind of kinds) {
       const profile = LIGHT_PROFILES[kind];
       expect(profile.radiusTiles, kind).toBeGreaterThan(0);
@@ -57,9 +59,10 @@ describe('LIGHT_PROFILES', () => {
     }
   });
 
-  test('les flammes et les télévisions vacillent (la télévision à 6 Hz), le reste ne bouge pas ; jamais de plus de 10 %', () => {
-    expect(kinds.filter((kind) => LIGHT_PROFILES[kind].flicker).sort()).toEqual(['candle', 'fire', 'tv']);
+  test('les flammes, les télévisions et les panneaux de sortie vacillent (la télévision à 6 Hz, le panneau à 3 Hz), le reste ne bouge pas ; jamais de plus de 10 %', () => {
+    expect(kinds.filter((kind) => LIGHT_PROFILES[kind].flicker).sort()).toEqual(['candle', 'exit', 'fire', 'tv']);
     expect(LIGHT_PROFILES.tv.flicker?.hz).toBe(6);
+    expect(LIGHT_PROFILES.exit.flicker?.hz).toBe(3);
     for (const kind of kinds) {
       const flicker = LIGHT_PROFILES[kind].flicker;
       if (!flicker) continue;
@@ -76,12 +79,29 @@ describe('LIGHT_PROFILES', () => {
 });
 
 describe('LIGHT_EMITTERS', () => {
-  test('les lampes, la cheminée, les écrans et les télévisions éclairent, et rien d\'autre', () => {
+  test('les lampes, la cheminée, les écrans, les télévisions et les panneaux de sortie éclairent, et rien d\'autre', () => {
     for (const id of LAMPS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('lamp');
     expect(LIGHT_EMITTERS[FIREPLACE]?.kind).toBe('fire');
     for (const id of SCREENS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('screen');
     for (const id of TVS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('tv');
-    expect(Object.keys(LIGHT_EMITTERS)).toHaveLength(LAMPS.length + 1 + SCREENS.length + TVS.length);
+    for (const id of EXIT_SIGNS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('exit');
+    expect(Object.keys(LIGHT_EMITTERS)).toHaveLength(LAMPS.length + 1 + SCREENS.length + TVS.length + EXIT_SIGNS.length);
+  });
+
+  test('un panneau de sortie donne un petit halo vert, plus fort qu\'une LED et plus faible qu\'une lampe, qui scintille', () => {
+    for (const id of EXIT_SIGNS) {
+      const source = sourceOf(id);
+      expect(source.kind, id).toBe('exit');
+      // Vert : plus de vert que de rouge et que de bleu.
+      const [r, g, b] = [(source.color >> 16) & 255, (source.color >> 8) & 255, source.color & 255];
+      expect(g, id).toBeGreaterThan(r);
+      expect(g, id).toBeGreaterThan(b);
+      expect(source.strength, id).toBeGreaterThan(LIGHT_PROFILES.glow.strength);
+      expect(source.strength, id).toBeLessThan(sourceOf('of-11-15').strength);
+      expect(source.flicker, id).toEqual({ amplitude: 0.1, hz: 3 });
+      // Le halo brille sur le panneau, dans le haut de son carreau.
+      expect(source.y, id).toBeLessThan(TILE_SIZE / 2);
+    }
   });
 
   test('chaque élément a un profil, et sa portée et sa force propres, quand il en a, restent dans les mêmes limites', () => {

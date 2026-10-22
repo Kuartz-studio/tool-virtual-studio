@@ -65,6 +65,13 @@ export class Img {
     return out;
   }
 
+  // L'image retournée de gauche à droite.
+  mirrorX(): Img {
+    const out = new Img(this.width, this.height);
+    for (let y = 0; y < this.height; y++) for (let x = 0; x < this.width; x++) out.set(this.width - 1 - x, y, this.get(x, y));
+    return out;
+  }
+
   // Colle `src` à (dx, dy) : « source par-dessus » quand `over` (l'ordre de superposition des calques d'un personnage), sinon un simple
   // remplacement des pixels.
   paste(src: Img, dx: number, dy: number, over = true): void {

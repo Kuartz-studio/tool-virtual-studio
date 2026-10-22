@@ -244,8 +244,13 @@ describe('les lieux', () => {
     expect(at(5, 38)).toBe('gym');
     expect(at(20, 38)).toBe('game');
     expect(at(60, 38)).toBe('lounge');
-    expect(at(4, 4)).toBe('desk:A1');
-    expect(at(25, 20)).toBe('desk:A6');
+    // Les petits bureaux (A5 au nord, A6 au sud) sont tout à l'ouest de leur rangée, les grands à leur droite.
+    expect(at(4, 4)).toBe('desk:A5');
+    expect(at(13, 4)).toBe('desk:A1');
+    expect(at(25, 4)).toBe('desk:A2');
+    expect(at(4, 20)).toBe('desk:A6');
+    expect(at(13, 20)).toBe('desk:A3');
+    expect(at(25, 20)).toBe('desk:A4');
   });
 
   test('la salle de sport et la salle de jeu sont les seules destinations ; les pièces fermées sont aussi des zones privées', () => {
@@ -412,25 +417,29 @@ describe('la salle de réunion', () => {
     expect(f.x + f.w / 2).toBe(meeting.x + meeting.w / 2);
   });
 
-  test('les chaises touchent la table : une rangée au nord, une au sud, une à chaque bout', () => {
+  test('les chaises regardent la table et l\'écran : quatre de dos au sud, une de profil à chaque bout vers la table, aucune au nord (devant l\'écran)', () => {
     const f = footprintOf(table.item, table);
     const north = chairs.filter((c) => c.y === f.y - 1);
     const south = chairs.filter((c) => c.y === f.y + f.h);
-    expect(north.map((c) => c.x).sort((a, b) => a - b)).toEqual([f.x, f.x + 1, f.x + 2, f.x + 3]);
+    expect(north).toEqual([]);
     expect(south.map((c) => c.x).sort((a, b) => a - b)).toEqual([f.x, f.x + 1, f.x + 2, f.x + 3]);
-    expect(chairs.filter((c) => c.x === f.x - 1 || c.x === f.x + f.w)).toHaveLength(2);
-    expect(chairs).toHaveLength(10);
+    for (const chair of south) expect(chair.item.name, chair.id).toMatch(/\(de dos\)$/);
+    expect(chairs.filter((c) => c.x === f.x - 1).map((c) => c.item.name)).toEqual(['Chaise grise (vers la droite)']);
+    expect(chairs.filter((c) => c.x === f.x + f.w).map((c) => c.item.name)).toEqual(['Chaise grise (vers la gauche)']);
+    expect(chairs).toHaveLength(6);
   });
 
-  test('les cases qui bloquent sont celles de la table et de l\'enceinte, ni plus ni moins', () => {
-    const f = footprintOf(table.item, table);
+  test('les cases qui bloquent sont celles de la table, des deux bibliothèques et de l\'enceinte, ni plus ni moins : jamais une chaise ni une lampe', () => {
+    const cellsOf = (f: { x: number; y: number; w: number; h: number }) => Array.from({ length: f.w * f.h }, (_, i) => `${f.x + (i % f.w)},${f.y + Math.floor(i / f.w)}`);
     const blocked = new Set<string>();
     for (let y = meeting.y; y < meeting.y + meeting.h; y++) {
       for (let x = meeting.x; x < meeting.x + meeting.w; x++) if (!walkable(x, y)) blocked.add(`${x},${y}`);
     }
-    const tableCells = Array.from({ length: f.w * f.h }, (_, i) => `${f.x + (i % f.w)},${f.y + Math.floor(i / f.w)}`);
+    const shelves = placed.filter((d) => d.item.cat === 'rangement' && inside(meeting, d.x, d.y));
+    expect(shelves).toHaveLength(2);
     const speaker = map.speakers.find((s) => s.place === 'meeting')!;
-    expect([...blocked].sort()).toEqual([...tableCells, `${tileOf(speaker.x)},${tileOf(speaker.y)}`].sort());
+    const expected = [...cellsOf(footprintOf(table.item, table)), ...shelves.flatMap((d) => cellsOf(footprintOf(d.item, d))), `${tileOf(speaker.x)},${tileOf(speaker.y)}`];
+    expect([...blocked].sort()).toEqual(expected.sort());
   });
 });
 
@@ -444,14 +453,23 @@ describe('les fontaines à eau', () => {
       }
     }
   });
+
+  test('sur la première rangée de la rue nord, un arbuste se traverse et la fontaine qui le suit arrête : (27, 11) et (29, 11), que vise la marche de bout en bout', () => {
+    const shrub = placed.find((d) => d.x === 27 && d.y === 11 && d.item.cat === 'plantes');
+    const fountain = placed.find((d) => d.x === 29 && d.y === 11 && d.item.name === 'Fontaine à eau');
+    expect(shrub?.item.solid, 'l\'arbuste').toBe(false);
+    expect(fountain?.item.solid, 'la fontaine').toBe(true);
+    for (const x of [25, 26, 27, 28]) expect(walkable(x, 11), `libre en ${x}, 11`).toBe(true);
+    expect(walkable(29, 11), 'la fontaine arrête').toBe(false);
+  });
 });
 
 describe('l\'interrupteur de lumière de la rue nord', () => {
-  test('un seul, au centre de la case (28, 10) : la face du mur nord de la rue, entre la porte du petit bureau A5 et la place', () => {
+  test('un seul, au centre de la case (28, 10) : la face du mur nord de la rue, entre la porte du grand bureau A2 et la place', () => {
     expect(OFFICE.zones.filter((zone) => zone.type === 'switch')).toEqual([{ type: 'switch', x: 28, y: 10, w: 1, h: 1 }]);
     expect(map.switches).toEqual([{ x: centre(28), y: centre(10) }]);
-    const a5 = OFFICE_DESK_SLOTS.find((slot) => slot.key === 'A5')!.door;
-    expect(28).toBeGreaterThanOrEqual(a5.x + a5.w);
+    const a2 = OFFICE_DESK_SLOTS.find((slot) => slot.key === 'A2')!.door;
+    expect(28).toBeGreaterThanOrEqual(a2.x + a2.w);
     expect(28).toBeLessThan(areaOf('plaza').x);
   });
 
@@ -472,5 +490,121 @@ describe('l\'interrupteur de lumière de la rue nord', () => {
     expect(withinSwitchReach(feetAt(34, 12), map.switches)).toBe(false);
     expect(withinSwitchReach(feetAt(28, 15), map.switches)).toBe(false);
     expect(withinSwitchReach(map.spawn, map.switches)).toBe(false);
+  });
+});
+
+describe('l\'agencement : chaque siège regarde ce qu\'il sert, rien n\'est posé de travers', () => {
+  const cells = (f: { x: number; y: number; w: number; h: number }): Array<[number, number]> =>
+    Array.from({ length: f.w * f.h }, (_, i) => [f.x + (i % f.w), f.y + Math.floor(i / f.w)] as [number, number]);
+  const facingOf = (name: string) => /\((?:.*, )?(de face|de dos|vers la gauche|vers la droite)\)/.exec(name)?.[1];
+  const tables = placed.filter((d) => d.item.cat === 'bureaux' || (d.item.cat === 'cafe' && /^Table/.test(d.item.name)));
+  const tableAt = (x: number, y: number) => tables.some((t) => cells(footprintOf(t.item, t)).some(([cx, cy]) => cx === x && cy === y));
+  const propObjects = (json.layers.find((layer) => layer.name === 'props') as TiledObjectLayer).objects;
+
+  test('un siège d\'une case contre une table la regarde : de face au nord, de dos au sud, vers la droite à l\'ouest, vers la gauche à l\'est', () => {
+    const wrong: string[] = [];
+    let checked = 0;
+    for (const seat of placed.filter((d) => d.item.cat === 'sieges' && d.item.w === 1)) {
+      const facing = facingOf(seat.item.name);
+      if (!facing) continue;
+      const wanted = [
+        tableAt(seat.x, seat.y + 1) && 'de face',   // la table est au sud du siège : il est au nord d'elle, il regarde vers le sud
+        tableAt(seat.x, seat.y - 1) && 'de dos',
+        tableAt(seat.x + 1, seat.y) && 'vers la droite',
+        tableAt(seat.x - 1, seat.y) && 'vers la gauche',
+      ].filter(Boolean);
+      if (wanted.length !== 1) continue;
+      checked++;
+      if (wanted[0] !== facing) wrong.push(`${seat.item.name} en ${seat.x}, ${seat.y} : ${facing} au lieu de ${wanted[0]}`);
+    }
+    expect(wrong).toEqual([]);
+    // Le café (4 tables de 4 chaises), les quatre tables de jeu (2, 2, 2 et 4) et la salle de réunion (4 de dos, 2 de profil).
+    expect(checked).toBeGreaterThanOrEqual(30);
+  });
+
+  test('aucun siège ne bloque le passage : ses cases sont libres, sauf celles qu\'un meuble solide occupe déjà', () => {
+    const solid = new Set<string>();
+    for (const d of placed.filter((p) => p.item.solid)) for (const [x, y] of cells(footprintOf(d.item, d))) solid.add(`${x},${y}`);
+    for (const object of propObjects) {
+      const prop = propByKey(object.name)!;
+      if (!prop.solid) continue;
+      for (const [x, y] of cells({ x: object.x / tile, y: object.y / tile, w: prop.w, h: prop.claim })) solid.add(`${x},${y}`);
+    }
+    const seats = placed.filter((d) => d.item.cat === 'sieges');
+    expect(seats.length).toBeGreaterThan(60);
+    for (const seat of seats) {
+      for (const [x, y] of cells(footprintOf(seat.item, seat))) {
+        if (!solid.has(`${x},${y}`)) expect(walkable(x, y), `${seat.item.name} en ${x}, ${y}`).toBe(true);
+      }
+    }
+  });
+
+  test('les rangées de la salle de conférence regardent l\'écran : toutes les chaises sont de dos', () => {
+    const conference = areaOf('conference');
+    const chairs = placed.filter((d) => d.item.cat === 'sieges' && inside(conference, d.x, d.y));
+    expect(chairs).toHaveLength(16);
+    for (const chair of chairs) expect(facingOf(chair.item.name), chair.item.name).toBe('de dos');
+  });
+
+  test('chaque table de jeu a une chaise de face au nord et une de dos au sud (la ludo aussi une de profil à chaque bout, tournées vers elle)', () => {
+    for (const table of map.tables) {
+      const seats = table.seats.map((seat) => ({ x: tileOf(seat.x), y: tileOf(seat.y) }));
+      const chairAt = (x: number, y: number) => placed.find((d) => d.item.cat === 'sieges' && d.x === x && d.y === y);
+      const north = seats.find((s) => s.y < table.rect.y / tile)!;
+      const south = seats.find((s) => s.y >= (table.rect.y + table.rect.height) / tile)!;
+      expect(facingOf(chairAt(north.x, north.y)?.item.name ?? ''), `${table.game} nord`).toBe('de face');
+      expect(facingOf(chairAt(south.x, south.y)?.item.name ?? ''), `${table.game} sud`).toBe('de dos');
+      if (table.game === 'ludo') {
+        const west = seats.find((s) => s.x < table.rect.x / tile)!;
+        const east = seats.find((s) => s.x >= (table.rect.x + table.rect.width) / tile)!;
+        expect(facingOf(chairAt(west.x, west.y)?.item.name ?? ''), 'ludo ouest').toBe('vers la droite');
+        expect(facingOf(chairAt(east.x, east.y)?.item.name ?? ''), 'ludo est').toBe('vers la gauche');
+      }
+    }
+  });
+
+  test('quatre panneaux de sortie, pas un de plus : aux bouts des deux rues, sur la face du mur, au-dessus d\'une case libre, la flèche vers le bout', () => {
+    const signs = placed.filter((d) => /^Panneau de sortie/.test(d.item.name));
+    expect(signs).toHaveLength(4);
+    for (const sign of signs) {
+      expect(walkable(sign.x, sign.y), `sous le panneau en ${sign.x}, ${sign.y}`).toBe(true);
+      expect(walkable(sign.x, sign.y - 1), `le mur du panneau en ${sign.x}, ${sign.y}`).toBe(false);
+      const west = sign.x < OFFICE_WIDTH / 2;
+      expect(west ? sign.x <= 3 : sign.x >= 70, `au bout de la rue : ${sign.x}`).toBe(true);
+      expect(facingOf(sign.item.name), `${sign.x}, ${sign.y}`).toBe(west ? 'vers la gauche' : 'vers la droite');
+    }
+    // Deux dans la rue nord (y 11), deux dans la rue sud (y 26), un à l'ouest et un à l'est dans chacune.
+    expect(signs.map((s) => `${s.x < OFFICE_WIDTH / 2 ? 'O' : 'E'}${s.y}`).sort()).toEqual(['E11', 'E26', 'O11', 'O26']);
+  });
+
+  test('les petits bureaux (A5, A6) sont tout à l\'ouest de leur rangée, les grands bureaux à leur droite', () => {
+    const x = (key: string) => OFFICE_DESK_SLOTS.find((slot) => slot.key === key)!.room.x;
+    expect([x('A5'), x('A1'), x('A2')]).toEqual([1, 9, 20]);
+    expect([x('A6'), x('A3'), x('A4')]).toEqual([1, 9, 20]);
+    for (const key of ['A5', 'A6']) expect(OFFICE_DESK_SLOTS.find((slot) => slot.key === key)!.room.w).toBe(6);
+  });
+
+  test('le café : la machine a son comptoir contre le mur, la case où l\'on se sert juste devant, et tout ce qui va avec (frigo, distributeurs, fontaine) à portée de main', () => {
+    const [coffee] = map.coffees;
+    const [cx, cy] = [tileOf(coffee!.x), tileOf(coffee!.y)];
+    const counter = placed.find((d) => d.item.name === 'Comptoir d\'accueil' && inside(areaOf('cafe'), d.x, d.y))!;
+    const f = footprintOf(counter.item, counter);
+    expect(cx >= f.x && cx < f.x + f.w, 'la case de service est devant le comptoir').toBe(true);
+    expect(cy, 'juste en dessous du comptoir').toBe(f.y + f.h);
+    const machine = propObjects.find((p) => p.name === 'coffee')!;
+    expect(machine.x / tile >= f.x && machine.x / tile < f.x + f.w, 'la machine est sur le comptoir').toBe(true);
+    const pantry = placed.filter((d) => /^(Réfrigérateur|Distributeur|Fontaine)/.test(d.item.name) && inside(areaOf('cafe'), d.x, d.y));
+    expect(pantry.length).toBeGreaterThanOrEqual(4);
+    for (const item of pantry) expect(Math.abs(item.x - cx), item.item.name).toBeLessThanOrEqual(8);
+  });
+
+  test('l\'accueil : trois postes côte à côte, la réceptionniste brune entre deux blondes, avec l\'horloge à côté', () => {
+    const posts = propObjects.filter((p) => p.name.startsWith('receptionist')).sort((a, b) => a.x - b.x);
+    expect(posts.map((p) => p.name)).toEqual(['receptionist', 'receptionist-2', 'receptionist']);
+    expect(new Set(posts.map((p) => p.y)).size).toBe(1);
+    expect(posts.map((p) => p.x / tile - posts[0]!.x / tile)).toEqual([0, 1, 2]);
+    const clock = propObjects.find((p) => p.name === 'grandfather-clock')!;
+    expect(clock.x / tile).toBe(posts[0]!.x / tile - 1);
+    expect(placeAt(map, posts[1]!.x + tile / 2, posts[1]!.y + tile / 2)?.key).toBe('reception');
   });
 });

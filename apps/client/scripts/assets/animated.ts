@@ -42,6 +42,11 @@ export const ANIMATED_PROPS: readonly AnimatedSource[] = [
   { key: 'treadmill', file: sheet('tapis_roulant'), frames: 12, fps: 12, loop: true, claim: 2, solid: true },
   { key: 'punching-bag-left', file: sheet('punching_bag_left'), frames: 6, fps: 8, loop: true, claim: 1, solid: true },
   { key: 'punching-bag-right', file: sheet('punching_bag_right'), frames: 6, fps: 8, loop: true, claim: 1, solid: true },
+  // L'accueil : une personne derrière son poste, un module de comptoir d'une case (côte à côte, deux ou trois font un comptoir) ; deux coiffures. Elle cligne des yeux.
+  { key: 'receptionist', file: sheet('receptionist'), frames: 7, fps: 5, loop: true, claim: 1, solid: true },
+  { key: 'receptionist-2', file: sheet('receptionist_2'), frames: 7, fps: 5, loop: true, claim: 1, solid: true },
+  // L'horloge comtoise de l'accueil : le balancier va et vient (une case de large, trois de haut, haute comme une armoire : elle bloque).
+  { key: 'grandfather-clock', file: sheet('pendulum_clock'), frames: 4, fps: 2, loop: true, claim: 1, solid: true },
   // Bougies (au sol et au mur) et aquarium du salon.
   { key: 'candle', file: sheet('candle'), frames: 3, fps: 6, loop: true, claim: 1, solid: false, light: 'candle' },
   { key: 'wall-candle', file: sheet('wall_candle'), frames: 3, fps: 6, loop: true, claim: 0, solid: false, light: 'candle' },

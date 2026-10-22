@@ -16,9 +16,12 @@ export interface Entry {
   kind?: DecorKind;
   claim?: number;
   solid?: boolean;
+  // L'image retournée de gauche à droite : un fauteuil de profil que la planche ne dessine que dans un sens. L'identifiant prend alors le suffixe « -m »
+  // (celui de l'original est inchangé).
+  flip?: boolean;
 }
 
-export type EntryOptions = Partial<Pick<Entry, 'kind' | 'claim' | 'solid' | 'crop'>>;
+export type EntryOptions = Partial<Pick<Entry, 'kind' | 'claim' | 'solid' | 'crop' | 'flip'>>;
 
 // Les planches sources, par clé (celle des identifiants : `of-4-12` est la case 4, 12 de la planche `of`), relatives au dossier des ressources.
 export const SHEETS: Record<string, string> = {
@@ -33,4 +36,5 @@ export const SHEETS: Record<string, string> = {
   ge: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/1_Generic_32x32.png',
   gy: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/8_Gym_32x32.png',
   ba: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/14_Basement_32x32.png',
+  mu: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/22_Museum_32x32.png',
 };

@@ -1,7 +1,6 @@
 import {
   OFFICE_DESK_SLOTS,
   TILE_SIZE,
-  decorItem,
   defaultDeskDecor,
   deskKey,
   deskRoomSpecOf,
@@ -16,7 +15,7 @@ import {
 } from '@bureau/shared';
 import type { GameObjects, Tilemaps } from 'phaser';
 import { decorTextureKey } from './decor-textures';
-import { layoutDecor, type Drawn, type PlacedAt } from './decor-layout';
+import { layoutDecor, placedFromObjects, type Drawn } from './decor-layout';
 import { snapToPixels } from './pixel-snap';
 
 // Ce que le jeu dessine des éléments posés : les meubles de la carte (calque `objets`), et dans chaque bureau le sol, les murs et les éléments
@@ -61,10 +60,7 @@ export class DecorLayer {
   ) {
     // Les meubles de la carte : le nom de chaque objet est la clé de l'élément, sa position le coin haut-gauche de son empreinte.
     const objects = tilemap.getObjectLayer('objets')?.objects ?? [];
-    const placed: PlacedAt[] = objects.flatMap((object) =>
-      object.name && decorItem(object.name) ? [{ id: object.name, x: Math.round((object.x ?? 0) / TILE_SIZE), y: Math.round((object.y ?? 0) / TILE_SIZE) }] : [],
-    );
-    this.staticDrawn = layoutDecor(placed);
+    this.staticDrawn = layoutDecor(placedFromObjects(objects));
     this.staticSprites = drawAll(scene, this.staticDrawn);
 
     // Les pièces de bureau que la carte décrit, chacune avec sa taille et sa porte : une carte sans portes (celle de développement) n'a pas de déco.

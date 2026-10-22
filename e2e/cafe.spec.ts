@@ -1,17 +1,17 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { giveDeskBack, joinOffice, playerSeenBy, restingAt, selfAt, teleportTo, WALK_TIMEOUT } from './helpers';
 
-// Le café, sur la vraie carte (le second serveur des tests : playwright.config.ts). La machine est au bar du café, sur le mur nord de la salle (case 37, 3) ;
-// on se sert de l'autre côté du bar, sur la case (37, 5). Se servir (la touche E, à deux cases au plus) donne 30 s de vitesse doublée : le serveur la laisse
+// Le café, sur la vraie carte (le second serveur des tests : playwright.config.ts). La machine est au bar du café, sur le mur nord de la salle (case 40, 3) ;
+// on se sert de l'autre côté du bar, sur la case (40, 5). Se servir (la touche E, à deux cases au plus) donne 30 s de vitesse doublée : le serveur la laisse
 // faire, tout le bureau voit une tasse fumante au-dessus de la tête, et celui qui l'a prise voit la pastille compter.
 
 // Un seul navigateur à la fois : plusieurs personnes, et le reste de la suite qui tourne sur ce serveur (les tests de personnalisation cherchent un bureau libre).
 test.describe.configure({ mode: 'default' });
 
 const px = (tile: number) => tile * 32 + 16;
-const AT_MACHINE = { x: px(37), y: px(5) };
+const AT_MACHINE = { x: px(40), y: px(5) };
 // À trois cases de la machine : un pas trop loin (la portée est de deux).
-const TOO_FAR = { x: px(37), y: px(8) };
+const TOO_FAR = { x: px(40), y: px(8) };
 // Le bout ouest de la rue du milieu (rangée 12) : 79 cases libres vers l'est, de quoi courir à 960 px/s pendant 2,5 s.
 const STREET_WEST = { x: px(3), y: px(12) };
 

@@ -11,6 +11,21 @@ const parse = (c: MapCanvas): OfficeMap => parseOfficeMap(c.toTiled());
 const blockedAt = (c: MapCanvas, x: number, y: number): boolean => c.blocked[y * c.width + x] === 1;
 const layer = (c: MapCanvas, name: string) => c.toTiled().layers.find((l) => l.name === name) as TiledObjectLayer | undefined;
 
+describe('MapCanvas.put : un décalage vertical, en pixels, pour une chaise rentrée sous sa table', () => {
+  test('sans décalage l\'objet n\'a pas de propriété ; avec, il porte offsetY, et rien d\'autre ne change (empreinte, collisions)', () => {
+    const c = canvas();
+    c.put('ki-0-13', 5, 6);
+    c.put('ki-1-13', 7, 6, { offsetY: 16 });
+    const objects = layer(c, 'objets')!.objects;
+    expect(objects.map(({ name, x, y, width, height, properties }) => ({ name, x, y, width, height, properties }))).toEqual([
+      { name: 'ki-0-13', x: 5 * 32, y: 6 * 32, width: 32, height: 32, properties: undefined },
+      { name: 'ki-1-13', x: 7 * 32, y: 6 * 32, width: 32, height: 32, properties: [{ name: 'offsetY', type: 'int', value: 16 }] },
+    ]);
+    expect(blockedAt(c, 5, 6)).toBe(false);
+    expect(blockedAt(c, 7, 6)).toBe(false);
+  });
+});
+
 describe('MapCanvas.prop : un objet animé posé sur la carte', () => {
   test('un prop solide bloque son empreinte (les rangées du bas), pas le reste de son image', () => {
     const c = canvas();

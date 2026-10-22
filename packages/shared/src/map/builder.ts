@@ -16,6 +16,8 @@ export interface DecorObject {
   id: string;
   x: number;   // les cases du coin haut-gauche de l'empreinte du meuble
   y: number;
+  // De combien de pixels on abaisse son image, sans toucher à son empreinte ni à sa profondeur (une chaise rentrée sous sa table).
+  offsetY?: number;
 }
 
 // Un objet animé posé : sa clé (props/catalog.ts) et la case du coin haut-gauche de son empreinte ; `depth`, quand il est posé sur un meuble : la
@@ -122,7 +124,8 @@ export class MapCanvas {
 
   // Un meuble de la banque, posé là : ses cases bloquent s'il est solide. Un meuble posé sur un mur ou sur un autre meuble solide est une
   // erreur de dessin : elle se voit tout de suite, à la construction.
-  put(id: string, x: number, y: number): void {
+  // `offsetY` : de combien de pixels on abaisse l'image, pour qu'elle passe sous le bord de la table qui la cache à moitié.
+  put(id: string, x: number, y: number, options: { offsetY?: number } = {}): void {
     const item = decorItem(id);
     if (!item) throw new Error(`Élément inconnu : « ${id} ».`);
     const f = footprintOf(item, { x, y });
@@ -138,7 +141,7 @@ export class MapCanvas {
     } else if (item.kind !== 'wall') {
       for (let xx = f.x; xx < f.x + f.w; xx++) this.index(xx, f.y);   // au moins dans la carte
     }
-    this.decor.push({ id, x, y });
+    this.decor.push({ id, x, y, ...(options.offsetY ? { offsetY: options.offsetY } : {}) });
   }
 
   // Un objet animé (props/catalog.ts), posé par la case du coin haut-gauche de son empreinte : les `claim` rangées du bas de son image, dont le haut
@@ -281,6 +284,7 @@ export class MapCanvas {
         height: f.h * TILE_SIZE,
         id: index + 1,
         name: placed.id,
+        ...(placed.offsetY ? { properties: [{ name: 'offsetY', type: 'int', value: placed.offsetY }] } : {}),
         rotation: 0,
         type: 'decor',
         visible: true,

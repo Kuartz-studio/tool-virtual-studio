@@ -7,7 +7,7 @@ import { ATLAS_MARGIN, packImages } from './pack';
 import { extract, segmentSheet } from './segment';
 import { ASSETS_DIR } from './build-assets';
 import { mapFiles, MAPS_DIR } from './build-map';
-import { BIG_FOOTPRINT_CELLS, BIG_ITEM_TILES, MIN_FLOAT_PX, defaultsOf, fitOnFootprint, type ResolvedEntry } from './decor';
+import { BIG_FOOTPRINT_CELLS, BIG_ITEM_TILES, MIN_FLOAT_PX, SOLID_CATEGORIES, Sheets, buildDecor, defaultsOf, fitOnFootprint, type ResolvedEntry } from './decor';
 import { readFileSync } from 'node:fs';
 
 const solid = (w: number, h: number, a = 255): Img => {
@@ -177,27 +177,26 @@ describe('les planches Gym et Basement', () => {
   });
 });
 
-describe('qui arrête l\'avatar : les gros éléments seuls', () => {
+describe('qui arrête l\'avatar : les tables, les rangements, les gros appareils, jamais un siège ni une plante', () => {
   const entry = (cat: ResolvedEntry['cat'], rect: ResolvedEntry['rect'], more: Partial<ResolvedEntry> = {}): ResolvedEntry => ({ sheet: 'of', name: 'x', cat, rect, ...more });
 
   test('un petit meuble se traverse, un gros l\'arrête', () => {
     expect([BIG_ITEM_TILES, BIG_FOOTPRINT_CELLS]).toEqual([3, 2]);
-    // Une plante d'une seule case, petite ou haute : traversable ; un palmier (2 cases au sol) : non.
-    expect(defaultsOf(entry('plantes', [6, 10, 1, 2])).solid).toBe(false);
-    expect(defaultsOf(entry('plantes', [6, 7, 1, 3])).solid).toBe(false);
-    expect(defaultsOf(entry('plantes', [13, 0, 2, 2])).solid).toBe(true);
-    // Un bureau, une bibliothèque, un frigo (1 case au sol mais 3 d'image) : gros.
+    // Un bureau, une bibliothèque, un frigo (1 case au sol mais 3 d'image), un comptoir : gros.
     expect(defaultsOf(entry('bureaux', [7, 28, 3, 2])).solid).toBe(true);
     expect(defaultsOf(entry('rangement', [3, 13, 2, 2])).solid).toBe(true);
     expect(defaultsOf(entry('cafe', [9, 23, 1, 3])).solid).toBe(true);
-    // Une petite table (1 × 2 cases d'image, 1 au sol) et une imprimante d'une case : traversables.
+    expect(defaultsOf(entry('sport', [10, 30, 2, 3], { claim: 2 })).solid).toBe(true);
+    // Une petite table (1 × 2 cases d'image, 1 au sol) : traversable.
     expect(defaultsOf(entry('rangement', [0, 0, 1, 2], { claim: 1 })).solid).toBe(false);
   });
 
-  test('les sièges, les objets posés sur un meuble et les tapis ne bloquent jamais, même grands', () => {
+  test('les sièges, les plantes, les objets posés sur un meuble et les tapis ne bloquent jamais, même grands', () => {
     expect(defaultsOf(entry('sieges', [1, 28, 3, 2])).solid).toBe(false);
     expect(defaultsOf(entry('ecrans', [14, 12, 3, 3])).solid).toBe(false);
     expect(defaultsOf(entry('deco', [0, 0, 4, 3], { kind: 'floor' })).solid).toBe(false);
+    // Une plante, petite, haute ou grande comme un palmier : on passe à travers.
+    for (const rect of [[6, 10, 1, 2], [6, 7, 1, 3], [13, 0, 2, 2], [10, 0, 2, 3]] as const) expect(defaultsOf(entry('plantes', rect)).solid, String(rect)).toBe(false);
   });
 
   test('la curation peut dire solid elle-même, dans un sens comme dans l\'autre', () => {
@@ -205,13 +204,110 @@ describe('qui arrête l\'avatar : les gros éléments seuls', () => {
     expect(defaultsOf(entry('bureaux', [7, 28, 3, 2], { solid: false })).solid).toBe(false);
   });
 
-  test('dans la banque : aucune plante d\'une case ne bloque, et les gros meubles bloquent tous', () => {
-    const plants = DECOR_ITEMS.filter((item) => item.cat === 'plantes' && item.kind === 'object');
-    expect(plants.length).toBeGreaterThan(5);
-    for (const plant of plants) expect(plant.solid, plant.name).toBe(plant.w * plant.claim >= BIG_FOOTPRINT_CELLS);
-    const bigDesks = DECOR_ITEMS.filter((item) => item.cat === 'bureaux' && item.kind === 'object' && item.w * item.h >= 6);
+  test('dans la banque : aucun siège, aucune plante, aucun banc ne bloque, et les grandes tables et les gros meubles bloquent tous', () => {
+    for (const item of DECOR_ITEMS.filter((i) => i.cat === 'sieges' || i.cat === 'plantes')) expect(item.solid, item.name).toBe(false);
+    for (const item of DECOR_ITEMS.filter((i) => /^Banc (de bois|de cantine|en bois)/.test(i.name))) expect(item.solid, item.name).toBe(false);
+    const bigDesks = DECOR_ITEMS.filter((item) => item.cat === 'bureaux' && item.kind === 'object' && item.w * item.h >= 6 && !/^Banc /.test(item.name));
     expect(bigDesks.length).toBeGreaterThan(10);
     for (const desk of bigDesks) expect(desk.solid, desk.name).toBe(true);
+  });
+
+  test('dans la banque : ce qui bloque est une table, un rangement, un appareil de cuisine, du sport, une cheminée, un piano, un jeu, une cloison — rien d\'autre', () => {
+    // Les exceptions de la curation, posées une à une : des appareils de bureau (les imprimantes sur meuble et la copieuse), une borne, deux cloisons.
+    const named = (item: { name: string }) => /^(Imprimante|Borne tactile|Cloison vitrée)/.test(item.name);
+    const stray = DECOR_ITEMS.filter((item) => item.solid && !SOLID_CATEGORIES.has(item.cat) && !named(item)).map((item) => `${item.id} ${item.name}`);
+    expect(stray).toEqual([]);
+  });
+});
+
+describe('les sièges disent de quel côté ils regardent', () => {
+  const seats = DECOR_ITEMS.filter((item) => item.cat === 'sieges');
+  // Sans sens : un tabouret, un pouf, un banc se prennent de n'importe quel côté.
+  const anySide = (name: string) => /^(Tabouret|Pouf|Banc)/.test(name);
+  const facing = (name: string) => /\((.*, )?(de face|de dos|vers la gauche|vers la droite)\)/.exec(name)?.[2];
+  const atlas = readImage(join(ASSETS_DIR, 'decor', 'sieges.png'));
+  const pixels = (id: string) => {
+    const item = DECOR_ITEMS.find((i) => i.id === id)!;
+    return atlas.crop(item.fx, item.fy, item.w * 32, item.h * 32);
+  };
+
+  test('chaque chaise, fauteuil et canapé a son sens dans son nom : de face, de dos, vers la gauche ou vers la droite', () => {
+    const silent = seats.filter((item) => !anySide(item.name) && !facing(item.name)).map((item) => `${item.id} ${item.name}`);
+    expect(silent).toEqual([]);
+  });
+
+  test('un fauteuil de bureau a ses quatre vues, pour la couleur grise comme pour l\'orange ; une chaise de cuisine aussi', () => {
+    const views = (pattern: RegExp) => new Set(seats.filter((item) => pattern.test(item.name)).map((item) => facing(item.name)));
+    for (const pattern of [/^Fauteuil gris/, /^Fauteuil orange/]) expect([...views(pattern)].sort(), String(pattern)).toEqual(['de dos', 'de face']);
+    const all = ['de dos', 'de face', 'vers la droite', 'vers la gauche'];
+    expect([...views(/^Chaise de cuisine/)].sort()).toEqual(all);
+    // Avec les chaises de profil (grises, orange, de bureau), un fauteuil de bureau regarde de tous les côtés.
+    expect([...views(/^(Fauteuil (gris|orange)|Chaise (grise|orange|de bureau (grise|orange)))/)].sort()).toEqual(all);
+  });
+
+  test('un fauteuil de profil existe dans les deux sens : la version « vers la droite » est l\'image de la planche retournée', () => {
+    const mirrored = seats.filter((item) => item.id.endsWith('-m'));
+    expect(mirrored.length).toBeGreaterThanOrEqual(4);
+    for (const item of mirrored) {
+      expect(facing(item.name), item.id).toBe('vers la droite');
+      const original = pixels(item.id.slice(0, -2));
+      const flipped = pixels(item.id);
+      for (let y = 0; y < original.height; y += 3) {
+        for (let x = 0; x < original.width; x++) expect(flipped.get(x, y), `${item.id} ${x},${y}`).toEqual(original.get(original.width - 1 - x, y));
+      }
+    }
+  });
+
+  test('un fauteuil de bureau vu de face montre ses accoudoirs, vu de dos non : le nom dit vrai', () => {
+    // Les accoudoirs sont les pixels clairs sur les flancs : seuls les fauteuils « de face » en ont, à hauteur de l'assise.
+    const armrests = (id: string) => {
+      const img = pixels(id);
+      let count = 0;
+      for (let y = 36; y < 56; y++) for (const x of [0, 1, 2, 3, 4, 27, 28, 29, 30, 31]) if (img.get(x, y).a === 255 && img.get(x, y).b > 150) count++;
+      return count;
+    };
+    for (const id of ['of-2-8', 'of-3-8']) expect(armrests(id), id).toBeGreaterThan(0);
+    for (const id of ['of-0-8', 'of-1-8']) expect(armrests(id), id).toBe(0);
+  });
+});
+
+describe('les panneaux de sortie', () => {
+  const signs = DECOR_ITEMS.filter((item) => /^Panneau de sortie/.test(item.name));
+
+  test('quatre panneaux d\'un carreau, faits pour le mur : vert vif et citron, vers la droite et vers la gauche', () => {
+    expect(signs.map((item) => item.name).sort()).toEqual([
+      'Panneau de sortie citron (vers la droite)',
+      'Panneau de sortie citron (vers la gauche)',
+      'Panneau de sortie vert (vers la droite)',
+      'Panneau de sortie vert (vers la gauche)',
+    ]);
+    for (const item of signs) expect([item.kind, item.w, item.h, item.cat, item.solid], item.name).toEqual(['wall', 1, 1, 'deco', false]);
+  });
+});
+
+// Une planche d'un seul tenant, donnée en mémoire : de quoi faire tourner buildDecor sans le pack.
+class OnePicture extends Sheets {
+  constructor(private readonly picture: Img) {
+    super('/aucun/dossier');
+  }
+  override image(): Img {
+    return this.picture;
+  }
+}
+
+describe('une copie retournée (flip) : buildDecor', () => {
+  test('son identifiant prend « -m » et son image est celle de l\'original retournée de gauche à droite ; l\'original reste tel quel', () => {
+    const picture = new Img(64, 32);
+    picture.fillRect(0, 0, 32, 32, { r: 200, g: 0, b: 0, a: 255 });    // à gauche, du rouge
+    picture.fillRect(32, 0, 32, 32, { r: 0, g: 0, b: 200, a: 255 });   // à droite, du bleu
+    const base = { sheet: 'of', rect: [0, 0, 2, 1] as const, cat: 'sieges' as const };
+    const built = buildDecor(new OnePicture(picture), [{ ...base, name: 'Original' }, { ...base, name: 'Retourné', flip: true }]);
+    expect([...built.sprites.keys()].sort()).toEqual(['of-0-0', 'of-0-0-m']);
+    const [original, mirrored] = [built.sprites.get('of-0-0')!, built.sprites.get('of-0-0-m')!];
+    expect(original.get(0, 0)).toMatchObject({ r: 200, b: 0 });
+    expect(original.get(63, 0)).toMatchObject({ r: 0, b: 200 });
+    expect(mirrored.get(0, 0), 'le bleu est passé à gauche').toMatchObject({ r: 0, b: 200 });
+    expect(mirrored.get(63, 0), 'le rouge est passé à droite').toMatchObject({ r: 200, b: 0 });
   });
 });
 

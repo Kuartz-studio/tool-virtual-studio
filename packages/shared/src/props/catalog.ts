@@ -4,7 +4,7 @@ import { PROP_LIST } from './generated';
 // rangés par `gen:assets` (apps/client/scripts/assets/animated.ts) ; la carte les place, le client les anime.
 
 // Les genres de lumière que la nuit sait dessiner (leurs profils sont ceux du client, game/light-sources.ts).
-export const LIGHT_KINDS = ['lamp', 'screen', 'fire', 'tv', 'glow', 'candle', 'water'] as const;
+export const LIGHT_KINDS = ['lamp', 'screen', 'fire', 'tv', 'glow', 'candle', 'water', 'exit'] as const;
 export type LightKind = (typeof LIGHT_KINDS)[number];
 
 export interface Prop {

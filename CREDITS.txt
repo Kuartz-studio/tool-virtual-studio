@@ -16,7 +16,7 @@ Auteur : LimeZu (https://limezu.itch.io)
 Pack : « Modern Interiors », version complète (https://limezu.itch.io/moderninteriors)
 Dossier du pack lu par les scripts : VIRTUAL-Desktop_V2_Ressources/moderninteriors-win (pnpm --filter @bureau/client gen:assets)
 
-1. Objets animés : 14 planches du dossier 3_Animated_objects/32x32/spritesheets, une planche par objet, recopiées sans
+1. Objets animés : 17 planches du dossier 3_Animated_objects/32x32/spritesheets, une planche par objet, recopiées sans
    retouche dans apps/client/public/assets/props/ (apps/client/scripts/assets/animated.ts) :
    - porte vitrée double des bureaux : animated_door_glass_double_32x32.png, rangée en door-glass-double.png (8 images de 64 x 96) ;
    - machine à café : animated_coffee_32x32.png, rangée en coffee.png (6 images de 32 x 64) ;
@@ -30,13 +30,19 @@ Dossier du pack lu par les scripts : VIRTUAL-Desktop_V2_Ressources/moderninterio
      punching-bag-left.png et punching-bag-right.png (6 images de 64 x 64) ;
    - bougies, au sol et au mur : animated_candle_32x32.png et animated_wall_candle_32x32.png, rangées en candle.png et
      wall-candle.png (3 images de 32 x 64) ;
-   - aquarium du salon : animated_fishtank_orange_32x32.png, rangée en fishtank.png (8 images de 64 x 64).
+   - aquarium du salon : animated_fishtank_orange_32x32.png, rangée en fishtank.png (8 images de 64 x 64) ;
+   - réceptionnistes de l'accueil : animated_receptionist_32x32.png et animated_receptionist_2_32x32.png, rangées en
+     receptionist.png et receptionist-2.png (7 images de 32 x 64) ;
+   - grande horloge à balancier de l'accueil : animated_pendulum_clock_32x32.png, rangée en grandfather-clock.png (4 images
+     de 32 x 96).
 
-2. Planches « Gym » et « Basement », dossier 1_Interiors/32x32/Theme_Sorter_32x32 du même pack :
+2. Planches « Gym », « Basement » et « Museum », dossier 1_Interiors/32x32/Theme_Sorter_32x32 du même pack :
    - 8_Gym_32x32.png : 46 éléments (tapis de yoga, ballons et poufs, râteliers et supports, kettlebells, disques, haltères,
      bancs et appareils, tapis de course, miroirs muraux). Curation : apps/client/scripts/assets/curation/gym.ts ;
    - 14_Basement_32x32.png : 44 éléments (canapés, fauteuils, tabourets, tables rondes, ping-pong, billard, bornes d'arcade,
-     râtelier de queues, meuble télé, coussins, grand tapis, vases). Curation : apps/client/scripts/assets/curation/basement.ts.
+     râtelier de queues, meuble télé, coussins, grand tapis, vases). Curation : apps/client/scripts/assets/curation/basement.ts ;
+   - 22_Museum_32x32.png : 2 panneaux de sortie (vert et citron), chacun avec sa copie retournée de gauche à droite, soit
+     4 éléments. Curation : apps/client/scripts/assets/curation/museum.ts.
    Les éléments sont découpés dans les planches, certains recadrés sur leur case, puis regroupés en atlas par catégorie dans
    apps/client/public/assets/decor/ : sport.png (nouveau, catégorie « Sport & jeux »), et bureaux.png, deco.png, detente.png
    et sieges.png (agrandis des éléments du sous-sol et de la salle de sport).

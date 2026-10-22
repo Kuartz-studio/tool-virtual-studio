@@ -4,14 +4,14 @@ import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS, defaultSetupO
 import { enter, nextEvent, record, sleep, startTestServer, type ClientSocket, type TestServer } from './helpers/realtime';
 import { findUserByEmail } from './helpers/test-app';
 
-// La grande carte (MAP_KEY=office) : le bureau A1 est la pièce des cases x 1 à 9, y 2 à 8 ; sa porte, de 2 × 2 cases (x 4 et 5, y 9 et 10), perce
-// la bande de mur du sud. La case (4, 9) est la porte, au contact de la pièce, (4, 8) l'intérieur juste derrière, (3, 6) un point dans la
-// pièce, et (4, 12) le couloir, 2 cases devant la porte. Centre d'une case, en pixels.
+// La grande carte (MAP_KEY=office) : le bureau A1 est la pièce des cases x 9 à 17, y 2 à 8 (les petits bureaux sont à sa gauche) ; sa porte, de 2 × 2 cases
+// (x 12 et 13, y 9 et 10), perce la bande de mur du sud. La case (12, 9) est la porte, au contact de la pièce, (12, 8) l'intérieur juste derrière, (11, 6)
+// un point dans la pièce, et (12, 12) le couloir, 2 cases devant la porte. Centre d'une case, en pixels.
 const px = (tile: number) => tile * 32 + 16;
-const DOORWAY = { x: px(4), y: px(9) };
-const ENTRY = { x: px(4), y: px(8) };   // le pas qui franchit la porte vers l'intérieur
-const INSIDE = { x: px(3), y: px(6) };
-const OUTSIDE = { x: px(4), y: px(12) };
+const DOORWAY = { x: px(12), y: px(9) };
+const ENTRY = { x: px(12), y: px(8) };   // le pas qui franchit la porte vers l'intérieur
+const INSIDE = { x: px(11), y: px(6) };
+const OUTSIDE = { x: px(12), y: px(12) };
 
 const step = (to: { x: number; y: number }): MovePayload => ({ ...to, dir: 'up', moving: true });
 
@@ -147,9 +147,9 @@ describe('une porte fermée', () => {
     const b = await person(srv, 'b@x.fr');
     await teleport(b, INSIDE);
     await run(a.socket, { type: 'lock', locked: true });
-    b.socket.emit('move', step({ x: px(3), y: px(7) }));
+    b.socket.emit('move', step({ x: px(11), y: px(7) }));
     await sleep(100);
-    expect(posOf(srv, b)).toEqual({ x: px(3), y: px(7) });   // il y circule encore
+    expect(posOf(srv, b)).toEqual({ x: px(11), y: px(7) });   // il y circule encore
 
     await teleport(b, DOORWAY);
     const corrected = nextEvent(b.socket, 'move:correct');
@@ -198,11 +198,11 @@ describe('exclure', () => {
     const bans = nextEvent(a.socket, 'desk:bans');
     const bAccess = nextEvent(b.socket, 'desk:access');
     expect(await run(a.socket, { type: 'kick', userId: b.id })).toEqual({ ok: true });
-    // Devant la porte, hors de la bande de mur : le milieu de la porte (x 160), au-delà de son bord sud (y 352), plus une demi-case.
-    expect(await corrected).toEqual({ x: 160, y: 368 });
+    // Devant la porte, hors de la bande de mur : le milieu de la porte (x 416), au-delà de son bord sud (y 352), plus une demi-case.
+    expect(await corrected).toEqual({ x: 416, y: 368 });
     expect(await bans).toEqual([{ id: b.id, name: 'b' }]);
     expect(await bAccess).toEqual({ closed: ['A1'] });
-    expect(posOf(srv, b)).toEqual({ x: 160, y: 368 });
+    expect(posOf(srv, b)).toEqual({ x: 416, y: 368 });
 
     await teleport(b, DOORWAY);
     const refused = nextEvent(b.socket, 'move:correct');
@@ -236,7 +236,7 @@ describe('aller à son bureau', () => {
     const corrected = nextEvent(a.socket, 'move:correct');
     expect(await run(a.socket, { type: 'goto' })).toEqual({ ok: true });
     const at = await corrected;
-    expect(at.x).toBe(176);   // le milieu de la pièce A1 : x 32 à 319
+    expect(at.x).toBe(432);   // le milieu de la pièce A1 : x 288 à 575
     expect(at.y).toBe(176);   // y 64 à 287
     expect(posOf(srv, a)).toEqual(at);
   });
@@ -281,7 +281,7 @@ describe('la vie des bureaux', () => {
 
 describe('le seuil : une porte qui se ferme ne coince personne', () => {
   // Le point de sortie devant la porte de A1, côté rue : le centre de la case (5, 11).
-  const STREET = { x: 160, y: 368 };
+  const STREET = { x: 416, y: 368 };
 
   test('verrouiller pendant que quelqu\'un est sur le seuil : il est repoussé dans la rue, devant la porte, et son navigateur s\'y replace', async () => {
     const srv = await startOffice();
