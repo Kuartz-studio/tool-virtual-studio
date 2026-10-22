@@ -712,6 +712,14 @@ describe('le dessin : la taille des chevaux, les chevaux arrivés, le dé, le tr
     const over = mount(ended, { mySeat: null, canAct: false });
     expect(over.container.querySelectorAll('.ludo-yard[data-turn]')).toHaveLength(0);
   });
+
+  test('dans l\'aperçu d\'avant la partie, personne n\'a le trait : aucune écurie n\'est marquée (la partie n\'a pas commencé)', () => {
+    const { container } = mount(ludo.create({ seats: 2, first: 0 }, () => 0.5).state, { mySeat: null, canAct: false, preview: true });
+    expect(container.querySelectorAll('.ludo-yard[data-turn]')).toHaveLength(0);
+    // Le même état, en partie : le siège 0 a le trait et son écurie est marquée.
+    const playing = mount(ludo.create({ seats: 2, first: 0 }, () => 0.5).state, { mySeat: null, canAct: false });
+    expect(playing.container.querySelectorAll('.ludo-yard[data-turn]')).toHaveLength(1);
+  });
 });
 
 describe('les couleurs qui ne jouent pas, la dernière case de l\'allée', () => {

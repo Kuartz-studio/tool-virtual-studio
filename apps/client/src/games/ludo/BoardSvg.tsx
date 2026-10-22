@@ -66,6 +66,8 @@ export interface BoardSvgProps {
   sliding: { seat: number; horse: number } | null;
   // Le nom de chaque siège (il peut en manquer, dans l'aperçu).
   names: readonly string[];
+  // Le siège dont l'écurie porte le cadre épais du trait, ou null : personne n'a le trait avant la partie (l'aperçu) ni après (elle est finie).
+  turnSeat: number | null;
   // Les quarts de tour qui amènent l'écurie de celui qui regarde en bas à gauche.
   turns: number;
   // Le côté d'une case, en pixels.
@@ -81,7 +83,7 @@ export interface BoardSvgProps {
   onPreview(horse: number | null): void;
 }
 
-export function BoardSvg({ state, horses, sliding, names, turns, cell, describedBy, mySeat, playable, onPick, previewed, onPreview }: BoardSvgProps) {
+export function BoardSvg({ state, horses, sliding, names, turnSeat, turns, cell, describedBy, mySeat, playable, onPick, previewed, onPreview }: BoardSvgProps) {
   const size = BOARD_CELLS;
   const turn = (point: Point): Point => rotatePoint(point, turns);
   // Le coin haut gauche d'une case, une fois le plateau tourné.
@@ -116,7 +118,7 @@ export function BoardSvg({ state, horses, sliding, names, turns, cell, described
         const seat = seatOfColor(color);
         const used = seat !== -1;
         const gone = used && isOut(seat);
-        const hasTurn = used && state.phase !== 'over' && state.turn === seat;
+        const hasTurn = used && turnSeat === seat;
         const center = turn({ x: col + YARD_SIZE / 2, y: row + YARD_SIZE / 2 });
         const corner = { x: center.x - YARD_SIZE / 2, y: center.y - YARD_SIZE / 2 };
         return (

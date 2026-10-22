@@ -118,6 +118,7 @@ export function LudoBoard({ state, mySeat, players, events, canAct, onMove, redu
         horses={horses}
         sliding={shown.slide}
         names={names}
+        turnSeat={preview || state.phase === 'over' ? null : state.turn}
         turns={turns}
         cell={cell}
         describedBy={positionId}
