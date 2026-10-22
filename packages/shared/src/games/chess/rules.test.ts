@@ -4,7 +4,7 @@ import { GAMES } from '../index';
 import { chess, chessMoveSchema, MAX_PLIES_KEPT, positionKey, START_FEN, stateFromFen, type ChessState } from './index';
 import { fields, legalTexts, moveOf, noRandom, play, playSan, randomPlayout, startState, stateOf, textOf } from './test-helpers';
 
-// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à A30) : ce que le
+// Les cas nommés du § 13.5 du document des jeux (C1 à C37), un test par cas, son numéro en tête du titre ; puis les cas que l'agent ajoute (A1 à A32) : ce que le
 // document ne nomme pas mais que les règles, le contrat et le SAN exigent aussi. Les coups s'écrivent de+vers(+pièce) : `e2e4`, `a7a8q`.
 
 // Le siège qui a le trait, qui doit exister.
@@ -437,6 +437,10 @@ describe('cas ajoutés par l\'agent (A1 à A21)', () => {
     // Roi et fou contre roi nu, et pourtant pat : l'ordre du document (mat, pat, matériel, répétition, 50 coups) donne « pat ».
     const stalemate = play(stateOf('k7/8/1K6/4B3/8/8/8/8 w - - 0 1'), 'e5c7');
     expect(chess.result(stalemate)?.reason).toBe('stalemate');
+    // Un pat donné au centième demi-coup reste un pat (la règle des 50 coups vient après lui, comme après le mat).
+    const lateStalemate = play(stateOf('k7/8/1K6/8/8/8/8/2Q5 w - - 99 80'), 'c1c7');
+    expect(lateStalemate.fen.split(' ')[4]).toBe('100');
+    expect(chess.result(lateStalemate)?.reason).toBe('stalemate');
     // Le même coup fait apparaître une position pour la 3e fois et porte le compteur à 100.
     const before = stateOf('7k/8/8/8/8/8/8/R3K3 w - - 99 80');
     const after = play(before, 'a1b1');
@@ -568,7 +572,7 @@ describe('cas ajoutés par l\'agent (A1 à A21)', () => {
 
 // Des parties réelles, jouées en SAN : chaque coup du texte doit être retrouvé parmi les coups légaux par l'écriture que le moteur lui donne (lettres, prises,
 // désambiguïsation, roque, échec, mat). Ce sont des données que l'agent n'a pas fabriquées : si le moteur ou le SAN se trompent quelque part, un coup manque.
-describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notation (A22 à A25), symétries et bords (A26 à A30)', () => {
+describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notation (A22 à A25), symétries et bords (A26 à A32)', () => {
   const sans = (state: ChessState): string[] => state.plies.map((ply) => ply.san);
 
   test('A22 : l\'Opéra de Morphy (Paris, 1858) : 33 demi-coups, un grand roque, Nbd7, et le mat Rd8#', () => {
@@ -673,7 +677,25 @@ describe('cas ajoutés par l\'agent : parties célèbres jouées par leur notati
     expect(stateFromFen('4k3/8/8/8/8/8/8/4K3 w - - 7').fen).toBe('4k3/8/8/8/8/8/8/4K3 w - - 7 1');
   });
 
-  test('A30 : un siège qui n\'existe pas ne peut ni abandonner ni jouer', () => {
+  test('A30 : un pion n\'avance de deux cases que de sa case de départ, et seulement si les deux cases sont libres', () => {
+    // Un pion déjà avancé (e4 pour les Blancs, d6 pour les Noirs) ne fait plus qu'un pas.
+    const advanced = play(startState(), 'e2e4 d7d6');
+    expect(legalTexts(advanced).filter((move) => move.startsWith('e4'))).toEqual(['e4e5']);
+    expect(legalTexts(play(advanced, 'a2a3')).filter((move) => move.startsWith('d6'))).toEqual(['d6d5']);
+    // Une pièce sur la case d'en face ferme le pion ; une pièce sur la seconde case lui laisse le pas simple ; le pion ne saute pas.
+    expect(legalTexts(stateOf('4k3/8/8/8/8/4n3/4P3/4K3 w - - 0 1')).filter((move) => move.startsWith('e2'))).toEqual([]);
+    expect(legalTexts(stateOf('4k3/8/8/8/4n3/8/4P3/4K3 w - - 0 1')).filter((move) => move.startsWith('e2'))).toEqual(['e2e3']);
+  });
+
+  test('A31 : une case de prise en passant mal placée (FEN fabriqué, hors invariants) n\'ouvre aucune prise', () => {
+    // Un pion blanc en d4, un pion noir en e4 et une case « e5 » donnée comme case de prise en passant : ce n'est pas la 6e rangée, rien à prendre en passant.
+    const state = stateOf('4k3/8/8/8/3Pp3/8/8/4K3 w - e5 0 1');
+    expect(chess.invariants(state)).not.toEqual([]);
+    expect(legalTexts(state)).not.toContain('d4e5');
+    expect(legalTexts(state)).toContain('d4d5');
+  });
+
+  test('A32 : un siège qui n\'existe pas ne peut ni abandonner ni jouer', () => {
     const state = play(startState(), 'e2e4');
     expect(chess.forfeit(state, 5, 'resign')).toEqual({ state, events: [] });
     expect(chess.forfeit(state, -1, 'timeout')).toEqual({ state, events: [] });
