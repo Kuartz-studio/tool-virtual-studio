@@ -189,8 +189,9 @@ describe('la fin de la partie', () => {
     expect(screen.getByText('Moi : 1200 → 1216 (+16)')).toBeTruthy();
     expect(screen.getByRole('button', { name: fr.games.actions.rematch })).toBeTruthy();
     expect(square('e8').getAttribute('aria-label')).toBe('e8, roi noir, en échec');
-    expect(audioEngine.playSfx).toHaveBeenCalledWith('win');
     expect(audioEngine.playSfx).toHaveBeenCalledWith('piece');
+    // La victoire sonne après le dernier coup (la plateforme espace les sons d'un lot de GAME_SOUND_GAP_MS).
+    await vi.waitFor(() => expect(audioEngine.playSfx).toHaveBeenCalledWith('win'), { timeout: 3000 });
     // La partie est finie : le plateau ne joue plus.
     await userEvent.click(square('f7'));
     expect(sentCommands().some((command) => (command as { type: string }).type === 'move')).toBe(false);

@@ -176,7 +176,8 @@ describe('la fin d\'une partie', () => {
     expect((await screen.findAllByText('Moi a sorti tous ses pions. Gammon !')).length).toBeGreaterThan(0);
     expect(screen.getByText('Moi : 1200 → 1216 (+16)')).toBeTruthy();
     expect(screen.getByText('Bastien : 1200 → 1184 (−16)')).toBeTruthy();
-    expect(audioEngine.playSfx).toHaveBeenCalledWith('win');
+    // La victoire sonne après le dernier pion (la plateforme espace les sons d'un lot de GAME_SOUND_GAP_MS).
+    await vi.waitFor(() => expect(audioEngine.playSfx).toHaveBeenCalledWith('win'), { timeout: 3000 });
     // Le plateau est inerte, la salle d'attente (avec « Revanche ») est revenue.
     expect(screen.queryByRole('button', { name: /jouable/ })).toBeNull();
     expect(screen.getByRole('button', { name: fr.games.actions.rematch })).toBeTruthy();

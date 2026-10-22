@@ -6,6 +6,7 @@ import { audioEngine } from '../../audio/audio';
 import { fr, t } from '../../i18n/fr';
 import { useOfficeStore } from '../../state/office-store';
 import { FakeSocket } from '../../test/fake-socket';
+import { GAME_SOUND_GAP_MS } from '../GameFrame';
 import { GamePanel } from '../GamePanel';
 import { BASTIEN, SELF, applyWorld, chair, match, table } from '../games-test-kit';
 
@@ -128,7 +129,8 @@ describe('la fin d\'une partie', () => {
     expect(screen.getByText('Bastien : 1200 → 1184 (−16)')).toBeTruthy();
     expect(board().querySelectorAll('.game-connect4-token[data-win]')).toHaveLength(4);
     expect(audioEngine.playSfx).toHaveBeenCalledWith('piece');
-    expect(audioEngine.playSfx).toHaveBeenCalledWith('win');
+    // La victoire sonne après le dernier jeton (la plateforme espace les sons d'un lot de GAME_SOUND_GAP_MS).
+    await vi.waitFor(() => expect(audioEngine.playSfx).toHaveBeenCalledWith('win'), { timeout: 3000 });
     expect(screen.getByRole('button', { name: fr.games.actions.rematch })).toBeTruthy();
     for (let n = 1; n <= 7; n++) expect(column(n).getAttribute('aria-disabled')).toBe('true');
   });
@@ -139,6 +141,9 @@ describe('la fin d\'une partie', () => {
     update(ended(all, 12, { result: { ranking: [[0, 1]], reason: 'full' }, ranked: true, events: [drop(1, 5, 5), { type: 'end', winner: null, cells: [] }] }));
     expect((await screen.findAllByText('Grille pleine : nulle.')).length).toBeGreaterThan(0);
     expect(board().querySelectorAll('.game-connect4-token[data-win]')).toHaveLength(0);
+    // Le son de la victoire, s'il y en avait un, viendrait GAME_SOUND_GAP_MS après le dernier jeton : on attend plus longtemps que cela.
+    await new Promise((resolve) => setTimeout(resolve, GAME_SOUND_GAP_MS * 2));
+    expect(audioEngine.playSfx).toHaveBeenCalledWith('piece');
     expect(audioEngine.playSfx).not.toHaveBeenCalledWith('win');
   });
 
