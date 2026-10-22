@@ -14,7 +14,9 @@ import {
   WORLD_TICK_MS,
   busyZoneIds,
   parseOfficeMap,
+  type AnyGameDefinition,
   type ClientToServerEvents,
+  type GameId,
   type GroupConfig,
   type OfficeMap,
   type Role,
@@ -31,6 +33,8 @@ import { createDeskController } from '../desks/desk-controller';
 import { createModeTravel } from '../modes/mode-travel';
 import { createTeleport } from '../teleport';
 import { DeskService } from '../desks/desk-service';
+import { createGamesController, type GamesController } from '../games/games-controller';
+import { LadderService } from '../games/ladder-service';
 import type { Db } from '../db/client';
 import type { Env } from '../env';
 import { LightsService } from '../lights/lights-service';
@@ -103,6 +107,12 @@ export interface RealtimeDeps {
   lights?: LightsService;
   /** La musique de chaque pièce. Par défaut, celle de la base (MusicService) ; les tests peuvent en passer une réglée à leur main. */
   music?: MusicService;
+  /** Les notes et les parties des jeux. Par défaut, celles de la base (LadderService) ; les tests peuvent en passer une réglée à leur main. */
+  ladder?: LadderService;
+  /** Les jeux que le registre connaît : ceux de GAMES par défaut ; les tests y mettent le morpion. */
+  gameDefinitions?: Partial<Record<GameId, AnyGameDefinition>>;
+  /** La période du balayage des délais des jeux : GAME_SWEEP_MS par défaut. */
+  gamesSweepMs?: number;
   /** L'intervalle des pings du serveur : PING_INTERVAL_MS par défaut. */
   pingIntervalMs?: number;
   /** Le délai de réponse à un ping, au-delà duquel la connexion est coupée : PING_TIMEOUT_MS par défaut. */
@@ -122,6 +132,8 @@ export interface Realtime {
   lights: LightsService;
   /** La musique de chaque pièce, réglée par ceux qui y sont, gardée d'un redémarrage à l'autre. */
   music: MusicService;
+  /** Les tables de jeu : leurs chaises, leurs parties, les invitations ; le classement est en base. */
+  games: GamesController;
   /** Les groupes de conversation et leurs rooms LiveKit : groupMembersOf sert au chat « À proximité ». */
   coordinator: MediaCoordinator;
   /**
@@ -256,6 +268,21 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   // La limite de débit des cafés : une prise par COFFEE_RATE_MS et par compte, comme les changements de lumière.
   const coffeeLimiter = createRateLimiter({ max: 1, windowMs: COFFEE_RATE_MS, now });
 
+  // Les tables de jeu (en mémoire), leur classement (en base) et le balayage de leurs délais. Celui qui accepte une invitation est posé près de la table (teleport).
+  const games = createGamesController({
+    io,
+    world,
+    map: d.map,
+    ladder: d.ladder ?? new LadderService(d.db),
+    definitions: d.gameDefinitions,
+    isOnline: (userId) => presence.socketsOf(userId).length > 0,
+    socketsOf: (userId) => enteredSockets(userId),
+    teleport,
+    now,
+    sweepMs: d.gamesSweepMs,
+    logger,
+  });
+
   const presence = createPresence({
     io,
     world,
@@ -269,7 +296,11 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     desks: deskController,
     lights,
     music,
-    onWelcome: resyncMedia,
+    games,
+    onWelcome: (socket) => {
+      resyncMedia(socket);
+      games.onWelcome(socket.data.userId);
+    },
   });
 
   // Ce que chaque socket sait de sa room LiveKit : la room de son dernier media:join, null après un media:leave. La même consigne
@@ -335,6 +366,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       switches: d.map.switches,
       music,
       musicLimiter,
+      games,
       map: d.map,
       deskOwnerOf: (key) => desks.get(key)?.ownerId ?? null,
       coffeeLimiter,
@@ -355,6 +387,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const offProfileChanged = d.events.on('profile:changed', (profile) => {
     world.setProfile(profile.id, { name: profile.name, avatarKey: profile.avatarKey });
     deskController.renameOwner(profile.id, profile.name);
+    games.profileChanged(profile.id, profile.name, profile.avatarKey);
     io.to(OFFICE_ROOM).emit('profile:changed', { id: profile.id, name: profile.name, avatarKey: profile.avatarKey });
   });
   const stopTicks = startWorldTicks(io, world, d.tickMs ?? WORLD_TICK_MS, now, logger);
@@ -383,6 +416,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       offSessionsRevoked();
       offProfileChanged();
       offActivityEdited();
+      // Les jeux d'abord : plus de balayage, plus de commande, plus rien d'écrit.
+      games.stop();
       clearInterval(saveTimer);
       d.sim?.stop();
       stopTicks();
@@ -407,6 +442,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     desks,
     lights,
     music,
+    games,
     coordinator,
     stop,
   };

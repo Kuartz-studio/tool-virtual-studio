@@ -57,6 +57,13 @@ export interface OfficeDebug {
   // L'avatar local marche-t-il tout seul (« Aller à mon bureau », voir auto-walk.ts) ? Faux dès qu'il est arrivé, qu'une touche de déplacement
   // l'a interrompu, ou qu'il est bloqué.
   autoWalking(): boolean;
+  // Les tables de jeu de la carte, en pixels : le jeu, le rectangle de la table, et le centre de chacune de ses chaises, dans l'ordre. Vide sur une carte sans table.
+  tables(): Array<{ game: string; x: number; y: number; width: number; height: number; seats: Array<{ x: number; y: number }> }>;
+  // La vue que le magasin a de la table de ce jeu (celle que le serveur a dite : chaises, spectateurs, partie), ou null sans table.
+  gameTable(game: string): unknown;
+  // Remplace l'état de la partie en cours à cette table par un état fabriqué (événement `debug:game`, que le serveur n'enregistre qu'avec E2E=1), et impose les prochains dés
+  // (de 1 à 6) : de quoi jouer la fin d'une partie sans en jouer toute la longueur.
+  debugGame(game: string, state: unknown, rolls?: number[]): void;
 }
 
 // Ce que les tests de bout en bout lisent du son : window.__audio, dans le même build. Le son démarre avant le jeu (dès la page de connexion) :

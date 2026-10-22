@@ -7,8 +7,9 @@ import { IconButton } from './IconButton';
 // du bureau (OfficeShell, `.office-side`) qui le pose à droite, ou en feuille en bas sur un téléphone.
 // Le focus va au titre à l'ouverture (le lecteur d'écran l'annonce, et Tab entre dans le panneau), sauf si le contenu a déjà pris le focus
 // (le champ d'un message) ; Échap ferme, sauf pendant une composition (clavier à touches mortes, méthode de saisie) : il l'annule.
-// `className` s'ajoute à celle du panneau, pour qui veut un corps à lui (le chat : sa liste défile, son champ reste en bas).
-export function Drawer({ title, onClose, id, className, children }: { title: string; onClose(): void; id?: string; className?: string; children: ReactNode }) {
+// `className` s'ajoute à celle du panneau, pour qui veut un corps à lui (le chat : sa liste défile, son champ reste en bas). `actions` : des boutons de plus, dans l'en-tête, avant
+// « Fermer » (les règles d'un jeu).
+export function Drawer({ title, onClose, id, className, actions, children }: { title: string; onClose(): void; id?: string; className?: string; actions?: ReactNode; children: ReactNode }) {
   const panel = useRef<HTMLElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
 
@@ -29,6 +30,7 @@ export function Drawer({ title, onClose, id, className, children }: { title: str
         <h2 ref={heading} tabIndex={-1}>
           {title}
         </h2>
+        {actions}
         <IconButton label={fr.ui.close} small tip="bottom" onClick={onClose}>
           <CloseIcon />
         </IconButton>

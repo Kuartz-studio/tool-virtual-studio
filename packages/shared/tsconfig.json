@@ -1,4 +1,9 @@
 {
   "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // Les tests des jeux lisent des variables d'environnement (JEUX_FUZZ, JEUX_LONG : le nombre de parties au hasard, les perft longs) et des fichiers (parties enregistrées).
+    // Le code de ce paquet, lui, reste sans API de Node : le client le compile aussi (le typage de ce paquet ne le garantit pas, la compilation du client si).
+    "types": ["node"]
+  },
   "include": ["src", "test"]
 }

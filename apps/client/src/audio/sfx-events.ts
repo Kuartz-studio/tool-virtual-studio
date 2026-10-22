@@ -1,4 +1,4 @@
-import type { ChatMessage } from '@bureau/shared';
+import { DEFAULT_ROOM_MUSIC, type ChatMessage } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import { doorSoundLevel } from '../game/door-state';
 import { listenOnBus, type OfficeBus } from '../net/office-connection';
@@ -59,14 +59,17 @@ interface SfxDeps {
   bus: OfficeBus;
   store: StoreApi<OfficeState>;
   doc?: Document;
+  // La pièce réglable où sont les pieds de la personne (celle de l'audio : `placeKey`), ou null ; sans elle, la musique des pièces ne sonne pas.
+  placeKey?: () => string | null;
 }
 
 // Branche les effets sur ce qui se passe : les clics de l'interface, les arrivées et départs, les messages, les toc toc, la conversation
 // qui commence ou finit, l'arrivée au bureau, la connexion qui tombe, un bureau ou un personnage enregistré, la lumière qu'on allume ou
-// qu'on éteint, le café qu'on se sert, le voyage d'un mode. Renvoie la fonction qui débranche tout.
+// qu'on éteint, le café qu'on se sert, la musique que quelqu'un d'autre règle dans la pièce où l'on est, le voyage d'un mode. Renvoie la
+// fonction qui débranche tout.
 //
-// En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc, la lumière) ne sonne pas.
-export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDeps): () => void {
+// En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc, la lumière, la musique) ne sonne pas.
+export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKey = () => null }: SfxDeps): () => void {
   const state = () => store.getState();
   const quiet = () => state().self?.status === 'dnd';
   const knock = () => {
@@ -138,6 +141,18 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document }: SfxDe
       if (now.ready && before.ready && (now.chatAll !== before.chatAll || now.chatNearby !== before.chatNearby)) {
         const message = arrivedIn(now.chatAll, before.chatAll) ?? arrivedIn(now.chatNearby, before.chatNearby);
         if (message !== undefined && message.userId !== now.selfId && !quiet()) engine.playSfx('message');
+      }
+
+      // La musique de la pièce où l'on est, qu'un autre règle : le bruit d'un interrupteur qui s'éteint ou se rallume, ou un clic pour une autre ambiance (la pièce éteinte
+      // n'en joue aucune). Ce qu'on règle soi-même a déjà le bruit de son clic ; l'état de l'init n'est pas un changement ; celui d'un autre ne sonne pas en « Ne pas déranger ».
+      const roomKey = placeKey();
+      if (roomKey !== null && now.ready && before.ready && now.music[roomKey] !== before.music[roomKey] && !quiet()) {
+        const next = now.music[roomKey] ?? DEFAULT_ROOM_MUSIC;
+        const previous = before.music[roomKey] ?? DEFAULT_ROOM_MUSIC;
+        if (next.by?.id !== now.selfId) {
+          if (next.on !== previous.on) engine.playSfx(next.on ? 'toggle-on' : 'toggle-off');
+          else if (next.on && next.scene !== previous.scene) engine.playSfx('click');
+        }
       }
 
       // Quelqu'un toque à la porte de mon bureau (et non : un toc toc qu'on écarte, qui raccourcit la liste).

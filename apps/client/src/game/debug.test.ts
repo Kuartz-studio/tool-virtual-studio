@@ -23,6 +23,9 @@ const debug = (): OfficeDebug => ({
   nightLevel: () => 0,
   autoWalking: () => false,
   doors: () => ({}),
+  tables: () => [],
+  gameTable: () => null,
+  debugGame: () => {},
 });
 
 afterEach(() => {

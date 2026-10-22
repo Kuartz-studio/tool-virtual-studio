@@ -4,6 +4,8 @@ import {
   isSimBot,
   parseOfficeMap,
   type ActivityState,
+  type GameId,
+  type GameTable,
   type InitPayload,
   type OfficeMap,
   type PublicPlayer,
@@ -14,6 +16,7 @@ import {
 } from '@bureau/shared';
 import { Scale, Scene, Scenes } from 'phaser';
 import { fr, t } from '../../i18n/fr';
+import { chairOf } from '../../games/table-view';
 import { deskTitle } from '../../office/desks';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { selectDeskOf, useOfficeStore } from '../../state/office-store';
@@ -23,6 +26,7 @@ import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
+import { gameTableTarget, tableFocus, type TableState } from '../game-tables';
 import { PropLayer } from '../prop-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
@@ -101,6 +105,8 @@ export class Office extends Scene {
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
   private editingRoom: Zone | null = null;
+  // Le panneau d'une table de jeu aussi : la caméra est sur la table, dans la partie de l'écran qu'il laisse libre.
+  private focusedTable: GameTable | null = null;
   // Le zoom que la caméra montre en ce moment, et celui où elle va : elle glisse de l'un à l'autre quand la personne change de pourcentage.
   private zoomShown = 1;
   private zoomTarget = 1;
@@ -139,6 +145,9 @@ export class Office extends Scene {
       nightLevel: () => this.lighting?.level ?? 0,
       autoWalking: () => this.autoWalk?.walking ?? false,
       doors: () => this.deskLayer?.phases() ?? {},
+      tables: () => (this.officeMap?.tables ?? []).map((table) => ({ game: table.game, ...table.rect, seats: table.seats.map((seat) => ({ x: seat.x, y: seat.y })) })),
+      gameTable: (game) => useOfficeStore.getState().games[game as GameId] ?? null,
+      debugGame: (game, state, rolls) => emitOnBus(EventBus, 'local:debug-game', { game: game as GameId, state, ...(rolls ? { rolls } : {}) }),
     };
     exposeDebug(this.debug);
 
@@ -202,6 +211,7 @@ export class Office extends Scene {
     this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, this.interactions, () => this.useLights()));
     const unbindCoffee = this.bindCoffeeMachines();
     const unbindSpeakers = this.bindSpeakers();
+    const unbindTables = this.bindGameTables();
     const showLights = (instant = false) => {
       const { on } = useOfficeStore.getState().lights;
       for (const lightSwitch of this.switches) lightSwitch.setOn(on);
@@ -272,6 +282,7 @@ export class Office extends Scene {
           this.showLightSources();
         }
         if (state.zoomPercent !== previous.zoomPercent) this.retargetZoom();
+        if (state.gameOpen !== previous.gameOpen) this.syncGameFocus(state.gameOpen);
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -293,6 +304,7 @@ export class Office extends Scene {
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
       unbindCoffee();
       unbindSpeakers();
+      unbindTables();
       this.prompt.destroy();
       this.teleportEffect.destroy();
       this.lighting.destroy();
@@ -382,13 +394,59 @@ export class Office extends Scene {
     return [room.x + room.width / 2 + EDITOR_PANEL_WIDTH_PX / 2 / zoom, room.y + room.height / 2];
   }
 
-  // Il se ferme : la caméra revient à l'avatar.
+  // Il se ferme (ou le panneau de la table de jeu) : la caméra revient à l'avatar.
   private followPlayer(): void {
     this.editingRoom = null;
+    this.focusedTable = null;
     const camera = this.cameras.main;
     camera.pan(this.player.x, this.player.y - this.player.displayHeight / 2, 350, 'Sine.easeInOut', true, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-      if (progress === 1 && this.editingRoom === null) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
+      if (progress === 1 && this.editingRoom === null && this.focusedTable === null) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
     });
+  }
+
+  // Les tables de jeu de la carte : une cible de la touche E devant chacune (« [E] Échecs : jouer »), qui demande l'ouverture de son panneau ; un clic sur la table fait de même,
+  // de près. Rend la fonction qui les retire.
+  private bindGameTables(): () => void {
+    const targets = this.officeMap.tables.map((table) =>
+      gameTableTarget(
+        table,
+        () => this.tableState(table.game),
+        () => useOfficeStore.getState().openGame(table.game),
+      ),
+    );
+    const unregister = targets.map((target) => this.interactions.register(target));
+    // Une zone invisible sur chaque table : un clic y actionne la cible (de près seulement : `useTarget` relit la portée).
+    const zones = this.officeMap.tables.map((table, index) =>
+      this.add
+        .zone(table.rect.x + table.rect.width / 2, table.rect.y + table.rect.height / 2, table.rect.width, table.rect.height)
+        .setInteractive({ useHandCursor: true })
+        .on('pointerdown', () => this.interactions.useTarget(targets[index]!)),
+    );
+    return () => {
+      for (const off of unregister) off();
+      for (const zone of zones) zone.destroy();
+    };
+  }
+
+  // Ce que la personne et cette table sont l'une pour l'autre (assise, une partie en cours) : de quoi écrire l'étiquette « [E] … ».
+  private tableState(game: GameId): TableState {
+    const { games, selfId } = useOfficeStore.getState();
+    const table = games[game];
+    return { seated: chairOf(table, selfId) !== null, playing: table?.match?.status === 'playing' };
+  }
+
+  // Le panneau d'une table s'ouvre (le magasin le dit) : la caméra quitte l'avatar et va à la table, qu'elle place dans la partie de l'écran que le panneau laisse libre. Il se ferme :
+  // elle revient à l'avatar.
+  private syncGameFocus(game: GameId | null): void {
+    const table = game === null ? undefined : this.officeMap.tables.find((candidate) => candidate.game === game);
+    if (!table) {
+      if (this.focusedTable) this.followPlayer();
+      return;
+    }
+    this.focusedTable = table;
+    const camera = this.cameras.main;
+    camera.stopFollow();
+    camera.pan(...tableFocus(table.rect, camera.zoom, this.scale.gameSize), 450, 'Sine.easeInOut', true);
   }
 
   // L'interrupteur est actionné de près (E, ou un clic sur la plaque) : on demande l'état contraire de celui qu'on voit. La lumière ne change qu'à
@@ -676,6 +734,7 @@ export class Office extends Scene {
     camera.setZoom(zoom);
     camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     if (this.editingRoom) camera.centerOn(...this.roomFocus(this.editingRoom, zoom));
+    else if (this.focusedTable) camera.centerOn(...tableFocus(this.focusedTable.rect, zoom, { width, height }));
     // À la création, layoutCamera passe avant les avatars.
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);

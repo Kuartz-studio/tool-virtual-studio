@@ -1,4 +1,4 @@
-import type { ChatMessage, InitPayload, PublicPlayer } from '@bureau/shared';
+import type { ChatMessage, GameInvite, GameNotice, GameTableView, InitPayload, PublicPlayer } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr, t } from '../i18n/fr';
 import { getSimRoom, resetSimRoom, subscribeSimConnectionLost } from '../sim/sim-room';
@@ -405,6 +405,60 @@ describe('connectOffice', () => {
       expect(store.getState().coffee).toEqual({});
       socket.receive('coffee:changed', { id: 'moi', ms: 30_000 });
       expect(store.getState().coffee).toEqual({ moi: 40_000 });
+    });
+  });
+
+  describe('les jeux', () => {
+    const view = (version: number, over: Partial<GameTableView> = {}): GameTableView => ({ game: 'connect4', version, chairs: [null, null], spectators: [], match: null, ...over });
+    const invite: GameInvite = { id: 'i1', game: 'chess', from: { id: 'a', name: 'A', avatarKey: null }, ttlMs: 60_000 };
+
+    test('init : les tables et les invitations en attente vont au magasin', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init(), games: [view(2)], gameInvites: [invite] });
+      expect(store.getState().games.connect4?.version).toBe(2);
+      expect(store.getState().gameInvites).toEqual([{ ...invite, until: expect.any(Number) }]);
+      socket.receive('init', init());
+      expect(store.getState().games).toEqual({});
+      expect(store.getState().gameInvites).toEqual([]);
+    });
+
+    test('game:table : au magasin, par jeu ; une version plus ancienne ne remplace rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      socket.receive('game:table', view(1));
+      socket.receive('game:table', view(2, { spectators: [{ id: 'a', name: 'A' }] }));
+      socket.receive('game:table', view(1));
+      expect(store.getState().games.connect4?.version).toBe(2);
+      expect(store.getState().games.connect4?.spectators).toHaveLength(1);
+    });
+
+    test('game:invite : au magasin ; game:invite:gone la retire', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      socket.receive('game:invite', invite);
+      expect(store.getState().gameInvites).toEqual([{ ...invite, until: expect.any(Number) }]);
+      socket.receive('game:invite:gone', { id: 'i1', reason: 'expired' });
+      expect(store.getState().gameInvites).toEqual([]);
+    });
+
+    test('local:debug-game part au serveur (debug:game) une fois l\'init reçu ; avant, rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.connect();
+      bus.emit('local:debug-game', { game: 'connect4', state: {} });
+      socket.serverAccepts();
+      bus.emit('local:debug-game', { game: 'connect4', state: {} });
+      expect(socket.sentOf('debug:game')).toEqual([]);
+      socket.receive('init', init());
+      bus.emit('local:debug-game', { game: 'connect4', state: { a: 1 }, rolls: [6, 1] });
+      expect(socket.sentOf('debug:game')).toEqual([{ game: 'connect4', state: { a: 1 }, rolls: [6, 1] }]);
+    });
+
+    test('game:notice : sur le bus, pour les messages passagers ; le magasin n\'en garde rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      const notice: GameNotice = { kind: 'accepted', game: 'chess', user: { id: 'a', name: 'A' } };
+      socket.receive('game:notice', notice);
+      expect(bus.emittedOf('game:notice')).toEqual([notice]);
     });
   });
 

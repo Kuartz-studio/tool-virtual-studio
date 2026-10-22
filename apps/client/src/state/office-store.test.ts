@@ -1,4 +1,4 @@
-import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
+import { CHAT_HISTORY_LIMIT, type ChatMessage, type GameId, type GameInvite, type GameMatchView, type GameTableView, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ZOOM_BUTTON_STEP, ZOOM_DEFAULT_PERCENT, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
@@ -654,5 +654,126 @@ describe('le café', () => {
     expect(store.getState().coffee).toEqual({ b: NOW + 30_000 });
     store.getState().reset();
     expect(store.getState().coffee).toEqual({});
+  });
+});
+
+const GAME_NOW = 10_000;
+
+describe('les jeux', () => {
+  const table = (game: GameId, version: number, over: Partial<GameTableView> = {}): GameTableView => ({ game, version, chairs: [null, null], spectators: [], match: null, ...over });
+  const match = (id: string, userIds: string[], status: 'playing' | 'ended' = 'playing'): GameMatchView => ({
+    id,
+    status,
+    players: userIds.map((userId) => ({ userId, name: userId, avatarKey: null, connected: true, reconnectMs: null })),
+    first: 0,
+    state: {},
+    events: [],
+    turnMs: status === 'playing' ? 1000 : null,
+    drawOffer: null,
+    startedAt: 0,
+    result: null,
+    ranked: null,
+    ratings: null,
+  });
+  const invite = (id: string, game: GameId = 'chess'): GameInvite => ({ id, game, from: { id: 'a', name: 'A', avatarKey: null }, ttlMs: 60_000 });
+  const withGames = (games?: GameTableView[], gameInvites?: GameInvite[]): InitPayload => ({ ...init(SELF, [A]), ...(games ? { games } : {}), ...(gameInvites ? { gameInvites } : {}) });
+  // Une invitation au magasin : ce que le serveur dit, avec son échéance (maintenant + ce qu'il lui reste à vivre).
+  const entry = (given: GameInvite) => ({ ...given, until: GAME_NOW + given.ttlMs });
+  beforeEach(() => {
+    vi.spyOn(performance, 'now').mockReturnValue(GAME_NOW);
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test('avant tout init : aucune table, aucune invitation, aucun panneau de jeu ouvert, rien d\'interrompu', () => {
+    expect(store.getState()).toMatchObject({ games: {}, gameInvites: [], gameOpen: null, gameInterrupted: null });
+  });
+
+  test('init : les tables, par jeu, et les invitations en attente ; un init qui n\'en dit rien les vide', () => {
+    store.getState().applyInit(withGames([table('chess', 3), table('ludo', 0)], [invite('i1')]));
+    expect(Object.keys(store.getState().games).sort()).toEqual(['chess', 'ludo']);
+    expect(store.getState().games.chess?.version).toBe(3);
+    expect(store.getState().gameInvites).toEqual([entry(invite('i1'))]);
+    store.getState().applyInit(withGames());
+    expect(store.getState().games).toEqual({});
+    expect(store.getState().gameInvites).toEqual([]);
+  });
+
+  test('setGameTable : la table de ce jeu est remplacée par une version plus récente ; une version égale ou plus ancienne est ignorée (l\'état reste le même objet)', () => {
+    store.getState().applyInit(withGames([table('chess', 3)]));
+    store.getState().setGameTable(table('chess', 4, { spectators: [{ id: 'a', name: 'A' }] }));
+    expect(store.getState().games.chess?.spectators).toHaveLength(1);
+    const before = store.getState().games;
+    store.getState().setGameTable(table('chess', 4));
+    store.getState().setGameTable(table('chess', 2));
+    expect(store.getState().games).toBe(before);
+  });
+
+  test('setGameTable : une table que l\'init ne connaissait pas s\'ajoute', () => {
+    store.getState().applyInit(withGames([table('chess', 3)]));
+    store.getState().setGameTable(table('connect4', 1));
+    expect(Object.keys(store.getState().games).sort()).toEqual(['chess', 'connect4']);
+  });
+
+  test('addGameInvite : une invitation de même identifiant remplace l\'ancienne, sans changer de rang ; removeGameInvite la retire, un inconnu ne change rien', () => {
+    store.getState().addGameInvite(invite('i1'));
+    store.getState().addGameInvite(invite('i2', 'ludo'));
+    store.getState().addGameInvite({ ...invite('i1'), ttlMs: 10_000 });
+    expect(store.getState().gameInvites.map((known) => [known.id, known.ttlMs, known.until])).toEqual([['i1', 10_000, GAME_NOW + 10_000], ['i2', 60_000, GAME_NOW + 60_000]]);
+    store.getState().removeGameInvite('i1');
+    expect(store.getState().gameInvites.map((known) => known.id)).toEqual(['i2']);
+    const before = store.getState().gameInvites;
+    store.getState().removeGameInvite('inconnue');
+    expect(store.getState().gameInvites).toBe(before);
+  });
+
+  test('openGame : le panneau d\'une table s\'ouvre, et null le ferme', () => {
+    store.getState().openGame('connect4');
+    expect(store.getState().gameOpen).toBe('connect4');
+    store.getState().openGame(null);
+    expect(store.getState().gameOpen).toBeNull();
+  });
+
+  test('init : une partie qu\'on jouait et que le serveur ne connaît plus (il a redémarré) est « interrompue »', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) })]));
+    store.getState().applyInit(withGames([table('chess', 0)]));
+    expect(store.getState().gameInterrupted).toBe('chess');
+    store.getState().dismissGameInterrupted();
+    expect(store.getState().gameInterrupted).toBeNull();
+  });
+
+  test('une interruption signalée le reste aux init suivants, jusqu\'à ce qu\'on l\'ait lue', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) })]));
+    store.getState().applyInit(withGames([table('chess', 0)]));
+    store.getState().applyInit(withGames([table('chess', 1)]));
+    expect(store.getState().gameInterrupted).toBe('chess');
+  });
+
+  test('init : une autre partie à la même table (un autre identifiant) vaut aussi interruption', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) })]));
+    store.getState().applyInit(withGames([table('chess', 1, { match: match('m2', ['moi', 'a']) })]));
+    expect(store.getState().gameInterrupted).toBe('chess');
+  });
+
+  test('init : la partie qui continue, ou qui a fini pendant la coupure (même identifiant), ou celle des autres, n\'est pas interrompue', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a']) }), table('ludo', 2, { match: match('m9', ['a', 'b']) })]));
+    store.getState().applyInit(withGames([table('chess', 6, { match: match('m1', ['moi', 'a'], 'ended') })]));
+    expect(store.getState().gameInterrupted).toBeNull();
+    store.getState().applyInit(withGames([table('ludo', 0)]));
+    expect(store.getState().gameInterrupted).toBeNull();
+  });
+
+  test('init : une partie finie qu\'on avait vue et que le serveur n\'a plus n\'est pas une interruption (elle était finie)', () => {
+    store.getState().applyInit(withGames([table('chess', 5, { match: match('m1', ['moi', 'a'], 'ended') })]));
+    store.getState().applyInit(withGames([table('chess', 0)]));
+    expect(store.getState().gameInterrupted).toBeNull();
+  });
+
+  test('reset (le bureau quitté) : tout redevient comme au départ', () => {
+    store.getState().applyInit(withGames([table('chess', 3)], [invite('i1')]));
+    store.getState().openGame('chess');
+    store.getState().reset();
+    expect(store.getState()).toMatchObject({ games: {}, gameInvites: [], gameOpen: null, gameInterrupted: null });
   });
 });

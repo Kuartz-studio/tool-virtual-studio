@@ -1,4 +1,4 @@
-import { AUDIO_SILENT_DISTANCE_PX, type ChatMessage, type DeskInfo, type InitPayload, type PublicPlayer } from '@bureau/shared';
+import { AUDIO_SILENT_DISTANCE_PX, DEFAULT_ROOM_MUSIC, type ChatMessage, type DeskInfo, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
 import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { emitOnBus } from '../net/office-connection';
@@ -35,15 +35,18 @@ let played: Played[];
 let store: ReturnType<typeof createOfficeStore>;
 let bus: EventEmitter;
 let unbind: () => void;
+// La pièce réglable où sont les pieds de la personne (celle de l'audio), que les tests posent.
+let place: string | null;
 
 const ids = () => played.map(([id]) => id);
 
 beforeEach(() => {
   vi.useFakeTimers();
   played = [];
+  place = null;
   store = createOfficeStore();
   bus = new EventEmitter();
-  unbind = bindSfx({ playSfx: (id, options) => void played.push(options === undefined ? [id] : [id, options]) }, { bus, store });
+  unbind = bindSfx({ playSfx: (id, options) => void played.push(options === undefined ? [id] : [id, options]) }, { bus, store, placeKey: () => place });
 });
 
 afterEach(() => {
@@ -277,6 +280,72 @@ describe('ce qui se passe au bureau', () => {
     expect(ids()).toEqual([]);
     emitOnBus(bus, 'lights:changed', { on: true, by: { id: 'moi', name: 'MOI' }, at: 2 });
     expect(ids()).toEqual(['toggle-on']);
+  });
+
+  describe('la musique de la pièce où l\'on est', () => {
+    const by = (id: string) => ({ id, name: id.toUpperCase() });
+    const room = (over: Partial<RoomMusic>, at = 1): RoomMusic => ({ ...DEFAULT_ROOM_MUSIC, by: by('a'), at, ...over });
+
+    beforeEach(() => {
+      place = 'game';
+      store.getState().applyInit(init(player('moi'), [player('a')]));
+      played.length = 0;
+    });
+
+    test('un autre la coupe : le bruit d\'un interrupteur qui s\'éteint ; il la relance : celui qui se rallume', () => {
+      store.getState().setRoomMusic('game', room({ on: false }));
+      store.getState().setRoomMusic('game', room({ on: true }, 2));
+      expect(played).toEqual([['toggle-off'], ['toggle-on']]);
+    });
+
+    test('un autre change son ambiance, allumée : un clic', () => {
+      store.getState().setRoomMusic('game', room({ scene: 'quest' }));
+      expect(played).toEqual([['click']]);
+    });
+
+    test('éteinte, son ambiance qu\'un autre change ne se voit pas : aucun bruit', () => {
+      store.getState().setRoomMusic('game', room({ on: false }));
+      played.length = 0;
+      store.getState().setRoomMusic('game', room({ on: false, scene: 'quest' }, 2));
+      expect(played).toEqual([]);
+    });
+
+    test('ce qu\'on règle soi-même ne sonne pas (le clic a déjà son bruit)', () => {
+      store.getState().setRoomMusic('game', room({ on: false, by: by('moi') }));
+      expect(played).toEqual([]);
+    });
+
+    test('la musique d\'une autre pièce que la sienne ne sonne pas', () => {
+      store.getState().setRoomMusic('lounge', room({ on: false }));
+      expect(played).toEqual([]);
+    });
+
+    test('sans pièce réglable sous les pieds (la rue, la place), aucun bruit', () => {
+      place = null;
+      store.getState().setRoomMusic('game', room({ on: false }));
+      expect(played).toEqual([]);
+    });
+
+    test('« Ne pas déranger » : la musique qu\'un autre règle ne sonne pas', () => {
+      store.getState().applyInit(init(player('moi', { status: 'dnd' }), [player('a')]));
+      played.length = 0;
+      store.getState().setRoomMusic('game', room({ on: false }));
+      expect(played).toEqual([]);
+    });
+
+    test('l\'état des pièces à l\'arrivée (l\'init) n\'est pas un changement ; une pièce déjà éteinte qu\'on rallume l\'est', () => {
+      store.getState().setReady(false);
+      store.getState().applyInit({ ...init(player('moi'), [player('a')]), music: { game: room({ on: false }) } });
+      expect(ids()).toEqual([]);
+      store.getState().setRoomMusic('game', room({ on: true }, 2));
+      expect(played).toEqual([['toggle-on']]);
+    });
+
+    test('une demande qui ne change rien (le même état annoncé deux fois) ne sonne qu\'une fois', () => {
+      store.getState().setRoomMusic('game', room({ on: false }));
+      store.getState().setRoomMusic('game', room({ on: false }, 2));
+      expect(played).toEqual([['toggle-off']]);
+    });
   });
 
   test('le café qu\'on se sert : le bruit de la machine, puis le coup de fouet du café un instant après ; celui des autres, et la fin du sien, ne sonnent pas', () => {

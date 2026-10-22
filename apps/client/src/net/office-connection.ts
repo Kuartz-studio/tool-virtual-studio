@@ -1,4 +1,4 @@
-import type { ActivityState, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { ActivityState, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -30,6 +30,9 @@ export interface OfficeBusEvents {
   // Quelqu'un vient de prendre un café (`ms` : ce qui lui en reste, 30 s tout neuf) ou le sien est fini (`ms` 0), soi-même compris : le serveur l'annonce à
   // tout le bureau. Le magasin en dit déjà l'échéance à jour quand l'événement part. Pas à l'arrivée : le café d'un `init` n'est pas une prise.
   'coffee:changed': (p: { id: string; ms: number }) => void;
+  // L'invitée a répondu à l'une de nos invitations à une table (elle accepte, refuse, ne dit rien, ou a quitté le bureau), ou n'a pas répondu à temps : un message
+  // passager (la file de toasts). Le magasin n'en garde rien.
+  'game:notice': (p: GameNotice) => void;
   'local:move': (p: MovePayload) => void;
   // Le jeu : la personne a cliqué sur la porte fermée de ce bureau, près de elle. La connexion toque pour elle (`desk:do`, knock).
   'local:knock': (p: { key: string }) => void;
@@ -49,6 +52,8 @@ export interface OfficeBusEvents {
   'local:teleport': (p: { x: number; y: number }) => void;
   // window.__office.boost (tests de bout en bout seulement) : `debug:boost`, que le serveur n'accepte qu'avec E2E=1.
   'local:boost': (p: { ms: number }) => void;
+  // window.__office.debugGame (tests de bout en bout seulement) : `debug:game`, que le serveur n'accepte qu'avec E2E=1.
+  'local:debug-game': (p: DebugGamePayload) => void;
   // L'interface demande au jeu de faire marcher l'avatar tout seul jusqu'à son bureau (« Aller à mon bureau », game/auto-walk.ts), ou
   // d'arrêter cette marche. Rien ne part au serveur de ces deux-là : l'avatar marche comme au clavier, et ses positions partent par `local:move`.
   'local:walk-to-desk': () => void;
@@ -190,6 +195,12 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     },
     // La musique d'une pièce : au magasin, que lisent l'audio, la puce du lieu et les enceintes.
     'music:changed': (p) => state().setRoomMusic(p.place, p.state),
+    // Les jeux : la table entière au magasin (qui n'en prend que la version la plus récente), les invitations reçues (et retirées) au magasin ; l'avis d'une réponse à l'une
+    // de nos invitations va au bus, pour les messages passagers.
+    'game:table': (view) => state().setGameTable(view),
+    'game:invite': (invite) => state().addGameInvite(invite),
+    'game:invite:gone': ({ id }) => state().removeGameInvite(id),
+    'game:notice': (notice) => emitOnBus(bus, 'game:notice', notice),
     // Le café : le magasin d'abord (il en tient l'échéance, que le jeu et la pastille y lisent), puis le bus, pour le jeu et le son.
     'coffee:changed': (p) => {
       state().setCoffee(p.id, p.ms);
@@ -219,6 +230,9 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:boost', (p) => {
       if (state().ready) socket.emit('debug:boost', p);
+    }),
+    listenOnBus(bus, 'local:debug-game', (p) => {
+      if (state().ready) socket.emit('debug:game', p);
     }),
     listenOnBus(bus, 'local:lights', ({ on }) => {
       if (state().ready) socket.emit('lights:set', { on });
