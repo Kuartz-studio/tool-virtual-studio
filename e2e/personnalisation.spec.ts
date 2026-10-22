@@ -1,4 +1,4 @@
-import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
 import { avatarsOf, enterOffice, expectInOffice, joinOffice, openPanel, playerSeenBy, selfAt, signIn, WALK_TIMEOUT, type Account } from './helpers';
 import { TEST_AVATAR_KEY } from './pixels';
 
@@ -12,6 +12,13 @@ test.afterEach(async () => {
 
 // Il n'y a que six bureaux, et le serveur en donne un à chaque arrivant : ceux qui n'ont pas besoin du leur le rendent tout de suite, et ceux
 // qui en ont besoin (la déco) prennent la première place libre, quand il y en a une.
+// Le nombre d'éléments que dit le panneau « Décorer mon bureau » (« 12 / 80 éléments »).
+async function itemCount(panel: Locator): Promise<number> {
+  const text = panel.getByText(/^\d+ \/ 80 éléments$/);
+  await expect(text).toBeVisible();
+  return Number((await text.textContent())!.split(' ')[0]);
+}
+
 async function arrive(browser: Browser, name: string, desk: 'needed' | 'given back' = 'given back'): Promise<{ page: Page; id: string; account: Account }> {
   const context = await browser.newContext();
   contexts.push(context);
@@ -124,7 +131,9 @@ test('la déco du bureau : un élément pris en main se pose dans la pièce, et 
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
 
-  await expect(panel.getByText('12 / 80 éléments')).toBeVisible();   // le poste de travail par défaut
+  // Le poste de travail par défaut : celui de la pièce attribuée (12 éléments dans une pièce standard, 8 dans une compacte).
+  const initial = await itemCount(panel);
+  expect(initial).toBeGreaterThanOrEqual(8);
   await panel.getByRole('button', { name: 'Tout vider' }).click();
   await expect(panel.getByText('0 / 80 éléments')).toBeVisible();
   await expect(panel.getByText('Modifications non enregistrées.')).toBeVisible();
@@ -136,7 +145,7 @@ test('la déco du bureau : un élément pris en main se pose dans la pièce, et 
   await expect(panel.getByText('En main :')).toHaveCount(0);
 
   await panel.getByRole('button', { name: 'Poste par défaut' }).click();
-  await expect(panel.getByText('12 / 80 éléments')).toBeVisible();
+  await expect(panel.getByText(`${initial} / 80 éléments`)).toBeVisible();
   // Le brouillon est redevenu ce que le serveur a : plus rien à enregistrer, le bouton ne propose plus que de fermer l'éditeur.
   await expect(panel.getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
   await panel.getByRole('button', { name: 'Fermer', exact: true }).click();
@@ -148,45 +157,57 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
-  await expect(panel.getByText('12 / 80 éléments')).toBeVisible();
+  const initial = await itemCount(panel);
+  expect(initial).toBeGreaterThanOrEqual(8);
 
   await panel.getByRole('button', { name: 'Plantes' }).click();
   await panel.getByRole('button', { name: 'Plante en pot', exact: true }).click();
   // La caméra amène la pièce dans la partie de l'écran que le panneau laisse libre, et s'y arrête : on lit où elle est (le bureau attribué
-  // n'est pas toujours le même, et la caméra reste contre le bord de la carte pour les premiers). La case (7, 2) de la pièce est libre dans le
-  // poste par défaut.
-  const spot = async () => {
+  // n'est pas toujours le même, et la caméra reste contre le bord de la carte pour les premiers).
+  const spotAt = async (column: number, row: number) => {
     const room = await a.page.evaluate(() => window.__office!.editorRoom());
     if (!room) return null;
-    return a.page.evaluate(({ x, y }) => window.__office!.toScreen(x, y), { x: room.x + 7 * 32 + 16, y: room.y + 2 * 32 + 16 });
+    return a.page.evaluate(({ x, y }) => window.__office!.toScreen(x, y), { x: room.x + column * 32 + 16, y: room.y + row * 32 + 16 });
   };
-  await expect.poll(spot, { timeout: 5000 }).not.toBeNull();
+  await expect.poll(() => spotAt(7, 2), { timeout: 5000 }).not.toBeNull();
   await a.page.waitForTimeout(700);
-  const target = (await spot())!;
-  await a.page.mouse.click(target.x, target.y);
-  await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
+  // Une case libre : les pièces n'ont pas toutes le même poste par défaut (porte au sud ou au nord, taille). On essaie quelques cases de la pièce, la
+  // première où la plante se pose (ailleurs, c'est le remplacement ou un refus, qu'on écarte).
+  let target: { x: number; y: number } | null = null;
+  for (const [column, row] of [[5, 2], [5, 4], [1, 2], [3, 3], [5, 5]] as const) {
+    const where = (await spotAt(column, row))!;
+    await a.page.mouse.click(where.x, where.y);
+    if (await panel.getByText(`${initial + 1} / 80 éléments`).isVisible({ timeout: 1500 }).catch(() => false)) {
+      target = where;
+      break;
+    }
+    const dialog = a.page.getByRole('alertdialog', { name: 'Remplacer cet élément ?' });
+    if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Annuler' }).click();
+  }
+  expect(target, 'une case libre dans la pièce').not.toBeNull();
+  await expect(panel.getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
   // Un deuxième clic au même endroit ne pose rien de plus : il y a déjà quelque chose, et la personne doit confirmer le remplacement.
-  await a.page.mouse.click(target.x, target.y);
+  await a.page.mouse.click(target!.x, target!.y);
   const dialog = a.page.getByRole('alertdialog', { name: 'Remplacer cet élément ?' });
   await expect(dialog).toBeVisible();
   await expect(dialog.getByText('Voulez-vous vraiment le remplacer par cet élément ?')).toBeVisible();
   await dialog.getByRole('button', { name: 'Annuler' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
-  // Confirmé, le nouvel élément prend la place de l'ancien : toujours 13 éléments.
-  await a.page.mouse.click(target.x, target.y);
+  await expect(panel.getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
+  // Confirmé, le nouvel élément prend la place de l'ancien : toujours un élément de plus qu'au départ.
+  await a.page.mouse.click(target!.x, target!.y);
   await dialog.getByRole('button', { name: 'Remplacer' }).click();
   await expect(dialog).toHaveCount(0);
-  await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
+  await expect(panel.getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
 
-  // La gomme efface l'élément visé : on repasse à 12, puis on le repose.
+  // La gomme efface l'élément visé : on revient au départ, puis on le repose.
   await panel.getByRole('button', { name: 'Gomme' }).click();
   await expect(panel.getByText('Gomme : clique sur un élément de la pièce pour l\'effacer.')).toBeVisible();
-  await a.page.mouse.click(target.x, target.y);
-  await expect(panel.getByText('12 / 80 éléments')).toBeVisible();
+  await a.page.mouse.click(target!.x, target!.y);
+  await expect(panel.getByText(`${initial} / 80 éléments`)).toBeVisible();
   await panel.getByRole('button', { name: 'Plante en pot', exact: true }).click();
-  await a.page.mouse.click(target.x, target.y);
-  await expect(panel.getByText('13 / 80 éléments')).toBeVisible();
+  await a.page.mouse.click(target!.x, target!.y);
+  await expect(panel.getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
 
   await panel.getByRole('button', { name: 'Enregistrer' }).click();
   await expect(panel.getByText('Déco enregistrée.')).toBeVisible();
@@ -195,23 +216,23 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   await enterOffice(a.page);
   await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
-  await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText('13 / 80 éléments')).toBeVisible();
+  await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
 });
 
-// Seuls les gros meubles arrêtent : à l'accueil, une petite plante en pot (49, 43) se traverse, et la table basse (47-48, 43-44) qui la suit
-// arrête. On part à droite de la plante, on marche vers la gauche.
+// Seuls les gros meubles arrêtent : dans la rue nord, un arbuste (20, 14) se traverse, et la fontaine à eau (12, 14) qui le suit arrête. On part à
+// droite de l'arbuste, on marche vers la gauche.
 test('la marche : une petite plante se traverse, un gros meuble arrête', async ({ browser }) => {
   const a = await arrive(browser, 'Alma');
-  await a.page.evaluate(() => window.__office!.teleport(51 * 32 + 16, 43 * 32 + 16));
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(51 * 32 + 16);
+  await a.page.evaluate(() => window.__office!.teleport(22 * 32 + 16, 14 * 32 + 16));
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(22 * 32 + 16);
 
   await a.page.keyboard.down('ArrowLeft');
-  // La plante occupe les x de 1568 à 1600 : l'avatar la traverse, puis butte contre la table (bord à 1568, plus la demi-largeur du corps).
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeLessThan(1590);
+  // L'arbuste occupe les x de 640 à 672 : l'avatar le traverse, puis butte contre la fontaine (bord droit à 416, plus la demi-largeur du corps).
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeLessThan(630);
   await a.page.waitForTimeout(800);
   await a.page.keyboard.up('ArrowLeft');
   const stopped = (await selfAt(a.page)).x;
-  expect(stopped).toBeGreaterThanOrEqual(1568 + 9);
-  expect(stopped).toBeLessThan(1600);
+  expect(stopped).toBeGreaterThanOrEqual(416 + 9);
+  expect(stopped).toBeLessThan(450);
 });
 

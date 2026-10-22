@@ -477,24 +477,12 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   ```
   Les constantes `MEETING_ROOM`, `GRAND_HALL`, `LOUNGE`, `POOL`, `PLAZA`, `LOUNGE_*` **disparaissent** : on lit `placeByKey(map, 'game')` etc.
 
-**Étapes**
-- [ ] Tests (`office.test.ts`), qui échouent — ce sont les contrôles de `layout.py` :
-  - « la carte fait 81 × 46 » ; « aucun chevauchement entre pièces » ;
-  - « toute case libre est joignable depuis l'apparition » ;
-  - « chaque porte et chaque arche débouche sur du libre des deux côtés » ;
-  - « les six places `A1` à `A6` ont une zone `desk` et une zone `door`, `A5` et `A6` font 6 × 7, `A3` à `A6` ont leur porte au nord de la pièce » ;
-  - « chaque place de musique a exactement une enceinte, à portée d'une case libre » ;
-  - « la machine à café a sa case libre devant » ;
-  - « chaque table a ses sièges (2, 2, 2, 4) sur des cases libres, et `freeSpotIn` trouve de la place autour de chacune » ;
-  - « la salle de sport et la salle de jeu sont des places de destination » ;
-  - « l'interrupteur est sur une case de mur de la rue nord » ;
-  - « aucun meuble sur un mur ni sur un autre meuble solide » (déjà vérifié par `MapCanvas.put`).
-- [ ] Dessiner la carte du plan de masse ci-dessus : murs, ouvertures, sols et murs par thème (tableau « Sol / murs »), puis les meubles de chaque pièce. Meubles de la banque (`decor/generated.ts`) et props (T7). Pas de meuble dans les bureaux : leur déco est celle de l'occupant.
-- [ ] La salle client : un `sign` (« EN TRAVAUX », panneau à bandes jaunes et noires tracé en code, 24 × 20 px) au milieu, et rien d'autre.
-- [ ] `PropLayer` dans `Office.ts` ; les lumières de nuit viennent aussi des props (`light`) ; `sourcesFromItems` accepte les props.
-- [ ] `pnpm --filter @bureau/client gen:map`, puis `pnpm --filter @bureau/server map:check` passe sur `office.json`.
-- [ ] Capture jour et nuit de chaque pièce sur le bac à sable. **Point de contrôle avec toi.**
-- [ ] Commit : `feat: la nouvelle carte, deux rangées de bureaux face à face, huit pièces`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `map-builder.test.ts` (`prop` : l'empreinte seule bloque, un prop sur un mur ou un meuble solide ou hors de la carte est refusé, le calque `props` avec la clé, la position et la taille de l'empreinte, `onTop` et `offsetY` ; `place`, `coffee`, `speaker`, `table`, `seat`, `sign` relus par `parseOfficeMap`) ; `office.test.ts` réécrit (35 tests : 81 × 46 ; A1 à A6 et leurs pièces ; l'enceinte, la machine, les tables et leurs sièges, le panneau, l'interrupteur ; aucun chevauchement ; chaque salle fermée sauf à ses ouvertures ; les bandes de mur ne sont percées qu'aux ouvertures ; chaque porte et chaque arche libre des deux côtés ; tout est joignable depuis l'apparition et aucune case libre n'est enfermée ; les lieux, leurs rectangles et leur ambiance ; la table de réunion et ses dix chaises ; les fontaines hors de l'axe d'une porte ; le calque `props`) ; client : `prop-textures`, `prop-layer` (mise en place, profondeur, `offsetY`), `light-sources` (`sourcesFromProps`), `map-signs`.
+- [x] Carte dessinée dans `office.ts` d'après le plan de masse (douze lieux, treize ouvertures, sept enceintes, quatre tables et dix sièges, la machine à café et sa case de service, le panneau de la salle client) ; mobilier de la banque et objets animés posés pièce par pièce, rien dans les bureaux. `gen:map` : `office.json` ; `map:check` : « Carte valide », 81 × 46.
+- [x] Client : `PropLayer` (sprites animés, triés par le bas de leur empreinte, première image en mouvement réduit), `prop-textures.ts` (planches chargées par le Preloader, animation en boucle par prop), `map-signs.ts` (panneau de chantier 24 × 20 tracé en code, texte dessous), lumières de nuit des objets animés (`sourcesFromProps` : feu, bougies, aquarium, enceintes).
+- [x] Captures jour et nuit sur le bac à sable (Playwright, serveur « office ») : vue d'ensemble, café, accueil, réunion, conférence, sport, jeu, détente, salle client ; envoyées avec `SendUserFile` (le point de contrôle n'attend pas : Andrea est absent).
+- [x] Commit avec T9 : `feat: la nouvelle carte, deux rangées de bureaux face à face, huit pièces`.
 
 ### Tâche 9 : reprendre ce qui dépendait de l'ancienne carte (P0, M)
 
@@ -508,11 +496,13 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   - tests : `scene-at.test.ts`, `where.test.ts`, `WhereChip.test.tsx`, `PeoplePanel.test.tsx`, `OfficeShell.test.tsx`, `AudioDirector.test.tsx`, `apps/server/test/spawn.test.ts`, `sim-bots.test.ts` ;
   - e2e : `musique-lieux.spec.ts` et `zz-captures-musique-lieux.spec.ts` réécrits sur `placeByKey`.
 
-**Étapes**
-- [ ] Tests, qui échouent : « une position enregistrée dans un nouveau mur fait apparaître à l'accueil » ; « le lieu d'un point est la plus petite place » ; « la rue se nomme « Couloir » » ; « un bureau se nomme comme avant ».
-- [ ] Migrer chaque appelant ; supprimer `LOUNGE_MUSIC_X` et consorts des tests.
-- [ ] `pnpm typecheck && pnpm test`, puis `pnpm e2e -- musique-lieux` et `personnalisation` (carte `office`).
-- [ ] Commit : `refactor: le lieu d'un point vient du registre, plus de rectangles en dur`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `scene-at.test.ts` (chaque lieu a l'ambiance de la carte ; un mur : la salle d'attente ; une arche change d'ambiance ; une carte sans lieux : la concentration), `where.test.ts` (nom d'un lieu, rue = « Couloir », bureau = « Bureau de … » ou « Place A1 », chaque case a un lieu), `spawn.test.ts` (une position tombée dans un mur de la nouvelle carte fait apparaître à l'accueil), `use-here`, `PeoplePanel`, `AudioDirector`, `audio-gain`, `light-switch`, `desks`, `realtime-desks`, `realtime-lights`, `map-check-cli` ; e2e `musique-lieux`, `lumiere`, `personnalisation` migrés sur les nouveaux repères.
+- [x] Migré : `sceneAt(map, x, y)` et `placeAt(map, desks, x, y)` lisent le registre (`placeAt` du partage) ; la clé de la carte n'y change plus rien (une carte sans lieux garde ses zones et la concentration) ; `fr.office.where.rooms` supprimé, les phrases « où » des ambiances décrivent la nouvelle carte. `spawn.ts` et `bots.ts` n'ont pas changé : ils lisent déjà la carte (case praticable, point d'apparition).
+- [x] `pnpm typecheck` vert ; `pnpm test` ; e2e `personnalisation` (6), `musique-lieux`, `lumiere` sur la vraie carte, et le projet `chromium` (petite carte) : voir le registre.
+- [x] Commit avec T8.
+
+**Tel que livré** (écarts au plan, tous au registre) : un seul commit pour T8 et T9 (T8 seule laisse rouges les tests des consommateurs des anciennes constantes) ; le plan écrivait « `A3` à `A6` ont leur porte au nord » : d'après son tableau, A5 est au nord de la rue (porte au sud), les portes au nord sont celles de `A3`, `A4` et `A6` ; la machine à café se pose sur son comptoir (`prop(..., { onTop, offsetY })`), l'objet du calque `props` porte alors sa profondeur ; les rues passent sur le sol de la place (grises d'un bout à l'autre) ; `CUSTOM_DECOR` et `OTHER_DECOR` des tests serveur sont valables dans les quatre sortes de pièces.
 
 ---
 

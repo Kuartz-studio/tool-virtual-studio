@@ -1,9 +1,9 @@
-import { DESK_ROOMS, OFFICE, buildTiledMap, defaultDeskDecor, isWalkablePoint, parseOfficeMap, type OfficeMap, type Zone } from '@bureau/shared';
+import { DESK_ROOMS, OFFICE, buildTiledMap, defaultDeskDecor, isWalkablePoint, parseOfficeMap, type DeskDecor, type OfficeMap, type Zone } from '@bureau/shared';
 import { eq, sql } from 'drizzle-orm';
 import { describe, expect, test, vi } from 'vitest';
 import { desk, deskSetup, user } from '../src/db/schema';
 import { DeskService, deskSlots, exitPoint, type DeskServiceOptions } from '../src/desks/desk-service';
-import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS } from './helpers/decor';
+import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS, defaultSetupOf } from './helpers/decor';
 import { createTestDb } from './helpers/test-db';
 
 // La grande carte (6 places A1…A6) et un compte par prénom, créés dans la base.
@@ -28,13 +28,22 @@ describe('les places de la carte', () => {
       const { x, y, width, height } = slot.zone;
       const inside = slot.exit.x >= x && slot.exit.x < x + width && slot.exit.y >= y && slot.exit.y < y + height;
       expect(inside, `sortie de ${slot.key}`).toBe(false);
-      // La porte perce une bande de mur de 2 cases : la sortie est au-delà de son bord extérieur (dans le couloir), sur une case où l'on marche.
-      expect(slot.exit.y, `sortie de ${slot.key}`).toBeGreaterThanOrEqual(slot.door!.y + slot.door!.height);
+      // La porte perce une bande de mur de 2 cases : la sortie est au-delà de son bord extérieur (dans la rue : en dessous d'une porte au sud, au-dessus d'une
+      // porte au nord), sur une case où l'on marche.
+      const south = slot.door!.y >= y;
+      if (south) expect(slot.exit.y, `sortie de ${slot.key}`).toBeGreaterThanOrEqual(slot.door!.y + slot.door!.height);
+      else expect(slot.exit.y, `sortie de ${slot.key}`).toBeLessThan(slot.door!.y);
       expect(isWalkablePoint(map, slot.exit.x, slot.exit.y), `sortie de ${slot.key}`).toBe(true);
     }
-    // Les six portes sont au sud (cases 4 et 5 de la pièce A1, 11 cases plus loin pour la suivante) : on sort vers le bas, au centre de la porte.
-    expect(slots.find((slot) => slot.key === 'A1')!.exit).toEqual({ x: 160, y: 368 });
-    expect(slots.find((slot) => slot.key === 'A2')!.exit).toEqual({ x: 160 + 11 * 32, y: 368 });
+    // Les portes de A1 et A2 sont au sud (cases 4-5 et 15-16, au centre de la porte) : on sort vers le bas, dans la rue nord. Celles de A3, A4 et A6 sont au
+    // nord de leur pièce : on sort vers le haut, dans la même rue.
+    const exit = (key: string) => slots.find((slot) => slot.key === key)!.exit;
+    expect(exit('A1')).toEqual({ x: 160, y: 368 });
+    expect(exit('A2')).toEqual({ x: 160 + 11 * 32, y: 368 });
+    expect(exit('A5')).toEqual({ x: 26 * 32, y: 368 });
+    expect(exit('A3')).toEqual({ x: 160, y: 15 * 32 - 16 });
+    expect(exit('A4')).toEqual({ x: 160 + 11 * 32, y: 15 * 32 - 16 });
+    expect(exit('A6')).toEqual({ x: 26 * 32, y: 15 * 32 - 16 });
   });
 });
 
@@ -167,7 +176,7 @@ describe('au redémarrage', () => {
     await service.setLocked('ana', true);
     service.kick('ana', 'bob', 'Bob');
     const reloaded = await DeskService.create(db, map);
-    expect(reloaded.get('A3')).toEqual({ key: 'A3', ownerId: 'ana', ownerName: 'ANA', name: 'Chez Ana', locked: true, closedByState: false, ...DEFAULT_SETUP });
+    expect(reloaded.get('A3')).toEqual({ key: 'A3', ownerId: 'ana', ownerName: 'ANA', name: 'Chez Ana', locked: true, closedByState: false, ...defaultSetupOf('A3') });
     expect(reloaded.deskOf('ana')?.key).toBe('A3');
     // Les exclus et les admis ne sont pas gardés.
     expect(reloaded.bansOf('ana')).toEqual([]);
@@ -286,7 +295,10 @@ describe('le décor de la pièce', () => {
     await service.claim('ana', 'Ana', 'A1');
     expect(service.get('A1')).toMatchObject(DEFAULT_SETUP);
     expect(service.get('A2')).toMatchObject(DEFAULT_SETUP);
-    expect(service.list().every((info) => info.floor === DEFAULT_SETUP.floor && info.items.length === DEFAULT_SETUP.items.length)).toBe(true);
+    // Chaque pièce a le poste de sa taille et du côté de sa porte.
+    expect(service.get('A3')).toMatchObject(defaultSetupOf('A3'));
+    expect(service.get('A6')).toMatchObject(defaultSetupOf('A6'));
+    expect(service.list().every((info) => info.floor === DEFAULT_SETUP.floor && info.items.length === defaultSetupOf(info.key).items.length)).toBe(true);
   });
 
   test('setDecor : enregistré en base au nom de la personne, gardé en mémoire, rediffusé pour sa seule place', async () => {
@@ -448,8 +460,17 @@ describe('des pièces de tailles différentes', () => {
       A5: { width: 6, height: 7, door: { side: 'south', x: 2, width: 2 } },
       A6: { width: 6, height: 7, door: { side: 'north', x: 2, width: 2 } },
     });
-    // Les places de la grande carte actuelle sont toutes standard, porte au sud.
-    for (const slot of deskSlots(map)) expect(slot.room, slot.key).toEqual(DESK_ROOMS.standard);
+    // Les places de la grande carte : quatre standard (A3 et A4 ont leur porte au nord), deux compactes (A6 a sa porte au nord).
+    const standardNorth = { ...DESK_ROOMS.standard, door: { ...DESK_ROOMS.standard.door, side: 'north' as const } };
+    const compactNorth = { ...DESK_ROOMS.compact, door: { ...DESK_ROOMS.compact.door, side: 'north' as const } };
+    expect(Object.fromEntries(deskSlots(map).map((slot) => [slot.key, slot.room]))).toEqual({
+      A1: DESK_ROOMS.standard,
+      A2: DESK_ROOMS.standard,
+      A3: standardNorth,
+      A4: standardNorth,
+      A5: DESK_ROOMS.compact,
+      A6: compactNorth,
+    });
   });
 
   test('une place sans porte (la petite carte de développement) garde la pièce standard', () => {
@@ -486,12 +507,14 @@ describe('des pièces de tailles différentes', () => {
 
   test('un décor enregistré qui ne tient plus dans la pièce est ignoré (la pièce par défaut), journalisé, et jamais effacé', async () => {
     const warn = vi.fn();
+    // Un décor qui n'a de place que dans une pièce standard : un bureau à la colonne 5 (de 5 à 7) dépasse les 6 colonnes d'une pièce compacte.
+    const WIDE: DeskDecor = { floor: 'noyer', wall: 'anthracite', items: [{ id: 'of-7-28', x: 5, y: 1 }] };
     // Ana règle sa pièce standard sur une carte où A5 est standard : le décor est écrit en base.
     const roomy = await setup({}, smallMap(9));
     await roomy.service.claim('ana', 'Ana', 'A5');
-    expect(await roomy.service.setDecor('ana', CUSTOM_DECOR)).toMatchObject({ ok: true });
+    expect(await roomy.service.setDecor('ana', WIDE)).toMatchObject({ ok: true });
 
-    // La carte change : A5 est maintenant compacte. Le même décor ne tient plus (un élément à la colonne 8).
+    // La carte change : A5 est maintenant compacte. Le même décor ne tient plus.
     const service = await DeskService.create(roomy.db, SMALL_MAP, { logger: { warn } });
     const expected = defaultDeskDecor(DESK_ROOMS.compact);
     expect(service.get('A5')).toMatchObject({ ownerId: 'ana', floor: expected.floor, wall: expected.wall, items: expected.items });
@@ -501,10 +524,10 @@ describe('des pièces de tailles différentes', () => {
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]![0]).toMatchObject({ userId: 'ana', desk: 'A5', reason: 'out_of_room' });
     // Jamais effacé : la ligne est toujours en base, telle qu'elle était.
-    expect(await roomy.db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...CUSTOM_DECOR }]);
+    expect(await roomy.db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...WIDE }]);
     // Et si la pièce redevient assez grande, le décor revient.
     const again = await DeskService.create(roomy.db, smallMap(9));
-    expect(again.get('A5')).toMatchObject(CUSTOM_DECOR);
+    expect(again.get('A5')).toMatchObject(WIDE);
   });
 
   test('un décor qui tient dans la pièce n\'est ni ignoré ni journalisé', async () => {

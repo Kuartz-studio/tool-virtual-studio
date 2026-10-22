@@ -1,4 +1,4 @@
-import { buildOfficeTiledMap, GRAND_HALL, LOUNGE, LOUNGE_MUSIC_X, LOUNGE_TERRACE_WIDTH, MEETING_ROOM, parseOfficeMap, PLAZA, type DeskInfo, type OfficeMap, type Zone } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, type DeskInfo, type OfficeMap, type Zone } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { fr } from '../i18n/fr';
 import { deskKeyAt, placeAt } from './where';
@@ -42,34 +42,34 @@ const desk = (over: Partial<DeskInfo>): DeskInfo => ({ key: 'A1', ownerId: null,
 
 describe('le nom du lieu', () => {
   test('sans carte, rien', () => {
-    expect(placeAt(null, null, [], 100, 100)).toBeNull();
+    expect(placeAt(null, [], 100, 100)).toBeNull();
   });
 
   test('la zone label qui contient le point donne son texte, écrit comme une phrase', () => {
-    expect(placeAt(map, 'dev-office', [], 100, 330)).toBe('Accueil');
+    expect(placeAt(map, [], 100, 330)).toBe('Accueil');
     // Une zone contient son bord haut et gauche, pas son bord bas et droit.
-    expect(placeAt(map, 'dev-office', [], 64, 320)).toBe('Accueil');
-    expect(placeAt(map, 'dev-office', [], 256, 330)).toBe(fr.office.where.hallway);
-    expect(placeAt(map, 'dev-office', [], 100, 352)).toBe(fr.office.where.hallway);
+    expect(placeAt(map, [], 64, 320)).toBe('Accueil');
+    expect(placeAt(map, [], 256, 330)).toBe(fr.office.where.hallway);
+    expect(placeAt(map, [], 100, 352)).toBe(fr.office.where.hallway);
   });
 
   test('une étiquette sans texte ne nomme rien', () => {
-    expect(placeAt(map, 'dev-office', [], 330, 330)).toBe(fr.office.where.hallway);
+    expect(placeAt(map, [], 330, 330)).toBe(fr.office.where.hallway);
   });
 
   test('ailleurs, « Couloir »', () => {
-    expect(placeAt(map, 'dev-office', [], 600, 500)).toBe('Couloir');
+    expect(placeAt(map, [], 600, 500)).toBe('Couloir');
   });
 
   test('l\'étiquette passe avant le nom de la pièce ; le reste de la pièce prend le nom de la pièce', () => {
-    expect(placeAt(map, 'dev-office', [], 340, 140)).toBe('Grande salle');
-    expect(placeAt(map, 'dev-office', [], 340, 20)).toBe('Salle de réunion');
+    expect(placeAt(map, [], 340, 140)).toBe('Grande salle');
+    expect(placeAt(map, [], 340, 20)).toBe('Salle de réunion');
   });
 
   test('un bureau : « Bureau de <nom> », ou le nom que son occupant lui a donné ; libre, « Place <clé> »', () => {
-    expect(placeAt(map, 'dev-office', [desk({ ownerName: 'Léa' })], 40, 40)).toBe('Bureau de Léa');
-    expect(placeAt(map, 'dev-office', [desk({ ownerName: 'Léa', name: 'Le QG' })], 40, 40)).toBe('Le QG');
-    expect(placeAt(map, 'dev-office', [], 40, 40)).toBe('Place A1');
+    expect(placeAt(map, [desk({ ownerName: 'Léa' })], 40, 40)).toBe('Bureau de Léa');
+    expect(placeAt(map, [desk({ ownerName: 'Léa', name: 'Le QG' })], 40, 40)).toBe('Le QG');
+    expect(placeAt(map, [], 40, 40)).toBe('Place A1');
   });
 });
 
@@ -88,54 +88,50 @@ describe('la clé du bureau où l\'on est', () => {
   });
 });
 
-// La grande carte : ses zones `label` ne sont que des bandes d'une case (« CAFÉ », « ACCUEIL »), et la zone détente est d'un seul tenant. Les grandes
-// pièces sont reconnues d'après les mêmes rectangles que l'ambiance de chaque endroit (audio/scene-at.ts).
-describe('les grandes pièces de la grande carte', () => {
+// La grande carte : ses lieux (zones `place`) nomment les pièces ; un bureau garde son nom, une rue est « Couloir ».
+describe('les lieux de la grande carte', () => {
   const office = parseOfficeMap(buildOfficeTiledMap());
   // Le milieu d'une case, en pixels.
   const px = (tile: number) => tile * office.tileSize + office.tileSize / 2;
-  const at = (tx: number, ty: number, desks: DeskInfo[] = []) => placeAt(office, 'office', desks, px(tx), px(ty));
+  const at = (tx: number, ty: number, desks: DeskInfo[] = []) => placeAt(office, desks, px(tx), px(ty));
 
-  test('le café est la place centrale, loin de sa bande d\'une case : on y est « Café », et non « Couloir »', () => {
-    expect(at(PLAZA.x + 15, PLAZA.y + 6)).toBe('Café');
-    // Pas sur la bande « CAFÉ » (y 24, x 18 à 29) : n'importe où sur la place.
-    expect(at(PLAZA.x + 1, PLAZA.y + 1)).toBe('Café');
-    expect(at(PLAZA.x + PLAZA.w - 1, PLAZA.y + PLAZA.h - 1)).toBe('Café');
-    // L'arche de la zone détente en fait partie, comme pour l'ambiance.
-    expect(at(18, LOUNGE.y - 1)).toBe('Café');
+  test('le café est le café, la place autour de lui la place centrale', () => {
+    expect(at(40, 5)).toBe('Café');
+    expect(at(33, 3)).toBe('Café');
+    expect(at(46, 8)).toBe('Café');
+    expect(at(31, 5)).toBe('Place centrale');
   });
 
   test('l\'accueil, où l\'on apparaît, n\'est pas le couloir', () => {
-    expect(placeAt(office, 'office', [], office.spawn.x, office.spawn.y)).toBe('Accueil');
-    expect(at(60, 40)).toBe('Accueil');
-    expect(at(44, 44)).toBe('Accueil');
-    expect(at(64, 33)).toBe('Accueil');
+    expect(placeAt(office, [], office.spawn.x, office.spawn.y)).toBe('Accueil');
+    expect(at(33, 17)).toBe('Accueil');
+    expect(at(47, 24)).toBe('Accueil');
   });
 
-  test('la zone détente, d\'ouest en est : la piscine, le salon, le coin musique', () => {
-    const y = LOUNGE.y + 6;
-    expect(at(LOUNGE.x, y)).toBe('Piscine');
-    expect(at(LOUNGE.x + LOUNGE_TERRACE_WIDTH - 1, y)).toBe('Piscine');
-    expect(at(LOUNGE.x + LOUNGE_TERRACE_WIDTH, y)).toBe('Salon');
-    expect(at(LOUNGE_MUSIC_X - 1, y)).toBe('Salon');
-    expect(at(LOUNGE_MUSIC_X, y)).toBe('Coin musique');
-    expect(at(LOUNGE.x + LOUNGE.w - 1, y)).toBe('Coin musique');
-    // Plus de « Zone détente » (le nom de la zone entière, et de sa bande du bas) : chaque endroit a le sien.
-    expect(at(22, 43)).toBe('Salon');
+  test('les salles : réunion, client, conférence, sport, jeu, détente et piscine', () => {
+    expect(at(55, 5)).toBe('Salle de réunion');
+    expect(at(70, 5)).toBe('Salle client');
+    expect(at(60, 20)).toBe('Salle de conférence');
+    expect(at(5, 38)).toBe('Salle de sport');
+    expect(at(20, 38)).toBe('Salle de jeu');
+    expect(at(45, 33)).toBe('Détente et piscine');
+    expect(at(75, 40)).toBe('Détente et piscine');
   });
 
-  test('la grande salle et la salle de réunion', () => {
-    expect(at(GRAND_HALL.x + 3, GRAND_HALL.y + 3)).toBe('Grande salle');
-    expect(at(MEETING_ROOM.x + 3, MEETING_ROOM.y + 3)).toBe('Salle de réunion');
-  });
-
-  test('un bureau garde son nom ; le couloir, au nord comme au sud, est « Couloir »', () => {
+  test('un bureau garde son nom ; une rue, au nord, au sud et à l\'est, est « Couloir »', () => {
     const slot = office.zones.find((zone) => zone.type === 'desk' && zone.name === 'A3')!;
     const mine = { key: 'A3', ownerId: 'moi', ownerName: 'Léa', name: null, locked: false, closedByState: false, floor: '', wall: '' } as unknown as DeskInfo;
-    expect(placeAt(office, 'office', [mine], slot.x + 40, slot.y + 40)).toBe('Bureau de Léa');
+    expect(placeAt(office, [mine], slot.x + 40, slot.y + 40)).toBe('Bureau de Léa');
     expect(at(30, 12)).toBe('Couloir');
-    expect(at(5, 29)).toBe('Couloir');
-    expect(at(56, 29)).toBe('Couloir');
+    expect(at(5, 28)).toBe('Couloir');
+    expect(at(76, 20)).toBe('Couloir');
+    // La rue traverse la place : on y est dans le couloir, pas sur la place.
+    expect(at(40, 12)).toBe('Couloir');
+  });
+
+  test('un bureau libre se nomme « Place <clé> »', () => {
+    const slot = office.zones.find((zone) => zone.type === 'desk' && zone.name === 'A5')!;
+    expect(placeAt(office, [], slot.x + 40, slot.y + 40)).toBe('Place A5');
   });
 
   test('chaque case de la carte a un lieu : les pièces, les places et le couloir, et rien d\'autre', () => {
@@ -143,16 +139,12 @@ describe('les grandes pièces de la grande carte', () => {
     for (let ty = 0; ty < office.heightTiles; ty++) {
       for (let tx = 0; tx < office.widthTiles; tx++) names.add(at(tx, ty) ?? '?');
     }
-    expect([...names].sort()).toEqual(['Accueil', 'Café', 'Coin musique', 'Couloir', 'Grande salle', 'Piscine', 'Place A1', 'Place A2', 'Place A3', 'Place A4', 'Place A5', 'Place A6', 'Salle de réunion', 'Salon'].sort());
+    expect([...names].sort()).toEqual(
+      ['Accueil', 'Café', 'Couloir', 'Détente et piscine', 'Place centrale', 'Place A1', 'Place A2', 'Place A3', 'Place A4', 'Place A5', 'Place A6', 'Salle client', 'Salle de conférence', 'Salle de jeu', 'Salle de réunion', 'Salle de sport'].sort(),
+    );
   });
 
-  test('une autre carte (celle des tests) n\'a pas ces pièces : ses zones seules nomment, et « Couloir » faute d\'étiquette', () => {
-    // Les mêmes pieds, mais la carte n'est pas « office » : seules ses zones parlent.
-    expect(placeAt(office, 'dev-office', [], px(PLAZA.x + 15), px(PLAZA.y + 6))).toBe('Couloir');
-    expect(placeAt(office, null, [], office.spawn.x, office.spawn.y)).toBe('Couloir');
-  });
-
-  test('sans carte, rien ; la clé de la carte n\'y change rien', () => {
-    expect(placeAt(null, 'office', [], 100, 100)).toBeNull();
+  test('sans carte, rien', () => {
+    expect(placeAt(null, [], 100, 100)).toBeNull();
   });
 });

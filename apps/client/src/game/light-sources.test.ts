@@ -1,6 +1,6 @@
 import { TILE_SIZE, decorItem } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { LIGHT_EMITTERS, LIGHT_PROFILES, sourcesFromItems, type LightKind } from './light-sources';
+import { LIGHT_EMITTERS, LIGHT_PROFILES, sourcesFromItems, sourcesFromProps, type LightKind } from './light-sources';
 
 // Le rectangle de l'image d'un élément de la banque posé à (x, y), en pixels de la carte : ce que DecorLayer donne.
 const placed = (id: string, x: number, y: number) => {
@@ -186,5 +186,36 @@ describe('sourcesFromItems', () => {
     // La cheminée brille de son feu, en bas de l'image ; l'écran géant (5 cases) au milieu de sa largeur.
     expect(sources[0]!.y).toBeGreaterThan(2 * TILE_SIZE);
     expect(sources[1]!.x).toBe(128 + (5 * TILE_SIZE) / 2);
+  });
+});
+
+// Les objets animés qui éclairent : le rectangle de leur image, en pixels de la carte (propImages).
+describe('sourcesFromProps : la lumière des objets animés', () => {
+  const image = (key: string, x: number, y: number, w: number, h: number) => ({ key, x, y, w, h });
+
+  test('la cheminée donne un feu, une bougie une flamme, l\'aquarium de l\'eau, une enceinte un point lumineux : la sorte que dit l\'objet', () => {
+    expect(sourcesFromProps([image('chimney', 0, 0, 64, 96)])[0]).toMatchObject({ kind: 'fire', radius: LIGHT_PROFILES.fire.radiusTiles * TILE_SIZE, strength: LIGHT_PROFILES.fire.strength });
+    expect(sourcesFromProps([image('candle', 0, 0, 32, 64)])[0]).toMatchObject({ kind: 'candle' });
+    expect(sourcesFromProps([image('wall-candle', 0, 0, 32, 64)])[0]).toMatchObject({ kind: 'candle' });
+    expect(sourcesFromProps([image('fishtank', 0, 0, 64, 64)])[0]).toMatchObject({ kind: 'water' });
+    expect(sourcesFromProps([image('amplifier-big', 0, 0, 32, 96)])[0]).toMatchObject({ kind: 'glow' });
+  });
+
+  test('la lumière est au milieu de l\'image, à la hauteur de l\'ampoule : la flamme est basse dans la cheminée, haute dans la bougie', () => {
+    const [fire] = sourcesFromProps([image('chimney', 100, 200, 64, 96)]);
+    expect(fire!.x).toBe(100 + 32);
+    expect(fire!.y).toBeGreaterThan(200 + 40);
+    expect(fire!.y).toBeLessThan(200 + 96);
+    const [candle] = sourcesFromProps([image('candle', 100, 200, 32, 64)]);
+    expect(candle!.y).toBeLessThan(200 + 32);
+  });
+
+  test('un objet qui n\'éclaire pas (un tapis de course), ou inconnu, ne donne rien', () => {
+    expect(sourcesFromProps([image('treadmill', 0, 0, 64, 96), image('nope', 0, 0, 32, 32)])).toEqual([]);
+  });
+
+  test('le feu vacille comme celui d\'un élément de la banque, l\'eau non', () => {
+    expect(sourcesFromProps([image('chimney', 0, 0, 64, 96)])[0]!.flicker).toEqual(LIGHT_PROFILES.fire.flicker);
+    expect(sourcesFromProps([image('fishtank', 0, 0, 64, 64)])[0]!.flicker).toBeUndefined();
   });
 });

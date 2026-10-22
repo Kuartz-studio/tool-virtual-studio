@@ -1,4 +1,4 @@
-import { TILE_SIZE, type LightKind } from '@bureau/shared';
+import { TILE_SIZE, propByKey, type LightKind } from '@bureau/shared';
 
 // Les lumières de la nuit : les éléments posés qui éclairent quand la lumière du bureau est éteinte (lampes, cheminée, écrans, télévisions), ceux
 // de la carte comme ceux des bureaux. La couche de nuit (LightingLayer) troue l'obscurité autour de chacun, et y ajoute une teinte et un halo de sa
@@ -138,6 +138,41 @@ export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
   'of-10-30': screenAt(24),
   'of-10-32': screenAt(24),
 };
+
+// Où est l'ampoule d'un objet animé, en pixels depuis le haut de son image : la flamme est basse dans la cheminée, haute dans une bougie. Au milieu
+// de l'image sans entrée ici.
+const PROP_BULB_Y: Readonly<Record<string, number>> = {
+  chimney: 62,
+  'chimney-red': 62,
+  'chimney-white': 62,
+  'chimney-yellow': 62,
+  candle: 14,
+  'wall-candle': 14,
+  amplifier: 40,
+  'amplifier-big': 56,
+  fishtank: 28,
+};
+
+// Les lumières des objets animés (le rectangle de leur image, en pixels de la carte : PropLayer.images) : la sorte de lumière est celle que porte
+// l'objet (props/catalog.ts), son profil celui de LIGHT_PROFILES. Un objet qui n'éclaire pas, ou inconnu, n'en donne pas.
+export function sourcesFromProps(images: readonly { key: string; x: number; y: number; w: number; h: number }[]): LightSource[] {
+  return images.flatMap(({ key, x, y, w, h }) => {
+    const kind = propByKey(key)?.light;
+    if (!kind) return [];
+    const profile = LIGHT_PROFILES[kind];
+    return [
+      {
+        x: x + w / 2,
+        y: y + (PROP_BULB_Y[key] ?? h / 2),
+        kind,
+        radius: profile.radiusTiles * TILE_SIZE,
+        color: profile.color,
+        strength: profile.strength,
+        ...(profile.flicker && { flicker: profile.flicker }),
+      },
+    ];
+  });
+}
 
 // Les lumières de ces éléments (le rectangle de leur image, en pixels de la carte : DecorLayer.placedImages). Un élément qui n'éclaire pas, ou
 // inconnu, n'en donne pas.

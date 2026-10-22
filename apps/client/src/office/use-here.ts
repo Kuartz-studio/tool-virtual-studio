@@ -39,8 +39,7 @@ export function useFeetValue<T>(read: (x: number, y: number, map: OfficeMap) => 
 // Le nom du lieu où l'on est (placeAt, où que l'on regarde : la puce, Personnes). null sans carte.
 export function usePlace(): string | null {
   const desks = useOfficeStore((state) => state.desks);
-  const mapKey = useOfficeStore((state) => state.mapKey);
-  return useFeetValue(useCallback((x: number, y: number, map: OfficeMap) => placeAt(map, mapKey, desks, x, y), [desks, mapKey]));
+  return useFeetValue(useCallback((x: number, y: number, map: OfficeMap) => placeAt(map, desks, x, y), [desks]));
 }
 
 // Est-on dans son propre bureau ? Faux sans bureau à soi, sans carte, et dans le bureau de quelqu'un d'autre.
@@ -57,7 +56,6 @@ const NO_PLACES: ReadonlyMap<string, string> = new Map();
 // positions ne préviennent pas React) ; ne redessine que quand un lieu change. Sans carte, personne n'a de lieu.
 export function usePlaces(): ReadonlyMap<string, string> {
   const map = useOfficeStore((state) => state.officeMap);
-  const mapKey = useOfficeStore((state) => state.mapKey);
   const desks = useOfficeStore((state) => state.desks);
   const players = useOfficeStore((state) => state.players);
   const [places, setPlaces] = useState(NO_PLACES);
@@ -72,7 +70,7 @@ export function usePlaces(): ReadonlyMap<string, string> {
       const next = new Map<string, string>();
       for (const player of Object.values(players)) {
         const at = positions.get(player.id) ?? player;
-        const place = placeAt(map, mapKey, desks, at.x, at.y);
+        const place = placeAt(map, desks, at.x, at.y);
         if (place !== null) next.set(player.id, place);
       }
       setPlaces((known) => (known.size === next.size && [...next].every(([id, place]) => known.get(id) === place) ? known : next));
@@ -80,7 +78,7 @@ export function usePlaces(): ReadonlyMap<string, string> {
     refresh();
     const timer = setInterval(refresh, REFRESH_MS);
     return () => clearInterval(timer);
-  }, [map, mapKey, desks, players]);
+  }, [map, desks, players]);
 
   return places;
 }

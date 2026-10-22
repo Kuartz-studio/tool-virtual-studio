@@ -74,7 +74,7 @@ export function buildMapLayers(
 }
 
 // Le texte d'une étiquette : en gras, de la couleur d'une inscription peinte au sol.
-const LABEL_STYLE = { fontFamily: 'monospace', fontSize: '14px', fontStyle: 'bold', color: '#3b4256' };
+export const LABEL_STYLE = { fontFamily: 'monospace', fontSize: '14px', fontStyle: 'bold', color: '#3b4256' };
 // Au-dessus du sol et des meubles bas, sous tous les avatars.
 const LABEL_DEPTH = DEPTH.meublesBas + 0.5;
 

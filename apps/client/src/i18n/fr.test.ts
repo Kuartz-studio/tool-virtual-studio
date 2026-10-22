@@ -82,9 +82,8 @@ test('le bouton du bureau : « Aller à mon bureau » dehors, « Réglages du bu
   expect(fr.desk.title).toBe('Mon bureau');
 });
 
-test('le lieu : « Couloir » faute de zone, les grandes pièces de la grande carte, et combien sont ici', () => {
+test('le lieu : « Couloir » pour une rue ou faute de zone, et combien sont ici', () => {
   expect(fr.office.where.hallway).toBe('Couloir');
-  expect(Object.values(fr.office.where.rooms)).toEqual(['Café', 'Accueil', 'Piscine', 'Salon', 'Coin musique', 'Grande salle', 'Salle de réunion']);
   expect(fr.office.where.onePerson).toBe('1 personne ici');
   expect(t(fr.office.where.manyPeople, { count: 4 })).toBe('4 personnes ici');
 });

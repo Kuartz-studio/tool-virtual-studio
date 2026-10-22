@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { LIGHT_SWITCH_REACH_TILES, TILE_SIZE, buildOffice, buildOfficeTiledMap, parseOfficeMap } from '@bureau/shared';
+import { LIGHT_SWITCH_REACH_TILES, TILE_SIZE, buildOffice, buildOfficeTiledMap, parseOfficeMap, placeByKey } from '@bureau/shared';
 import { PNG } from 'pngjs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { DECOR_DEPTH, layoutDecor, type Drawn } from './decor-layout';
@@ -238,15 +238,15 @@ describe('l\'interrupteur de la grande carte', () => {
     }
   });
 
-  test('il est sur la face du mur nord du couloir, entre les portes des bureaux A3 et A4, et on peut s\'y tenir en dessous', () => {
+  test('il est sur la face du mur nord de la rue, entre la porte du bureau A5 et la place centrale, et on peut s\'y tenir en dessous', () => {
     const [position] = map.switches;
     const [tx, ty] = [Math.floor(position!.x / TILE_SIZE), Math.floor(position!.y / TILE_SIZE)];
-    expect([tx, ty]).toEqual([32, 10]);
-    const doors = map.zones.filter((zone) => zone.type === 'door');
-    const between = (key: string) => doors.find((door) => door.name === key)!;
-    expect(tx * TILE_SIZE).toBeGreaterThan(between('A3').x + between('A3').width);
-    expect((tx + 1) * TILE_SIZE).toBeLessThan(between('A4').x);
-    // Un mur sous lui : l'avatar ne s'y met pas ; la case juste au sud est le couloir, praticable.
+    expect([tx, ty]).toEqual([28, 10]);
+    const door = map.zones.find((zone) => zone.type === 'door' && zone.name === 'A5')!;
+    const plaza = placeByKey(map, 'plaza')!.rects[0]!;
+    expect(tx * TILE_SIZE).toBeGreaterThan(door.x + door.width);
+    expect((tx + 1) * TILE_SIZE).toBeLessThan(plaza.x);
+    // Un mur sous lui : l'avatar ne s'y met pas ; la case juste au sud est la rue, praticable.
     expect(map.blocked[ty * map.widthTiles + tx]).toBe(1);
     expect(map.blocked[(ty + 1) * map.widthTiles + tx]).toBe(0);
   });

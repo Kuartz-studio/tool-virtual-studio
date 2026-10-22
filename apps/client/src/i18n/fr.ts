@@ -133,18 +133,8 @@ export const fr = {
     // Le lieu où l'on est (la puce en haut à gauche) et ceux qui y sont.
     where: {
       label: 'Lieu',
-      // Là où aucune zone de la carte ne porte de nom.
+      // Les rues, et là où aucune zone de la carte ne porte de nom. Les pièces portent le nom que leur donne la carte (zone `place`).
       hallway: 'Couloir',
-      // Les grandes pièces de la grande carte (office/where.ts).
-      rooms: {
-        cafe: 'Café',
-        reception: 'Accueil',
-        pool: 'Piscine',
-        lounge: 'Salon',
-        music: 'Coin musique',
-        hall: 'Grande salle',
-        meeting: 'Salle de réunion',
-      },
       onePerson: '1 personne ici',
       manyPeople: '{count} personnes ici',
     },
@@ -330,12 +320,12 @@ export const fr = {
     },
     // Les six ambiances : leur nom, ce qu'elles évoquent, et où elles jouent d'elles-mêmes.
     scenes: {
-      lobby: { title: 'Salle d\'attente', mood: 'Calme, comme une ville la nuit', where: 'L\'accueil, le couloir, la connexion' },
-      focus: { title: 'Concentration', mood: 'Chill, pour travailler ou se reposer', where: 'Les bureaux et la salle de réunion' },
-      sunny: { title: 'Soleil', mood: 'Joyeux et décontracté', where: 'La place centrale et la piscine' },
-      dusk: { title: 'Crépuscule', mood: 'Mystérieux, façon Moyen Âge le soir', where: 'Le salon' },
-      drift: { title: 'Dérive', mood: 'Étrange et planant, un peu science-fiction', where: 'La grande salle' },
-      quest: { title: 'Expédition', mood: 'Plus rythmé : aventure et découverte', where: 'Le coin musique' },
+      lobby: { title: 'Salle d\'attente', mood: 'Calme, comme une ville la nuit', where: 'L\'accueil, la place et les rues, la connexion' },
+      focus: { title: 'Concentration', mood: 'Chill, pour travailler ou se reposer', where: 'Les bureaux, la salle de réunion et la salle client' },
+      sunny: { title: 'Soleil', mood: 'Joyeux et décontracté', where: 'Le café, la piscine et le salon' },
+      dusk: { title: 'Crépuscule', mood: 'Mystérieux, façon Moyen Âge le soir', where: 'La salle de jeu' },
+      drift: { title: 'Dérive', mood: 'Étrange et planant, un peu science-fiction', where: 'La salle de conférence' },
+      quest: { title: 'Expédition', mood: 'Plus rythmé : aventure et découverte', where: 'La salle de sport' },
     },
     status: {
       locked: 'Le son démarre dès que tu cliques ou appuies sur une touche.',

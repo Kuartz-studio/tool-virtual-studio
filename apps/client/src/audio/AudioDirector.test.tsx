@@ -1,4 +1,4 @@
-import { buildOfficeTiledMap, GRAND_HALL, LOUNGE, parseOfficeMap, type InitPayload, type PublicPlayer } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, type InitPayload, type PublicPlayer } from '@bureau/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { EventBus } from '../game/EventBus';
@@ -133,7 +133,8 @@ describe('le lieu', () => {
   test('à l\'arrivée, l\'ambiance de l\'endroit où l\'on apparaît, tout de suite', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterOffice(px(LOUNGE.x + 25), px(LOUNGE.y + 6));
+    // La salle de jeu, au sud : le crépuscule.
+    enterOffice(px(20), px(38));
     await settle();
     expect(useAudioStore.getState().place).toBe('dusk');
     expect(musicNow()).toContain('/assets/audio/music/dusk.ogg');
@@ -142,10 +143,11 @@ describe('le lieu', () => {
   test('on change de pièce : l\'ambiance ne change qu\'après un moment dans la nouvelle', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterOffice(px(54), px(41));
+    enterOffice(map.spawn.x, map.spawn.y);
     expect(useAudioStore.getState().place).toBe('lobby');
 
-    walkTo(GRAND_HALL.x + 3, GRAND_HALL.y + 3);
+    // La salle de conférence : l'étrange et le planant.
+    walkTo(54, 20);
     await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS - 1));
     expect(useAudioStore.getState().place).toBe('lobby');
     await act(() => vi.advanceTimersByTimeAsync(1));
@@ -157,10 +159,10 @@ describe('le lieu', () => {
   test('traverser une pièce sans s\'y arrêter ne change pas la musique', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterOffice(px(54), px(41));
-    walkTo(GRAND_HALL.x + 3, GRAND_HALL.y + 3);
+    enterOffice(map.spawn.x, map.spawn.y);
+    walkTo(54, 20);
     await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS / 2));
-    walkTo(54, 41);
+    walkTo(40, 22);
     await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS * 3));
     expect(useAudioStore.getState().place).toBe('lobby');
   });
@@ -168,7 +170,7 @@ describe('le lieu', () => {
   test('quitter le bureau (la carte est retirée) : retour à la salle d\'attente', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterOffice(px(LOUNGE.x + 25), px(LOUNGE.y + 6));
+    enterOffice(px(20), px(38));
     expect(useAudioStore.getState().place).toBe('dusk');
     act(() => useOfficeStore.getState().setOfficeMap(null));
     expect(useAudioStore.getState().place).toBe('lobby');

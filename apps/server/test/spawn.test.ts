@@ -1,4 +1,4 @@
-import { DEV_OFFICE, buildTiledMap, parseOfficeMap } from '@bureau/shared';
+import { DEV_OFFICE, buildOfficeTiledMap, buildTiledMap, parseOfficeMap, placeAt } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { chooseSpawn } from '../src/realtime/spawn';
 
@@ -78,5 +78,27 @@ describe('chooseSpawn : autres cas', () => {
     expect(fallback).not.toBe(map.spawn);
     fallback.x = 1;
     expect(map.spawn).toEqual(spawn);
+  });
+});
+
+// La grande carte : des comptes enregistrés avant elle gardent leur dernière position, qui peut être tombée dans un mur de la nouvelle disposition.
+describe('chooseSpawn : la grande carte', () => {
+  const office = parseOfficeMap(buildOfficeTiledMap());
+  const centre = (tx: number, ty: number) => ({ x: tx * 32 + 16, y: ty * 32 + 16 });
+
+  test('une position enregistrée dans un mur de la nouvelle carte : l\'apparition, à l\'accueil', () => {
+    // La case (10, 5) est un pan de mur entre les bureaux A1 et A2.
+    expect(chooseSpawn(office, centre(10, 5), new Set())).toEqual(office.spawn);
+    expect(placeAt(office, office.spawn.x, office.spawn.y)?.key).toBe('reception');
+  });
+
+  test('une position praticable de la nouvelle carte est gardée, dans une salle comme dans la rue', () => {
+    expect(chooseSpawn(office, centre(20, 38), new Set())).toEqual(centre(20, 38));
+    expect(chooseSpawn(office, centre(20, 12), new Set())).toEqual(centre(20, 12));
+  });
+
+  test('un bureau occupé, quand on y a laissé sa position : l\'accueil aussi', () => {
+    const desk = office.zones.find((zone) => zone.type === 'desk' && zone.name === 'A6')!;
+    expect(chooseSpawn(office, centre(25, 20), new Set([desk.id]))).toEqual(office.spawn);
   });
 });

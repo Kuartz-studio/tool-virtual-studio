@@ -79,7 +79,6 @@ function useEngineState(engine: AudioEngine): void {
 // l'endroit où sont les pieds de la personne : tout de suite à l'arrivée, puis seulement quand elle est restée un moment dans un autre.
 function usePlaceScene(): void {
   const map = useOfficeStore((state) => state.officeMap);
-  const mapKey = useOfficeStore((state) => state.mapKey);
   useEffect(() => {
     const { setPlace } = useAudioStore.getState();
     if (map === null) {
@@ -87,12 +86,12 @@ function usePlaceScene(): void {
       return;
     }
     const start = useOfficeStore.getState().self ?? map.spawn;
-    let settled: SceneId = sceneAt(map, mapKey, start.x, start.y);
+    let settled: SceneId = sceneAt(map, start.x, start.y);
     setPlace(settled);
 
     let pending: { scene: SceneId; timer: ReturnType<typeof setTimeout> } | null = null;
     const moveTo = (x: number, y: number) => {
-      const scene = sceneAt(map, mapKey, x, y);
+      const scene = sceneAt(map, x, y);
       if (pending?.scene === scene) return;
       if (pending !== null) clearTimeout(pending.timer);
       pending = null;
@@ -111,7 +110,7 @@ function usePlaceScene(): void {
       off();
       if (pending !== null) clearTimeout(pending.timer);
     };
-  }, [map, mapKey]);
+  }, [map]);
 }
 
 // Qui parle (soi-même compris) baisse la musique ; elle remonte un peu après la dernière voix.

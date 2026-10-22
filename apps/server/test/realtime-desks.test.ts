@@ -1,6 +1,6 @@
 import { DESK_KNOCK_COOLDOWN_MS, DESK_RATE, type DeskAck, type DeskCommand, type MovePayload } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS } from './helpers/decor';
+import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS, defaultSetupOf } from './helpers/decor';
 import { enter, nextEvent, record, sleep, startTestServer, type ClientSocket, type TestServer } from './helpers/realtime';
 import { findUserByEmail } from './helpers/test-app';
 
@@ -49,7 +49,7 @@ describe('les places', () => {
     expect(a.init.desks.map((d) => d.key)).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6']);
     // Personne n'a décoré sa pièce : toutes montrent le poste de travail par défaut.
     expect(a.init.desks[0]).toEqual({ key: 'A1', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP });
-    expect(a.init.desks.every((d) => d.floor === DEFAULT_SETUP.floor && d.items.length === DEFAULT_SETUP.items.length)).toBe(true);
+    expect(a.init.desks.every((d) => d.floor === DEFAULT_SETUP.floor && d.items.length === defaultSetupOf(d.key).items.length)).toBe(true);
     expect(a.init.closedDesks).toEqual([]);
 
     const changed = nextEvent(a.socket, 'desk:changed');
@@ -78,7 +78,7 @@ describe('les places', () => {
     await sleep(60);
     expect(seenByB.payloadsOf('desk:changed')).toEqual([
       { key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
-      { key: 'A6', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
+      { key: 'A6', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...defaultSetupOf('A6') },
     ]);
     expect(await run(b.socket, { type: 'claim', key: 'A6' })).toEqual({ ok: false, error: 'taken' });
     expect(await run(b.socket, { type: 'claim', key: 'nulle-part' })).toEqual({ ok: false, error: 'unknown_desk' });

@@ -22,14 +22,16 @@ import { avatarObjectName } from '../avatars';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
+import { PropLayer } from '../prop-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
 import { bindKeyboard, bindUseKey, bindWheelZoom, bindZoomKeys, DirectionInput } from '../input';
 import { Interactions } from '../interactions';
-import { sourcesFromItems } from '../light-sources';
+import { sourcesFromItems, sourcesFromProps } from '../light-sources';
 import { LightSwitch } from '../light-switch';
 import { LightingLayer } from '../lighting';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
+import { addMapSigns } from '../map-signs';
 import { MoveSender } from '../move-sender';
 import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
@@ -78,6 +80,7 @@ export class Office extends Scene {
   private bubbles: SpeakingBubbles;
   private deskLayer: DeskLayer;
   private decorLayer: DecorLayer;
+  private propLayer: PropLayer;
   // Les interrupteurs de lumière de la carte (un seul sur la grande carte, aucun sur celle de développement).
   private switches: LightSwitch[] = [];
   // Ce qu'on actionne de près (touche E, ou un clic) : un seul gestionnaire, et l'étiquette « [E] … » unique qu'il commande.
@@ -130,8 +133,11 @@ export class Office extends Scene {
     this.tilemap = this.add.tilemap(this.mapKey);
     const { collisions, sol, murs } = buildMapLayers(this, this.tilemap);
     addZoneLabels(this, this.officeMap.zones);
+    addMapSigns(this, this.officeMap.signs);
     // Les meubles de la carte, et dans chaque bureau le décor de son occupant (thèmes compris).
     this.decorLayer = new DecorLayer(this, this.tilemap, { sol, murs }, this.officeMap);
+    // Les objets animés de la carte (machine à café, cheminée, enceintes, sport, bougies, aquarium).
+    this.propLayer = new PropLayer(this, this.tilemap);
     this.decorEditor = new DecorEditorView(this, this.decorLayer, { onOpen: (room) => this.focusRoom(room), onClose: () => this.followPlayer() });
     useOfficeStore.getState().setOfficeMap(this.officeMap);
     // Le zoom d'abord : les étiquettes des avatars en dépendent.
@@ -261,6 +267,7 @@ export class Office extends Scene {
       this.deskLayer.destroy();
       this.decorEditor.destroy();
       this.decorLayer.destroy();
+      this.propLayer.destroy();
       useOfficeStore.getState().setOfficeMap(null);
       this.debug.ready = false;
       this.debug.self = null;
@@ -312,7 +319,7 @@ export class Office extends Scene {
 
   // Les lumières de la nuit : les lampes, le feu et les écrans posés, ceux de la carte et ceux des bureaux tels qu'on les voit.
   private showLightSources(): void {
-    this.lighting.setStatic(sourcesFromItems(this.decorLayer.placedImages()));
+    this.lighting.setStatic([...sourcesFromItems(this.decorLayer.placedImages()), ...sourcesFromProps(this.propLayer.images())]);
   }
 
   private feet(): { x: number; y: number } {

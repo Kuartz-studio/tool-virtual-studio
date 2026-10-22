@@ -53,18 +53,24 @@ test('map:check sur la carte de développement : résumé en français (zones pa
 }, 60_000);
 
 // La carte que le serveur charge en production (MAP_KEY=office) : le JSON généré dans le client doit rester lisible par le code du serveur.
-test('map:check sur la grande carte du bureau : 66 × 47 cases, 6 bureaux avec leur porte, 3 salles, apparition à l\'accueil, code 0', async () => {
+test('map:check sur la grande carte du bureau : 81 × 46 cases, 6 bureaux avec leur porte, 6 salles, 12 lieux, apparition à l\'accueil, code 0', async () => {
   const run = await runCommand([OFFICE_MAP]);
   expect(run.code, run.stderr).toBe(0);
   expect(run.stderr).toBe('');
   expect(run.stdout).toMatch(/^Carte valide : \.\.\/client\/public\/assets\/maps\/office\.json$/m);
-  expect(run.stdout).toMatch(/Taille : 66 × 47 cases de 32 px/);
+  expect(run.stdout).toMatch(/Taille : 81 × 46 cases de 32 px/);
   expect(run.stdout).toMatch(/^\s+desk : 6$/m);
   expect(run.stdout).toMatch(/^\s+door : 6$/m);
-  expect(run.stdout).toMatch(/^\s+private : 3$/m);   // la zone détente, la grande salle, la salle de réunion
+  expect(run.stdout).toMatch(/^\s+private : 6$/m);   // la réunion, la salle client, la conférence, le sport, le jeu, la détente
   expect(run.stdout).toMatch(/^\s+spawn : 1$/m);
-  expect(run.stdout).toMatch(/^\s+switch : 1$/m);   // l'interrupteur de la lumière, dans le couloir
-  expect(run.stdout).toMatch(/Point d'apparition : x = 1744, y = 1328 \(case 54, 41\)/);
+  expect(run.stdout).toMatch(/^\s+switch : 1$/m);   // l'interrupteur de la lumière, dans la rue nord
+  expect(run.stdout).toMatch(/^\s+place : 12$/m);
+  expect(run.stdout).toMatch(/^\s+speaker : 7$/m);   // une enceinte par lieu qui a de la musique
+  expect(run.stdout).toMatch(/^\s+coffee : 1$/m);
+  expect(run.stdout).toMatch(/^\s+game : 4$/m);
+  expect(run.stdout).toMatch(/^\s+seat : 10$/m);
+  expect(run.stdout).toMatch(/^\s+sign : 1$/m);
+  expect(run.stdout).toMatch(/Point d'apparition : x = 1296, y = 720 \(case 40, 22\)/);
 }, 60_000);
 
 test('map:check refuse une carte invalide : code 1, le code de MapError et un message en français, rien sur la sortie normale', async () => {

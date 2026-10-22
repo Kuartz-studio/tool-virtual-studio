@@ -1,18 +1,46 @@
+import type { MusicScene } from '../audio/scenes';
 import { TILE_SIZE } from '../constants';
 import { decorItem } from '../decor/catalog';
 import { footprintOf } from '../decor/placement';
 import { FLOOR_THEMES, POOL_TILES, TILESET, WALL_THEMES } from '../decor/generated-themes';
+import { propByKey } from '../props/catalog';
 import { zoneObject, type ZoneInput } from './build-tiled';
+import type { GameId } from './parse-map';
 import type { TiledMapJson, TiledObject, TiledObjectLayer, TiledTileLayer } from './tiled-types';
 
-// Le dessin d'une carte, case par case : des primitives (sol, mur, ouverture, meuble, piscine) qui remplissent les calques de tuiles, les
-// collisions et le calque d'objets d'un JSON Tiled. Les murs suivent la convention du pack : un mur horizontal fait deux cases de haut (le
-// haut avec son liseré, puis le bas avec sa plinthe), un mur vertical une case de large (un pan).
+// Le dessin d'une carte, case par case : des primitives (sol, mur, ouverture, meuble, objet animé, piscine, lieux, tables) qui remplissent les
+// calques de tuiles, les collisions et les calques d'objets d'un JSON Tiled. Les murs suivent la convention du pack : un mur horizontal fait
+// deux cases de haut (le haut avec son liseré, puis le bas avec sa plinthe), un mur vertical une case de large (un pan).
 
 export interface DecorObject {
   id: string;
   x: number;   // les cases du coin haut-gauche de l'empreinte du meuble
   y: number;
+}
+
+// Un objet animé posé : sa clé (props/catalog.ts) et la case du coin haut-gauche de son empreinte ; `depth`, quand il est posé sur un meuble : la
+// profondeur d'affichage qui le met devant celui-ci, et `offsetY` de combien de pixels on abaisse son image (pour qu'il pose sur le plateau du meuble).
+export interface PropObject {
+  key: string;
+  x: number;
+  y: number;
+  depth?: number;
+  offsetY?: number;
+}
+
+// Un rectangle de la carte, en cases.
+export interface Area {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface PlaceOptions {
+  kind?: 'room' | 'open' | 'street';
+  scene?: MusicScene;
+  music?: boolean;
+  destination?: boolean;
 }
 
 const floorGid = (id: string): number => {
@@ -33,6 +61,7 @@ export class MapCanvas {
   readonly blocked: Uint8Array;
   readonly solidDecor: Uint8Array;
   readonly decor: DecorObject[] = [];
+  readonly props: PropObject[] = [];
   readonly zones: ZoneInput[] = [];
 
   constructor(
@@ -112,6 +141,80 @@ export class MapCanvas {
     this.decor.push({ id, x, y });
   }
 
+  // Un objet animé (props/catalog.ts), posé par la case du coin haut-gauche de son empreinte : les `claim` rangées du bas de son image, dont le haut
+  // dépasse au-dessus. Ses cases bloquent s'il est solide ; posé sur un mur ou sur un meuble solide, ou hors de la carte, c'est une erreur de dessin.
+  // `onTop` : l'objet est posé sur un meuble solide (la machine à café sur son comptoir) : il ne bloque rien de plus, et se dessine devant ce meuble ;
+  // `offsetY` : de combien de pixels on abaisse son image (le plateau d'un comptoir est plus bas que le bord haut de sa case).
+  prop(key: string, x: number, y: number, options: { onTop?: boolean; offsetY?: number } = {}): void {
+    const prop = propByKey(key);
+    if (!prop) throw new Error(`Objet animé inconnu : « ${key} ».`);
+    for (let xx = x; xx < x + prop.w; xx++) this.index(xx, y);   // au moins dans la carte
+    if (options.onTop) {
+      const bottom = this.supportBottom(x, y);
+      if (bottom === null) throw new Error(`« ${key} » en ${x}, ${y} n'est posé sur aucun meuble solide.`);
+      this.props.push({ key, x, y, depth: bottom * TILE_SIZE + 0.5, ...(options.offsetY ? { offsetY: options.offsetY } : {}) });
+      return;
+    }
+    if (prop.solid) {
+      for (let yy = y; yy < y + prop.claim; yy++) {
+        for (let xx = x; xx < x + prop.w; xx++) {
+          const i = this.index(xx, yy);
+          if (this.blocked[i]) throw new Error(`« ${key} » en ${x}, ${y} est posé sur un obstacle (case ${xx}, ${yy}).`);
+          this.blocked[i] = 1;
+          this.solidDecor[i] = 1;
+        }
+      }
+    }
+    this.props.push({ key, x, y });
+  }
+
+  // La rangée sous laquelle finit le meuble solide qui occupe cette case (le plus bas, s'il y en a plusieurs), ou null.
+  private supportBottom(x: number, y: number): number | null {
+    let bottom: number | null = null;
+    for (const placed of this.decor) {
+      const item = decorItem(placed.id)!;
+      if (item.kind !== 'object' || !item.solid) continue;
+      const f = footprintOf(item, placed);
+      if (x >= f.x && x < f.x + f.w && y >= f.y && y < f.y + f.h) bottom = Math.max(bottom ?? 0, f.y + f.h);
+    }
+    return bottom;
+  }
+
+  // Un lieu (zone `place`) : sa clé, son nom affiché, son rectangle et ses réglages (genre `room` par défaut, ambiance `lobby`, sans musique ni
+  // destination). La lecture de la carte (parse-map) refuse deux lieux de même clé.
+  place(key: string, label: string, area: Area, options: PlaceOptions = {}): void {
+    const props: Record<string, string | number | boolean> = { label };
+    if (options.kind !== undefined) props.kind = options.kind;
+    if (options.scene !== undefined) props.scene = options.scene;
+    if (options.music) props.music = true;
+    if (options.destination) props.destination = true;
+    this.zones.push({ type: 'place', name: key, ...area, props });
+  }
+
+  // La case, devant la machine à café, où l'on se tient pour en prendre un.
+  coffee(x: number, y: number): void {
+    this.zones.push({ type: 'coffee', x, y, w: 1, h: 1 });
+  }
+
+  // L'enceinte d'un lieu qui a de la musique : la case où elle se tient.
+  speaker(placeKey: string, x: number, y: number): void {
+    this.zones.push({ type: 'speaker', name: placeKey, x, y, w: 1, h: 1 });
+  }
+
+  // La table d'un jeu (une seule par jeu) et ses sièges, numérotés à partir de 1 : une case chacun.
+  table(game: GameId, area: Area): void {
+    this.zones.push({ type: 'game', name: game, ...area });
+  }
+
+  seat(game: GameId, n: number, x: number, y: number): void {
+    this.zones.push({ type: 'seat', name: `${game}:${n}`, x, y, w: 1, h: 1 });
+  }
+
+  // Un panneau, que le client trace dans son rectangle.
+  sign(text: string, x: number, y: number, w = 1, h = 1): void {
+    this.zones.push({ type: 'sign', text, x, y, w, h });
+  }
+
   // Un bassin : de l'eau avec sa margelle, les cases du bord sont des obstacles (on ne marche pas dans l'eau).
   pool(x: number, y: number, w: number, h: number): void {
     for (let yy = y; yy < y + h; yy++) {
@@ -186,6 +289,29 @@ export class MapCanvas {
         y: f.y * TILE_SIZE,
       };
     });
+    // Les objets animés : le nom est la clé du prop, la position et la taille celles de son empreinte (en pixels). Le client les anime.
+    const propObjects: TiledObject[] = this.props.map((placed, index) => {
+      const prop = propByKey(placed.key)!;
+      return {
+        height: prop.claim * TILE_SIZE,
+        id: index + 1,
+        name: placed.key,
+        ...(placed.depth === undefined
+          ? {}
+          : {
+              properties: [
+                { name: 'depth', type: 'float', value: placed.depth },
+                ...(placed.offsetY ? [{ name: 'offsetY', type: 'int', value: placed.offsetY }] : []),
+              ],
+            }),
+        rotation: 0,
+        type: 'prop',
+        visible: true,
+        width: prop.w * TILE_SIZE,
+        x: placed.x * TILE_SIZE,
+        y: placed.y * TILE_SIZE,
+      };
+    });
     const empty = new Array<number>(width * height).fill(0);
     const collisions = Array.from(this.blocked, (b) => (b ? 1 : 0));
     const layers = [
@@ -193,9 +319,10 @@ export class MapCanvas {
       tileLayer(2, 'murs', this.walls),
       tileLayer(3, 'meubles-bas', empty),
       objectLayer(4, 'objets', objects),
-      tileLayer(5, 'dessus', empty),
-      tileLayer(6, 'collisions', collisions, false),
-      objectLayer(7, 'zones', this.zones.map(zoneObject)),
+      objectLayer(5, 'props', propObjects),
+      tileLayer(6, 'dessus', empty),
+      tileLayer(7, 'collisions', collisions, false),
+      objectLayer(8, 'zones', this.zones.map(zoneObject)),
     ];
     return {
       compressionlevel: -1,
@@ -203,7 +330,7 @@ export class MapCanvas {
       infinite: false,
       layers,
       nextlayerid: layers.length + 1,
-      nextobjectid: Math.max(objects.length, this.zones.length) + 1,
+      nextobjectid: Math.max(objects.length, propObjects.length, this.zones.length) + 1,
       orientation: 'orthogonal',
       renderorder: 'right-down',
       tiledversion: '1.12.2',
