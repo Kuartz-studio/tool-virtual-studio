@@ -7,6 +7,10 @@ import {
   type DeskDecor,
   type DeskInfo,
   type DeskKnock,
+  type GameId,
+  type GameInvite,
+  type GameMatchView,
+  type GameTableView,
   type InitPayload,
   type LightsState,
   type MediaJoinPayload,
@@ -56,6 +60,10 @@ export interface PendingReplace {
   at: { x: number; y: number };
   replacing: number[];
 }
+
+// Une invitation à une table, telle que le magasin la garde : ce que le serveur a dit, et jusqu'à quand elle vaut, en ms sur l'horloge de la page (performance.now), puisque le
+// serveur ne donne que ce qu'il lui reste à vivre à la réception.
+export type GameInviteEntry = GameInvite & { until: number };
 
 export interface OfficeState {
   // Le compte connecté, d'après le dernier `init` ; null avant le premier.
@@ -117,6 +125,18 @@ export interface OfficeState {
   // `music:changed`. Une pièce qui n'y est pas est allumée, avec son ambiance par défaut. L'audio y lit ce qu'il joue (selectWantedScene), la puce du lieu ce qu'on
   // règle.
   music: Record<string, RoomMusic>;
+  // Les tables de jeu, par jeu : la dernière vue que le serveur en a donnée (celle de l'`init`, puis `game:table`, qui ne remplace que par une version plus récente).
+  // Un jeu sans table sur la carte n'y est pas : la petite carte de développement n'en a aucune.
+  games: Partial<Record<GameId, GameTableView>>;
+  // Les invitations à une table qui attendent sa réponse (celles de l'`init`, puis `game:invite`) ; une invitation y reste jusqu'à ce qu'on réponde, qu'elle expire
+  // ou que le serveur la retire (`game:invite:gone`).
+  gameInvites: GameInviteEntry[];
+  // La table dont le panneau est ouvert, ou que l'on demande d'ouvrir (la touche E à une table, « Accepter » une invitation) : la coque ouvre alors le panneau, la
+  // caméra va à la table. null : aucun panneau de jeu.
+  gameOpen: GameId | null;
+  // La table où une partie que l'on jouait a disparu pendant une coupure (le serveur a redémarré : les parties en cours ne sont pas gardées) : le panneau dit
+  // « Partie interrompue ». null sans interruption à signaler.
+  gameInterrupted: GameId | null;
   // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
   // null avant le jeu, et en dehors de lui.
   officeMap: OfficeMap | null;
@@ -143,6 +163,15 @@ export interface OfficeState {
   // La musique de cette pièce, telle que le serveur l'annonce (`music:changed`) : le serveur fait foi, rien n'est changé avant son annonce.
   setRoomMusic(place: string, state: RoomMusic): void;
   setDeskNotice(text: string | null): void;
+  // Une table a changé (`game:table`) : la vue remplace celle de ce jeu si sa version est plus récente ; une version égale ou plus ancienne est ignorée.
+  setGameTable(view: GameTableView): void;
+  // Une invitation arrive (`game:invite`) : elle remplace celle de même identifiant ; elle est retirée quand on répond ou que le serveur la retire.
+  addGameInvite(invite: GameInvite): void;
+  removeGameInvite(id: string): void;
+  // Ouvre le panneau de cette table, ou le ferme (null).
+  openGame(game: GameId | null): void;
+  // « Partie interrompue » a été lu.
+  dismissGameInterrupted(): void;
   // Le zoom : un pourcentage donné (ramené aux bornes et au cran de 5 % le plus proche), des crans de `size` % plus près (positifs) ou plus
   // loin (négatifs ; 5 % par cran si `size` n'est pas dit), la vue de départ.
   setZoomPercent(percent: number): void;
@@ -222,6 +251,10 @@ type Data = Pick<
   | 'lights'
   | 'coffee'
   | 'music'
+  | 'games'
+  | 'gameInvites'
+  | 'gameOpen'
+  | 'gameInterrupted'
   | 'officeMap'
   | 'decorEditor'
   | 'zoomPercent'
@@ -253,6 +286,10 @@ const initialData = (): Data => ({
   lights: LIGHTS_ON,
   coffee: {},
   music: {},
+  games: {},
+  gameInvites: [],
+  gameOpen: null,
+  gameInterrupted: null,
   officeMap: null,
   decorEditor: null,
   zoomPercent: ZOOM_DEFAULT_PERCENT,
@@ -280,6 +317,23 @@ function withoutBoost(p: PublicPlayer): PublicPlayer {
   const rest = { ...p };
   delete rest.boost;
   return rest;
+}
+
+// Une invitation reçue, avec l'échéance que lui donne ce qu'il lui reste à vivre.
+const inviteEntry = (invite: GameInvite): GameInviteEntry => ({ ...invite, until: performance.now() + invite.ttlMs });
+
+// Les tables d'un `init`, par jeu.
+const gamesOf = (tables: readonly GameTableView[] | undefined): Partial<Record<GameId, GameTableView>> => Object.fromEntries((tables ?? []).map((table) => [table.game, table]));
+
+// Le jeu où une partie que cette personne jouait n'existe plus dans les tables du nouvel `init` : le serveur a redémarré, ou une autre partie a pris la place. Une partie qui
+// continue, ou qui a fini pendant la coupure (le serveur la garde jusqu'à la suivante), n'est pas interrompue ; ni celle des autres, ni celle qui était déjà finie.
+function interruptedGame(before: Partial<Record<GameId, GameTableView>>, after: Partial<Record<GameId, GameTableView>>, selfId: string): GameId | null {
+  for (const table of Object.values(before)) {
+    const match: GameMatchView | null = table.match;
+    if (match?.status !== 'playing' || !match.players.some((player) => player.userId === selfId)) continue;
+    if (after[table.game]?.match?.id !== match.id) return table.game;
+  }
+  return null;
 }
 
 // Les messages sans doublon d'`id` : le premier exemplaire reste.
@@ -355,6 +409,10 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           coffee: coffeeDeadlines([p.self, ...others]),
           // La musique des pièces du moment : un init sans `music` dit que personne n'a rien réglé.
           music: p.music ?? {},
+          // Les tables et les invitations du moment ; une partie qu'on jouait et que le serveur ne connaît plus est signalée (et le reste jusqu'à ce qu'on l'ait lue).
+          games: gamesOf(p.games),
+          gameInvites: (p.gameInvites ?? []).map(inviteEntry),
+          gameInterrupted: interruptedGame(state.games, gamesOf(p.games), p.self.id) ?? state.gameInterrupted,
         }));
       },
 
@@ -396,6 +454,23 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
       setOfficeMap: (officeMap) => set({ officeMap }),
       setLights: (lights) => set({ lights }),
+      setGameTable: (view) =>
+        set((state) => {
+          const known = state.games[view.game];
+          return known && known.version >= view.version ? state : { games: { ...state.games, [view.game]: view } };
+        }),
+      addGameInvite: (invite) =>
+        set((state) => {
+          const entry = inviteEntry(invite);
+          const index = state.gameInvites.findIndex((known) => known.id === invite.id);
+          if (index === -1) return { gameInvites: [...state.gameInvites, entry] };
+          const invites = [...state.gameInvites];
+          invites[index] = entry;
+          return { gameInvites: invites };
+        }),
+      removeGameInvite: (id) => set((state) => (state.gameInvites.some((invite) => invite.id === id) ? { gameInvites: state.gameInvites.filter((invite) => invite.id !== id) } : state)),
+      openGame: (game) => set({ gameOpen: game }),
+      dismissGameInterrupted: () => set({ gameInterrupted: null }),
       setCoffee: (id, ms) =>
         set((state) => {
           if (ms > 0) return { coffee: { ...state.coffee, [id]: performance.now() + ms } };
