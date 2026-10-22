@@ -1,0 +1,239 @@
+/* Le tablier du backgammon. Tous les sélecteurs commencent par `.game-backgammon` (§ 12.4 du document des jeux) ; le cadre autour (texte, boutons) suit les jetons de la feuille de la
+   plateforme, jour comme nuit, et l'illustration a sa palette à elle, la même le jour et la nuit : ses variables sont déclarées ici, sur `.game-backgammon`. */
+.game-backgammon {
+  /* La palette de l'illustration. Les pions (ivoire et rouge brique) ont la leur, dans le code (sprites.ts) ; les deux tons des flèches sont assez clairs pour que le liseré brun des
+     pions s'en détache à 3 contre 1 au moins [WCAG 1.4.11]. */
+  --bg-frame: #3b2415;
+  --bg-bed: #24403f;
+  --bg-point-dark: #9c5f3a;
+  --bg-point-light: #e0c28a;
+  --bg-bar: #2a1b11;
+  --bg-ink: #1a1410;
+  --bg-ivory: #f4ecd8;
+  /* Ce qui s'éclaire : l'ambre pour ce qu'on peut jouer, le cyan pour ce que l'adversaire vient de déplacer. Chacun a un liseré sombre, pour se lire sur les deux tons de flèche. */
+  --bg-glow: #ffd45e;
+  --bg-moved: #5fd1e8;
+  /* Le focus du clavier : un anneau clair doublé d'un anneau sombre, lisible sur tous les fonds. */
+  --bg-focus-light: #ffffff;
+  --bg-focus-dark: #1a1410;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+}
+
+/* Le tablier a la taille que la disposition lui donne (geometry.ts) ; un conteneur plus étroit le réduit d'un bloc, sans défilement. */
+.game-backgammon-fit {
+  position: relative;
+  flex: none;
+  max-width: 100%;
+}
+
+.game-backgammon-stage {
+  position: relative;
+  transform-origin: top left;
+}
+
+.game-backgammon-svg {
+  display: block;
+}
+
+.game-backgammon-frame {
+  fill: var(--bg-frame);
+}
+
+.game-backgammon-bed {
+  fill: var(--bg-bed);
+}
+
+.game-backgammon-point[data-tone='dark'] {
+  fill: var(--bg-point-dark);
+}
+
+.game-backgammon-point[data-tone='light'] {
+  fill: var(--bg-point-light);
+}
+
+.game-backgammon-bar,
+.game-backgammon-tray {
+  fill: var(--bg-bar);
+}
+
+/* Les arrivées et le pion choisi : un voile d'ambre sur la flèche, plus marqué pour le pion choisi. */
+.game-backgammon-glow {
+  fill: var(--bg-glow);
+  fill-opacity: 0.3;
+  stroke: var(--bg-ink);
+  stroke-width: 1;
+}
+
+.game-backgammon-glow[data-kind='selected'],
+.game-backgammon-glow[data-kind='playable'] {
+  fill-opacity: 0.42;
+  stroke: var(--bg-glow);
+  stroke-width: 2;
+}
+
+/* Le pion choisi : un anneau d'ambre cerné de sombre. */
+.game-backgammon-ring {
+  fill: none;
+  stroke: var(--bg-glow);
+  stroke-width: 3;
+  paint-order: stroke;
+}
+
+/* Une arrivée : un point d'ambre cerné de sombre, à la place du prochain pion. */
+.game-backgammon-dot {
+  fill: var(--bg-glow);
+  stroke: var(--bg-ink);
+  stroke-width: 2;
+}
+
+.game-backgammon-underline {
+  stroke: var(--bg-ink);
+  stroke-width: 1;
+}
+
+.game-backgammon-underline[data-kind='playable'] {
+  fill: var(--bg-glow);
+}
+
+.game-backgammon-underline[data-kind='moved'] {
+  fill: var(--bg-moved);
+}
+
+/* « +n » sur le dernier pion d'une pile trop haute : sombre sur ivoire, clair sur rouge. */
+.game-backgammon-count {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.game-backgammon-count[data-camp='white'] {
+  fill: var(--bg-ink);
+}
+
+.game-backgammon-count[data-camp='red'] {
+  fill: var(--bg-ivory);
+}
+
+.game-backgammon-offcount,
+.game-backgammon-times {
+  font-size: 13px;
+  font-weight: 700;
+  fill: var(--bg-ivory);
+}
+
+.game-backgammon-die[data-used] {
+  opacity: 0.35;
+}
+
+/* La grille des cases : par-dessus le dessin, des boutons transparents posés à la main (geometry.ts), un par flèche, un pour la barre, un pour la sortie. */
+.game-backgammon-grid,
+.game-backgammon-row {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.game-backgammon-cell {
+  position: absolute;
+  pointer-events: auto;
+}
+
+.game-backgammon-button {
+  display: block;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.game-backgammon-button[aria-disabled='true'] {
+  cursor: default;
+}
+
+.game-backgammon-button:hover:not([aria-disabled='true']) {
+  background: rgb(255 255 255 / 12%);
+}
+
+.game-backgammon-button:focus-visible {
+  outline: 2px solid var(--bg-focus-light);
+  outline-offset: -2px;
+  box-shadow: inset 0 0 0 4px var(--bg-focus-dark);
+}
+
+/* « Lancer les dés » : au milieu de la moitié du tablier où les dés vont se poser. */
+.game-backgammon-roll {
+  position: absolute;
+  z-index: 1;
+  min-width: 96px;
+  min-height: 36px;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  box-shadow: var(--shadow-m);
+}
+
+/* L'avis « Aucun coup possible » : une pastille au milieu du tablier, qui ne prend aucun clic. */
+.game-backgammon-notice {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  padding: 6px 14px;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--bg-ivory);
+  white-space: nowrap;
+  pointer-events: none;
+  background: var(--bg-ink);
+  border-radius: var(--radius-pill);
+  transform: translate(-50%, -50%);
+}
+
+/* Sous le tablier : les étapes posées, les avis, la course, les pions sortis. */
+.game-backgammon-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+  text-align: center;
+}
+
+.game-backgammon-info p {
+  margin: 0;
+}
+
+.game-backgammon-steps {
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.game-backgammon-note {
+  color: var(--warning-text);
+}
+
+.game-backgammon-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.game-backgammon-undo,
+.game-backgammon-confirm,
+.game-backgammon-bear {
+  min-width: 72px;
+  min-height: 36px;
+}
