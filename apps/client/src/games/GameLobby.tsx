@@ -1,5 +1,5 @@
-import { refusesGameInvites, type AnyGameDefinition, type GameId, type GameTableView } from '@bureau/shared';
-import { useId, useState } from 'react';
+import { refusesGameInvites, roomOfTable, type AnyGameDefinition, type GameId, type GameTableView } from '@bureau/shared';
+import { useId, useMemo, useState } from 'react';
 import { fr, t } from '../i18n/fr';
 import { sendGameCommand } from '../net/game-commands';
 import type { OfficeSocket } from '../net/socket';
@@ -106,6 +106,12 @@ export function GameLobby({ game, table, def, selfId, socket, rematch, onMessage
 // déranger », un mode qui ferme la porte ou qui conduit ailleurs) n'a pas de bouton : le serveur refuserait.
 function InvitePicker({ game, table, send, onMessage }: { game: GameId; table: GameTableView; send: (command: { type: 'invite'; game: GameId; userId: string }) => Promise<boolean>; onMessage(text: string | null): void }) {
   const players = useOfficeStore((state) => state.players);
+  // La pièce de la table : un mode dont l'emplacement est cette pièce ne conduit pas ailleurs (voir refusesGameInvites).
+  const officeMap = useOfficeStore((state) => state.officeMap);
+  const tableRoom = useMemo(() => {
+    const placed = officeMap?.tables.find((candidate) => candidate.game === game);
+    return officeMap && placed ? (roomOfTable(officeMap, placed)?.key ?? null) : null;
+  }, [officeMap, game]);
   const [open, setOpen] = useState(false);
   const [sent, setSent] = useState<string | null>(null);
   const listId = useId();
@@ -132,7 +138,7 @@ function InvitePicker({ game, table, send, onMessage }: { game: GameId; table: G
           ) : (
             <ul>
               {people.map((player) => {
-                const refuses = refusesGameInvites(player);
+                const refuses = refusesGameInvites(player, tableRoom);
                 return (
                   <li key={player.id} className="game-invite-row">
                     <AvatarPortrait avatarKey={player.avatarKey} name={player.name} size={28} />

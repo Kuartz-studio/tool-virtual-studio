@@ -37,6 +37,28 @@ describe('jouer un coup', () => {
     expect(view().version).toBe(table.version);
   });
 
+  // La version de la table avance à tout changement (un spectateur qui arrive, un nom qui change, une connexion qui tombe) : un coup que l'un d'eux croise en route est jugé sur le
+  // même état de jeu, il ne doit pas être jeté. Seul un changement de la partie (un coup, une sortie, la nulle acceptée, une partie qui commence) périme un coup.
+  test('un spectateur qui arrive pendant que le coup est en route ne le périme pas', async () => {
+    const { startMatch, service, play, view } = gamesSetup();
+    const table = await startMatch();
+    await service.run(CLAIRE, { type: 'watch', game: 'connect4' });
+    expect(view().version).toBe(table.version + 1);
+    expect(await play(ALICE, 4, 'connect4', table.version)).toEqual({ ok: true });
+  });
+
+  test('un nom qui change en route ne périme pas le coup ; un coup joué entre-temps, si', async () => {
+    const { startMatch, service, play, view } = gamesSetup();
+    const table = await startMatch();
+    await service.profileChanged(BASTIEN, 'Bastien Bis', null);
+    expect(view().version).toBe(table.version + 1);
+    expect(await play(ALICE, 4, 'connect4', table.version)).toEqual({ ok: true });
+    // Bastien joue sur la version qu'il avait avant le coup d'Alice, puis sur celle d'entre les deux : périmées l'une et l'autre.
+    expect(await play(BASTIEN, 3, 'connect4', table.version)).toEqual({ ok: false, error: 'stale' });
+    expect(await play(BASTIEN, 3, 'connect4', table.version + 1)).toEqual({ ok: false, error: 'stale' });
+    expect(await play(BASTIEN, 3)).toEqual({ ok: true });
+  });
+
   test('un coup de la mauvaise forme : invalid', async () => {
     const { startMatch, service, view } = gamesSetup();
     await startMatch();
@@ -486,6 +508,8 @@ describe('le débogage des tests de bout en bout', () => {
     await service.debugSet('connect4', state);
     expect(view().match?.state).toEqual(state);
     expect(view().version).toBe(table.version + 1);
+    // Un coup pensé sur l'état d'avant est périmé : l'état fabriqué en est un autre.
+    expect(await service.run(ALICE, { type: 'move', game: 'connect4', version: table.version, move: { cell: 2 } })).toEqual({ ok: false, error: 'stale' });
     // Alice joue le coup qui lui donne la partie : classée, puisque l'état fabriqué compte quatre coups.
     await service.run(ALICE, { type: 'move', game: 'connect4', version: view().version, move: { cell: 2 } });
     expect(view().match).toMatchObject({ status: 'ended', ranked: true });

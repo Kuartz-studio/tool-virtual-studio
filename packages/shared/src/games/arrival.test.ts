@@ -4,7 +4,7 @@ import { parseOfficeMap } from '../map/parse-map';
 import { placeAt, placeByKey } from '../map/places';
 import { avatarBodyFits } from '../map/queries';
 import { GAME_ARRIVAL_RING_TILES } from '../constants';
-import { arrivalSpot } from './arrival';
+import { arrivalSpot, roomOfTable } from './arrival';
 
 const map = parseOfficeMap(buildOfficeTiledMap());
 const chess = map.tables.find((table) => table.game === 'chess')!;
@@ -21,6 +21,18 @@ const ring = {
 const inRing = (point: { x: number; y: number }) => point.x >= ring.left && point.x < ring.right && point.y >= ring.top && point.y < ring.bottom;
 const inTable = (point: { x: number; y: number }) =>
   point.x >= chess.rect.x && point.x < chess.rect.x + chess.rect.width && point.y >= chess.rect.y && point.y < chess.rect.y + chess.rect.height;
+
+describe('roomOfTable : la pièce d\'une table est celle de son centre', () => {
+  test('les quatre tables de la carte sont dans la salle de jeu', () => {
+    expect(map.tables).toHaveLength(4);
+    for (const table of map.tables) expect(roomOfTable(map, table)?.key, table.game).toBe('game');
+  });
+
+  test('une table posée hors de toute pièce n\'en a pas', () => {
+    const outside = { ...chess, rect: { x: -500, y: -500, width: chess.rect.width, height: chess.rect.height } };
+    expect(roomOfTable(map, outside)).toBeNull();
+  });
+});
 
 describe('arrivalSpot : où poser quelqu\'un qui arrive à une table', () => {
   test('la carte a bien des chaises praticables, de part et d\'autre de la table des échecs', () => {

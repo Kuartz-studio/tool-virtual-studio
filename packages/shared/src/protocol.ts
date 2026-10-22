@@ -126,6 +126,9 @@ export interface DeskInfo {
   floor: string;
   wall: string;
   items: PlacedItem[];
+  // Sa déco enregistrée ne tient plus dans la pièce (la carte a changé : plus petite, porte de l'autre côté) : `items` est alors le poste par défaut, et la déco reste en base, que
+  // l'enregistrement d'une nouvelle remplacerait. Absent sinon.
+  decorUnfit?: true;
 }
 // Quelqu'un que le propriétaire a exclu de son bureau.
 export interface DeskBan { id: string; name: string }

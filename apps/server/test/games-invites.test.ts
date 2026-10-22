@@ -54,6 +54,16 @@ describe('inviter', () => {
     expect(sent.invites).toEqual([]);
   });
 
+  // Un mode « Jeux » dont l'emplacement est la salle de jeu : l'invitation le conduit là où il voulait être, elle ne l'arrache à rien (la table de Puissance 4 est dans la salle `game`).
+  test('un mode dont l\'emplacement est la salle de la table laisse inviter ; celui d\'une autre salle, non', async () => {
+    const { invite, player, sent } = await aliceSeated();
+    player(BASTIEN).activity = { id: 'a', label: 'Jeux', color: '#22c55e', allowEntry: true, hear: true, heard: true, place: 'game' };
+    expect(await invite(BASTIEN)).toEqual({ ok: true });
+    expect(sent.invites).toHaveLength(1);
+    player(CLAIRE).activity = { id: 'b', label: 'Muscu', color: '#f97316', allowEntry: true, hear: true, heard: true, place: 'gym' };
+    expect(await invite(CLAIRE)).toEqual({ ok: false, error: 'dnd' });
+  });
+
   test('un mode qui laisse entrer et ne conduit nulle part ne gêne pas : l\'invitation part', async () => {
     const { invite, player, sent } = await aliceSeated();
     player(BASTIEN).activity = { id: 'a', label: 'Pause', color: '#22c55e', allowEntry: true, hear: true, heard: true };

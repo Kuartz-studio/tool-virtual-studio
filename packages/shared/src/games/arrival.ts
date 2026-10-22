@@ -21,6 +21,11 @@ function overlap(a: Rect, b: Rect): Rect | null {
 // 3. sinon n'importe quelle case de la salle qui contient la table ;
 // 4. sinon null : personne n'est posé, et la personne reste où elle est.
 // `chair` : l'indice de la chaise où il va s'asseoir ; null : il regarde, ou la table est pleine.
+// La pièce d'une table : celle qui contient son centre ; null si elle n'est dans aucune.
+export function roomOfTable(map: OfficeMap, table: GameTable): Place | null {
+  return placeAt(map, table.rect.x + table.rect.width / 2, table.rect.y + table.rect.height / 2);
+}
+
 export function arrivalSpot(map: OfficeMap, table: GameTable, chair: number | null, taken: ReadonlyArray<Point>): Point | null {
   const size = map.tileSize;
   const seat = chair === null ? undefined : table.seats[chair];
@@ -29,7 +34,7 @@ export function arrivalSpot(map: OfficeMap, table: GameTable, chair: number | nu
     return { x: seat.x, y: seat.y };
   }
 
-  const room = placeAt(map, table.rect.x + table.rect.width / 2, table.rect.y + table.rect.height / 2);
+  const room = roomOfTable(map, table);
   if (room === null) return null;
   const grow = GAME_ARRIVAL_RING_TILES * size;
   const ring: Rect = { x: table.rect.x - grow, y: table.rect.y - grow, width: table.rect.width + 2 * grow, height: table.rect.height + 2 * grow };
