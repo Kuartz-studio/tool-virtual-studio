@@ -218,6 +218,11 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
           </div>
 
           <footer className="decor-footer">
+            {mine?.decorUnfit && (
+              <p className="desk-hint" role="status">
+                {fr.decor.unfit}
+              </p>
+            )}
             <p className="desk-hint" role="status">
               {held ? (
                 <>

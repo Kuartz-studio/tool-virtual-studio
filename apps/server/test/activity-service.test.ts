@@ -17,6 +17,8 @@ describe('créer, lire', () => {
   test('un état : son identifiant (uuid), ses trois interrupteurs ; la liste les rend dans l\'ordre de création', async () => {
     const { service } = await setup();
     const first = await service.create('ana', focus);
+    // Deux créations dans la même milliseconde se départagent par leur identifiant, tiré au hasard : l'horloge de la base avance avant la seconde, puisque l'ordre est ici ce qu'on teste.
+    await new Promise((resolve) => setTimeout(resolve, 5));
     const second = await service.create('ana', { label: 'À table', color: '#f59e0b', allowEntry: true, hear: false, heard: false });
     expect(first).toMatchObject({ ok: true, state: { label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false } });
     if (!first.ok || !second.ok) throw new Error('création refusée');
@@ -97,7 +99,11 @@ describe('l\'emplacement', () => {
     if (!withPlace.ok || !without.ok) throw new Error('création refusée');
     expect(withPlace.state.place).toBe('gym');
     expect(await service.get('ana', withPlace.state.id)).toEqual(withPlace.state);
-    expect((await service.list('ana')).map((state) => state.place)).toEqual(['gym', undefined]);
+    // Deux créations dans la même milliseconde se départagent par leur identifiant, tiré au hasard : la liste n'a pas d'ordre à vérifier ici.
+    const places = (await service.list('ana')).map((state) => state.place);
+    expect(places).toHaveLength(2);
+    expect(places).toContain('gym');
+    expect(places).toContain(undefined);
     expect('place' in without.state).toBe(false);
   });
 

@@ -57,6 +57,19 @@ describe('sans bureau', () => {
   });
 });
 
+describe('une déco enregistrée qui ne tient plus dans la pièce (la carte a changé)', () => {
+  // Le serveur montre alors le poste par défaut et garde la déco en base ; enregistrer la remplacerait pour de bon : le panneau prévient avant.
+  test('le panneau le dit, et dit que le poste par défaut est montré', () => {
+    setup([{ ...desk('A2', 'moi'), decorUnfit: true }]);
+    expect(screen.getByText(fr.decor.unfit)).toBeTruthy();
+  });
+
+  test('une déco qui tient, ou la déco des autres : aucun avertissement', () => {
+    setup([desk('A2', 'moi'), { ...desk('A3', 'autre'), decorUnfit: true }]);
+    expect(screen.queryByText(fr.decor.unfit)).toBeNull();
+  });
+});
+
 describe('avec un bureau', () => {
   test('ouvrir le panneau ouvre l\'éditeur sur son bureau, le fermer le ferme', () => {
     const { view } = setup();

@@ -357,24 +357,25 @@ export class DeskService {
 
   // Le décor que montre une place : celui de son occupant s'il en a réglé un et qu'il tient dans la pièce, le poste par défaut de la pièce sinon (et
   // pour une place libre). Un décor enregistré qui ne tient plus (la carte a changé : la pièce est devenue plus petite, sa porte a changé de côté)
-  // est ignoré et journalisé, jamais effacé : il revient si la pièce redevient assez grande.
-  private decorOf(state: DeskState): DeskDecor {
+  // est ignoré et journalisé, jamais effacé : il revient si la pièce redevient assez grande. `unfit` le dit, pour que la place l'annonce à son occupant (enregistrer le remplacerait).
+  private decorOf(state: DeskState): { decor: DeskDecor; unfit: boolean } {
     const room = this.roomOf(state.key);
     const own = state.ownerId === null ? undefined : this.setups.get(state.ownerId);
     if (own) {
       const checked = checkDecor(own, room);
-      if (checked.ok) return own;
+      if (checked.ok) return { decor: own, unfit: false };
       const id = `${state.ownerId}|${state.key}`;
       if (!this.unfit.has(id)) {
         this.unfit.add(id);
         this.logger?.warn({ userId: state.ownerId, desk: state.key, reason: checked.error }, 'Décor enregistré qui ne tient plus dans sa pièce : le poste par défaut est montré, le décor reste en base');
       }
+      return { decor: defaultDeskDecor(room), unfit: true };
     }
-    return defaultDeskDecor(room);
+    return { decor: defaultDeskDecor(room), unfit: false };
   }
 
   private info(state: DeskState): DeskInfo {
-    const decor = this.decorOf(state);
+    const { decor, unfit } = this.decorOf(state);
     return {
       key: state.key,
       ownerId: state.ownerId,
@@ -386,6 +387,7 @@ export class DeskService {
       wall: decor.wall,
       // Des copies : ce qui part dans une `DeskInfo` ne doit jamais permettre de changer le décor par défaut ou celui d'une personne.
       items: copyItems(decor.items),
+      ...(unfit ? { decorUnfit: true as const } : {}),
     };
   }
 }

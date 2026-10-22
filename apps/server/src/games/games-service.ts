@@ -12,6 +12,7 @@ import {
   recordingRng,
   refusesGameInvites,
   rngFromDice,
+  roomOfTable,
   type ActivityState,
   type AnyGameDefinition,
   type ForfeitReason,
@@ -118,6 +119,9 @@ interface Match {
   ratings: Array<{ userId: string; before: number; after: number }> | null;
   // Des dés imposés aux prochains tirages de cette partie (débogage des tests de bout en bout seulement).
   forcedRolls: number[];
+  // La version de la table au dernier changement de l'état du jeu (la partie qui commence, un coup, une sortie, la nulle acceptée, un état fabriqué). Un coup envoyé sur une version
+  // plus ancienne a été pensé sur un état périmé ; les autres changements de la table (un spectateur, un nom, une connexion, une offre de nulle) ne le périment pas.
+  stateVersion: number;
 }
 
 interface Table {
@@ -163,10 +167,9 @@ export class GamesService {
     this.clock = d.clock ?? Date.now;
     this.newId = d.newId ?? randomUUID;
     for (const table of d.map.tables) {
-      const centre = { x: table.rect.x + table.rect.width / 2, y: table.rect.y + table.rect.height / 2 };
       this.tables.set(table.game, {
         game: table.game,
-        roomKey: placeAt(d.map, centre.x, centre.y)?.key ?? null,
+        roomKey: roomOfTable(d.map, table)?.key ?? null,
         version: 0,
         chairs: table.seats.map(() => null),
         spectators: new Map(),
@@ -237,10 +240,14 @@ export class GamesService {
   }
 
   // Un changement de la table : sa version avance, et tout le bureau reçoit la table entière. `events` : ce que le changement a provoqué dans la partie (à animer) ; sans
-  // eux (un spectateur qui arrive, quelqu'un qui s'assoit), la partie n'a rien de neuf à animer.
-  private commit(table: Table, events: unknown[] = []): void {
+  // eux (un spectateur qui arrive, quelqu'un qui s'assoit), la partie n'a rien de neuf à animer. `matchChanged` : l'état du jeu a changé (une partie qui commence, un coup, une
+  // sortie, la nulle acceptée, un état fabriqué) : un coup envoyé sur une version d'avant est périmé, ce que ne fait aucun autre changement (voir `Match.stateVersion`).
+  private commit(table: Table, events: unknown[] = [], matchChanged = false): void {
     table.version++;
-    if (table.match) table.match.events = events;
+    if (table.match) {
+      table.match.events = events;
+      if (matchChanged) table.match.stateVersion = table.version;
+    }
     this.d.out.table(this.viewOf(table));
   }
 
@@ -452,9 +459,10 @@ export class GamesService {
       ranked: null,
       ratings: null,
       forcedRolls: [],
+      stateVersion: 0,
     };
     this.armDeadline(table.match);
-    this.commit(table, made.events);
+    this.commit(table, made.events, true);
     return true;
   }
 
@@ -475,8 +483,9 @@ export class GamesService {
     if (!match || match.status !== 'playing') return refuse('no_match');
     const seat = this.seatOf(match, userId);
     if (seat === -1 || match.out[seat]) return refuse('not_seated');
-    // Un coup envoyé deux fois, ou sur un état périmé, ne compte qu'une fois.
-    if (version !== table.version) return refuse('stale');
+    // Un coup envoyé deux fois, ou sur un état périmé, ne compte qu'une fois. La version de la table avance aussi pour un spectateur, un nom ou une connexion : un coup que l'un d'eux croise
+    // en route porte une version plus ancienne que la table, mais l'état du jeu est le même, et il passe. Une version plus récente que la table (un serveur redémarré) est périmée aussi.
+    if (version < match.stateVersion || version > table.version) return refuse('stale');
     const parsed = match.def.moveSchema.safeParse(raw);
     if (!parsed.success) return refuse('invalid');
     if (match.def.turn(match.state) !== seat) return refuse('not_your_turn');
@@ -498,7 +507,7 @@ export class GamesService {
   private async afterAction(table: Table, events: unknown[]): Promise<void> {
     const match = table.match!;
     if (match.def.result(match.state) === null) {
-      this.commit(table, events);
+      this.commit(table, events, true);
       return;
     }
     await this.finish(table, events);
@@ -539,6 +548,7 @@ export class GamesService {
       chair.since = now;
       if (!chair.connected) table.chairs[index] = null;
     });
+    // La partie finie n'accepte plus de coup (no_match) : sa version d'état ne sert plus.
     this.commit(table, events);
   }
 
@@ -609,8 +619,8 @@ export class GamesService {
     if (targetId === userId) return refuse('self');
     const target = this.d.players.get(targetId);
     if (!target || !this.d.isOnline(targetId)) return refuse('offline');
-    // Qui ne veut pas être dérangé (statut, mode qui ferme la porte ou qui conduit ailleurs) n'est pas invité.
-    if (refusesGameInvites(target)) return refuse('dnd');
+    // Qui ne veut pas être dérangé (statut, mode qui ferme la porte ou qui conduit ailleurs que dans la salle de la table) n'est pas invité.
+    if (refusesGameInvites(target, table.roomKey)) return refuse('dnd');
     if (this.playingTableOf(targetId) !== null) return refuse('busy');
     if (this.chairIndex(table, targetId) !== -1) return refuse('already_here');
 
@@ -890,7 +900,7 @@ export class GamesService {
       match.forcedRolls = [...rolls];
       match.log.push({ kind: 'debug', state, at: this.d.now() - match.startedMono });
       this.armDeadline(match);
-      this.commit(table);
+      this.commit(table, [], true);
     });
   }
 }

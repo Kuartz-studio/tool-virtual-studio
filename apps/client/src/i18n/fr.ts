@@ -577,6 +577,8 @@ export const fr = {
     done: 'Fermer',
     reset: 'Poste par défaut',
     clear: 'Tout vider',
+    // Sa déco enregistrée ne tient plus dans la pièce (la carte a changé) : le poste par défaut est montré, la déco reste en base, mais l'enregistrement d'une nouvelle la remplace.
+    unfit: 'Ta déco enregistrée ne tient plus dans cette pièce depuis le changement de carte : c\'est le poste par défaut qui est montré, et enregistrer remplacera ta déco.',
     errors: {
       too_many: 'La pièce est pleine.',
       unknown_item: 'Cet élément n\'existe pas.',

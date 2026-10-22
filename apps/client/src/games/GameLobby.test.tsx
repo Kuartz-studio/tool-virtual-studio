@@ -1,3 +1,4 @@
+import { buildOfficeTiledMap, parseOfficeMap } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -165,6 +166,21 @@ describe('inviter quelqu\'un', () => {
     await userEvent.click(screen.getByRole('button', { name: fr.games.invite.toggle }));
     for (const name of ['Dan', 'Eve', 'Fay']) expect((screen.getByRole('button', { name: t(fr.games.invite.sendLabel, { name }) }) as HTMLButtonElement).disabled, name).toBe(true);
     expect((screen.getByRole('button', { name: t(fr.games.invite.sendLabel, { name: 'Gus' }) }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  test('un mode dont l\'emplacement est la salle de la table (la salle de jeu) laisse inviter ; celui d\'une autre salle, non', async () => {
+    const view = table('connect4', 3, { chairs: [chair(SELF), null] });
+    applyWorld([], [view]);
+    const { useOfficeStore } = await import('../state/office-store');
+    act(() => {
+      useOfficeStore.getState().setOfficeMap(parseOfficeMap(buildOfficeTiledMap()));
+      useOfficeStore.getState().upsertPlayer(player('hal', { activity: { id: 'a', label: 'Jeux', color: '#22c55e', allowEntry: true, hear: true, heard: true, place: 'game' } }));
+      useOfficeStore.getState().upsertPlayer(player('ida', { activity: { id: 'b', label: 'Muscu', color: '#f97316', allowEntry: true, hear: true, heard: true, place: 'gym' } }));
+    });
+    render(<GameLobby game="connect4" table={view} def={tictactoe as never} selfId={SELF} socket={socket.asSocket()} rematch={false} onMessage={vi.fn()} />);
+    await userEvent.click(screen.getByRole('button', { name: fr.games.invite.toggle }));
+    expect((screen.getByRole('button', { name: t(fr.games.invite.sendLabel, { name: 'Hal' }) }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole('button', { name: t(fr.games.invite.sendLabel, { name: 'Ida' }) }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   test('personne d\'autre en ligne : on le dit', async () => {

@@ -518,6 +518,8 @@ describe('des pièces de tailles différentes', () => {
     const service = await DeskService.create(roomy.db, SMALL_MAP, { logger: { warn } });
     const expected = defaultDeskDecor(DESK_ROOMS.compact);
     expect(service.get('A5')).toMatchObject({ ownerId: 'ana', floor: expected.floor, wall: expected.wall, items: expected.items });
+    // La place le dit (`decorUnfit`), pour que son panneau prévienne la personne : enregistrer remplacerait son décor, que personne ne voit plus.
+    expect(service.get('A5')?.decorUnfit).toBe(true);
     service.get('A5');
     service.list();
     // Journalisé une fois, avec de quoi retrouver la personne, la place et la raison.
@@ -528,6 +530,16 @@ describe('des pièces de tailles différentes', () => {
     // Et si la pièce redevient assez grande, le décor revient.
     const again = await DeskService.create(roomy.db, smallMap(9));
     expect(again.get('A5')).toMatchObject(WIDE);
+    expect(again.get('A5')?.decorUnfit).toBeUndefined();
+  });
+
+  test('une place libre, ou un décor qui tient, ne porte pas de `decorUnfit`', async () => {
+    const { service } = await setup({}, SMALL_MAP);
+    expect(service.get('A5')?.decorUnfit).toBeUndefined();
+    await service.claim('ana', 'Ana', 'A5');
+    expect(service.get('A5')?.decorUnfit).toBeUndefined();
+    await service.setDecor('ana', { floor: 'noyer', wall: 'anthracite', items: [{ id: 'of-7-28', x: 0, y: 0 }] });
+    expect(service.get('A5')?.decorUnfit).toBeUndefined();
   });
 
   test('un décor qui tient dans la pièce n\'est ni ignoré ni journalisé', async () => {
