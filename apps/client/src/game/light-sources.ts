@@ -1,10 +1,11 @@
-import { TILE_SIZE } from '@bureau/shared';
+import { TILE_SIZE, type LightKind } from '@bureau/shared';
 
 // Les lumières de la nuit : les éléments posés qui éclairent quand la lumière du bureau est éteinte (lampes, cheminée, écrans, télévisions), ceux
 // de la carte comme ceux des bureaux. La couche de nuit (LightingLayer) troue l'obscurité autour de chacun, et y ajoute une teinte et un halo de sa
 // couleur. Toutes ne se valent pas : un écran n'éclaire presque rien, un lampadaire un peu plus, une cheminée toute la pièce.
 
-export type LightKind = 'lamp' | 'screen' | 'fire' | 'tv' | 'glow' | 'candle' | 'water';
+// Les genres de lumière sont ceux du partage (les objets animés de la carte disent lequel ils portent).
+export type { LightKind };
 
 // Le vacillement d'une lumière : sa portée bouge de ± `amplitude` (une part de la portée), au rythme de `hz` battements par seconde.
 export interface LightFlicker {

@@ -26,7 +26,8 @@ export const MUSIC_SOURCES = {
 } as const;
 
 // Les effets : l'identifiant de l'effet (le nom du fichier) et son fichier dans le pack (dossier/nom). Les petits bruits de l'interface
-// viennent de son dossier UI, les jingles des événements de Musical Effects (tous au vibraphone, pour rester de la même famille).
+// viennent de son dossier UI, les jingles des événements de Musical Effects (tous au vibraphone, pour rester de la même famille), les portes et
+// les serrures de Environment, le café, l'élan et la téléportation de Other, les dés et les pions de Card and Board.
 export const SFX_SOURCES = {
   click: 'UI/select_2.wav',
   'toggle-on': 'UI/toggle_on.wav',
@@ -43,7 +44,28 @@ export const SFX_SOURCES = {
   error: 'Musical Effects/vibraphone_negative_quick.wav',
   lost: 'Musical Effects/vibraphone_negative_long.wav',
   knock: 'Other/subtle_knock.wav',
+  'door-open': 'Environment/door_open.wav',
+  'door-close': 'Environment/door_close.wav',
+  lock: 'Environment/lock_lock.wav',
+  unlock: 'Environment/lock_unlock.wav',
+  coffee: 'Other/drink_slurp.wav',
+  boost: 'Other/whoosh_2.wav',
+  teleport: 'Other/whoosh_1.wav',
+  dice: 'Card and Board/dice_roll_1.wav',
+  piece: 'Card and Board/chips_place_1.wav',
+  win: 'Other/applause.wav',
 } as const;
+
+// Les effets trop longs pour ce qu'ils annoncent : écourtés à `seconds`, avec une extinction sur les `fadeSeconds` dernières secondes. Les
+// applaudissements de la victoire durent plus de dix secondes dans le pack.
+export const SFX_TRIMS: Partial<Record<keyof typeof SFX_SOURCES, { seconds: number; fadeSeconds: number }>> = {
+  win: { seconds: 3.5, fadeSeconds: 0.8 },
+};
+
+// Le filtre ffmpeg d'une extinction sur la fin d'un son écourté.
+export function fadeOutFilter({ seconds, fadeSeconds }: { seconds: number; fadeSeconds: number }): string {
+  return `afade=t=out:st=${round(seconds - fadeSeconds, 3)}:d=${fadeSeconds}`;
+}
 
 // Les niveaux visés. Une ambiance est ramenée à ce volume intégré (LUFS) quand le curseur est à fond, et jamais au-dessus de ce pic ; un
 // effet, à ce niveau RMS de son moment le plus fort (dB, par rapport au maximum numérique) : ses fichiers vont de très doux à très forts.
@@ -149,14 +171,16 @@ function buildMusic(id: keyof typeof MUSIC_SOURCES, musicDir: string): Measured 
   return { gain: musicGain(parseLoudness(analyse(source, 'ebur128=peak=true'))), seconds: duration(ogg) };
 }
 
-// Un effet : le .wav du pack, tel quel.
+// Un effet : le .wav du pack, tel quel ; ou écourté avec une extinction (SFX_TRIMS). Le volume est mesuré sur le fichier qu'on range.
 function buildSfx(id: keyof typeof SFX_SOURCES, sfxDir: string): Measured {
   const source = requireFile(join(sfxDir, SFX_SOURCES[id]));
   const dir = join(AUDIO_DIR, 'sfx');
   mkdirSync(dir, { recursive: true });
   const wav = join(dir, `${id}.wav`);
-  copyFileSync(source, wav);
-  return { gain: sfxGain(parseLevels(analyse(source, 'astats=metadata=0:reset=0'))), seconds: duration(wav) };
+  const trim = SFX_TRIMS[id];
+  if (trim) ffmpeg(['-i', source, '-t', String(trim.seconds), '-af', fadeOutFilter(trim), '-c:a', 'pcm_s16le', wav]);
+  else copyFileSync(source, wav);
+  return { gain: sfxGain(parseLevels(analyse(wav, 'astats=metadata=0:reset=0'))), seconds: duration(wav) };
 }
 
 // Le fichier généré : les gains et les durées, que lit src/audio/catalog.ts.

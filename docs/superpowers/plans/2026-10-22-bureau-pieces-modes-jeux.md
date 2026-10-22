@@ -445,12 +445,14 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
 | `piece` | `Card and Board/chips_place_1.wav` | pion posé, coup joué |
 | `win` | `Other/applause.wav` (écourté au besoin) | victoire |
 
-**Étapes**
-- [ ] Test du pipeline : « chaque prop a une planche dont la largeur est un multiple de `frameWidth` × `frames` » ; « chaque son de `SFX_SOURCES` existe dans le pack » ; « chaque nouvel effet a un gain mesuré ».
-- [ ] Curation `gym` : tapis de yoga (4 couleurs), ballons, barre et haltères, banc, râtelier d'haltères, kettlebells, miroirs muraux, machines (planche annotée à régénérer : `scratchpad/look/gym.png` et `basement_top.png`, script PIL de quadrillage). Curation `basement` : canapés d'angle et trois places (4 couleurs), tables rondes, tables de ping-pong et de billard, tabourets, coussins. Nouvelle catégorie `sport` dans `DECOR_CATEGORIES`.
-- [ ] `pnpm --filter @bureau/client gen:assets` et `gen:audio` ; les fichiers générés sont commités.
-- [ ] `CREDITS.txt` : mention des objets animés LimeZu.
-- [ ] Commit : `feat(client): objets animés, planches sport et jeux, sons des portes et du café`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer : `animated.test.ts` (`propFromSheet` lit la taille d'une image et l'empreinte, refuse une planche qui ne se partage pas, une image qui n'est pas un nombre entier de cases et une empreinte plus haute que l'image ; chaque prop a sa planche rangée, de la largeur de ses images, sans image vide ; les onze formes attendues) ; `pipeline.test.ts` (catégorie « Sport & jeux » en dernier, de quoi équiper une salle de sport et une salle de jeu, les tables de jeu bloquent sur toute leur surface et les sièges jamais, tapis au sol et miroirs au mur, aucun nom répété par catégorie) ; `build-audio.test.ts` (25 effets, les dix nouveaux et leurs fichiers du pack, un seul fichier par effet, `SFX_TRIMS` et le filtre d'extinction). Les deux contrôles du plan sur le pack lui-même (« chaque son existe dans le pack », « chaque effet a un gain mesuré ») : le second existait déjà (`catalog.test.ts`), le premier est fait par `gen:audio` (il s'arrête sur le fichier manquant) — un test qui lit `~/Downloads` casserait sur toute autre machine.
+- [x] Curation : `curation/gym.ts` (46 éléments : tapis de yoga au sol, ballons, poufs, râteliers et supports, kettlebells, disques, haltères, bancs et appareils, tapis de course, trois miroirs muraux) et `curation/basement.ts` (44 éléments : quatre canapés, huit fauteuils, huit tabourets, trois tables rondes, ping-pong, billard, bornes d'arcade, râtelier de queues, meuble télé, coussins, grand tapis, vases). Planches annotées par `scratchpad/sheets` (découpe automatique, case de départ de chaque objet) ; nouvelle catégorie `sport` (« Sport & jeux »). Les helpers `on` et `named` passent dans `curation/helpers.ts`.
+- [x] Objets animés : `animated.ts` (14 planches, dont les quatre teintes de la cheminée), `packages/shared/src/props/catalog.ts` (`Prop`, `PROPS`, `propByKey`, `LIGHT_KINDS`) et `generated.ts`, planches dans `public/assets/props/`. `LightKind` vient maintenant du partage (le client le ré-exporte).
+- [x] `gen:assets` : 541 éléments dans 10 atlas, 14 objets animés. `gen:audio` : dix effets de plus ; `SFX_TRIMS` écourte la victoire (applaudissements de 11,8 s) à 3,5 s avec 0,8 s d'extinction ; les `.ogg` des ambiances, que `gen:audio` réécrit avec un autre conteneur, sont remis tels quels (le son est le même). Les dix effets ont leur niveau et leur délai de repos dans `audio/catalog.ts`.
+- [x] `CREDITS.txt` : objets animés, sport, sous-sol, dossiers Environment et Card and Board.
+- [x] `pnpm typecheck` vert ; `pnpm test` vert.
+- [x] Commit : `feat(client): objets animés, planches sport et jeux, sons des portes et du café`.
 
 ---
 

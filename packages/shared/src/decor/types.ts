@@ -12,6 +12,7 @@ export const DECOR_CATEGORIES = [
   { id: 'deco', label: 'Déco & murs' },
   { id: 'cafe', label: 'Pause & café' },
   { id: 'detente', label: 'Détente & loisirs' },
+  { id: 'sport', label: 'Sport & jeux' },
 ] as const;
 
 export type DecorCategoryId = (typeof DECOR_CATEGORIES)[number]['id'];

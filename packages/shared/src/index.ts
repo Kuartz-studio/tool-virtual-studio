@@ -17,6 +17,7 @@ export * from './proximity/audio-gain';
 export * from './proximity/compute-groups';
 export * from './decor/types';
 export * from './decor/generated';
+export * from './props/catalog';
 export * from './decor/generated-themes';
 export * from './character/types';
 export * from './character/generated';
