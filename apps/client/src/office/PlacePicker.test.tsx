@@ -2,7 +2,7 @@ import { buildOfficeTiledMap, buildTiledMap, DEV_OFFICE, parseOfficeMap } from '
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
-import { PlacePicker } from './PlacePicker';
+import { PlacePicker, wrapLabel } from './PlacePicker';
 
 const office = parseOfficeMap(buildOfficeTiledMap());
 const small = parseOfficeMap(buildTiledMap({ ...DEV_OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
@@ -55,4 +55,34 @@ test('un emplacement que la carte n\'a plus (une clé périmée) : aucun bouton 
   expect(screen.getAllByRole('button').every((button) => button.getAttribute('aria-pressed') === 'false')).toBe(true);
   await userEvent.click(screen.getByRole('button', { name: 'Salle de sport' }));
   expect(onChange).toHaveBeenCalledWith('gym');
+});
+
+// La mini-carte est petite (la salle de sport y fait une cinquantaine de pixels de large) : un nom plus long que sa pièce passait sous la pièce voisine et se lisait « Salle de spor ».
+test('le nom d\'une destination passe sur plusieurs lignes, aucune plus longue que la pièce ne le permet', () => {
+  render(<PlacePicker map={office} value={undefined} onChange={() => undefined} />);
+  const lines = (name: string) => [...screen.getByRole('button', { name }).querySelectorAll('tspan')].map((line) => line.textContent);
+  expect(lines('Salle de sport')).toEqual(['Salle de', 'sport']);
+  expect(lines('Salle de jeu')).toEqual(['Salle de', 'jeu']);
+});
+
+test('wrapLabel : on coupe aux espaces, une ligne ne dépasse pas la largeur donnée sauf un mot plus long qu\'elle', () => {
+  expect(wrapLabel('Salle de sport', 8)).toEqual(['Salle de', 'sport']);
+  expect(wrapLabel('Salle de jeu', 8)).toEqual(['Salle de', 'jeu']);
+  expect(wrapLabel('Gym', 8)).toEqual(['Gym']);
+  expect(wrapLabel('Anticonstitutionnellement', 8)).toEqual(['Anticonstitutionnellement']);
+  expect(wrapLabel('Un deux trois quatre', 9)).toEqual(['Un deux', 'trois', 'quatre']);
+  expect(wrapLabel('', 8)).toEqual(['']);
+});
+
+test('les lignes du nom sont centrées sur leur pièce, l\'une sous l\'autre', () => {
+  render(<PlacePicker map={office} value={undefined} onChange={() => undefined} />);
+  const button = screen.getByRole('button', { name: 'Salle de sport' });
+  const room = button.querySelector('rect')!;
+  const centerX = Number(room.getAttribute('x')) + Number(room.getAttribute('width')) / 2;
+  const centerY = Number(room.getAttribute('y')) + Number(room.getAttribute('height')) / 2;
+  const lines = [...button.querySelectorAll('tspan')];
+  expect(lines.map((line) => Number(line.getAttribute('x')))).toEqual([centerX, centerX]);
+  const [top, bottom] = lines.map((line) => Number(line.getAttribute('y')));
+  expect((top! + bottom!) / 2).toBe(centerY);
+  expect(bottom!).toBeGreaterThan(top!);
 });

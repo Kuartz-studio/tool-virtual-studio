@@ -103,6 +103,22 @@ test('placeOver : centrée, la fenêtre ne sort pas de la page', () => {
   expect(placeOver(anchorAt(950), VIEWPORT, 'top', 320).left).toBe(824);
 });
 
+// Sur un téléphone (375 px), le bouton de la musique de la pièce est à 88 px du bord gauche : la fenêtre, alignée sur lui, sortait de la page.
+test('placeOver : alignée sur le bord gauche de l\'ancre, la fenêtre ne sort pas de la page (marge de 16 px), au-dessus comme au-dessous', () => {
+  const phone = { width: 375, height: 812 };
+  const anchor = { left: 88, right: 128, top: 16, bottom: 56, width: 40 };
+  // 375 − 16 − 340 = 19 : la fenêtre est ramenée vers la gauche.
+  expect(placeOver(anchor, phone, 'bottom-start', 340).left).toBe(19);
+  expect(placeOver(anchor, phone, 'top-start', 340).left).toBe(19);
+  // Elle ne passe pas non plus à gauche de la marge, même si elle est plus large que la page.
+  expect(placeOver(anchor, phone, 'bottom-start', 400).left).toBe(16);
+  // Assez de place : l'alignement sur l'ancre ne change pas.
+  expect(placeOver({ ...anchor, left: 20 }, phone, 'bottom-start', 300).left).toBe(20);
+  // Pas encore mesurée (largeur 0) : seule la marge de droite la retient.
+  expect(placeOver(anchor, phone, 'bottom-start', 0).left).toBe(88);
+  expect(placeOver({ ...anchor, left: 500 }, phone, 'bottom-start', 0).left).toBe(359);
+});
+
 test('centrée (`top`), elle dit sa place, et se pose sur le milieu de l\'ancre', () => {
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(anchorAt(300) as DOMRect);
   vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(320);

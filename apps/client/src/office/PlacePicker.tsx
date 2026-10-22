@@ -11,6 +11,21 @@ export interface PlacePickerProps {
   onChange(place: string | undefined): void;
 }
 
+// Le nom d'une destination sur la mini-carte : la salle de sport n'y fait qu'une cinquantaine de pixels, un nom d'une ligne passait sous la pièce voisine. Il se coupe aux espaces en
+// lignes d'au plus LABEL_LINE_CHARS caractères (un mot plus long reste entier), de LABEL_LINE_HEIGHT unités de la carte de haut.
+const LABEL_LINE_CHARS = 8;
+const LABEL_LINE_HEIGHT = 92;
+
+export function wrapLabel(label: string, maxChars: number): string[] {
+  const lines: string[] = [];
+  for (const word of label.split(' ').filter((part) => part !== '')) {
+    const last = lines.at(-1);
+    if (last !== undefined && last.length + 1 + word.length <= maxChars) lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  return lines.length > 0 ? lines : [''];
+}
+
 export function PlacePicker({ map, value, onChange }: PlacePickerProps) {
   if (map === null) return null;
   const destinations = map.places.filter((place) => place.destination);
@@ -42,8 +57,12 @@ export function PlacePicker({ map, value, onChange }: PlacePickerProps) {
             onKeyDown={(event) => onKey(event, place.key)}
           >
             <rect x={rect.x} y={rect.y} width={rect.width} height={rect.height} rx={24} />
-            <text x={rect.x + rect.width / 2} y={rect.y + rect.height / 2} textAnchor="middle" dominantBaseline="middle">
-              {place.label}
+            <text textAnchor="middle" dominantBaseline="middle">
+              {wrapLabel(place.label, LABEL_LINE_CHARS).map((line, index, lines) => (
+                <tspan key={index} x={rect.x + rect.width / 2} y={rect.y + rect.height / 2 + (index - (lines.length - 1) / 2) * LABEL_LINE_HEIGHT}>
+                  {line}
+                </tspan>
+              ))}
             </text>
           </g>
         )),

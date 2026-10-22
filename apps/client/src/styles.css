@@ -3462,7 +3462,7 @@ svg.lucide.icon-s {
 /* La mini-carte des pièces où un mode peut conduire : les destinations sont des boutons, les autres pièces un fond. */
 .place-picker {
   width: 100%;
-  max-height: 168px;
+  max-height: 240px;
   background: var(--surface-soft);
   border-radius: 12px;
 }
@@ -3484,7 +3484,7 @@ svg.lucide.icon-s {
 }
 
 .place-picker .place-destination text {
-  font-size: 88px;
+  font-size: 76px;
   font-weight: 600;
   fill: var(--text);
   pointer-events: none;

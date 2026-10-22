@@ -34,14 +34,17 @@ export function placeOver(
   placement: PopoverPlacement,
   popoverWidth: number,
 ): CSSProperties {
-  if (placement === 'bottom-start') return { top: rect.bottom + GAP, left: rect.left };
+  // Alignée sur le bord gauche de l'ancre, la fenêtre est ramenée dans la page (EDGE de marge à droite comme à gauche) : sur un téléphone, une ancre à 88 px du bord la ferait
+  // sortir. Pas encore mesurée (largeur 0), seule la marge de droite la retient.
+  const left = Math.max(EDGE, Math.min(rect.left, viewport.width - EDGE - popoverWidth));
+  if (placement === 'bottom-start') return { top: rect.bottom + GAP, left };
   const bottom = viewport.height - rect.top + GAP;
   if (placement === 'top-end') return { bottom, right: viewport.width - rect.right };
   if (placement === 'top') {
     const half = popoverWidth / 2;
     return { bottom, left: Math.min(Math.max(rect.left + rect.width / 2, EDGE + half), viewport.width - EDGE - half) };
   }
-  return { bottom, left: rect.left };
+  return { bottom, left };
 }
 
 // Où poser la fenêtre : au-dessus de l'ancre, en coordonnées de la page (la couche d'interface est fixe : rien ne défile). Remesurée quand la
