@@ -68,7 +68,7 @@ export function BoardSvg({ layout, viewSeat, position, marks, dice }: BoardSvgPr
   const offCell = cells.find((cell) => cell.kind === 'off');
 
   return (
-    <svg className="game-backgammon-svg" width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true" focusable="false" shapeRendering="crispEdges">
+    <svg className="game-backgammon-svg" width={layout.width} height={layout.stageHeight} viewBox={`0 0 ${layout.width} ${layout.stageHeight}`} aria-hidden="true" focusable="false" shapeRendering="crispEdges">
       <defs>
         {(['white', 'red'] as const).map((camp) => {
           const palette: DiscPalette = PALETTE[camp];
@@ -82,6 +82,21 @@ export function BoardSvg({ layout, viewSeat, position, marks, dice }: BoardSvgPr
         })}
       </defs>
 
+      {/* Les numéros des points, dans la numérotation de celui qui regarde, en petit le long des bords (les deux bandes, au-dessus et au-dessous du tablier). */}
+      {points.map((cell) => (
+        <text
+          key={cell.id}
+          className="game-backgammon-number"
+          x={cell.x + cell.width / 2}
+          y={cell.row === 'top' ? layout.band / 2 : layout.stageHeight - layout.band / 2}
+          textAnchor="middle"
+          dominantBaseline="central"
+        >
+          {cell.point}
+        </text>
+      ))}
+
+      <g transform={`translate(0 ${layout.band})`}>
       <rect className="game-backgammon-frame" x={0} y={0} width={layout.width} height={layout.height} />
       <rect className="game-backgammon-bed" x={layout.pad} y={layout.pad} width={innerWidth} height={innerHeight} />
 
@@ -149,6 +164,15 @@ export function BoardSvg({ layout, viewSeat, position, marks, dice }: BoardSvgPr
           );
         })}
 
+      {/* Une arrivée : un point d'ambre à la place du prochain pion (celui d'un pion adverse seul qui sera frappé, à sa place). */}
+      {points.map((cell) => {
+        if (!marks.get(cell.id)?.target) return null;
+        const { owner, count } = checkersAt(position, viewSeat, cell.point!);
+        const next = owner === viewSeat ? Math.min(count, layout.visibleStack - 1) : 0;
+        const slot = stackSlot(layout, cell, next);
+        return <circle key={cell.id} className="game-backgammon-dot" cx={slot.x} cy={slot.y} r={layout.checker / 2 - 4} />;
+      })}
+
       {/* Au-dessus des pions : ce qu'on peut prendre (souligné), le pion choisi (cerclé), ce que l'adversaire vient de déplacer (souligné d'une autre couleur). */}
       {points.map((cell) => {
         const mark = marks.get(cell.id);
@@ -169,6 +193,7 @@ export function BoardSvg({ layout, viewSeat, position, marks, dice }: BoardSvgPr
       {offCell && marks.get('off')?.moved && <rect className="game-backgammon-underline" data-kind="moved" x={offCell.x + 4} y={offCell.y + offCell.height - 4} width={offCell.width - 8} height={3} />}
 
       {dice && <Dice {...dice} />}
+      </g>
     </svg>
   );
 }

@@ -183,16 +183,19 @@ export function Board({ state, mySeat, players, events, canAct, onMove, reducedM
     if (preview || state.phase === 'over') return null;
     let seat: 0 | 1;
     let values: [number, number];
+    // Les dés d'un tour passé n'ont rien donné : ils s'estompent comme des dés joués.
+    let passed = false;
     if (state.phase === 'move' && state.dice.length === 2) {
       seat = state.turn;
       values = [state.dice[0]!, state.dice[1]!];
     } else if (passNotice?.values) {
       seat = passNotice.seat;
       values = passNotice.values;
+      passed = true;
     } else return null;
     const side = seat === viewSeat ? 'mine' : 'theirs';
     const centre = diceCentre(layout, side);
-    const used = seat === mySeat && myMove ? diceUsed(state, done) : ([false, false] as const);
+    const used = passed ? ([true, true] as const) : seat === mySeat && myMove ? diceUsed(state, done) : ([false, false] as const);
     return { values, x: centre.x, y: centre.y, artPixel: layout.artPixel, used, rolling, side };
   }, [preview, state, passNotice, viewSeat, layout, mySeat, myMove, done, rolling]);
 
@@ -352,6 +355,8 @@ export function Board({ state, mySeat, players, events, canAct, onMove, reducedM
         ];
   const noticeText = passNotice === null ? null : passNotice.seat === mySeat ? fr.noMove : t(fr.cantMove, { name: names[passNotice.seat]! });
   const diceText = diceView && !rolling ? diceLabel(diceView.values) : null;
+  // L'avis se pose dans l'autre moitié du tablier que les dés, pour ne pas les cacher.
+  const noticeCentre = diceView ? diceCentre(layout, diceView.side === 'mine' ? 'theirs' : 'mine') : { x: layout.width / 2, y: layout.height / 2 };
 
   const renderCell = (cell: Cell) => (
     <div
@@ -359,7 +364,7 @@ export function Board({ state, mySeat, players, events, canAct, onMove, reducedM
       role="gridcell"
       className="game-backgammon-cell"
       data-kind={cell.kind}
-      style={{ left: cell.x, top: cell.y, width: cell.width, height: cell.height, ...(cell.pointer ? {} : { pointerEvents: 'none' as const }) }}
+      style={{ left: cell.x, top: cell.y + layout.band, width: cell.width, height: cell.height, ...(cell.pointer ? {} : { pointerEvents: 'none' as const }) }}
     >
       <button
         ref={(element) => {
@@ -381,15 +386,15 @@ export function Board({ state, mySeat, players, events, canAct, onMove, reducedM
 
   return (
     <div ref={rootRef} className="game-backgammon" data-layout={layout.mode} data-view-seat={viewSeat} data-phase={state.phase} data-interactive={interactive || undefined}>
-      <div className="game-backgammon-fit" style={{ width: layout.width * scale, height: layout.height * scale }}>
-        <div className="game-backgammon-stage" style={{ width: layout.width, height: layout.height, ...(scale < 1 ? { transform: `scale(${scale})` } : {}) }}>
+      <div className="game-backgammon-fit" style={{ width: layout.width * scale, height: layout.stageHeight * scale }}>
+        <div className="game-backgammon-stage" style={{ width: layout.width, height: layout.stageHeight, ...(scale < 1 ? { transform: `scale(${scale})` } : {}) }}>
           <BoardSvg layout={layout} viewSeat={viewSeat} position={shown} marks={marks} dice={diceView} />
           {canAct && myRoll && !draft.sent && (
             <button
               type="button"
               className="bar-button game-backgammon-roll"
               data-sfx="none"
-              style={{ left: diceCentre(layout, 'mine').x, top: diceCentre(layout, 'mine').y }}
+              style={{ left: diceCentre(layout, 'mine').x, top: diceCentre(layout, 'mine').y + layout.band }}
               onClick={roll}
             >
               {fr.roll}
@@ -403,7 +408,11 @@ export function Board({ state, mySeat, players, events, canAct, onMove, reducedM
               {rows.bottom.map(renderCell)}
             </div>
           </div>
-          {noticeText !== null && <div className="game-backgammon-notice">{noticeText}</div>}
+          {noticeText !== null && (
+            <div className="game-backgammon-notice" style={{ left: noticeCentre.x, top: noticeCentre.y + layout.band }}>
+              {noticeText}
+            </div>
+          )}
         </div>
       </div>
 

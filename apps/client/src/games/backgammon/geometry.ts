@@ -15,11 +15,10 @@ export const MIN_TARGET = 24;
 // Une largeur inconnue (avant la première mesure) : celle d'un panneau d'ordinateur.
 const FALLBACK_WIDTH = 408;
 
-// Une pile de cinq pions tient dans sa flèche avec ce jeu en plus, en pixels.
-const POINT_SLACK = 4;
-
-const COMPACT = { pad: 3, bar: 12, minCell: 24, maxCell: 30, discArt: 11, artPixel: 2, gap: 20 } as const;
-const WIDE = { pad: 6, bar: 24, minCell: 26, maxCell: 44, discArt: 13, artPixel: 2, gap: 24, offGap: 4, offMin: 44, offMax: 60 } as const;
+// Les deux dispositions. `slack` : le jeu, en pixels, entre cinq pions empilés et la pointe de leur flèche. `band` : la hauteur des deux bandes où s'écrivent les numéros des points,
+// au-dessus et au-dessous du tablier. La serrée est plus basse (246 px de tablier, 266 avec ses numéros) : sur un téléphone, tout le plateau, boutons compris, tient en 380 px.
+const COMPACT = { pad: 3, bar: 12, minCell: 24, maxCell: 30, discArt: 11, artPixel: 2, gap: 16, slack: 2, band: 10 } as const;
+const WIDE = { pad: 6, bar: 24, minCell: 26, maxCell: 44, discArt: 13, artPixel: 2, gap: 24, slack: 4, band: 12, offGap: 4, offMin: 44, offMax: 60 } as const;
 
 // La largeur à partir de laquelle la disposition large tient : des flèches de 26 px, la barre, et la zone de sortie.
 export const WIDE_MIN_WIDTH = 2 * WIDE.pad + POINTS_PER_ROW * WIDE.minCell + WIDE.bar + WIDE.offGap + WIDE.offMin;
@@ -31,7 +30,10 @@ const OFF_DISC_INSET = 6;
 export interface BoardLayout {
   mode: 'wide' | 'compact';
   width: number;
+  // La hauteur du tablier lui-même, et celle de la scène : le tablier plus les deux bandes de numéros (`band` chacune).
   height: number;
+  band: number;
+  stageHeight: number;
   pad: number;
   // La largeur d'une flèche, de la barre et de la zone de sortie (0 en disposition serrée), et le jeu entre le tablier et elle.
   cell: number;
@@ -57,11 +59,14 @@ export function layoutFor(containerWidth: number): BoardLayout {
     const cell = clamp(Math.floor((available - fixed - WIDE.offMin) / POINTS_PER_ROW), WIDE.minCell, WIDE.maxCell);
     const off = clamp(available - fixed - POINTS_PER_ROW * cell, WIDE.offMin, WIDE.offMax);
     const checker = WIDE.discArt * WIDE.artPixel;
-    const pointLength = VISIBLE_STACK * checker + POINT_SLACK;
+    const pointLength = VISIBLE_STACK * checker + WIDE.slack;
+    const height = 2 * WIDE.pad + 2 * pointLength + WIDE.gap;
     return {
       mode: 'wide',
       width: fixed + POINTS_PER_ROW * cell + off,
-      height: 2 * WIDE.pad + 2 * pointLength + WIDE.gap,
+      height,
+      band: WIDE.band,
+      stageHeight: height + 2 * WIDE.band,
       pad: WIDE.pad,
       cell,
       bar: WIDE.bar,
@@ -78,11 +83,14 @@ export function layoutFor(containerWidth: number): BoardLayout {
   const fixed = 2 * COMPACT.pad + COMPACT.bar;
   const cell = clamp(Math.floor((available - fixed) / POINTS_PER_ROW), COMPACT.minCell, COMPACT.maxCell);
   const checker = COMPACT.discArt * COMPACT.artPixel;
-  const pointLength = VISIBLE_STACK * checker + POINT_SLACK;
+  const pointLength = VISIBLE_STACK * checker + COMPACT.slack;
+  const height = 2 * COMPACT.pad + 2 * pointLength + COMPACT.gap;
   return {
     mode: 'compact',
     width: fixed + POINTS_PER_ROW * cell,
-    height: 2 * COMPACT.pad + 2 * pointLength + COMPACT.gap,
+    height,
+    band: COMPACT.band,
+    stageHeight: height + 2 * COMPACT.band,
     pad: COMPACT.pad,
     cell,
     bar: COMPACT.bar,

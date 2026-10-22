@@ -138,6 +138,38 @@ describe('le dessin : chaque case dit ce qu\'elle porte', () => {
   });
 });
 
+describe('ce que le dessin montre en plus des cases', () => {
+  test('les numéros des points sont écrits le long des bords, dans la numérotation de celui qui regarde : 13 à 24 en haut, 12 à 1 en bas', () => {
+    for (const mySeat of [0, 1] as const) {
+      const { container, unmount } = mount({ mySeat, canAct: false });
+      const numbers = [...container.querySelectorAll('.game-backgammon-number')].map((text) => Number(text.textContent));
+      expect(numbers).toHaveLength(24);
+      expect(numbers.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 24 }, (_, index) => index + 1));
+      // Les numéros du haut sont ceux de la rangée du haut.
+      const top = [...container.querySelectorAll('.game-backgammon-number')].filter((text) => Number(text.getAttribute('y')) < 12).map((text) => Number(text.textContent));
+      expect(top.slice().sort((a, b) => a - b)).toEqual(Array.from({ length: 12 }, (_, index) => index + 13));
+      unmount();
+    }
+  });
+
+  test('chaque arrivée possible porte un point à la place du prochain pion ; sans pion choisi, aucun', () => {
+    const { container } = mount();
+    expect(container.querySelectorAll('.game-backgammon-dot')).toHaveLength(0);
+    click('Point 8 : 3 pions blancs, jouable');
+    expect(container.querySelectorAll('.game-backgammon-dot')).toHaveLength(2);
+    click('Point 8 : 3 pions blancs, sélectionné');
+    expect(container.querySelectorAll('.game-backgammon-dot')).toHaveLength(0);
+  });
+
+  test('les pions jouables sont soulignés dans le dessin, le pion choisi est cerclé', () => {
+    const { container } = mount();
+    expect(container.querySelectorAll('.game-backgammon-underline[data-kind="playable"]').length).toBeGreaterThan(0);
+    expect(container.querySelectorAll('.game-backgammon-ring')).toHaveLength(0);
+    click('Point 8 : 3 pions blancs, jouable');
+    expect(container.querySelectorAll('.game-backgammon-ring')).toHaveLength(1);
+  });
+});
+
 describe('à moi de jouer : construire le tour', () => {
   test('les pions que je peux prendre sont dits « jouable » ; ceux de l\'adversaire et les cases vides ne le sont pas', () => {
     mount();
@@ -835,6 +867,21 @@ describe('la largeur du conteneur (§ 9.5.1)', () => {
     click('Sortir');
     click('Valider');
     expect(props.onMove).toHaveBeenCalledWith({ type: 'play', steps: [{ from: 3, to: 'off', die: 5 }, { from: 2, to: 'off', die: 6 }] });
+  });
+
+  test('un conteneur plus étroit que le tablier serré (hors téléphones courants) : le tablier est réduit d\'un bloc pour tenir, jamais de défilement horizontal', () => {
+    cleanupObserver();
+    fakeResizeObserver(260);
+    const { container } = mount();
+    const fit = container.querySelector<HTMLElement>('.game-backgammon-fit')!;
+    const stage = container.querySelector<HTMLElement>('.game-backgammon-stage')!;
+    expect(parseFloat(fit.style.width)).toBeLessThanOrEqual(260);
+    expect(stage.style.transform).toMatch(/^scale\(0\.\d+\)$/);
+    // À sa largeur, ou plus large, pas de réduction.
+    cleanupObserver();
+    fakeResizeObserver(311);
+    const normal = mount();
+    expect(normal.container.querySelector<HTMLElement>('.game-backgammon-stage')!.style.transform).toBe('');
   });
 
   test('sans ResizeObserver (un navigateur ancien), le plateau se dessine quand même, en disposition large', () => {

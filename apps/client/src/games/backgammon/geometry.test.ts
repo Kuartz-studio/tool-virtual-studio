@@ -11,8 +11,11 @@ describe('layoutFor : la disposition suit la largeur du conteneur', () => {
     expect(layout).toMatchObject({ mode: 'compact', cell: 24, bar: 12, off: 0, checker: 22 });
     expect(layout.width).toBeLessThanOrEqual(311);
     expect(layout.width).toBeGreaterThanOrEqual(300);
-    expect(layout.height).toBeGreaterThanOrEqual(250);
+    expect(layout.height).toBeGreaterThanOrEqual(240);
     expect(layout.height).toBeLessThanOrEqual(262);
+    // Avec les deux bandes de numéros, la scène reste assez basse pour que tout le plateau, boutons compris, tienne en 380 px.
+    expect(layout.stageHeight).toBe(layout.height + 2 * layout.band);
+    expect(layout.stageHeight).toBeLessThanOrEqual(275);
   });
 
   test('408 px (le panneau d\'un ordinateur) : la disposition large, une barre cliquable de 24 px et une zone de sortie à droite', () => {
