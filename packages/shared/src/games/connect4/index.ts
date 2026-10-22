@@ -24,7 +24,7 @@ export const connect4: GameDefinition<Connect4State, Connect4Move, Connect4Event
   label: 'Puissance 4',
   minPlayers: 2,
   maxPlayers: 2,
-  // Pas de nulle par accord (R6) : seule la grille pleine est nulle.
+  // Pas de nulle par accord (§ 15.1, R6) : seule la grille pleine est nulle.
   drawOffers: false,
   moveSchema: connect4MoveSchema,
 
@@ -37,7 +37,9 @@ export const connect4: GameDefinition<Connect4State, Connect4Move, Connect4Event
     };
   },
 
-  turn: turnOf,
+  turn(state) {
+    return turnOf(state);
+  },
 
   // Les colonnes qui ne sont pas pleines, de la gauche vers la droite.
   legalMoves(state, seat) {
@@ -49,8 +51,8 @@ export const connect4: GameDefinition<Connect4State, Connect4Move, Connect4Event
     return moves;
   },
 
-  // Tout est revérifié ici (R4), dans cet ordre : la partie n'est pas finie, c'est bien à ce siège, la colonne existe et n'est pas pleine. Puis le jeton tombe, et
-  // la fin éventuelle est décidée dans cet appel (R5) : l'alignement d'abord (le 42e jeton peut gagner), la grille pleine ensuite.
+  // Tout est revérifié ici (§ 2.2, R4), dans cet ordre : la partie n'est pas finie, c'est bien à ce siège, la colonne existe et n'est pas pleine. Puis le jeton
+  // tombe, et la fin éventuelle est décidée dans cet appel (§ 2.2, R5) : l'alignement d'abord (le 42e jeton peut gagner), la grille pleine ensuite.
   apply(state, seat, move, _rng): ApplyResult<Connect4State, Connect4Event> {
     const mover = turnOf(state);
     if (mover === null) return { ok: false, error: 'wrong_phase' };
@@ -98,7 +100,9 @@ export const connect4: GameDefinition<Connect4State, Connect4Move, Connect4Event
     return state.moves.length;
   },
 
-  invariants: connect4Invariants,
+  invariants(state) {
+    return connect4Invariants(state);
+  },
 };
 
 // Le dernier jeton posé : qui l'a joué, dans quelle colonne et à quelle rangée ; null avant le premier. L'interface le cercle sans rien avoir à retenir d'une image à

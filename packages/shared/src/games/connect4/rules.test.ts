@@ -13,6 +13,7 @@ import {
   connect4,
   connect4MoveSchema,
   dropRow,
+  isColumn,
   lastDrop,
   playColumns,
   type Connect4Event,
@@ -584,9 +585,11 @@ describe('Puissance 4 : les invariants', () => {
     ['une case qui vaut -1', () => withCell(states().mid, at(6, 0), -1), /vaut -1/],
     ['une case qui vaut 1,5', () => withCell(states().mid, at(6, 0), 1.5), /vaut 1.5/],
     ['un siège de départ qui vaut 2', () => set(states().mid, { first: 2 }), /commence/],
-    ['une colonne jouée qui n\'existe pas', () => set(states().mid, { moves: [...states().mid.moves.slice(0, -1), 9] }), /colonne 9/],
-    ['une colonne jouée fractionnaire', () => set(states().mid, { moves: [...states().mid.moves.slice(0, -1), 1.5] }), /colonne 1.5/],
+    ['une colonne jouée qui n\'existe pas', () => set(states().mid, { moves: [...states().mid.moves.slice(0, -1), 9] }), /colonne 9, qui n'existe pas/],
+    ['une colonne jouée fractionnaire', () => set(states().mid, { moves: [...states().mid.moves.slice(0, -1), 1.5] }), /colonne 1.5, qui n'existe pas/],
     ['un jeton qui flotte', () => withCell(states().mid, at(3, 0), 0), /flotte/],
+    // Un seul jeton au-dessus du trou (la colonne 3 de `states().mid` en a deux) : il faut le voir aussi.
+    ['un seul jeton qui flotte', () => withCell(set(states().mid, { cells: play(0, columns('3 3')).state.cells, moves: [3, 3] }), at(3, 0), 0), /flotte/],
     ['un jeton de trop pour le premier joueur', () => withCell(states().mid, at(0, 0), 1), /jetons/],
     // Trois jetons contre deux au départ : un seul jeton de plus pour le second les rendrait égaux (légal) ; il en faut deux pour qu'il en ait plus que l'autre.
     ['deux jetons de trop pour le second joueur', () => withCell(withCell(states().mid, at(0, 0), 2), at(1, 0), 2), /jetons/],
@@ -644,6 +647,13 @@ describe('Puissance 4 : les aides de la grille pour l\'interface et les tests', 
         expect(cellColumn(at(col, row))).toBe(col);
         expect(cellRow(at(col, row))).toBe(row);
       }
+    }
+  });
+
+  test('isColumn : seuls les entiers de 0 à 6 sont des colonnes (un coup qui vient du réseau peut contenir n\'importe quoi)', () => {
+    for (let col = 0; col < 7; col++) expect(isColumn(col), `colonne ${col}`).toBe(true);
+    for (const value of [-1, 7, 8, 100, 0.5, 3.5, 6.999, Number.NaN, Infinity, -Infinity, '3', '', null, undefined, [3], { col: 3 }, true]) {
+      expect(isColumn(value), String(JSON.stringify(value) ?? value)).toBe(false);
     }
   });
 

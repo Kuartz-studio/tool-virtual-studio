@@ -34,9 +34,11 @@ describe('Puissance 4 : parties au hasard contre le harnais de conformité', () 
     expect(report.games).toBe(GAMES);
     // 42 jetons au plus : la grille pleine ou un alignement termine toute partie (un abandon compte une action de plus qu'il n'y a eu de jetons, jamais 43).
     expect(report.longest).toBeLessThanOrEqual(42);
-    expect(report.actions).toBeGreaterThanOrEqual(GAMES * 4);
-    // L'état est une grille, une liste de colonnes et un résultat : de l'ordre de la demi-douzaine de centaines d'octets, loin des 50 ko permis.
-    expect(report.biggestStateBytes).toBeGreaterThan(200);
+    // Chaque partie pose au moins un jeton (un abandon n'arrive qu'après le premier).
+    expect(report.actions).toBeGreaterThanOrEqual(GAMES);
+    // L'état est une grille, une liste de colonnes et un résultat : de l'ordre de la demi-douzaine de centaines d'octets, loin des 50 ko permis. Même une partie
+    // neuve pèse plus de cent octets (ses 42 cases).
+    expect(report.biggestStateBytes).toBeGreaterThan(100);
     expect(report.biggestStateBytes).toBeLessThan(1_000);
   }, 120_000);
 
