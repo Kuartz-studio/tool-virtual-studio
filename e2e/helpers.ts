@@ -100,7 +100,7 @@ export function musicButton(page: Page): Locator {
 }
 
 // Ouvre le juke-box (la fenêtre « Musique et ambiances », au-dessus du bouton du dock), et le renvoie : la musique, son volume, les ambiances et les
-// effets sonores. Ses cartes d'ambiance sont des boutons radio, que le nom de l'ambiance (« Crépuscule ») ou « Selon l'endroit » désigne.
+// effets sonores. Ses cartes d'ambiance sont des boutons radio, que le nom de l'ambiance (« Crépuscule ») ou « Selon la pièce » désigne.
 export async function openJukebox(page: Page): Promise<Locator> {
   await musicButton(page).click();
   const jukebox = page.getByRole('dialog', { name: 'Musique et ambiances', exact: true });

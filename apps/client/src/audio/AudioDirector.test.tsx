@@ -1,4 +1,4 @@
-import { buildOfficeTiledMap, parseOfficeMap, type InitPayload, type PublicPlayer } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, placeByKey, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { EventBus } from '../game/EventBus';
@@ -39,7 +39,7 @@ beforeEach(() => {
   localStorage.clear();
   audio = createFakeAudio();
   engine = new AudioEngine(audio.runtime);
-  useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, place: 'lobby', status: 'locked', playing: null });
+  useAudioStore.setState({ prefs: { ...DEFAULT_AUDIO_PREFS }, place: 'lobby', placeKey: null, status: 'locked', playing: null });
 });
 
 afterEach(() => {
@@ -174,6 +174,143 @@ describe('le lieu', () => {
     expect(useAudioStore.getState().place).toBe('dusk');
     act(() => useOfficeStore.getState().setOfficeMap(null));
     expect(useAudioStore.getState().place).toBe('lobby');
+  });
+});
+
+// La musique de chaque pièce : ceux qui y sont la règlent pour tous (le serveur la dit : music:changed, au magasin du bureau). On entend celle de la pièce où l'on est,
+// sauf l'ambiance qu'on a choisie soi-même dans le panneau Son.
+describe('la musique de chaque pièce', () => {
+  const BY = { id: 'a', name: 'A' };
+  const OFF: RoomMusic = { on: false, scene: null, by: BY, at: 1 };
+  const QUEST: RoomMusic = { on: true, scene: 'quest', by: BY, at: 2 };
+  const url = (scene: string) => `/assets/audio/music/${scene}.ogg`;
+
+  // Le milieu d'un lieu de la carte, en pixels.
+  const middleOf = (key: string) => {
+    const rect = placeByKey(map, key)!.rects[0]!;
+    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+  };
+  // On arrive à cet endroit : le serveur dit où l'on est et, dans son init, la musique des pièces déjà réglées (un init la remplace toute).
+  const enterAt = (at: { x: number; y: number }, music: Record<string, RoomMusic> = {}) =>
+    act(() => {
+      useOfficeStore.getState().applyInit({ ...init, self: { ...me, x: at.x, y: at.y }, music });
+      useOfficeStore.getState().setOfficeMap(map);
+    });
+  const walkTo = (at: { x: number; y: number }) => act(() => emitOnBus(EventBus, 'local:move', { x: at.x, y: at.y, dir: 'down', moving: true } as never));
+  const setMusic = (place: string, state: RoomMusic) => act(() => useOfficeStore.getState().setRoomMusic(place, state));
+
+  test('arriver dans une pièce éteinte : le silence ; allumée sous nos pieds, la musique repart', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    enterAt(middleOf('game'), { game: OFF });
+    await settle();
+    expect(musicNow()).toEqual([]);
+    expect(useAudioStore.getState().playing).toBeNull();
+    expect(useAudioStore.getState().placeKey).toBe('game');
+
+    setMusic('game', { on: true, scene: null, by: BY, at: 3 });
+    await settle();
+    expect(musicNow()).toEqual([url('dusk')]);
+  });
+
+  test('arriver dans une pièce dont on a choisi l\'ambiance : celle-là, à la place de celle par défaut', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    enterAt(middleOf('game'), { game: QUEST });
+    await settle();
+    expect(musicNow()).toEqual([url('quest')]);
+    expect(useAudioStore.getState().playing).toBe('quest');
+  });
+
+  test('quelqu\'un règle la pièce où l\'on est : la musique suit tout de suite, sans attendre', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    enterAt(middleOf('game'));
+    await settle();
+    expect(musicNow()).toEqual([url('dusk')]);
+
+    setMusic('game', OFF);
+    expect(musicNow()).toEqual([]);
+    setMusic('game', { ...QUEST, at: 4 });
+    await settle();
+    expect(musicNow()).toEqual([url('quest')]);
+  });
+
+  test('entrer dans une pièce éteinte coupe la musique, mais seulement après PLACE_SETTLE_MS : on ne coupe pas en longeant sa porte', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    enterAt(map.spawn, { game: OFF });
+    await settle();
+    expect(musicNow()).toEqual([url('lobby')]);
+
+    walkTo(middleOf('game'));
+    await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS - 1));
+    expect(musicNow()).toEqual([url('lobby')]);
+    await act(() => vi.advanceTimersByTimeAsync(1));
+    await settle();
+    expect(musicNow()).toEqual([]);
+
+    // Et en sortir la relance : le couloir joue.
+    walkTo(map.spawn);
+    await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS));
+    await settle();
+    expect(musicNow()).toEqual([url('lobby')]);
+  });
+
+  test('deux pièces de même ambiance par défaut : passer de l\'une à l\'autre change la pièce dont on entend la musique, après PLACE_SETTLE_MS', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    // La salle de réunion et un bureau jouent la même ambiance (« focus ») ; celle de la salle est coupée, pas celle du bureau.
+    enterAt(middleOf('meeting'), { meeting: OFF });
+    await settle();
+    expect(musicNow()).toEqual([]);
+    expect(useAudioStore.getState().placeKey).toBe('meeting');
+
+    walkTo(middleOf('desk:A1'));
+    await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS));
+    await settle();
+    expect(useAudioStore.getState().placeKey).toBe('desk:A1');
+    expect(musicNow()).toEqual([url('focus')]);
+  });
+
+  test('une pièce éteinte ne l\'est que pour elle : la pièce d\'à côté joue sa musique', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    enterAt(middleOf('gym'), { game: OFF });
+    await settle();
+    expect(musicNow()).toEqual([url('quest')]);
+  });
+
+  test('l\'ambiance choisie dans le panneau Son (son casque) passe avant la pièce, même éteinte ; « Musique » coupée la fait taire', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    act(() => useAudioStore.getState().setPrefs({ scene: 'sunny' }));
+    enterAt(middleOf('game'), { game: OFF });
+    await settle();
+    expect(musicNow()).toEqual([url('sunny')]);
+
+    act(() => useAudioStore.getState().setPrefs({ musicOn: false }));
+    expect(musicNow()).toEqual([]);
+  });
+
+  test('un endroit sans enceinte (la rue) joue toujours son ambiance par défaut : un état qui traîne n\'y change rien', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    enterAt(middleOf('street-n'), { 'street-n': OFF });
+    await settle();
+    expect(musicNow()).toEqual([url('lobby')]);
+    expect(useAudioStore.getState().placeKey).toBeNull();
+  });
+
+  test('la pièce dont on règle la musique est celle de nos pieds : dans un bureau, celle du bureau', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    const desk = map.zones.find((zone) => zone.type === 'desk')!;
+    enterAt({ x: desk.x + desk.width / 2, y: desk.y + desk.height / 2 });
+    await settle();
+    expect(useAudioStore.getState()).toMatchObject({ place: 'focus', placeKey: `desk:${desk.name}` });
+    setMusic(`desk:${desk.name}`, OFF);
+    expect(musicNow()).toEqual([]);
   });
 });
 

@@ -1,4 +1,5 @@
 import type { MusicScene } from '../audio/scenes';
+import type { RoomMusic } from '../protocol';
 import { avatarBodyFits } from './queries';
 import type { Point } from './find-path';
 import { deskKey, type GameId, type OfficeMap, type Zone } from './parse-map';
@@ -74,6 +75,14 @@ export function placeAt(map: OfficeMap, x: number, y: number): Place | null {
     }
   }
   return best;
+}
+
+// Ce que joue un lieu : son ambiance par défaut, ou celle qu'on lui a réglée ; le silence (null) s'il a été éteint. `state` est son réglage (`RoomMusic`), ou
+// undefined si personne n'y a touché. Un lieu sans enceinte (la rue, la place, la salle client) n'a pas de réglage : il joue toujours son ambiance par défaut,
+// quoi que dise `state`.
+export function roomSceneOf(place: Pick<Place, 'scene' | 'music'>, state: Pick<RoomMusic, 'on' | 'scene'> | undefined): MusicScene | null {
+  if (!place.music || state === undefined) return place.scene;
+  return state.on ? (state.scene ?? place.scene) : null;
 }
 
 // Le lieu de cette clé (`cafe`, ou `desk:A1` pour un bureau), ou undefined.

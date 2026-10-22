@@ -592,15 +592,17 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   - la musique entendue est `room.on ? (room.scene ?? scène par défaut de la place) : rien`, **sauf** si la personne a choisi une ambiance précise dans le panneau Son (son casque : elle passe avant, mais coupée si « Musique » est coupée) ;
   - une demande identique à l'état courant ne change rien (idempotent) ; une par personne et par `MUSIC_RATE_MS`.
 
-**Étapes**
-- [ ] Tests, qui échouent :
-  - `music-service` : « allumée par défaut » ; « éteindre est idempotent » ; « un échec d'écriture laisse l'état » ; « deux demandes simultanées ne diffusent qu'une fois » ; « l'état revient après un redémarrage » ;
-  - `handlers` : « de loin, `music:set` est ignoré » ; « dans le bureau d'un autre, il est ignoré » ; « l'`init` redit l'état des pièces » ;
-  - `selectWantedScene` : « pièce éteinte : silence » ; « ambiance personnelle : elle passe avant » ; « pièce sans enceinte : ambiance par défaut » ;
-  - `AudioDirector` : « entrer dans une pièce éteinte coupe, y entrer allumée lance sa scène, avec le délai de `PLACE_SETTLE_MS` » ;
-  - e2e : « Alice éteint la musique du jeu, Bastien qui y est n'entend plus rien, et la rallume pour lui » ; « Bastien entre dans le bureau d'Alice : il entend son ambiance ».
-- [ ] Les enceintes sont des `Interactable` (« [E] Couper la musique » / « Lancer la musique »), et animées tant que la pièce joue (`amplifier` : images en boucle, immobile éteinte). La puce du lieu a un petit bouton haut-parleur qui ouvre la même grille de six ambiances que le juke-box, plus « Par défaut ».
-- [ ] Commit : `feat: la musique se règle pièce par pièce, pour tous ceux qui y sont`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer :
+  - partage `room-music.test.ts` (`MUSIC_RATE_MS`, `DEFAULT_ROOM_MUSIC`, `musicSetSchema` : un état voulu, `null` pour revenir à l'ambiance par défaut, une demande vide refusée ; `roomSceneOf` : par défaut, éteinte, ambiance réglée, pièce sans enceinte) ;
+  - `music-service.test.ts` : « allumée par défaut » ; éteindre ; choisir une ambiance puis `null` ; « idempotent » ; `wouldChange` ; « deux demandes simultanées ne diffusent qu'une fois » ; « un échec d'écriture laisse l'état » ; « l'état revient après un redémarrage » (avec le nom actuel de l'auteur, ou sans nom si son compte n'existe plus) ; copies ;
+  - `realtime-music.test.ts` : « de loin, `music:set` est ignoré » ; « dans le bureau d'un autre, il est ignoré » (et le propriétaire loin de son bureau ne règle rien) ; une pièce sans enceinte ; « l'`init` redit l'état des pièces » ; une demande identique ne compte pas dans la limite ; un réglage par personne et par `MUSIC_RATE_MS` ; un redémarrage ; une base qui n'enregistre pas. Chaque règle du serveur a été vue échouer quand on la retire (contrôle par mutation) ;
+  - client : `selectWantedScene` (« pièce éteinte : silence », « ambiance personnelle : elle passe avant », « pièce sans enceinte : ambiance par défaut »), `soundAt`, `AudioDirector` (« entrer dans une pièce éteinte coupe, y entrer allumée lance sa scène, avec le délai de `PLACE_SETTLE_MS` », deux pièces de même ambiance), le magasin, la connexion, `Popover` sous l'ancre, « Selon la pièce » dans le juke-box, `RoomMusicButton`, les enceintes (`speakers.test.ts`, `loopOrRest`) ;
+  - e2e `musique-pieces.spec.ts` : « Alice coupe la musique du jeu à l'enceinte, Bastien qui y est n'entend plus rien (même après un rechargement), et elle la relance » ; « Alice règle la musique de son bureau, Bastien qui y entre l'entend, mais ne peut pas la régler ».
+- [x] Les enceintes sont des `Interactable` (« [E] Couper la musique » / « [E] Lancer la musique »), et leur amplificateur tourne tant que la pièce joue (immobile, sur sa première image, éteinte). La puce du lieu a un bouton haut-parleur (`RoomMusicButton`) qui ouvre sous elle la même grille de six ambiances que le juke-box, plus « Par défaut » et l'interrupteur de la pièce ; le juke-box dit « Selon la pièce ».
+- [x] Commit : `feat: la musique se règle pièce par pièce, pour tous ceux qui y sont`.
+
+**Tel que livré** (écarts au plan, au registre) : `selectWantedScene(state, music)` prend la musique des pièces (le magasin du bureau) en second argument, la pièce où l'on est (`placeKey`) venant de l'état du son, que `AudioDirector` règle avec le même délai que l'ambiance ; `Popover` gagne un placement `bottom-start` (la puce est en haut de la page) ; la musique d'un bureau reste attachée à sa clé `desk:A1` : un nouveau propriétaire la trouve comme son prédécesseur l'a laissée.
 
 ---
 

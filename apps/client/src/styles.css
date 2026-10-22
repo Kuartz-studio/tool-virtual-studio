@@ -971,6 +971,19 @@ svg.lucide.icon-s {
   transform-origin: bottom right;
 }
 
+/* Sous son bouton (la puce du lieu, en haut de la page) : elle s'ouvre vers le bas. */
+.popover[data-placement='bottom-start'] {
+  transform-origin: top left;
+  animation-name: pop-in-down;
+}
+
+@keyframes pop-in-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.97);
+  }
+}
+
 @keyframes pop-in {
   from {
     opacity: 0;
@@ -1465,6 +1478,12 @@ svg.lucide.icon-s {
 .where-stack .portrait {
   margin-left: -6px;
   box-shadow: 0 0 0 2px var(--surface);
+}
+
+/* Le bouton haut-parleur de la puce du lieu : la musique de la pièce où l'on est (RoomMusicButton). Il se resserre contre les portraits. */
+.dock-where .room-music-button {
+  flex: none;
+  margin: -4px -6px -4px 0;
 }
 
 .where-more {
@@ -2428,7 +2447,7 @@ svg.lucide.icon-s {
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    Le juke-box (SoundPopover) : une fenêtre de 320 px au-dessus du bouton « Musique et ambiances », centrée sur lui. En haut la musique (son
-   interrupteur et son volume), puis le choix de l'ambiance : « Selon l'endroit », une carte large, et six cartes à pochette en pixel art ; en
+   interrupteur et son volume), puis le choix de l'ambiance : « Selon la pièce », une carte large, et six cartes à pochette en pixel art ; en
    bas les effets sonores, et les crédits. Les boutons radio sont de vrais boutons, invisibles, qui couvrent leur carte.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .popover[data-placement='top'] {
@@ -2548,7 +2567,7 @@ svg.lucide.icon-s {
   outline-offset: 2px;
 }
 
-/* « Selon l'endroit » : l'épingle du lieu, son titre, l'ambiance d'ici en dessous, et à droite sa pochette. */
+/* « Selon la pièce » : l'épingle du lieu, son titre, l'ambiance d'ici en dessous, et à droite sa pochette. */
 .juke-auto {
   display: flex;
   align-items: center;
@@ -2720,6 +2739,15 @@ svg.lucide.icon-s {
 
 .juke-fx > .volume .volume-slider {
   min-width: 0;
+}
+
+/* La musique de la pièce (RoomMusicButton) : la même fenêtre que le juke-box, sans volume ; qui l'a réglée en dernier, et la note du casque, en petit. */
+.room-music-by,
+.room-music-note {
+  margin: 0;
+  padding: 0 10px;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
 }
 
 .juke-credits {

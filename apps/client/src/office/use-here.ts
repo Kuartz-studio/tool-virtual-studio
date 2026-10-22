@@ -2,6 +2,7 @@ import type { OfficeMap, PublicPlayer } from '@bureau/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EventBus } from '../game/EventBus';
 import { listenOnBus } from '../net/office-connection';
+import { soundAt } from '../audio/scene-at';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { deskKeyAt, placeAt } from './where';
 
@@ -40,6 +41,11 @@ export function useFeetValue<T>(read: (x: number, y: number, map: OfficeMap) => 
 export function usePlace(): string | null {
   const desks = useOfficeStore((state) => state.desks);
   return useFeetValue(useCallback((x: number, y: number, map: OfficeMap) => placeAt(map, desks, x, y), [desks]));
+}
+
+// La clé de la pièce où l'on est, si on y règle la musique (elle a une enceinte : `game`, `desk:A1`) ; null ailleurs, et sans carte.
+export function useMusicPlace(): string | null {
+  return useFeetValue(useCallback((x: number, y: number, map: OfficeMap) => soundAt(map, x, y).key, []));
 }
 
 // Est-on dans son propre bureau ? Faux sans bureau à soi, sans carte, et dans le bureau de quelqu'un d'autre.

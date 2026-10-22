@@ -11,8 +11,8 @@ const OFFICE_PORT = 3101;
 const OFFICE_URL = `http://localhost:${OFFICE_PORT}`;
 
 // Les tests qui veulent la vraie carte : la personnalisation (six bureaux libres), la musique par endroit (les zones de la grande carte), la
-// lumière (l'interrupteur de la rue nord), les portes vitrées des bureaux et le café (la machine du bar).
-const OFFICE_SPECS = /(personnalisation|musique-lieux|lumiere|portes|cafe)\.spec\.ts/;
+// lumière (l'interrupteur de la rue nord), les portes vitrées des bureaux, le café (la machine du bar) et la musique de chaque pièce.
+const OFFICE_SPECS = /(personnalisation|musique-lieux|musique-pieces|lumiere|portes|cafe)\.spec\.ts/;
 
 // Les faux périphériques de Chromium : une caméra (une mire qui bouge) et un micro (un bip), accordés sans question. L'écran d'entrée
 // du bureau les montre, et les tests audio/vidéo (media.spec.ts) les publient. Le test du refus lance son propre navigateur.

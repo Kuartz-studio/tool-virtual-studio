@@ -34,6 +34,7 @@ import { LightingLayer } from '../lighting';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { addMapSigns } from '../map-signs';
 import { MoveSender } from '../move-sender';
+import { speakerPlaying, speakerSprites, speakerTarget } from '../speakers';
 import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingBubbles } from '../objects/NameTag';
@@ -91,6 +92,8 @@ export class Office extends Scene {
   // La machine à café s'agite jusqu'à cette heure (ms, horloge du jeu) ; la vitesse de son animation, telle qu'on l'a réglée.
   private machineExcitedUntil = 0;
   private machineScale = 1;
+  // Les images d'amplificateur de chaque enceinte (par clé de pièce) : elles tournent tant que la pièce joue.
+  private readonly speakerImages = new Map<string, Phaser.GameObjects.Sprite[]>();
   private lighting: LightingLayer;
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
@@ -193,6 +196,7 @@ export class Office extends Scene {
     // Les interrupteurs de lumière : la plaque se met à l'état que dit le magasin, et le suit.
     this.switches = this.officeMap.switches.map((position) => new LightSwitch(this, position, this.interactions, () => this.useLights()));
     const unbindCoffee = this.bindCoffeeMachines();
+    const unbindSpeakers = this.bindSpeakers();
     const showLights = (instant = false) => {
       const { on } = useOfficeStore.getState().lights;
       for (const lightSwitch of this.switches) lightSwitch.setOn(on);
@@ -256,6 +260,7 @@ export class Office extends Scene {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
         if (state.lights !== previous.lights) showLights();
         if (state.coffee !== previous.coffee) this.showCoffee();
+        if (state.music !== previous.music) this.showSpeakers();
         if (state.decorEditor !== previous.decorEditor) {
           this.decorEditor.sync(state.decorEditor);
           // Le brouillon de l'éditeur montre peut-être une lampe de plus, ou de moins.
@@ -282,6 +287,7 @@ export class Office extends Scene {
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
       unbindCoffee();
+      unbindSpeakers();
       this.prompt.destroy();
       this.lighting.destroy();
       this.deskLayer.destroy();
@@ -553,6 +559,28 @@ export class Office extends Scene {
     return () => {
       for (const off of unregister) off();
     };
+  }
+
+  // Les enceintes de la carte : une cible de la touche E devant chacune (« [E] Couper la musique » / « [E] Lancer la musique »), qui demande l'état contraire de celui qu'on voit
+  // pour sa pièce (`local:music`) ; son amplificateur tourne tant que la pièce joue. Rend la fonction qui les retire.
+  private bindSpeakers(): () => void {
+    const targets = this.officeMap.speakers.map((speaker) =>
+      speakerTarget(speaker, () => useOfficeStore.getState().music[speaker.place], (request) => emitOnBus(EventBus, 'local:music', request)),
+    );
+    const unregister = targets.map((target) => this.interactions.register(target));
+    const amplifiers = [...this.propLayer.byKey('amplifier-big'), ...this.propLayer.byKey('amplifier')];
+    for (const speaker of this.officeMap.speakers) this.speakerImages.set(speaker.place, speakerSprites(speaker, amplifiers));
+    this.showSpeakers();
+    return () => {
+      for (const off of unregister) off();
+      this.speakerImages.clear();
+    };
+  }
+
+  // Chaque amplificateur tourne tant que sa pièce joue, d'après la musique que le serveur a annoncée ; éteinte, il s'arrête sur sa première image.
+  private showSpeakers(): void {
+    const { music } = useOfficeStore.getState();
+    for (const [place, sprites] of this.speakerImages) for (const sprite of sprites) this.propLayer.setPlaying(sprite, speakerPlaying(music[place]));
   }
 
   // La machine à café tourne plus vite pendant MACHINE_EXCITED_MS après qu'on s'est servi : on ne retouche son animation que quand sa vitesse change.

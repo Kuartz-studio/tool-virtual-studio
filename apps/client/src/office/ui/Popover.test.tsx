@@ -33,6 +33,19 @@ test('ouvert : le rôle est celui que l\'appelant a choisi, le nom est le libell
   expect(screen.getByRole('menuitem', { name: 'Un' })).toBeTruthy();
 });
 
+test('sous l\'ancre (`bottom-start`) : la place est dite, et la fenêtre se pose sous le bouton', () => {
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue(anchorAt(24) as DOMRect);
+  Object.defineProperty(document.documentElement, 'clientWidth', { value: VIEWPORT.width, configurable: true });
+  Object.defineProperty(document.documentElement, 'clientHeight', { value: VIEWPORT.height, configurable: true });
+  render(<Harness onClose={() => {}} placement="bottom-start" />);
+  const menu = screen.getByRole('menu');
+  expect(menu.getAttribute('data-placement')).toBe('bottom-start');
+  expect(menu.style.top).toBe('754px');
+  expect(menu.style.left).toBe('24px');
+  expect(menu.style.bottom).toBe('');
+  vi.restoreAllMocks();
+});
+
 test('par défaut il s\'ouvre en haut, aligné à gauche de l\'ancre', () => {
   render(<Harness onClose={() => {}} />);
   expect(screen.getByRole('menu').getAttribute('data-placement')).toBe('top-start');
@@ -70,13 +83,17 @@ test('fermé, il n\'écoute plus rien : ni Échap, ni les clics', async () => {
 
 // Les coordonnées de la page : 1000 × 800, et une ancre de 40 px de large dont le haut est à 700.
 const VIEWPORT = { width: 1000, height: 800 };
-const anchorAt = (left: number) => ({ left, right: left + 40, top: 700, width: 40 });
+const anchorAt = (left: number) => ({ left, right: left + 40, top: 700, bottom: 740, width: 40 });
 
 test('placeOver : alignée à gauche ou à droite de l\'ancre, ou centrée sur elle', () => {
   expect(placeOver(anchorAt(300), VIEWPORT, 'top-start', 320)).toEqual({ bottom: 114, left: 300 });
   expect(placeOver(anchorAt(300), VIEWPORT, 'top-end', 320)).toEqual({ bottom: 114, right: 660 });
   // Centrée : le milieu de l'ancre (320), que le CSS ramène à la moitié de la fenêtre.
   expect(placeOver(anchorAt(300), VIEWPORT, 'top', 320)).toEqual({ bottom: 114, left: 320 });
+});
+
+test('placeOver : sous l\'ancre (`bottom-start`), alignée sur son bord gauche : le haut de la fenêtre est sous le bas de l\'ancre', () => {
+  expect(placeOver(anchorAt(300), VIEWPORT, 'bottom-start', 320)).toEqual({ top: 754, left: 300 });
 });
 
 test('placeOver : centrée, la fenêtre ne sort pas de la page', () => {

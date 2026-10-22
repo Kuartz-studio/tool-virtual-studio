@@ -1,6 +1,6 @@
 import { buildOfficeTiledMap, buildTiledMap, DEV_OFFICE, parseOfficeMap, placeByKey } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { OUTSIDE_SCENE, sceneAt } from './scene-at';
+import { OUTSIDE_SCENE, sceneAt, soundAt } from './scene-at';
 
 // La grande carte, lue comme le serveur et le jeu la lisent.
 const map = parseOfficeMap(buildOfficeTiledMap());
@@ -65,5 +65,57 @@ describe('l\'ambiance de chaque endroit du bureau', () => {
     const small = parseOfficeMap(buildTiledMap({ ...DEV_OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
     expect(small.places).toEqual([]);
     expect(sceneAt(small, small.spawn.x, small.spawn.y)).toBe('focus');
+  });
+});
+
+// Où l'on est pour le son : l'ambiance par défaut de l'endroit, et la clé de la pièce dont on peut régler la musique (celles qui ont une enceinte), sinon null.
+describe('soundAt : l\'ambiance d\'un endroit, et la pièce dont on y règle la musique', () => {
+  const inside = (key: string) => {
+    const rect = placeByKey(map, key)!.rects[0]!;
+    return soundAt(map, rect.x + rect.width / 2, rect.y + rect.height / 2);
+  };
+
+  test('hors du bureau : la salle d\'attente, sans pièce à régler', () => {
+    expect(soundAt(null, 0, 0)).toEqual({ scene: 'lobby', key: null });
+  });
+
+  test('chaque pièce à enceinte donne sa clé et son ambiance par défaut', () => {
+    expect(inside('game')).toEqual({ scene: 'dusk', key: 'game' });
+    expect(inside('gym')).toEqual({ scene: 'quest', key: 'gym' });
+    expect(inside('conference')).toEqual({ scene: 'drift', key: 'conference' });
+    expect(inside('meeting')).toEqual({ scene: 'focus', key: 'meeting' });
+    expect(inside('lounge')).toEqual({ scene: 'sunny', key: 'lounge' });
+    expect(inside('reception')).toEqual({ scene: 'lobby', key: 'reception' });
+  });
+
+  test('le café, au milieu de la place : celui du café, pas de la place', () => {
+    expect(inside('cafe')).toEqual({ scene: 'sunny', key: 'cafe' });
+  });
+
+  test('la place, les rues et la salle client n\'ont pas d\'enceinte : leur ambiance par défaut, aucune pièce à régler', () => {
+    expect(soundAt(map, px(60), px(28))).toEqual({ scene: 'lobby', key: null });
+    expect(inside('street-n')).toEqual({ scene: 'lobby', key: null });
+    expect(inside('client')).toEqual({ scene: 'focus', key: null });
+  });
+
+  test('un bureau : « focus », et sa pièce est celle du bureau (desk:<clé>)', () => {
+    for (const desk of map.zones.filter((zone) => zone.type === 'desk')) {
+      expect(soundAt(map, desk.x + desk.width / 2, desk.y + desk.height / 2), desk.name ?? '').toEqual({ scene: 'focus', key: `desk:${desk.name}` });
+    }
+  });
+
+  test('un point hors de tout lieu (un mur) : la salle d\'attente, sans pièce à régler', () => {
+    expect(soundAt(map, px(0), px(0))).toEqual({ scene: 'lobby', key: null });
+  });
+
+  test('l\'ambiance est toujours celle de sceneAt', () => {
+    for (let ty = 0; ty < map.heightTiles; ty += 3) {
+      for (let tx = 0; tx < map.widthTiles; tx += 3) expect(soundAt(map, px(tx), px(ty)).scene).toBe(sceneAt(map, px(tx), px(ty)));
+    }
+  });
+
+  test('la carte des tests (sans lieux) : la concentration partout, aucune pièce à régler hors des bureaux', () => {
+    const small = parseOfficeMap(buildTiledMap({ ...DEV_OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
+    expect(soundAt(small, small.spawn.x, small.spawn.y)).toEqual({ scene: 'focus', key: null });
   });
 });

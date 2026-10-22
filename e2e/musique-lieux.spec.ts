@@ -127,7 +127,7 @@ test('« Ici », dans Personnes, ne réunit que ceux du même lieu : deux person
   }
 });
 
-test('l\'ambiance choisie à la main prime sur l\'endroit, et « Selon l\'endroit » rend la main', async ({ page }) => {
+test('l\'ambiance choisie à la main prime sur l\'endroit, et « Selon la pièce » rend la main', async ({ page }) => {
   test.slow();
   await joinOffice(page, 'Gaspard');
   await giveDeskBack(page);
@@ -142,7 +142,7 @@ test('l\'ambiance choisie à la main prime sur l\'endroit, et « Selon l\'endroi
   await page.waitForTimeout(1500);
   expect(await playing(page)).toBe('quest');
 
-  // « Selon l'endroit » : la salle de conférence, où l'on est.
-  await jukebox.getByRole('radio', { name: /^Selon l'endroit/ }).check();
+  // « Selon la pièce » : la salle de conférence, où l'on est.
+  await jukebox.getByRole('radio', { name: /^Selon la pièce/ }).check();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('drift');
 });

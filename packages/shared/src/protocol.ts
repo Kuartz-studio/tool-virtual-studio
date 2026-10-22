@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MUSIC_SCENES, type MusicScene } from './audio/scenes';
 import type { AvatarKey } from './avatars';
 import { ACTIVITY_LABEL_MAX_LENGTH, CHAT_MAX_LENGTH, DESK_NAME_MAX_LENGTH, DISPLAY_NAME_MAX_LENGTH } from './constants';
 import type { DecorError } from './decor/placement';
@@ -83,12 +84,20 @@ export const lightsSetSchema = z.object({ on: z.boolean() });
 // Réservé aux tests de bout en bout (`debug:boost`, seulement avec E2E=1) : donne du café pendant `ms` ms (0 : le retire), comme la machine.
 export const debugBoostSchema = z.object({ ms: z.number().int().min(0).max(3_600_000) });
 
+// La demande de régler la musique d'une pièce (`music:set`) : la clé du lieu (celle de la carte : `game`, `desk:A1` pour un bureau) et l'état voulu, `on`
+// (allumée ou éteinte) et/ou `scene` (l'ambiance ; null : celle par défaut de la pièce). Ce qui n'est pas dit ne change pas. Un état voulu, non une
+// bascule : une demande répétée, ou qui croise celle d'un autre, ne change rien. Une demande qui ne dit rien n'en est pas une.
+export const musicSetSchema = z
+  .object({ place: z.string().min(1).max(64), on: z.boolean().optional(), scene: z.enum(MUSIC_SCENES).nullable().optional() })
+  .refine((request) => request.on !== undefined || request.scene !== undefined);
+
 export type MovePayload = z.infer<typeof moveSchema>;
 export type ActivityInput = z.infer<typeof activityInputSchema>;
 export type DeskCommand = z.infer<typeof deskCommandSchema>;
 export type MediaState = z.infer<typeof mediaStateSchema>;
 export type ChatSendPayload = z.infer<typeof chatSendSchema>;
 export type LightsSetPayload = z.infer<typeof lightsSetSchema>;
+export type MusicSetPayload = z.infer<typeof musicSetSchema>;
 
 export interface ActivityState extends ActivityInput { id: string }
 // `activity` : l'état d'activité qu'elle a choisi (absent ou null : un statut ordinaire, `status`). Il passe avant `status` pour le point
@@ -120,6 +129,11 @@ export interface DeskKnock { key: string; userId: string; name: string }
 // La lumière du bureau, la même pour tout le monde. `by` : qui l'a changée en dernier (null : personne n'y a touché, ou son compte n'existe
 // plus), `at` : quand, en ms depuis 1970 (0 : jamais).
 export interface LightsState { on: boolean; by: { id: string; name: string } | null; at: number }
+// La musique d'une pièce, la même pour tous ceux qui y sont : allumée ou éteinte (`on`), son ambiance (`scene` ; null : celle par défaut de la pièce, que la carte
+// donne), qui l'a réglée en dernier (null : personne n'y a touché, ou son compte n'existe plus) et quand (ms depuis 1970 ; 0 : jamais).
+export interface RoomMusic { on: boolean; scene: MusicScene | null; by: { id: string; name: string } | null; at: number }
+// Une pièce que personne n'a touchée : allumée, son ambiance par défaut.
+export const DEFAULT_ROOM_MUSIC: Readonly<RoomMusic> = { on: true, scene: null, by: null, at: 0 };
 export interface InitPayload {
   self: PublicPlayer;
   players: PublicPlayer[];
@@ -133,6 +147,8 @@ export interface InitPayload {
   deskBans: DeskBan[];
   // La lumière du bureau. Absente : allumée.
   lights?: LightsState;
+  // La musique des pièces que quelqu'un a réglées, par clé de lieu. Absente (ou une pièce qui n'y est pas) : allumée, son ambiance par défaut.
+  music?: Record<string, RoomMusic>;
 }
 // Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
 // le voient sauter à sa nouvelle place au lieu de glisser jusqu'à elle à travers les murs.
@@ -167,6 +183,7 @@ export interface ServerToClientEvents {
   'desk:bans': (p: DeskBan[]) => void;                    // à un propriétaire : ceux qu'il a exclus
   'desk:knock': (p: DeskKnock) => void;                   // à un propriétaire : quelqu'un toque à sa porte
   'lights:changed': (p: LightsState) => void;             // à tout le bureau : la lumière vient d'être allumée ou éteinte
+  'music:changed': (p: { place: string; state: RoomMusic }) => void;   // à tout le bureau : la musique d'une pièce vient d'être réglée
   'coffee:changed': (p: { id: string; ms: number }) => void;   // à tout le bureau : quelqu'un prend un café (ms : la durée qui lui reste) ou le sien est fini (0)
   'media:join': (p: MediaJoinPayload) => void;
   'media:leave': () => void;
@@ -183,6 +200,7 @@ export interface ClientToServerEvents {
   'chat:send': (p: ChatSendPayload, ack: (r: ChatAck) => void) => void;
   'desk:do': (p: DeskCommand, ack: (r: DeskAck) => void) => void;
   'lights:set': (p: LightsSetPayload) => void;   // allumer ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé
+  'music:set': (p: MusicSetPayload) => void;   // régler la musique de la pièce où l'on est (dans un bureau : le sien) ; sans réponse : `music:changed` dit ce qui a changé
   'coffee:take': () => void;   // prendre un café, de près (2 cases au plus de la machine) ; sans réponse : `coffee:changed` dit ce qui a changé
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
   'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1

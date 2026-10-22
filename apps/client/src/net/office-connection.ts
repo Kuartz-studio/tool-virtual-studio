@@ -1,4 +1,4 @@
-import type { ActivityState, InitPayload, LightsState, MovePayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { ActivityState, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -41,6 +41,9 @@ export interface OfficeBusEvents {
   // Le jeu : la personne se sert à la machine à café, de près. La connexion le demande au serveur (`coffee:take`) ; le café ne commence qu'à son annonce
   // (`coffee:changed`).
   'local:coffee': () => void;
+  // Le jeu ou l'interface : la personne règle la musique de la pièce où elle est (l'enceinte, la puce du lieu). La connexion le demande au serveur
+  // (`music:set`) ; la musique ne change qu'à son annonce (`music:changed`), que le magasin retient.
+  'local:music': (p: MusicSetPayload) => void;
   // window.__office.teleport (tests de bout en bout seulement) : `debug:teleport`, que le serveur n'accepte qu'avec E2E=1.
   'local:teleport': (p: { x: number; y: number }) => void;
   // window.__office.boost (tests de bout en bout seulement) : `debug:boost`, que le serveur n'accepte qu'avec E2E=1.
@@ -94,9 +97,10 @@ export function listenOnBus<E extends keyof OfficeBusEvents>(bus: OfficeBus, eve
 // - la connexion est prête (`ready`, au magasin) une fois l'`init` de cette connexion reçu, et ne l'est plus dès qu'elle est coupée ;
 // - la lumière du bureau (`lights:changed`, et celle de l'`init`) va au magasin, puis au bus (`lights:changed`) : le jeu l'obscurcit, le son
 //   fait son bruit d'interrupteur ;
+// - la musique des pièces (`music:changed`, et celle de l'`init`) va au magasin, que lisent l'audio (ce qu'on entend où l'on est), la puce du lieu et les enceintes ;
 // - le café (`coffee:changed`, et le `boost` de chacun dans l'`init`) va au magasin, qui en tient l'échéance, puis au bus (`coffee:changed`) : le jeu montre la
 //   tasse et donne la vitesse, le son joue la machine, la pastille compte les secondes ;
-// - ce que le jeu produit (`local:move`, `local:teleport`, `local:lights`, `local:coffee`) part au serveur, mais seulement quand la connexion est prête. Avant, le
+// - ce que le jeu produit (`local:move`, `local:teleport`, `local:lights`, `local:coffee`, `local:music`) part au serveur, mais seulement quand la connexion est prête. Avant, le
 //   serveur ne sait pas encore où l'on est (ou l'a oublié) ; pendant une coupure, Socket.io garderait les messages et les enverrait au
 //   retour, périmés. Au retour, l'`init` replace l'avatar (le jeu repart de là).
 //
@@ -183,6 +187,8 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setLights(lights);
       emitOnBus(bus, 'lights:changed', lights);
     },
+    // La musique d'une pièce : au magasin, que lisent l'audio, la puce du lieu et les enceintes.
+    'music:changed': (p) => state().setRoomMusic(p.place, p.state),
     // Le café : le magasin d'abord (il en tient l'échéance, que le jeu et la pastille y lisent), puis le bus, pour le jeu et le son.
     'coffee:changed': (p) => {
       state().setCoffee(p.id, p.ms);
@@ -218,6 +224,9 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:coffee', () => {
       if (state().ready) socket.emit('coffee:take');
+    }),
+    listenOnBus(bus, 'local:music', (p) => {
+      if (state().ready) socket.emit('music:set', p);
     }),
     listenOnBus(bus, 'local:knock', ({ key }) => {
       if (!state().ready) return;

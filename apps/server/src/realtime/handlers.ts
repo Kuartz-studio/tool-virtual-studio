@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import {
   COFFEE_DURATION_MS,
+  DESK_PLACE_PREFIX,
   EMPTY_GROUPING,
   OPEN_SPACE_GROUPING,
   MEDIA_STATE_RATE,
@@ -17,6 +18,8 @@ import {
   lightsSetSchema,
   mediaStateSchema,
   moveSchema,
+  musicSetSchema,
+  placeAt,
   speakingSchema,
   statusSchema,
   withinCoffeeReach,
@@ -36,6 +39,7 @@ import type { Env } from '../env';
 import type { LightsService } from '../lights/lights-service';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
+import type { MusicService } from '../music/music-service';
 import { createRateLimiter, type RateLimiter } from '../rate-limit';
 import type { TypedServer, TypedSocket } from './io';
 import type { World } from './world';
@@ -64,6 +68,14 @@ export interface HandlerDeps {
   lightsLimiter: RateLimiter;
   /** Les interrupteurs de la carte (leur centre, en pixels) : sans l'un d'eux à portée, la lumière ne se change pas. */
   switches: ReadonlyArray<{ x: number; y: number }>;
+  /** La musique de chaque pièce : `music:set` la règle. */
+  music: Pick<MusicService, 'get' | 'set' | 'wouldChange'>;
+  /** La limite de débit des réglages de musique (un par MUSIC_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
+  musicLimiter: RateLimiter;
+  /** La carte : le lieu où le monde voit la personne décide de la pièce dont elle règle la musique. */
+  map: OfficeMap;
+  /** Qui occupe cette place de bureau (son identifiant), ou null si elle est libre ou n'existe pas : dans un bureau, son propriétaire seul en règle la musique. */
+  deskOwnerOf: (deskKey: string) => string | null;
   /** La limite de débit des cafés (une prise par COFFEE_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
   coffeeLimiter: RateLimiter;
   /** Les cases de service des machines à café de la carte (leur centre, en pixels) : sans l'une d'elles à portée, on ne se sert pas. */
@@ -239,6 +251,34 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
         if (state) io.to(OFFICE_ROOM).emit('lights:changed', state);
       },
       (err: unknown) => logServerError(d.logger, { err, userId }, 'Changement de la lumière impossible'),
+    );
+  });
+
+  // Régler la musique de la pièce où l'on est : celle où le monde voit la personne (jamais celle qu'elle dit), si elle a une enceinte ; dans un bureau, seul son
+  // propriétaire le fait. Aucune réponse, quoi qu'il arrive : la confirmation est `music:changed`, que tout le bureau reçoit, émetteur compris (ceux qui sont
+  // ailleurs aussi : ils en ont besoin en y entrant). Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme pour le
+  // chat. Puis, dans cet ordre, ce qui ne passe pas est ignoré :
+  // 1. charge utile invalide (musicSetSchema) ;
+  // 2. la clé n'est pas celle du lieu où est la personne, ou ce lieu n'a pas d'enceinte (la rue, la salle client), ou c'est le bureau d'un autre ;
+  // 3. la pièce est déjà dans l'état demandé : la demande est idempotente, elle ne change rien et ne compte pas dans la limite ;
+  // 4. plus d'un réglage par personne et par MUSIC_RATE_MS : la limite est celle du compte, que se reconnecter ne remet pas à zéro.
+  // Les réglages d'une même pièce passent l'un après l'autre (MusicService) : deux personnes qui demandent le même état en même temps ne le changent qu'une
+  // fois, et une seule diffusion part. Une base qui n'enregistre pas le réglage le laisse sans effet : journalisé, rien ne part.
+  socket.on('music:set', (payload) => {
+    const me = d.world.get(userId);
+    if (!me || !socket.rooms.has(OFFICE_ROOM)) return;
+    const request = musicSetSchema.safeParse(payload);
+    if (!request.success) return;
+    const place = placeAt(d.map, me.x, me.y);
+    if (place === null || place.key !== request.data.place || !place.music) return;
+    if (place.kind === 'desk' && d.deskOwnerOf(place.key.slice(DESK_PLACE_PREFIX.length)) !== userId) return;
+    const { place: key, ...patch } = request.data;
+    if (!d.music.wouldChange(key, patch) || !d.musicLimiter.take(userId)) return;
+    d.music.set(key, patch, { id: userId, name: me.name }).then(
+      (state) => {
+        if (state) io.to(OFFICE_ROOM).emit('music:changed', { place: key, state });
+      },
+      (err: unknown) => logServerError(d.logger, { err, userId, place: key }, 'Changement de la musique impossible'),
     );
   });
 

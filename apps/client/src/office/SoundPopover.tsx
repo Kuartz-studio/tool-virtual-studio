@@ -1,8 +1,10 @@
+import { roomSceneOf } from '@bureau/shared';
 import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
 import { audioEngine } from '../audio/audio';
 import { useAudioStore } from '../audio/audio-store';
 import { SCENE_IDS, type SceneId } from '../audio/catalog';
 import { fr, t } from '../i18n/fr';
+import { useOfficeStore } from '../state/office-store';
 import { COVER_HEIGHT, COVER_WIDTH, drawCover } from './ambiance-covers';
 import { MusicIcon, PlaceIcon, PlayIcon, VolumeIcon } from './icons';
 import { IconButton } from './ui/IconButton';
@@ -47,8 +49,8 @@ function VolumeSlider({ label, value, disabled, compact = false, onChange }: { l
 }
 
 // La pochette d'une ambiance : 16 × 10 pixels (ambiance-covers.ts), que le CSS agrandit ×5 sans lissage. Décorative : le titre est écrit à côté.
-// `data-cover` dit laquelle (les tests, et le suivi du lieu de « Selon l'endroit »).
-function Cover({ scene }: { scene: SceneId }) {
+// `data-cover` dit laquelle (les tests, et le suivi du lieu de « Selon la pièce »).
+export function Cover({ scene }: { scene: SceneId }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (canvas.current) drawCover(canvas.current, scene);
@@ -60,7 +62,7 @@ const ARROWS: ReadonlySet<string> = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft'
 
 // Les flèches sont à ce qu'elles règlent (une carte, un volume) : elles ne vont pas jusqu'à l'avatar, dont le clavier (game/input.ts) ne les ignore que
 // dans un champ où l'on écrit, et non sur un bouton radio ou un curseur.
-function keepArrows(event: KeyboardEvent<HTMLElement>): void {
+export function keepArrows(event: KeyboardEvent<HTMLElement>): void {
   if (ARROWS.has(event.key)) event.stopPropagation();
 }
 
@@ -74,7 +76,7 @@ export interface SoundPopoverProps {
 
 // Le juke-box (spec de la tâche 11a) : la musique et les effets sonores de l'appli, dans une fenêtre de 320 px au-dessus du bouton du dock. La
 // voix des autres n'en dépend pas (elle suit le micro et la sortie du système). Les réglages sont enregistrés dans le navigateur.
-// - En haut, la musique : son interrupteur, son volume, et le choix de l'ambiance : « Selon l'endroit » (celle du lieu où l'on est, avec sa
+// - En haut, la musique : son interrupteur, son volume, et le choix de l'ambiance : « Selon la pièce » (celle du lieu où l'on est, avec sa
 //   pochette), puis six cartes, chacune avec sa pochette en pixel art. Ce sont de vrais boutons radio (un seul groupe, au clavier : les flèches),
 //   cachés dans leur carte ; ce que l'ambiance évoque et où elle joue sont en infobulle (`title`) et décrits aux lecteurs d'écran
 //   (`aria-description`), avec « En cours » pour celle qu'on entend. Musique coupée, la grille reste utilisable, en retrait : le choix est gardé
@@ -86,6 +88,9 @@ export function SoundPopover({ open, onClose, anchorRef, id }: SoundPopoverProps
   const prefs = useAudioStore((state) => state.prefs);
   const playing = useAudioStore((state) => state.playing);
   const place = useAudioStore((state) => state.place);
+  const placeKey = useAudioStore((state) => state.placeKey);
+  // Ce que la pièce où l'on est joue : son ambiance par défaut, celle que ses occupants ont réglée, ou rien s'ils l'ont coupée.
+  const heardHere = useOfficeStore((state) => roomSceneOf({ scene: place, music: placeKey !== null }, placeKey === null ? undefined : state.music[placeKey]));
   const status = useAudioStore((state) => state.status);
   const setPrefs = useAudioStore((state) => state.setPrefs);
   const groupName = useId();
@@ -162,10 +167,10 @@ export function SoundPopover({ open, onClose, anchorRef, id }: SoundPopoverProps
             <PlaceIcon />
             <span className="juke-auto-text">
               <span className="juke-name">{fr.sound.ambiance.auto}</span>
-              <small>{t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes[place].title })}</small>
+              <small>{heardHere === null ? fr.sound.ambiance.autoOff : t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes[heardHere].title })}</small>
             </span>
             <span className="juke-art">
-              <Cover scene={place} />
+              <Cover scene={heardHere ?? place} />
             </span>
           </label>
           <div className="juke-grid">{SCENE_IDS.map(card)}</div>

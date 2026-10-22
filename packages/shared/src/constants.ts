@@ -102,6 +102,9 @@ export const LIGHT_SWITCH_REACH_TILES = 3;
 export const COFFEE_DURATION_MS = 30_000;
 export const COFFEE_REACH_TILES = 2;
 export const COFFEE_RATE_MS = 2_000;
+// La musique de chaque pièce, que ceux qui y sont règlent pour tous : une personne la change au plus une fois par MUSIC_RATE_MS (le serveur ignore ce qui
+// vient avant).
+export const MUSIC_RATE_MS = 800;
 export const SESSION_TTL_S = 30 * 24 * 3600;
 export const LIVEKIT_TOKEN_TTL_S = 600;
 export const OFFICE_ROOM = 'office';

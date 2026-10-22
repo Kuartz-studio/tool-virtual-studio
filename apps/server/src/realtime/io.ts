@@ -7,6 +7,7 @@ import {
   DISCONNECT_GRACE_MS,
   GROUPS_TICK_MS,
   LIGHTS_RATE_MS,
+  MUSIC_RATE_MS,
   OFFICE_ROOM,
   POSITION_SAVE_INTERVAL_MS,
   SOCKET_CONNECT_RATE,
@@ -34,6 +35,7 @@ import { LightsService } from '../lights/lights-service';
 import { createLogger, logServerError } from '../logger';
 import { LIVEKIT_VARIABLES, createLiveKitBackend, type MediaBackend } from '../media/livekit';
 import { MediaCoordinator, newBootId, type MediaEvent } from '../media/media-coordinator';
+import { MusicService } from '../music/music-service';
 import { createRateLimiter } from '../rate-limit';
 import type { ServerEvents } from '../server-events';
 import type { SimHost } from '../sim/sim-host';
@@ -97,6 +99,8 @@ export interface RealtimeDeps {
   desks?: DeskService;
   /** La lumière du bureau. Par défaut, celle de la base (LightsService) ; les tests peuvent en passer une réglée à leur main. */
   lights?: LightsService;
+  /** La musique de chaque pièce. Par défaut, celle de la base (MusicService) ; les tests peuvent en passer une réglée à leur main. */
+  music?: MusicService;
   /** L'intervalle des pings du serveur : PING_INTERVAL_MS par défaut. */
   pingIntervalMs?: number;
   /** Le délai de réponse à un ping, au-delà duquel la connexion est coupée : PING_TIMEOUT_MS par défaut. */
@@ -114,6 +118,8 @@ export interface Realtime {
   desks: DeskService;
   /** La lumière du bureau : allumée ou éteinte pour tout le monde, gardée d'un redémarrage à l'autre. */
   lights: LightsService;
+  /** La musique de chaque pièce, réglée par ceux qui y sont, gardée d'un redémarrage à l'autre. */
+  music: MusicService;
   /** Les groupes de conversation et leurs rooms LiveKit : groupMembersOf sert au chat « À proximité ». */
   coordinator: MediaCoordinator;
   /**
@@ -235,6 +241,10 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   // à toutes ses sockets, sur l'horloge du temps réel.
   const lights = d.lights ?? new LightsService(d.db);
   const lightsLimiter = createRateLimiter({ max: 1, windowMs: LIGHTS_RATE_MS, now });
+  // La musique de chaque pièce (lue en base au démarrage, relue dans chaque init), et la limite de débit de ses réglages : par compte, commune à toutes ses
+  // sockets, sur l'horloge du temps réel.
+  const music = d.music ?? new MusicService(d.db);
+  const musicLimiter = createRateLimiter({ max: 1, windowMs: MUSIC_RATE_MS, now });
   // La limite de débit des cafés : une prise par COFFEE_RATE_MS et par compte, comme les changements de lumière.
   const coffeeLimiter = createRateLimiter({ max: 1, windowMs: COFFEE_RATE_MS, now });
 
@@ -250,6 +260,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     chat,
     desks: deskController,
     lights,
+    music,
     onWelcome: resyncMedia,
   });
 
@@ -314,6 +325,10 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       lights,
       lightsLimiter,
       switches: d.map.switches,
+      music,
+      musicLimiter,
+      map: d.map,
+      deskOwnerOf: (key) => desks.get(key)?.ownerId ?? null,
       coffeeLimiter,
       coffees: d.map.coffees,
     });
@@ -383,6 +398,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     socketsOf: (userId) => presence.socketsOf(userId),
     desks,
     lights,
+    music,
     coordinator,
     stop,
   };

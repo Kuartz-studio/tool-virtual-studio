@@ -293,6 +293,24 @@ export const fr = {
     use: 'Éteindre',
     useOn: 'Allumer',
   },
+  // La musique de la pièce où l'on est : l'enceinte (« [E] Couper la musique », de près) et le bouton haut-parleur de la puce du lieu, dont la fenêtre règle l'état de la
+  // pièce pour tous ceux qui y sont : allumée ou coupée, et son ambiance (« Par défaut » : celle que la carte lui donne). Dans un bureau, son propriétaire seul y touche.
+  roomMusic: {
+    mute: 'Couper la musique',
+    play: 'Lancer la musique',
+    // Le bouton de la puce du lieu, et la fenêtre qu'il ouvre : le même nom, qui est aussi l'infobulle.
+    button: 'Musique de la pièce',
+    title: 'Musique de la pièce',
+    on: 'Musique allumée',
+    // Le nom du groupe des ambiances, pour les lecteurs d'écran, et son premier choix : celle de la carte.
+    scenes: 'Ambiance de la pièce',
+    default: 'Par défaut',
+    defaultHint: 'L\'ambiance de la pièce : {scene}',
+    // Qui a réglé la pièce en dernier.
+    by: 'Réglée par {name}',
+    // Quand on écoute une ambiance choisie dans le panneau Son (son casque), le réglage de la pièce vaut pour les autres.
+    headphones: 'Tu écoutes l\'ambiance choisie dans le panneau Son : ce réglage est pour ceux qui sont ici.',
+  },
   // Le café : la machine du bar (« [E] Prendre un café », de près) et la pastille qui compte ce qu'il en reste, sous la puce du lieu.
   coffee: {
     take: 'Prendre un café',
@@ -318,10 +336,12 @@ export const fr = {
     ambiance: {
       // Le nom du groupe des cartes, pour les lecteurs d'écran.
       label: 'Ambiance',
-      auto: 'Selon l\'endroit',
-      // L'infobulle de « Selon l'endroit », et son sous-titre : l'ambiance du lieu où l'on est.
-      autoHint: 'La musique change avec l\'endroit où tu es.',
+      auto: 'Selon la pièce',
+      // L'infobulle de « Selon la pièce », et son sous-titre : l'ambiance de la pièce où l'on est (celle que ses occupants ont réglée, sinon l'ambiance qui lui va), ou
+      // le silence quand ils ont coupé sa musique.
+      autoHint: 'La musique change avec la pièce où tu es : celle que ses occupants ont réglée, sinon l\'ambiance qui lui va.',
       autoHere: 'Ici : {scene}',
+      autoOff: 'Ici : musique coupée',
       // Dite aux lecteurs d'écran pour l'ambiance qu'on entend (l'égaliseur de sa carte est décoratif).
       playing: 'En cours',
     },

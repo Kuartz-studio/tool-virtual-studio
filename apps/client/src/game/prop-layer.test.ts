@@ -1,7 +1,7 @@
 import { TILE_SIZE } from '@bureau/shared';
 import { expect, test } from 'vitest';
 import { DECOR_DEPTH } from './decor-layout';
-import { layoutProps, propImages } from './prop-layer';
+import { layoutProps, loopOrRest, propImages } from './prop-layer';
 
 // Un objet du calque `props` de la carte : le nom est la clé, la position et la taille celles de l'empreinte, en pixels.
 const object = (name: string, x: number, y: number, claim: number, w = 1) => ({ name, x: x * TILE_SIZE, y: y * TILE_SIZE, width: w * TILE_SIZE, height: claim * TILE_SIZE });
@@ -42,4 +42,17 @@ test('propImages : le rectangle de l\'image entière, en pixels de la carte, pou
   const [machine] = propImages(layoutProps([object('coffee', 37, 3, 1)]));
   // Une machine à café : 1 × 2 cases d'image, posée sur la rangée 3 : son image va de la rangée 2 à la rangée 3.
   expect(machine).toEqual({ key: 'coffee', x: 37 * TILE_SIZE, y: 2 * TILE_SIZE, w: TILE_SIZE, h: 2 * TILE_SIZE });
+});
+
+test('loopOrRest : allumé, l\'objet reprend sa boucle (sans la relancer s\'il tourne déjà) ; éteint, il s\'arrête sur sa première image', () => {
+  const calls: string[] = [];
+  const sprite = {
+    play: (key: string, ignoreIfPlaying?: boolean) => void calls.push(`play ${key} ${String(ignoreIfPlaying)}`),
+    stop: () => void calls.push('stop'),
+    setFrame: (frame: number) => void calls.push(`frame ${frame}`),
+  };
+  loopOrRest(sprite, 'prop:amplifier-big', true);
+  loopOrRest(sprite, 'prop:amplifier-big', false);
+  loopOrRest(sprite, 'prop:amplifier-big', true);
+  expect(calls).toEqual(['play prop:amplifier-big true', 'stop', 'frame 0', 'play prop:amplifier-big true']);
 });

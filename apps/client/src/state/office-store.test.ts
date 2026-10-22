@@ -1,4 +1,4 @@
-import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer } from '@bureau/shared';
+import { CHAT_HISTORY_LIMIT, type ChatMessage, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ZOOM_BUTTON_STEP, ZOOM_DEFAULT_PERCENT, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
@@ -553,6 +553,49 @@ describe('la lumière', () => {
     store.getState().applyInit({ ...init(SELF, [A]), lights: OFF });
     store.getState().reset();
     expect(store.getState().lights).toEqual(LIT);
+  });
+});
+
+// La musique des pièces : le serveur dit l'état de celles qu'on a réglées (init, puis `music:changed`) ; les autres sont allumées, leur ambiance par défaut.
+describe('la musique des pièces', () => {
+  const OFF: RoomMusic = { on: false, scene: null, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
+  const QUEST: RoomMusic = { on: true, scene: 'quest', by: { id: 'b', name: 'B' }, at: 1_700_000_005_000 };
+
+  test('avant tout réglage : aucune pièce n\'a d\'état', () => {
+    expect(store.getState().music).toEqual({});
+  });
+
+  test('init : les pièces réglées vont au magasin ; un init sans `music` dit que personne n\'a rien réglé', () => {
+    store.getState().applyInit({ ...init(SELF, [A]), music: { game: OFF } });
+    expect(store.getState().music).toEqual({ game: OFF });
+    store.getState().applyInit(init(SELF, [A]));
+    expect(store.getState().music).toEqual({});
+  });
+
+  test('setRoomMusic : l\'état de cette pièce, tel que le serveur l\'annonce ; les autres pièces ne changent pas', () => {
+    store.getState().setRoomMusic('game', OFF);
+    store.getState().setRoomMusic('gym', QUEST);
+    expect(store.getState().music).toEqual({ game: OFF, gym: QUEST });
+    store.getState().setRoomMusic('game', { ...OFF, on: true, at: OFF.at + 1 });
+    expect(store.getState().music.game).toMatchObject({ on: true, at: OFF.at + 1 });
+    expect(store.getState().music.gym).toBe(QUEST);
+  });
+
+  test('un nouvel init remplace tout : ce qu\'on croyait avant une coupure n\'a plus cours', () => {
+    store.getState().applyInit({ ...init(SELF, [A]), music: { game: OFF } });
+    store.getState().setRoomMusic('gym', QUEST);
+    store.getState().applyInit({ ...init(SELF, [A]), music: { cafe: QUEST } });
+    expect(store.getState().music).toEqual({ cafe: QUEST });
+  });
+
+  test('setRoomMusic ne change que la musique : les joueurs restent les mêmes objets ; reset efface tout', () => {
+    store.getState().applyInit(init(SELF, [A]));
+    const before = store.getState();
+    store.getState().setRoomMusic('game', OFF);
+    expect(store.getState().players).toBe(before.players);
+    expect(store.getState().self).toBe(before.self);
+    store.getState().reset();
+    expect(store.getState().music).toEqual({});
   });
 });
 

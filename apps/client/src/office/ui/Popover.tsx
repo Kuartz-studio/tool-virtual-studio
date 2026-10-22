@@ -5,7 +5,7 @@ const GAP = 14;
 // Centrée sur son ancre, la fenêtre garde au moins cet écart avec les bords de la page.
 const EDGE = 16;
 
-export type PopoverPlacement = 'top-start' | 'top-end' | 'top';
+export type PopoverPlacement = 'top-start' | 'top-end' | 'top' | 'bottom-start';
 
 export interface PopoverProps {
   open: boolean;
@@ -14,7 +14,8 @@ export interface PopoverProps {
   // c'est elle qui ouvre et ferme (sans cela, le clic qui ferme rouvrirait aussitôt).
   anchorRef: RefObject<HTMLElement | null>;
   // Au-dessus de l'ancre, alignée sur son bord gauche (`top-start`) ou sur son bord droit (`top-end`), ou centrée sur elle (`top`, que les
-  // bords de la page retiennent : sur un écran étroit, elle reste dans la page).
+  // bords de la page retiennent : sur un écran étroit, elle reste dans la page) ; ou au-dessous, alignée sur son bord gauche (`bottom-start`) : ce
+  // que le haut de la page ouvre (la puce du lieu).
   placement?: PopoverPlacement;
   // Son nom, pour les lecteurs d'écran.
   label: string;
@@ -25,13 +26,15 @@ export interface PopoverProps {
 }
 
 // Où poser la fenêtre, au-dessus de l'ancre, en coordonnées de la page : le bord du bas, et le bord gauche, ou droit, ou le milieu (que le CSS
-// ramène à la moitié de la largeur de la fenêtre : `translate`) quand elle est centrée, et que ses bords gardent loin de ceux de la page.
+// ramène à la moitié de la largeur de la fenêtre : `translate`) quand elle est centrée, et que ses bords gardent loin de ceux de la page. Au-dessous
+// (`bottom-start`) : le bord du haut, sous le bas de l'ancre, et son bord gauche.
 export function placeOver(
-  rect: Pick<DOMRect, 'left' | 'right' | 'top' | 'width'>,
+  rect: Pick<DOMRect, 'left' | 'right' | 'top' | 'bottom' | 'width'>,
   viewport: { width: number; height: number },
   placement: PopoverPlacement,
   popoverWidth: number,
 ): CSSProperties {
+  if (placement === 'bottom-start') return { top: rect.bottom + GAP, left: rect.left };
   const bottom = viewport.height - rect.top + GAP;
   if (placement === 'top-end') return { bottom, right: viewport.width - rect.right };
   if (placement === 'top') {

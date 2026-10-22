@@ -69,7 +69,7 @@ test('le juke-box : le nom du bouton et de sa fenêtre, ses interrupteurs et ses
   expect(fr.sound.effects.label).toBe('Effets sonores');
   expect(fr.sound.effects.volume).toBe('Volume des effets sonores');
   expect(fr.sound.effects.test).toBe('Écouter un effet');
-  expect(fr.sound.ambiance.auto).toBe('Selon l\'endroit');
+  expect(fr.sound.ambiance.auto).toBe('Selon la pièce');
   expect(t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes.lobby.title })).toBe('Ici : Salle d\'attente');
   expect(Object.values(fr.sound.scenes).map((scene) => scene.title)).toEqual(['Salle d\'attente', 'Concentration', 'Soleil', 'Crépuscule', 'Dérive', 'Expédition']);
 });

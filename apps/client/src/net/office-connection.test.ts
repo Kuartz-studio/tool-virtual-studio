@@ -292,6 +292,58 @@ describe('connectOffice', () => {
     });
   });
 
+  describe('la musique des pièces', () => {
+    const OFF = { on: false, scene: null, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 } as const;
+
+    test('init : la musique des pièces réglées va au magasin ; sans musique dans l\'init, aucune pièce n\'a d\'état', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init(), music: { game: OFF } });
+      expect(store.getState().music).toEqual({ game: OFF });
+      socket.receive('init', init());
+      expect(store.getState().music).toEqual({});
+    });
+
+    test('music:changed : au magasin, pièce par pièce', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      socket.receive('music:changed', { place: 'game', state: OFF });
+      expect(store.getState().music).toEqual({ game: OFF });
+      const quest = { on: true, scene: 'quest', by: { id: 'moi', name: 'MOI' }, at: OFF.at + 5000 } as const;
+      socket.receive('music:changed', { place: 'gym', state: quest });
+      expect(store.getState().music).toEqual({ game: OFF, gym: quest });
+    });
+
+    test('local:music part au serveur (music:set) une fois l\'init reçu ; avant, et pendant une coupure, rien', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.connect();
+      bus.emit('local:music', { place: 'game', on: false });
+      socket.serverAccepts();
+      bus.emit('local:music', { place: 'game', on: false });
+      expect(socket.sentOf('music:set')).toEqual([]);
+
+      socket.receive('init', init());
+      bus.emit('local:music', { place: 'game', on: false });
+      bus.emit('local:music', { place: 'game', scene: 'dusk' });
+      expect(socket.sentOf('music:set')).toEqual([{ place: 'game', on: false }, { place: 'game', scene: 'dusk' }]);
+
+      // Pendant une coupure, Socket.io garderait le message pour le rendre au retour, périmé.
+      socket.connectionDrops();
+      bus.emit('local:music', { place: 'game', on: true });
+      socket.serverAccepts();
+      bus.emit('local:music', { place: 'game', on: true });
+      expect(socket.sentOf('music:set')).toHaveLength(2);
+    });
+
+    test('local:music n\'est qu\'une demande : le magasin ne change qu\'à la réponse du serveur (music:changed)', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', init());
+      bus.emit('local:music', { place: 'game', on: false });
+      expect(store.getState().music).toEqual({});
+      socket.receive('music:changed', { place: 'game', state: OFF });
+      expect(store.getState().music).toEqual({ game: OFF });
+    });
+  });
+
   describe('le café', () => {
     beforeEach(() => {
       vi.spyOn(performance, 'now').mockReturnValue(10_000);

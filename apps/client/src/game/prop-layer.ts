@@ -48,13 +48,33 @@ export function propImages(placements: readonly PropPlacement[]): Array<{ key: s
   return placements.map(({ key, prop, left, bottom }) => ({ key, x: left, y: bottom - prop.frameHeight, w: prop.frameWidth, h: prop.frameHeight }));
 }
 
+// Un objet animé qui reprend sa boucle (allumé : sans la relancer s'il tourne déjà) ou s'arrête sur sa première image (éteint) : une enceinte tant que sa pièce joue.
+export function loopOrRest(
+  sprite: { play(key: string, ignoreIfPlaying?: boolean): unknown; stop(): unknown; setFrame(frame: number): unknown },
+  animationKey: string,
+  on: boolean,
+): void {
+  if (on) {
+    sprite.play(animationKey, true);
+  } else {
+    sprite.stop();
+    sprite.setFrame(0);
+  }
+}
+
 export class PropLayer {
   private readonly placements: PropPlacement[];
   private readonly sprites = new Map<string, GameObjects.Sprite[]>();
+  // La clé de l'objet que chaque sprite montre, et si les animations sont permises (pas en mouvement réduit).
+  private readonly keys = new Map<GameObjects.Sprite, string>();
+  private readonly still: boolean;
+  private readonly scene: Phaser.Scene;
 
   constructor(scene: Phaser.Scene, tilemap: Tilemaps.Tilemap) {
+    this.scene = scene;
     this.placements = layoutProps(tilemap.getObjectLayer('props')?.objects ?? []);
     const still = prefersReducedMotion();
+    this.still = still;
     for (const { key, prop, left, bottom, depth } of this.placements) {
       // Une planche absente (fichier qui n'a pas chargé) : l'objet ne se dessine pas, le reste du bureau si.
       if (!scene.textures.exists(propTextureKey(key))) continue;
@@ -62,7 +82,16 @@ export class PropLayer {
       // En mouvement réduit (prefers-reduced-motion) : la première image, sans animation.
       if (prop.loop && !still && scene.anims.exists(propAnimationKey(key))) sprite.play(propAnimationKey(key));
       this.sprites.set(key, [...(this.sprites.get(key) ?? []), sprite]);
+      this.keys.set(sprite, key);
     }
+  }
+
+  // Allume ou éteint l'animation d'un de ces objets (une enceinte : sa boucle tourne tant que sa pièce joue, et s'arrête sur sa première image sinon). Sans effet pour
+  // un objet qui n'a pas de boucle, ou en mouvement réduit : il n'est jamais animé.
+  setPlaying(sprite: GameObjects.Sprite, on: boolean): void {
+    const key = this.keys.get(sprite);
+    if (key === undefined || this.still || !propByKey(key)?.loop || !this.scene.anims.exists(propAnimationKey(key))) return;
+    loopOrRest(sprite, propAnimationKey(key), on);
   }
 
   // Les sprites d'un prop (les portes, la musique et le café les animent), dans l'ordre de la carte.
@@ -78,5 +107,6 @@ export class PropLayer {
   destroy(): void {
     for (const sprites of this.sprites.values()) for (const sprite of sprites) sprite.destroy();
     this.sprites.clear();
+    this.keys.clear();
   }
 }

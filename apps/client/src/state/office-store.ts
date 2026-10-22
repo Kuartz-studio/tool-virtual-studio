@@ -13,6 +13,7 @@ import {
   type MediaState,
   type OfficeMap,
   type PublicPlayer,
+  type RoomMusic,
   type Status,
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
@@ -112,6 +113,10 @@ export interface OfficeState {
   // `boost` dans l'`init`), le magasin en fait une échéance. Qui n'a pas de ligne n'a pas de café. Le jeu y lit ceux dont la tasse se montre (et si
   // l'avatar local va à la vitesse du café), la pastille ce qu'il reste à soi-même.
   coffee: Record<string, number>;
+  // La musique des pièces que quelqu'un a réglées, par clé de lieu (celle de la carte, `desk:A1` pour un bureau) : celle du dernier `init`, puis ce que dit
+  // `music:changed`. Une pièce qui n'y est pas est allumée, avec son ambiance par défaut. L'audio y lit ce qu'il joue (selectWantedScene), la puce du lieu ce qu'on
+  // règle.
+  music: Record<string, RoomMusic>;
   // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
   // null avant le jeu, et en dehors de lui.
   officeMap: OfficeMap | null;
@@ -135,6 +140,8 @@ export interface OfficeState {
   // Le café de cette personne, tel que le serveur l'annonce (`coffee:changed`) : `ms` ms à partir de maintenant, qui remplacent ce qui restait ; 0 : fini,
   // l'échéance disparaît.
   setCoffee(id: string, ms: number): void;
+  // La musique de cette pièce, telle que le serveur l'annonce (`music:changed`) : le serveur fait foi, rien n'est changé avant son annonce.
+  setRoomMusic(place: string, state: RoomMusic): void;
   setDeskNotice(text: string | null): void;
   // Le zoom : un pourcentage donné (ramené aux bornes et au cran de 5 % le plus proche), des crans de `size` % plus près (positifs) ou plus
   // loin (négatifs ; 5 % par cran si `size` n'est pas dit), la vue de départ.
@@ -214,6 +221,7 @@ type Data = Pick<
   | 'deskNotice'
   | 'lights'
   | 'coffee'
+  | 'music'
   | 'officeMap'
   | 'decorEditor'
   | 'zoomPercent'
@@ -244,6 +252,7 @@ const initialData = (): Data => ({
   deskNotice: null,
   lights: LIGHTS_ON,
   coffee: {},
+  music: {},
   officeMap: null,
   decorEditor: null,
   zoomPercent: ZOOM_DEFAULT_PERCENT,
@@ -344,6 +353,8 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           // été remis, sans que personne nous le dise.
           lights: p.lights ?? LIGHTS_ON,
           coffee: coffeeDeadlines([p.self, ...others]),
+          // La musique des pièces du moment : un init sans `music` dit que personne n'a rien réglé.
+          music: p.music ?? {},
         }));
       },
 
@@ -390,6 +401,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           if (ms > 0) return { coffee: { ...state.coffee, [id]: performance.now() + ms } };
           return Object.hasOwn(state.coffee, id) ? { coffee: without(state.coffee, id) } : state;
         }),
+      setRoomMusic: (place, state) => set((s) => ({ music: { ...s.music, [place]: state } })),
       setDeskNotice: (deskNotice) => set({ deskNotice }),
       setZoomPercent: (percent) => set({ zoomPercent: clampZoomPercent(percent) }),
       stepZoom: (steps, size = ZOOM_WHEEL_STEP) => set((state) => ({ zoomPercent: stepZoomPercent(state.zoomPercent, steps, size) })),

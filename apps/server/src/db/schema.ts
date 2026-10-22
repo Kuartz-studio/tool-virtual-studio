@@ -82,3 +82,14 @@ export const officeLights = pgTable('office_lights', {
   changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
   changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// La musique de chaque pièce, que ceux qui y sont règlent pour tous : une ligne par pièce touchée (la clé du lieu : `game`, `desk:A1`), écrite au premier
+// changement. Sans ligne, la pièce est allumée avec son ambiance par défaut. `scene` est l'ambiance choisie (null : celle par défaut de la pièce), `changedBy`
+// celui qui l'a réglée en dernier (null si son compte n'existe plus), `changedAt` le moment du changement.
+export const roomMusic = pgTable('room_music', {
+  placeKey: text('place_key').primaryKey(),
+  on: boolean('on').notNull().default(true),
+  scene: text('scene'),
+  changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+});
