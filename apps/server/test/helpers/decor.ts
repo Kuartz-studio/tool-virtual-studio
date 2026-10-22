@@ -1,4 +1,4 @@
-import { DEFAULT_DESK_DECOR, DESK_ROOM, type DecorError, type DeskDecor } from '@bureau/shared';
+import { DEFAULT_DESK_DECOR, DESK_ROOMS, type DecorError, type DeskDecor } from '@bureau/shared';
 
 // Ce que montre une pièce dont la personne n'a rien réglé (et toute place libre), tel qu'il figure dans une DeskInfo.
 export const DEFAULT_SETUP = { floor: DEFAULT_DESK_DECOR.floor, wall: DEFAULT_DESK_DECOR.wall, items: DEFAULT_DESK_DECOR.items };
@@ -22,5 +22,5 @@ export const OTHER_DECOR: DeskDecor = { floor: 'sable', wall: 'brun', items: [{ 
 export const REFUSED_DECORS: Array<{ decor: DeskDecor; reason: DecorError }> = [
   { decor: { ...CUSTOM_DECOR, floor: 'lave' }, reason: 'unknown_theme' },
   { decor: { ...CUSTOM_DECOR, items: [{ id: 'of-7-28', x: 0, y: 0 }, { id: 'of-7-28', x: 2, y: 1 }] }, reason: 'overlap' },
-  { decor: { ...CUSTOM_DECOR, items: [{ id: 'of-7-28', x: DESK_ROOM.doorX - 1, y: DESK_ROOM.height - 2 }] }, reason: 'blocks_door' },
+  { decor: { ...CUSTOM_DECOR, items: [{ id: 'of-7-28', x: DESK_ROOMS.standard.door.x - 1, y: DESK_ROOMS.standard.height - 2 }] }, reason: 'blocks_door' },
 ];

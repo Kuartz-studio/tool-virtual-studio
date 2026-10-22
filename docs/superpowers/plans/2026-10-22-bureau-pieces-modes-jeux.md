@@ -381,16 +381,19 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
   ```
 - Règles de `checkDecor` ajoutées : un élément mural ne peut pas surplomber les cases de la porte quand elle est au nord (`blocks_door`).
 
-**Étapes**
-- [ ] Tests, qui échouent :
-  - `parse-map` : « les nouveaux types sont reconnus » ; « une `place` sans `label` est refusée » ; « une scène inconnue est refusée » ; « deux places de même clé sont refusées » ; « un `speaker` dont la place n'a pas de musique est refusé » ; « un `seat` sans `game` du même jeu est refusé » ; « `coffees`, `speakers`, `tables` et `signs` sont lus » ;
-  - `places` : « la plus petite place gagne (le café dans la place centrale) » ; « un point dans une zone desk rend la place `desk:A1` » ; « hors de toute place : null » ; « `freeSpotIn` rend une case praticable libre, la même à chaque appel, à 2 cases des autres » ; « `freeSpotIn` rend null pleine » ;
-  - `decor` : « `checkDecor` accepte le poste réduit dans la pièce compacte » ; « refuse un élément qui dépasse 6 cases » ; « porte au nord : refuse un meuble devant la porte et un tableau au-dessus d'elle » ; « `defaultDeskDecor(compact)` passe `checkDecor(compact)` » ; « le poste standard passe toujours » ;
-  - serveur `desks` : « la déco d'une place compacte est validée avec sa pièce » ; « un décor enregistré qui ne tient plus dans la pièce est ignoré (pièce par défaut) et journalisé, jamais effacé ».
-- [ ] Implémenter ; remplacer chaque usage de `DESK_ROOM` (`decor-layer.ts:69` saute aujourd'hui les pièces d'une autre taille, `auto-walk.ts` aussi) par la spec de la place.
-- [ ] Les six noms de scène (`lobby`, `focus`, `sunny`, `dusk`, `drift`, `quest`) passent dans `packages/shared/src/audio/scenes.ts` (`MUSIC_SCENES`, type `MusicScene`) ; le client les importe et `SceneId` devient un alias de `MusicScene`. Un test vérifie que `measured.generated.ts` couvre chacune.
-- [ ] `pnpm typecheck && pnpm test` passent (la petite carte de développement n'est pas touchée).
-- [ ] Commit : `feat(shared): registre des lieux, nouvelles zones et bureaux de tailles différentes`.
+**Étapes** (faites le 22 oct. 2026)
+- [x] Tests vus échouer puis passer :
+  - `parse-map` (`map.test.ts`, `places.test.ts`) : les nouveaux types sont reconnus ; une `place` sans `label`, de scène inconnue, de clé en double ou préfixée `desk:` est refusée ; un `speaker` dont la place n'a pas de musique est refusé ; un `seat` sans table du même jeu est refusé ; `coffees`, `speakers`, `tables`, `signs` sont lus ;
+  - `places` : la plus petite place gagne, une zone desk rend `desk:<clé>`, hors de toute place `null`, `freeSpotIn` (praticable, déterministe, à 2 cases des autres, `null` quand c'est plein) ;
+  - `decor` : le poste réduit tient dans la pièce compacte, qui refuse ce qui dépasse 6 cases ; porte au nord : ni meuble devant la porte ni tableau au-dessus ; chaque poste par défaut passe son propre `checkDecor` ;
+  - serveur `desks` : la déco d'une place compacte est validée avec sa pièce ; un décor enregistré qui ne tient plus est ignoré (poste par défaut de la pièce), journalisé une fois, jamais effacé, et revient si la pièce redevient assez grande ;
+  - client `decor-draft` et `state/decor-editor` : `anchorFor`, `tryPlace` et `planPlace` prennent la pièce ; une pièce compacte ramène un bureau à sa largeur de 6 cases, une porte au nord refuse un tableau au-dessus d'elle ; `roomOfDesk` (standard sans carte, sans porte ou pour une place inconnue).
+- [x] Implémenté : plus aucun `DESK_ROOM` ni `DOOR_ENTRY_CELLS` (pas d'alias) ; `DeskSlot.room` côté serveur ; côté client, `DecorLayer` crée une pièce par zone desk que la carte décrit avec une porte (`deskRoomSpecOf`), son poste par défaut est `defaultDeskDecor(spec)` ; `DecorEditorView` (grille, case sous le pointeur, pose) et `auto-walk.ts` (`decorated`) suivent la même règle ; le panneau « Poste par défaut » remet celui de la pièce (`roomOfDesk`).
+- [x] `MUSIC_SCENES` dans `packages/shared/src/audio/scenes.ts` ; `SCENE_IDS` du client est cette liste même (`satisfies readonly SceneId[]`) ; le test existant vérifie déjà que `measured.generated.ts` couvre chaque scène, un nouveau que la liste est celle du partage.
+- [x] `pnpm typecheck` vert (client, serveur, partage, e2e) ; `pnpm test` : 145 fichiers, 2 700 tests ; `pnpm e2e personnalisation.spec.ts --project=office` : 6 verts (la déco du bureau sur la vraie carte, toutes les pièces standard).
+- [x] Commit : `feat(shared): registre des lieux, nouvelles zones et bureaux de tailles différentes`.
+
+**Tel que livré** (écarts au plan, tous au registre) : `desk-controller.ts` n'a pas changé (la géométrie par place est dans `DeskService`) ; `spawn.test.ts` non plus ; `GAME_IDS` est défini dans `parse-map.ts` (et `places.ts` n'importe que des types) pour éviter un cycle d'imports ; `Zone.properties` n'existe que pour `place` et `sign` ; une zone desk sans porte n'a plus de pièce décorée côté client (avant : toute zone de 9 × 7), alors que le serveur la valide en pièce standard.
 
 ### Tâche 7 : les images et les sons dont on a besoin (P0, M)
 

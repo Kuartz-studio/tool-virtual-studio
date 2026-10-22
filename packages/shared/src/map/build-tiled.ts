@@ -12,6 +12,8 @@ export interface ZoneInput {
   h: number;
   name?: string;
   text?: string;   // le texte d'une étiquette (zone label)
+  // Les propriétés Tiled de la zone (label, kind, scene… d'un lieu ; text d'un panneau) : texte, nombre ou booléen.
+  props?: Record<string, string | number | boolean>;
 }
 
 export interface TiledMapInput {
@@ -157,12 +159,16 @@ function floorTile(zones: ZoneInput[], tx: number, ty: number): number {
 
 // Un rectangle en pixels. Le type est dans `type`, le champ que Phaser lit ; le texte d'une étiquette, dans la propriété `text`.
 // Les identifiants suivent l'ordre de saisie, à partir de 1 : ils ne changent pas tant que les zones ne changent pas.
-function zoneObject(z: ZoneInput, index: number): TiledObject {
+export function zoneObject(z: ZoneInput, index: number): TiledObject {
+  const properties = [
+    ...(z.text === undefined ? [] : [{ name: 'text', type: 'string', value: z.text }]),
+    ...Object.entries(z.props ?? {}).map(([name, value]) => ({ name, type: typeof value === 'number' ? 'int' : typeof value === 'boolean' ? 'bool' : 'string', value })),
+  ];
   return {
     height: z.h * TILE_SIZE,
     id: index + 1,
     name: z.name ?? '',
-    ...(z.text === undefined ? {} : { properties: [{ name: 'text', type: 'string', value: z.text }] }),
+    ...(properties.length === 0 ? {} : { properties }),
     rotation: 0,
     type: z.type,
     visible: true,

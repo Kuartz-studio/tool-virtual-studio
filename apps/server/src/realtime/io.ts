@@ -210,7 +210,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const chatLimiter = createRateLimiter({ ...CHAT_RATE, now });
 
   // La porte d'un bureau se ferme d'elle-même quand son propriétaire, présent, est dans un état d'activité qui ne laisse pas entrer.
-  const desks = d.desks ?? new DeskService(d.db, d.map, { ownerAllowsEntry: (ownerId) => world.get(ownerId)?.activity?.allowEntry !== false });
+  const desks = d.desks ?? new DeskService(d.db, d.map, { ownerAllowsEntry: (ownerId) => world.get(ownerId)?.activity?.allowEntry !== false, logger });
   const deskController = createDeskController({
     io,
     world,

@@ -1,6 +1,7 @@
 import {
-  DESK_ROOM,
   decorItem,
+  deskKey,
+  deskRoomSpecOf,
   findPath,
   footprintOf,
   isWalkableTile,
@@ -111,8 +112,8 @@ export function planWalk(map: OfficeMap, from: Point, to: Point): Point[] | null
   return cornersOf(straighten(map, steps)).map((t) => centerOf(map, t));
 }
 
-// La pièce d'un bureau, en cases de la carte : son coin haut-gauche et sa taille. Le décor des occupants n'existe que dans les pièces de la
-// taille de celles du jeu (DecorLayer) : les autres cartes (celle de développement) n'ont pas de meubles.
+// La pièce d'un bureau, en cases de la carte : son coin haut-gauche et sa taille. Le décor des occupants n'existe que dans les pièces que la
+// carte décrit avec une porte (DecorLayer) : les autres cartes (celle de développement) n'ont pas de meubles.
 function roomTiles(map: OfficeMap, room: Zone): { tx: number; ty: number; width: number; height: number; decorated: boolean } {
   const [width, height] = [Math.round(room.width / map.tileSize), Math.round(room.height / map.tileSize)];
   return {
@@ -120,7 +121,7 @@ function roomTiles(map: OfficeMap, room: Zone): { tx: number; ty: number; width:
     ty: Math.round(room.y / map.tileSize),
     width,
     height,
-    decorated: width === DESK_ROOM.width && height === DESK_ROOM.height,
+    decorated: deskRoomSpecOf(map, deskKey(room)) !== undefined,
   };
 }
 

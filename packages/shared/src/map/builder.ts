@@ -2,7 +2,7 @@ import { TILE_SIZE } from '../constants';
 import { decorItem } from '../decor/catalog';
 import { footprintOf } from '../decor/placement';
 import { FLOOR_THEMES, POOL_TILES, TILESET, WALL_THEMES } from '../decor/generated-themes';
-import type { ZoneInput } from './build-tiled';
+import { zoneObject, type ZoneInput } from './build-tiled';
 import type { TiledMapJson, TiledObject, TiledObjectLayer, TiledTileLayer } from './tiled-types';
 
 // Le dessin d'une carte, case par case : des primitives (sol, mur, ouverture, meuble, piscine) qui remplissent les calques de tuiles, les
@@ -231,17 +231,3 @@ export class MapCanvas {
   }
 }
 
-function zoneObject(z: ZoneInput, index: number): TiledObject {
-  return {
-    height: z.h * TILE_SIZE,
-    id: index + 1,
-    name: z.name ?? '',
-    ...(z.text === undefined ? {} : { properties: [{ name: 'text', type: 'string', value: z.text }] }),
-    rotation: 0,
-    type: z.type,
-    visible: true,
-    width: z.w * TILE_SIZE,
-    x: z.x * TILE_SIZE,
-    y: z.y * TILE_SIZE,
-  };
-}

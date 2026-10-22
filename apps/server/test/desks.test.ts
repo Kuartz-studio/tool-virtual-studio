@@ -1,6 +1,6 @@
-import { OFFICE, buildTiledMap, isWalkablePoint, parseOfficeMap, type Zone } from '@bureau/shared';
+import { DESK_ROOMS, OFFICE, buildTiledMap, defaultDeskDecor, isWalkablePoint, parseOfficeMap, type OfficeMap, type Zone } from '@bureau/shared';
 import { eq, sql } from 'drizzle-orm';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import { desk, deskSetup, user } from '../src/db/schema';
 import { DeskService, deskSlots, exitPoint, type DeskServiceOptions } from '../src/desks/desk-service';
 import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS } from './helpers/decor';
@@ -9,11 +9,11 @@ import { createTestDb } from './helpers/test-db';
 // La grande carte (6 places A1…A6) et un compte par prénom, créés dans la base.
 const map = parseOfficeMap(buildTiledMap({ ...OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
 
-async function setup(options: DeskServiceOptions = {}) {
+async function setup(options: DeskServiceOptions = {}, onMap: OfficeMap = map) {
   const db = await createTestDb();
   const people = ['ana', 'bob', 'cleo'];
   for (const id of people) await db.insert(user).values({ id, name: id.toUpperCase(), email: `${id}@example.test` });
-  const service = await DeskService.create(db, map, options);
+  const service = await DeskService.create(db, onMap, options);
   return { db, service, people };
 }
 
@@ -421,5 +421,99 @@ describe('le décor de la pièce', () => {
     const { db } = await setup();
     await db.execute(sql`drop table "desk_setup"`);
     await expect(DeskService.create(db, map)).rejects.toThrow();
+  });
+});
+
+// ---- Des pièces de tailles différentes ---------------------------------------------------------------------------------------
+
+// Une carte à trois places : A1 standard (9 × 7, porte au sud), A5 compacte (6 × 7, porte au sud), A6 compacte, sa porte au nord de la pièce.
+const SMALL_ROWS = Array.from({ length: 24 }, (_, y) => (y === 0 || y === 23 ? '#'.repeat(30) : `#${'.'.repeat(28)}#`));
+const zonesOfSmallMap = (a5: { w: number } = { w: 6 }) => [
+  { type: 'desk' as const, name: 'A1', x: 1, y: 2, w: 9, h: 7 },
+  { type: 'door' as const, name: 'A1', x: 4, y: 9, w: 2, h: 2 },
+  { type: 'desk' as const, name: 'A5', x: 12, y: 2, w: a5.w, h: 7 },
+  { type: 'door' as const, name: 'A5', x: 12 + 2, y: 9, w: 2, h: 2 },
+  { type: 'desk' as const, name: 'A6', x: 12, y: 15, w: 6, h: 7 },
+  { type: 'door' as const, name: 'A6', x: 14, y: 13, w: 2, h: 2 },
+  { type: 'spawn' as const, x: 25, y: 12, w: 1, h: 1 },
+];
+const smallMap = (a5Width = 6) => parseOfficeMap(buildTiledMap({ ascii: SMALL_ROWS, zones: zonesOfSmallMap({ w: a5Width }), tileset: { name: 'dev', image: 'tiles.png' } }));
+const SMALL_MAP = smallMap();
+
+describe('des pièces de tailles différentes', () => {
+  test('chaque place lit sa pièce sur la carte : sa taille et le côté de sa porte', () => {
+    const rooms = Object.fromEntries(deskSlots(SMALL_MAP).map((slot) => [slot.key, slot.room]));
+    expect(rooms).toEqual({
+      A1: { width: 9, height: 7, door: { side: 'south', x: 3, width: 2 } },
+      A5: { width: 6, height: 7, door: { side: 'south', x: 2, width: 2 } },
+      A6: { width: 6, height: 7, door: { side: 'north', x: 2, width: 2 } },
+    });
+    // Les places de la grande carte actuelle sont toutes standard, porte au sud.
+    for (const slot of deskSlots(map)) expect(slot.room, slot.key).toEqual(DESK_ROOMS.standard);
+  });
+
+  test('une place sans porte (la petite carte de développement) garde la pièce standard', () => {
+    const noDoor = parseOfficeMap(buildTiledMap({ ascii: SMALL_ROWS, zones: [{ type: 'desk', name: 'B1', x: 1, y: 2, w: 4, h: 3 }, { type: 'spawn', x: 25, y: 12, w: 1, h: 1 }], tileset: { name: 'dev', image: 'tiles.png' } }));
+    expect(deskSlots(noDoor)[0]!.room).toEqual(DESK_ROOMS.standard);
+  });
+
+  test('la déco d\'une place compacte est validée avec sa pièce : ce qui tient dans une pièce standard peut ne pas tenir', async () => {
+    const { service } = await setup({}, SMALL_MAP);
+    await service.claim('ana', 'Ana', 'A5');
+    await service.claim('bob', 'Bob', 'A1');
+    const wide = { floor: 'noyer', wall: 'anthracite', items: [{ id: 'of-7-28', x: 4, y: 1 }] };
+    expect(await service.setDecor('ana', wide)).toEqual({ ok: false, error: 'bad_decor', reason: 'out_of_room' });
+    expect(await service.setDecor('bob', wide)).toMatchObject({ ok: true });
+    expect(await service.setDecor('ana', defaultDeskDecor(DESK_ROOMS.compact))).toMatchObject({ ok: true });
+  });
+
+  test('une porte au nord : un tableau au-dessus d\'elle est refusé, à côté de la porte il est permis', async () => {
+    const { service } = await setup({}, SMALL_MAP);
+    await service.claim('ana', 'Ana', 'A6');
+    const over = (x: number) => ({ floor: 'noyer', wall: 'anthracite', items: [{ id: 'of-15-0', x, y: 0 }] });
+    expect(await service.setDecor('ana', over(2))).toEqual({ ok: false, error: 'bad_decor', reason: 'blocks_door' });
+    expect(await service.setDecor('ana', over(4))).toMatchObject({ ok: true });
+  });
+
+  test('une place libre, ou une personne qui n\'a rien réglé, montre le poste par défaut de sa pièce', async () => {
+    const { service } = await setup({}, SMALL_MAP);
+    await service.claim('ana', 'Ana', 'A6');
+    for (const [key, room] of [['A1', DESK_ROOMS.standard], ['A5', DESK_ROOMS.compact], ['A6', { ...DESK_ROOMS.compact, door: { ...DESK_ROOMS.compact.door, side: 'north' as const } }]] as const) {
+      const expected = defaultDeskDecor(room);
+      expect(service.get(key), key).toMatchObject({ floor: expected.floor, wall: expected.wall, items: expected.items });
+    }
+  });
+
+  test('un décor enregistré qui ne tient plus dans la pièce est ignoré (la pièce par défaut), journalisé, et jamais effacé', async () => {
+    const warn = vi.fn();
+    // Ana règle sa pièce standard sur une carte où A5 est standard : le décor est écrit en base.
+    const roomy = await setup({}, smallMap(9));
+    await roomy.service.claim('ana', 'Ana', 'A5');
+    expect(await roomy.service.setDecor('ana', CUSTOM_DECOR)).toMatchObject({ ok: true });
+
+    // La carte change : A5 est maintenant compacte. Le même décor ne tient plus (un élément à la colonne 8).
+    const service = await DeskService.create(roomy.db, SMALL_MAP, { logger: { warn } });
+    const expected = defaultDeskDecor(DESK_ROOMS.compact);
+    expect(service.get('A5')).toMatchObject({ ownerId: 'ana', floor: expected.floor, wall: expected.wall, items: expected.items });
+    service.get('A5');
+    service.list();
+    // Journalisé une fois, avec de quoi retrouver la personne, la place et la raison.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]![0]).toMatchObject({ userId: 'ana', desk: 'A5', reason: 'out_of_room' });
+    // Jamais effacé : la ligne est toujours en base, telle qu'elle était.
+    expect(await roomy.db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...CUSTOM_DECOR }]);
+    // Et si la pièce redevient assez grande, le décor revient.
+    const again = await DeskService.create(roomy.db, smallMap(9));
+    expect(again.get('A5')).toMatchObject(CUSTOM_DECOR);
+  });
+
+  test('un décor qui tient dans la pièce n\'est ni ignoré ni journalisé', async () => {
+    const warn = vi.fn();
+    const { db, service } = await setup({}, SMALL_MAP);
+    await service.claim('ana', 'Ana', 'A5');
+    await service.setDecor('ana', { floor: 'noyer', wall: 'anthracite', items: [{ id: 'of-7-28', x: 0, y: 0 }] });
+    const reloaded = await DeskService.create(db, SMALL_MAP, { logger: { warn } });
+    expect(reloaded.get('A5')).toMatchObject({ floor: 'noyer', items: [{ id: 'of-7-28', x: 0, y: 0 }] });
+    expect(warn).not.toHaveBeenCalled();
   });
 });

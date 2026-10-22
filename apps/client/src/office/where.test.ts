@@ -23,6 +23,11 @@ const map = {
   blocked: new Uint8Array(400),
   spawn: { x: 48, y: 48 },
   switches: [],
+  places: [],
+  coffees: [],
+  speakers: [],
+  tables: [],
+  signs: [],
   zones: [
     zone('1', 'label', 64, 320, 192, 32, { text: 'ACCUEIL' }),
     zone('2', 'label', 320, 320, 96, 32),

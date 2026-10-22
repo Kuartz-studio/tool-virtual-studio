@@ -15,6 +15,11 @@ const map = {
   blocked: new Uint8Array(900),
   spawn: { x: 48, y: 48 },
   switches: [],
+  places: [],
+  coffees: [],
+  speakers: [],
+  tables: [],
+  signs: [],
   zones: [zone('1', 'label', 0, 320, 320, 64, { text: 'ACCUEIL' }), zone('2', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' })],
 } as unknown as OfficeMap;
 

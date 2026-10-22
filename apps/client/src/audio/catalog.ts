@@ -1,3 +1,4 @@
+import { MUSIC_SCENES } from '@bureau/shared';
 import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
 
 // Les sons de l'appli : des ambiances (de la musique en boucle) et des effets (tout ce qui n'est pas de la musique). Les fichiers sont
@@ -9,8 +10,9 @@ import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
 
 export type SceneId = keyof typeof MEASURED_MUSIC;
 
-// Dans l'ordre où le panneau Son les propose : de la plus calme à la plus rythmée, ou presque.
-export const SCENE_IDS = ['lobby', 'focus', 'sunny', 'dusk', 'drift', 'quest'] as const satisfies readonly SceneId[];
+// Dans l'ordre où le panneau Son les propose : de la plus calme à la plus rythmée, ou presque. La liste est celle du partage (le serveur et la carte
+// nomment les mêmes ambiances) ; `satisfies` fait échouer la compilation si l'une n'a pas son fichier mesuré.
+export const SCENE_IDS = MUSIC_SCENES satisfies readonly SceneId[];
 
 export interface Scene {
   id: SceneId;

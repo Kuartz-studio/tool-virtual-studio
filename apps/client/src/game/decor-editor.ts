@@ -1,4 +1,4 @@
-import { DESK_ROOM, TILE_SIZE, decorItem, footprintOf, type Zone } from '@bureau/shared';
+import { DESK_ROOMS, TILE_SIZE, decorItem, footprintOf, type DeskRoomSpec, type Zone } from '@bureau/shared';
 import type { GameObjects, Input } from 'phaser';
 import { anchorFor, planPlace } from '../office/decor-draft';
 import { useOfficeStore, type DecorEditor as DecorEditorState } from '../state/office-store';
@@ -32,6 +32,8 @@ export interface DecorEditorHooks {
 export class DecorEditorView {
   private editor: DecorEditorState | null = null;
   private room: Zone | null = null;
+  // La pièce (taille et porte) du bureau qu'on décore : la pose et la grille la suivent.
+  private spec: DeskRoomSpec = DESK_ROOMS.standard;
   private grid: GameObjects.Graphics | null = null;
   private outline: GameObjects.Graphics | null = null;
   private ghost: GameObjects.Image | null = null;
@@ -73,10 +75,11 @@ export class DecorEditorView {
     const room = this.layer.zoneOf(editor.deskKey);
     if (!room) return;
     this.room = room;
+    this.spec = this.layer.specOf(editor.deskKey) ?? DESK_ROOMS.standard;
     this.grid = this.scene.add.graphics().setDepth(DEPTH.dessus - 2);
     this.grid.lineStyle(1, GRID.color, GRID.alpha);
-    for (let i = 0; i <= DESK_ROOM.width; i++) this.grid.lineBetween(room.x + i * TILE_SIZE, room.y, room.x + i * TILE_SIZE, room.y + room.height);
-    for (let j = 0; j <= DESK_ROOM.height; j++) this.grid.lineBetween(room.x, room.y + j * TILE_SIZE, room.x + room.width, room.y + j * TILE_SIZE);
+    for (let i = 0; i <= this.spec.width; i++) this.grid.lineBetween(room.x + i * TILE_SIZE, room.y, room.x + i * TILE_SIZE, room.y + room.height);
+    for (let j = 0; j <= this.spec.height; j++) this.grid.lineBetween(room.x, room.y + j * TILE_SIZE, room.x + room.width, room.y + j * TILE_SIZE);
     this.outline = this.scene.add.graphics().setDepth(DEPTH.dessus - 2);
     this.hooks.onOpen(room);
   }
@@ -98,7 +101,7 @@ export class DecorEditorView {
     const room = this.room;
     if (!room) return null;
     const [x, y] = [Math.floor((pointer.worldX - room.x) / TILE_SIZE), Math.floor((pointer.worldY - room.y) / TILE_SIZE)];
-    return x >= 0 && y >= 0 && x < DESK_ROOM.width && y < DESK_ROOM.height ? { x, y } : null;
+    return x >= 0 && y >= 0 && x < this.spec.width && y < this.spec.height ? { x, y } : null;
   }
 
   // Où l'élément tenu se poserait si on cliquait, et ce que cela donnerait : posé, posé en remplaçant, ou refusé.
@@ -106,9 +109,9 @@ export class DecorEditorView {
     const editor = this.editor;
     const cell = this.cellAt(pointer);
     if (!editor || editor.held === null || !cell) return null;
-    const at = anchorFor(editor.held, cell);
+    const at = anchorFor(editor.held, cell, this.spec);
     if (!at) return null;
-    const plan = planPlace(editor.draft, editor.held, at);
+    const plan = planPlace(editor.draft, editor.held, at, this.spec);
     return { ...at, verdict: plan.kind === 'place' ? 'ok' : plan.kind === 'replace' ? 'replace' : 'refused' };
   }
 

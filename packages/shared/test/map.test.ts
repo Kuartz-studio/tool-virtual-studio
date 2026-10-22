@@ -197,7 +197,9 @@ describe('lecture des zones', () => {
     expect(map.zones.find((z) => z.type === 'spawn')).toMatchObject({ name: null, text: null, x: 64, y: 224, width: 32, height: 32 });
     // La carte de développement n'a pas de porte (zone door) : les bureaux de la grande carte en ont (office.test.ts). Elle n'a pas non plus
     // d'interrupteur (zone switch) : les tests de bout en bout lisent ses pixels, qu'une plaque au mur changerait.
-    expect(new Set(map.zones.map((z) => z.type))).toEqual(new Set(ZONE_TYPES.filter((type) => type !== 'door' && type !== 'switch')));
+    // La petite carte de développement n'a ni porte, ni interrupteur, ni lieu : seulement ces quatre types, tous reconnus.
+    expect(new Set(map.zones.map((z) => z.type))).toEqual(new Set(['spawn', 'private', 'desk', 'label']));
+    for (const type of ['spawn', 'private', 'desk', 'label']) expect(ZONE_TYPES).toContain(type);
   });
 
   test('nom et texte : espaces de bord retirés, vides → null, propriété qui n\'est pas du texte ignorée', () => {

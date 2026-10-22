@@ -1,4 +1,4 @@
-import { DESK_ROOM } from '../decor/placement';
+import { DESK_ROOMS } from '../decor/placement';
 import { DEFAULT_FLOOR_THEME, DEFAULT_WALL_THEME } from '../decor/themes';
 import type { ZoneInput } from './build-tiled';
 import { MapCanvas } from './builder';
@@ -27,13 +27,13 @@ export interface OfficeDeskSlot {
   walls: Array<{ x: number; y: number; part: 'top' | 'bottom' | 'stem' }>;
 }
 
-const SLOT_PITCH = DESK_ROOM.width + 2;   // une pièce, avec ses deux pans de mur
+const SLOT_PITCH = DESK_ROOMS.standard.width + 2;   // une pièce, avec ses deux pans de mur
 const ROOM_Y = 2;
-const SOUTH_BAND_Y = ROOM_Y + DESK_ROOM.height;   // 9 : la bande de mur du sud, 2 cases de haut
+const SOUTH_BAND_Y = ROOM_Y + DESK_ROOMS.standard.height;   // 9 : la bande de mur du sud, 2 cases de haut
 
 function deskSlot(index: number): OfficeDeskSlot {
   const x0 = SLOT_PITCH * index;
-  const door = { x: x0 + 1 + DESK_ROOM.doorX, y: SOUTH_BAND_Y, w: DESK_ROOM.doorWidth, h: 2 };
+  const door = { x: x0 + 1 + DESK_ROOMS.standard.door.x, y: SOUTH_BAND_Y, w: DESK_ROOMS.standard.door.width, h: 2 };
   const walls: OfficeDeskSlot['walls'] = [];
   for (let x = x0; x < x0 + SLOT_PITCH; x++) {
     walls.push({ x, y: 0, part: 'top' }, { x, y: 1, part: 'bottom' });
@@ -41,7 +41,7 @@ function deskSlot(index: number): OfficeDeskSlot {
     if (!inDoor) walls.push({ x, y: SOUTH_BAND_Y, part: 'top' }, { x, y: SOUTH_BAND_Y + 1, part: 'bottom' });
   }
   for (let y = ROOM_Y; y < SOUTH_BAND_Y; y++) walls.push({ x: x0, y, part: 'stem' }, { x: x0 + SLOT_PITCH - 1, y, part: 'stem' });
-  return { key: `A${index + 1}`, room: { x: x0 + 1, y: ROOM_Y, w: DESK_ROOM.width, h: DESK_ROOM.height }, door, walls };
+  return { key: `A${index + 1}`, room: { x: x0 + 1, y: ROOM_Y, w: DESK_ROOMS.standard.width, h: DESK_ROOMS.standard.height }, door, walls };
 }
 
 export const OFFICE_DESK_SLOTS: OfficeDeskSlot[] = Array.from({ length: 6 }, (_, index) => deskSlot(index));

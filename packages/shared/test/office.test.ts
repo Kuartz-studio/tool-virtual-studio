@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  DESK_ROOM,
+  DESK_ROOMS,
   GRAND_HALL,
   LOUNGE,
   MEETING_ROOM,
@@ -60,7 +60,7 @@ describe('la carte du bureau', () => {
 
   test('un bureau est une vraie pièce : 9 × 7 cases (63), fermée par des murs sauf à sa porte de 2 cases', () => {
     for (const slot of OFFICE_DESK_SLOTS) {
-      expect([slot.room.w, slot.room.h]).toEqual([DESK_ROOM.width, DESK_ROOM.height]);
+      expect([slot.room.w, slot.room.h]).toEqual([DESK_ROOMS.standard.width, DESK_ROOMS.standard.height]);
       expect([slot.room.w, slot.room.h]).toEqual([9, 7]);
       expect([slot.door.w, slot.door.h]).toEqual([2, 2]);
       // Le pourtour de la pièce (cases juste dehors) est bloqué partout, sauf aux deux cases de la porte.
@@ -71,7 +71,7 @@ describe('la carte du bureau', () => {
       const doorCells = [0, 1].map((i) => `${slot.door.x + i},${slot.room.y + slot.room.h}`);
       expect(open.sort(), `place ${slot.key}`).toEqual(doorCells.sort());
       // La porte est dans le prolongement des deux cases du bas de la pièce : on y entre tout droit.
-      expect(slot.door.x).toBe(slot.room.x + DESK_ROOM.doorX);
+      expect(slot.door.x).toBe(slot.room.x + DESK_ROOMS.standard.door.x);
     }
   });
 
@@ -93,7 +93,7 @@ describe('la carte du bureau', () => {
   });
 
   test('la zone détente est une grande zone : au moins 8 fois un bureau ; la salle de réunion, au moins 2 fois ; la grande salle, au moins 2 fois', () => {
-    const desk = DESK_ROOM.width * DESK_ROOM.height;
+    const desk = DESK_ROOMS.standard.width * DESK_ROOMS.standard.height;
     expect(LOUNGE.w * LOUNGE.h).toBeGreaterThanOrEqual(8 * desk);
     expect(GRAND_HALL.w * GRAND_HALL.h).toBeGreaterThanOrEqual(2 * desk);
     expect(MEETING_ROOM.w * MEETING_ROOM.h).toBeGreaterThanOrEqual(2 * desk);

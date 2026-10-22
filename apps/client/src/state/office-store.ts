@@ -17,7 +17,7 @@ import {
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { clampZoomPercent, stepZoomPercent, ZOOM_DEFAULT_PERCENT, ZOOM_WHEEL_STEP } from '../game/zoom';
-import { anchorFor, planPlace, removeAt } from '../office/decor-draft';
+import { anchorFor, planPlace, removeAt, roomOfDesk } from '../office/decor-draft';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
 // dernière consigne audio/vidéo, et les messages du chat. Le serveur le dit à chaque (re)connexion (`init`), puis par événements
@@ -375,9 +375,10 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
         set((state) => {
           const editor = state.decorEditor;
           if (!editor || editor.held === null || editor.replace !== null) return state;
-          const at = anchorFor(editor.held, cell);
+          const room = roomOfDesk(state.officeMap, editor.deskKey);
+          const at = anchorFor(editor.held, cell, room);
           if (!at) return state;
-          const plan = planPlace(editor.draft, editor.held, at);
+          const plan = planPlace(editor.draft, editor.held, at, room);
           if (plan.kind === 'place') return { decorEditor: { ...editor, draft: plan.decor, error: null } };
           if (plan.kind === 'replace') return { decorEditor: { ...editor, error: null, replace: { id: editor.held, at, replacing: plan.replacing } } };
           return { decorEditor: { ...editor, error: plan.error } };
@@ -387,7 +388,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           const editor = state.decorEditor;
           if (!editor?.replace) return state;
           // Le brouillon est recalculé : c'est celui d'aujourd'hui qui compte, et la pièce doit encore être valable.
-          const plan = planPlace(editor.draft, editor.replace.id, editor.replace.at);
+          const plan = planPlace(editor.draft, editor.replace.id, editor.replace.at, roomOfDesk(state.officeMap, editor.deskKey));
           if (plan.kind === 'refused') return { decorEditor: { ...editor, error: plan.error, replace: null } };
           return { decorEditor: { ...editor, draft: plan.decor, error: null, replace: null } };
         }),
