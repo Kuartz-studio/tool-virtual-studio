@@ -6,6 +6,7 @@ export * from './rng';
 export * from './elo';
 export * from './protocol';
 export * from './arrival';
+export * from './invites';
 
 // Les jeux connus, par identifiant. Un jeu absent du registre (pas encore fusionné) n'existe pas : sa table reste fermée (« Bientôt disponible »).
 export const GAMES: Partial<Record<GameId, AnyGameDefinition>> = Object.fromEntries(

@@ -1,6 +1,7 @@
 import { useEffect, type ReactNode } from 'react';
 import { create } from 'zustand';
 import { EventBus } from '../game/EventBus';
+import { useGameToasts } from '../games/InviteToast';
 import { fr, t } from '../i18n/fr';
 import { sendDeskCommand } from '../net/desk-commands';
 import { listenOnBus } from '../net/office-connection';
@@ -172,6 +173,7 @@ export function Toasts({ socket }: { socket: OfficeSocket | null }) {
   const items = useToasts((state) => state.items);
   useDeskToasts(socket);
   useLightsToasts();
+  useGameToasts(socket);
   // Quitter le bureau (la déconnexion, une autre page) vide la file : rien ne reparaît à la prochaine arrivée.
   useEffect(() => () => useToasts.getState().clear(), []);
   if (items.length === 0) return null;

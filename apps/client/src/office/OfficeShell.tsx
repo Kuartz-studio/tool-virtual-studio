@@ -1,5 +1,6 @@
 import type { Role } from '@bureau/shared';
 import { Activity, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { GamePanel } from '../games/GamePanel';
 import { fr } from '../i18n/fr';
 import { listActivityStates } from '../lib/activity-api';
 import { useMailMode } from '../lib/config';
@@ -165,6 +166,18 @@ export function OfficeShell({
   // qu'ouvert, ne saurait où l'on a marché avant son ouverture. La puce du lieu et le filtre « Ici » le prennent d'elle : un seul lieu pour les deux.
   const place = usePlace();
 
+  // Le panneau d'une table de jeu : le magasin le demande (la touche E devant une table, « Accepter » une invitation), la coque l'ouvre à la place de celui d'avant ; il se ferme avec
+  // le panneau (un autre panneau qui s'ouvre, « Fermer »), et le magasin n'en demande plus.
+  const gameOpen = useOfficeStore((state) => state.gameOpen);
+  useEffect(() => {
+    if (gameOpen !== null) show('game', null);
+    // Seulement quand une table est demandée : `show` change à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gameOpen]);
+  useEffect(() => {
+    if (panel !== 'game' && useOfficeStore.getState().gameOpen !== null) useOfficeStore.getState().openGame(null);
+  }, [panel]);
+
   const panels: PanelControls = {
     open: panel,
     toggle: (id, from) => (panel === id ? close() : show(id, from)),
@@ -209,6 +222,7 @@ export function OfficeShell({
           {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
           {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}
           {panel === 'states' && <StatesPanel id={idOf('states')} socket={socket} onClose={close} />}
+          {panel === 'game' && gameOpen !== null && <GamePanel id={idOf('game')} socket={socket} onClose={close} />}
           {isAdmin && panel === 'admin' && <AdminPanel id={idOf('admin')} selfId={user.id} mail={mail} onClose={close} />}
           {__SIM__ && panel === 'sim' && <SimPanel id={idOf('sim')} onClose={close} />}
           {/* Le panneau Chat reste monté fermé, caché : le brouillon et l'onglet choisi sont là à la réouverture. Caché, ses effets sont

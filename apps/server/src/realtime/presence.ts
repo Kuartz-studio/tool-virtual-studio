@@ -8,6 +8,7 @@ import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from './io';
 import { loadPosition, savePositions } from './positions';
 import type { DeskController } from '../desks/desk-controller';
+import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
 import type { MusicService } from '../music/music-service';
 import { chooseSpawn } from './spawn';
@@ -31,6 +32,8 @@ export interface PresenceDeps {
   lights: Pick<LightsService, 'ready' | 'get'>;
   /** La musique des pièces : chaque init la dit, une fois lue en base. */
   music: Pick<MusicService, 'ready' | 'all'>;
+  /** Les tables de jeu : chaque init les dit ; la présence les prévient quand la dernière socket d'une personne tombe, qu'elle quitte le monde ou qu'un membre est retiré. */
+  games?: Pick<GamesController, 'initFor' | 'onSocketsGone' | 'onDepart' | 'onRemoved'>;
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -119,6 +122,7 @@ export function createPresence(d: PresenceDeps) {
       mapKey: d.mapKey,
       chatHistory,
       ...d.desks.initFor(socket),
+      ...d.games?.initFor(socket),
       lights: d.lights.get(),
       // Seulement les pièces qu'on a réglées : sans réglage, le champ n'y est pas.
       ...(Object.keys(music).length > 0 ? { music } : {}),
@@ -217,6 +221,8 @@ export function createPresence(d: PresenceDeps) {
       if (own.size > 0) return;   // remplacée : la nouvelle socket garde le joueur
       socketsByUser.delete(userId);
     }
+    // La dernière socket est tombée : ses parties de jeu comptent à rebours, le temps de revenir.
+    if (!halted) d.games?.onSocketsGone(userId);
     // À l'arrêt, stop() enregistre tout le monde. Hors du monde : arrivée interrompue, ou membre retiré.
     if (halted || !d.world.get(userId)) return;
     // Sans connexion, elle ne parle plus à personne : sa bulle s'éteint chez les autres, sans attendre la fin du délai de grâce.
@@ -236,6 +242,8 @@ export function createPresence(d: PresenceDeps) {
     if (socketsByUser.has(userId)) return;   // revenu (connect annule le minuteur : par précaution)
     const player = d.world.leave(userId);
     if (!player) return;
+    // Les chaises où elle attendait sont libres (une partie en cours garde son siège jusqu'à la fin de son délai).
+    d.games?.onDepart(userId);
     await queueSave([rowOf(player)]);
     // Revenu pendant l'écriture : c'est son retour qui a été annoncé (player:joined), pas un départ.
     if (halted || d.world.get(userId)) return;
@@ -249,6 +257,8 @@ export function createPresence(d: PresenceDeps) {
     const player = d.world.leave(userId);   // d'abord : la déconnexion de ses sockets ne trouve plus de joueur à faire attendre
     for (const socket of [...(socketsByUser.get(userId) ?? [])]) socket.disconnect(true);
     if (player) d.io.to(OFFICE_ROOM).emit('player:left', { id: userId });
+    // Il sort tout de suite de sa partie, et ses chaises et invitations tombent.
+    d.games?.onRemoved(userId);
   }
 
   // sessions:revoked (mot de passe réinitialisé) : ses sockets sont coupées, sans reconnexion automatique. Contrairement à un retrait,

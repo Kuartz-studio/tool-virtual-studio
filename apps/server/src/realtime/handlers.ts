@@ -3,6 +3,8 @@ import {
   COFFEE_DURATION_MS,
   DESK_PLACE_PREFIX,
   EMPTY_GROUPING,
+  GAME_LADDER_RATE,
+  GAME_RATE,
   OPEN_SPACE_GROUPING,
   MEDIA_STATE_RATE,
   MOVE_RATE,
@@ -13,7 +15,10 @@ import {
   activityIdSchema,
   chatSendSchema,
   debugBoostSchema,
+  debugGameSchema,
   deskCommandSchema,
+  gameCommandSchema,
+  gameLadderSchema,
   computeGroups,
   lightsSetSchema,
   mediaStateSchema,
@@ -27,8 +32,10 @@ import {
   type ChatAck,
   type ChatMessage,
   type DeskAck,
+  type GameAck,
   type GroupConfig,
   type GroupingState,
+  type LadderAck,
   type OfficeMap,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
@@ -36,6 +43,7 @@ import type { ActivityController } from '../activity/activity-controller';
 import type { ChatService } from '../chat/chat-service';
 import type { DeskController } from '../desks/desk-controller';
 import type { Env } from '../env';
+import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
@@ -76,6 +84,8 @@ export interface HandlerDeps {
   map: OfficeMap;
   /** Qui occupe cette place de bureau (son identifiant), ou null si elle est libre ou n'existe pas : dans un bureau, son propriétaire seul en règle la musique. */
   deskOwnerOf: (deskKey: string) => string | null;
+  /** Les tables de jeu : `game:do` et `game:ladder` y passent, `debug:game` (E2E seulement) y remplace l'état d'une partie. */
+  games: Pick<GamesController, 'run' | 'ladder' | 'debugSet'>;
   /** La limite de débit des cafés (une prise par COFFEE_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
   coffeeLimiter: RateLimiter;
   /** Les cases de service des machines à café de la carte (leur centre, en pixels) : sans l'une d'elles à portée, on ne se sert pas. */
@@ -100,6 +110,8 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   const mediaLimiter = createRateLimiter({ ...MEDIA_STATE_RATE, now: d.now });
   const speakingLimiter = createRateLimiter({ ...SPEAKING_RATE, now: d.now });
   const deskLimiter = createRateLimiter({ ...DESK_RATE, now: d.now });
+  const gameLimiter = createRateLimiter({ ...GAME_RATE, now: d.now });
+  const ladderLimiter = createRateLimiter({ ...GAME_LADDER_RATE, now: d.now });
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
   // flot de messages invalides ne coûte presque rien. Refusé par le monde (trop vite, case bloquante, hors carte), il renvoie à
@@ -230,6 +242,43 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     });
   });
 
+  // Les commandes d'une table de jeu (regarder, s'asseoir, se dire prêt, jouer un coup, abandonner, proposer la nulle, inviter, répondre à une invitation), avec accusé de
+  // réception : `game:table` dit ce qui a changé à tout le bureau. Le tronc commun, comme `desk:do` : une socket qui n'a pas reçu son init, ou dont la personne n'est pas au
+  // monde, est ignorée sans réponse ; puis, dans cet ordre : 1. au-delà de GAME_RATE par socket : `rate_limited` ; 2. commande invalide (gameCommandSchema) : `invalid` ; 3. la
+  // commande (GamesService), qui ne lève jamais : une erreur imprévue répond `unavailable`.
+  socket.on('game:do', (payload, ack) => {
+    const reply = (r: GameAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!gameLimiter.take(socket.id)) return reply({ ok: false, error: 'rate_limited' });
+    const command = gameCommandSchema.safeParse(payload);
+    if (!command.success) return reply({ ok: false, error: 'invalid' });
+    d.games.run(userId, command.data).then(reply, (err: unknown) => {
+      logServerError(d.logger, { err, userId }, 'Commande de jeu impossible');
+      reply({ ok: false, error: 'unavailable' });
+    });
+  });
+
+  // Le classement d'un jeu : les meilleurs et le rang de cette personne. Même tronc : ignorée sans init ; au-delà de GAME_LADDER_RATE par socket : `rate_limited` ; jeu inconnu :
+  // `invalid` ; une base qui ne répond pas : `unavailable`.
+  socket.on('game:ladder', (payload, ack) => {
+    const reply = (r: LadderAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!ladderLimiter.take(socket.id)) return reply({ ok: false, error: 'rate_limited' });
+    const request = gameLadderSchema.safeParse(payload);
+    if (!request.success) return reply({ ok: false, error: 'invalid' });
+    d.games.ladder(request.data.game, userId).then(
+      (ladder) => reply({ ok: true, ...ladder }),
+      (err: unknown) => {
+        logServerError(d.logger, { err, userId }, 'Lecture du classement impossible');
+        reply({ ok: false, error: 'unavailable' });
+      },
+    );
+  });
+
   // Allumer ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
   // monde voit la personne (jamais là où elle dit être). Aucune réponse, quoi qu'il arrive : la confirmation est `lights:changed`, que tout
   // le bureau reçoit, émetteur compris. Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme
@@ -310,6 +359,13 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
       if (!boost.success || !d.world.get(userId)) return;
       d.world.setBoost(userId, boost.data.ms === 0 ? null : boost.data.ms);
       io.to(OFFICE_ROOM).emit('coffee:changed', { id: userId, ms: boost.data.ms });
+    });
+    // Remplace l'état de la partie en cours à une table par un état fabriqué (il doit passer les invariants du jeu), et impose les prochains dés : de quoi jouer une fin de
+    // partie sans en jouer toute la longueur.
+    socket.on('debug:game', (payload) => {
+      const request = debugGameSchema.safeParse(payload);
+      if (!request.success || !d.world.get(userId)) return;
+      d.games.debugSet(request.data.game, request.data.state, request.data.rolls);
     });
   }
 }
