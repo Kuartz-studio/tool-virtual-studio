@@ -57,6 +57,13 @@
       "when": 1792651396270,
       "tag": "0007_activity_place",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792653159108,
+      "tag": "0008_games",
+      "breakpoints": true
     }
   ]
 }

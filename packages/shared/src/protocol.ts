@@ -5,6 +5,8 @@ import { ACTIVITY_LABEL_MAX_LENGTH, CHAT_MAX_LENGTH, DESK_NAME_MAX_LENGTH, DISPL
 import type { DecorError } from './decor/placement';
 import { MAX_DECOR_ITEMS } from './decor/placement';
 import type { PlacedItem } from './decor/types';
+import type { DebugGamePayload, GameAck, GameCommand, GameInvite, GameNotice, GameTableView, LadderAck } from './games/protocol';
+import type { GameId } from './games/types';
 import type { SimRoomPayload } from './sim';
 
 export const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
@@ -152,6 +154,10 @@ export interface InitPayload {
   lights?: LightsState;
   // La musique des pièces que quelqu'un a réglées, par clé de lieu. Absente (ou une pièce qui n'y est pas) : allumée, son ambiance par défaut.
   music?: Record<string, RoomMusic>;
+  // Les tables de jeu de la carte, chacune telle que le bureau la voit. Absent ou vide : la carte n'en a pas (la petite carte de développement).
+  games?: GameTableView[];
+  // Les invitations à une table qui attendent la réponse de cette personne.
+  gameInvites?: GameInvite[];
 }
 // Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
 // le voient sauter à sa nouvelle place au lieu de glisser jusqu'à elle à travers les murs.
@@ -188,6 +194,10 @@ export interface ServerToClientEvents {
   'lights:changed': (p: LightsState) => void;             // à tout le bureau : la lumière vient d'être allumée ou éteinte
   'music:changed': (p: { place: string; state: RoomMusic }) => void;   // à tout le bureau : la musique d'une pièce vient d'être réglée
   'coffee:changed': (p: { id: string; ms: number }) => void;   // à tout le bureau : quelqu'un prend un café (ms : la durée qui lui reste) ou le sien est fini (0)
+  'game:table': (p: GameTableView) => void;               // à tout le bureau : une table de jeu a changé (la table entière : rien n'y est caché)
+  'game:invite': (p: GameInvite) => void;                 // à une personne : on l'invite à une table
+  'game:invite:gone': (p: { id: string; reason: 'expired' | 'cancelled' | 'answered' }) => void;   // à une personne : l'invitation n'est plus à montrer
+  'game:notice': (p: GameNotice) => void;                 // à l'invitante : la réponse, le silence ou le départ de l'invitée
   'media:join': (p: MediaJoinPayload) => void;
   'media:leave': () => void;
   'session:replaced': () => void;
@@ -205,6 +215,9 @@ export interface ClientToServerEvents {
   'lights:set': (p: LightsSetPayload) => void;   // allumer ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé
   'music:set': (p: MusicSetPayload) => void;   // régler la musique de la pièce où l'on est (dans un bureau : le sien) ; sans réponse : `music:changed` dit ce qui a changé
   'coffee:take': () => void;   // prendre un café, de près (2 cases au plus de la machine) ; sans réponse : `coffee:changed` dit ce qui a changé
+  'game:do': (p: GameCommand, ack: (r: GameAck) => void) => void;   // une commande de jeu (regarder, s'asseoir, jouer un coup, inviter…) ; `game:table` dit ce qui a changé
+  'game:ladder': (p: { game: GameId }, ack: (r: LadderAck) => void) => void;   // le classement d'un jeu : les meilleurs, et son rang
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
   'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1
+  'debug:game': (p: DebugGamePayload) => void;   // accepté seulement si E2E=1 : remplace l'état de la partie en cours à une table
 }

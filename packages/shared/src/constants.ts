@@ -105,6 +105,31 @@ export const COFFEE_RATE_MS = 2_000;
 // La musique de chaque pièce, que ceux qui y sont règlent pour tous : une personne la change au plus une fois par MUSIC_RATE_MS (le serveur ignore ce qui
 // vient avant).
 export const MUSIC_RATE_MS = 800;
+// Les jeux de la salle de jeu (échecs, backgammon, Puissance 4, petits chevaux). Les délais courent sur l'horloge monotone du monde, jamais sur celle du mur.
+// - GAME_TURN_TIMEOUT_MS : sans action du siège qui doit agir, il sort de la partie (défaite) ; elle repart à chaque action acceptée, un lancer de dés compris.
+//   GAME_TURN_WARNING_MS : le compte à rebours ne s'affiche que dans la dernière minute.
+// - GAME_RECONNECT_MS : un joueur sans connexion garde sa place aussi longtemps, puis il sort (défaite) ; plus long que le délai de grâce du monde.
+// - GAME_INVITE_TTL_MS : une invitation sans réponse expire ; au plus GAME_INVITES_PER_USER en attente par invitante.
+// - GAME_CHAIR_IDLE_MS : une chaise occupée sans partie se libère après ce temps, compté depuis le dernier geste (s'asseoir, la fin d'une partie, « prêt »).
+// - GAME_SWEEP_MS : la période du balayage des délais ci-dessus.
+// - GAME_MIN_RANKED_MOVES : une partie compte pour le classement à partir de ce nombre de coups (les coups du jeu : un lancer de dés n'en est pas un).
+// - GAME_RATE : les commandes d'une socket (`game:do`) ; GAME_INVITE_RATE : les invitations d'un compte ; GAME_LADDER_RATE : les lectures du classement.
+// - GAME_LADDER_TOP : le nombre de lignes du classement.
+// - GAME_ARRIVAL_RING_TILES : l'anneau autour de la table où l'on pose qui accepte une invitation ; GAME_TABLE_REACH_TILES : la portée de la touche E autour d'une table.
+export const GAME_TURN_TIMEOUT_MS = 300_000;
+export const GAME_TURN_WARNING_MS = 60_000;
+export const GAME_RECONNECT_MS = 90_000;
+export const GAME_INVITE_TTL_MS = 60_000;
+export const GAME_CHAIR_IDLE_MS = 600_000;
+export const GAME_SWEEP_MS = 1_000;
+export const GAME_MIN_RANKED_MOVES = 2;
+export const GAME_INVITES_PER_USER = 3;
+export const GAME_RATE = { max: 20, windowMs: 2_000 };
+export const GAME_INVITE_RATE = { max: 6, windowMs: 60_000 };
+export const GAME_LADDER_RATE = { max: 10, windowMs: 10_000 };
+export const GAME_LADDER_TOP = 10;
+export const GAME_ARRIVAL_RING_TILES = 2;
+export const GAME_TABLE_REACH_TILES = 2;
 export const SESSION_TTL_S = 30 * 24 * 3600;
 export const LIVEKIT_TOKEN_TTL_S = 600;
 export const OFFICE_ROOM = 'office';
