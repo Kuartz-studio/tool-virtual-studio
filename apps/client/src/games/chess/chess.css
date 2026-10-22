@@ -124,10 +124,17 @@
 /* Les coordonnées, discrètes, dans les cases du bord : les chiffres à gauche, les lettres en bas. */
 .game-chess-coord {
   position: absolute;
+  z-index: 2;
   font-size: var(--text-xs);
   font-weight: var(--weight-semibold);
   line-height: 1;
   pointer-events: none;
+  /* Au-dessus des pièces, dont le socle les recouvrirait : un liseré de la couleur de la case les détache. */
+  text-shadow: 1px 0 var(--chess-light), -1px 0 var(--chess-light), 0 1px var(--chess-light), 0 -1px var(--chess-light);
+}
+
+.game-chess-square[data-shade='dark'] .game-chess-coord {
+  text-shadow: 1px 0 var(--chess-dark), -1px 0 var(--chess-dark), 0 1px var(--chess-dark), 0 -1px var(--chess-dark);
 }
 
 .game-chess-coord[data-coord='rank'] {

@@ -194,6 +194,11 @@ describe('les contrastes de la palette (WCAG 1.4.11 : 3 contre 1 avec la case)',
     }
   });
 
+  test('le texte posé sur le bois (les coordonnées, l\'avance « +2 » des bandes) tranche à 4,5 contre 1 sur sa couleur (WCAG 1.4.3)', () => {
+    expect(contrast(valueOf('--chess-on-light'), valueOf('--chess-light'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(valueOf('--chess-on-dark'), valueOf('--chess-dark'))).toBeGreaterThanOrEqual(4.5);
+  });
+
   test('les deux couleurs de case se distinguent l\'une de l\'autre', () => {
     expect(contrast(valueOf('--chess-light'), valueOf('--chess-dark'))).toBeGreaterThanOrEqual(1.8);
   });
