@@ -4,9 +4,6 @@ import { pickIndex, seededRng } from '../rng';
 import { FORFEIT_REASONS, type Rng } from '../types';
 import { LUDO_HOME, LUDO_HORSES, LUDO_STABLE, ludo, trackCell, type LudoEvent, type LudoState } from './index';
 
-// Le paquet partagé ne charge pas les types de Node (son tsconfig n'a pas de `types`) : on déclare seulement ce que ce fichier lit, l'environnement du processus de test.
-declare const process: { env: Record<string, string | undefined> };
-
 // Les parties au hasard des petits chevaux : 300 par défaut (`pnpm test`), `JEUX_FUZZ=10000` pour la recette de dix mille.
 const GAMES = Number(process.env.JEUX_FUZZ ?? 300);
 // 120 s pour les 300 parties du test courant ; une recette plus grande a un délai qui grandit avec elle, sans quoi elle serait coupée en route.
