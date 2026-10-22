@@ -1,0 +1,359 @@
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Le plateau des échecs (games/chess/ChessBoard.tsx). Tous les sélecteurs commencent par `.game-chess` ; les couleurs de l'illustration (l'échiquier, ses repères, les pièces) sont des
+   variables locales `--chess-*`, les mêmes jour et nuit ; le cadre autour (listes, bandes de texte) suit les jetons de styles.css. Un test lit cette feuille (styles.test.ts).
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.game-chess {
+  /* L'échiquier : le bois clair et le bois sombre. */
+  --chess-light: #f0dcb4;
+  --chess-dark: #8d6040;
+  /* Le texte posé sur chacun (les coordonnées), à 4,5 contre 1 au moins. */
+  --chess-on-light: #6a4a2a;
+  --chess-on-dark: #fbf1d9;
+  /* Les repères : l'anneau de la sélection et du focus (un trait sombre doublé d'un liseré clair : l'un des deux tranche sur toute case), le point et l'anneau des coups possibles, le cercle de
+     l'échec (rouge, avec son liseré blanc). Chacun tranche à 3 contre 1 au moins avec la case qu'il marque. */
+  --chess-ring-dark: #0c121a;
+  --chess-ring-light: #fffdf4;
+  --chess-hint: #0c121a;
+  --chess-hint-halo: #fffdf4;
+  --chess-check: #d4262c;
+  --chess-check-halo: #ffffff;
+  --chess-check-glow: rgb(212 38 44 / 55%);
+  /* Les teintes : la case sélectionnée (vert), le dernier coup (jaune) et son repère d'angle. */
+  --chess-select-tint: rgb(98 190 110 / 55%);
+  --chess-last-tint: rgb(245 217 90 / 60%);
+  --chess-last-mark: #0c121a;
+  /* Les pièces : le contour, le corps, l'ombre de chaque camp. */
+  --chess-edge-white: #1a1620;
+  --chess-white-body: #fbf5e4;
+  --chess-white-shade: #d2c19a;
+  --chess-edge-black: #0f0d13;
+  --chess-black-body: #4b5064;
+  --chess-black-shade: #2f3243;
+  /* Le voile sur l'échiquier pendant le choix d'une promotion, et son texte. */
+  --chess-scrim: rgb(18 22 30 / 74%);
+  --chess-scrim-text: #fffdf4;
+  /* Combien de temps une pièce glisse vers sa case (sans mouvement réduit). */
+  --chess-slide-duration: 180ms;
+
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+/* L'échiquier, centré dans la largeur du panneau ; sa taille vient des cases (`--chess-cell`, posée par le plateau d'après la largeur mesurée). */
+.game-chess-board-wrap {
+  position: relative;
+  align-self: center;
+}
+
+.game-chess-board {
+  display: flex;
+  flex-direction: column;
+  width: calc(var(--chess-cell) * 8);
+  overflow: hidden;
+  border-radius: var(--radius-s);
+  box-shadow: 0 0 0 1px var(--border-strong);
+}
+
+.game-chess-row {
+  display: grid;
+  grid-template-columns: repeat(8, var(--chess-cell));
+}
+
+.game-chess-cell {
+  width: var(--chess-cell);
+  height: var(--chess-cell);
+}
+
+/* Une case : un bouton qui remplit la sienne. */
+.game-chess-square {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-width: 24px;
+  min-height: 24px;
+  margin: 0;
+  padding: 0;
+  color: var(--chess-on-light);
+  background-color: var(--chess-light);
+  border: 0;
+  border-radius: 0;
+  cursor: default;
+}
+
+.game-chess-square[data-shade='dark'] {
+  color: var(--chess-on-dark);
+  background-color: var(--chess-dark);
+}
+
+.game-chess[data-interactive] .game-chess-square[data-piece] {
+  cursor: pointer;
+}
+
+/* Le focus du clavier : un trait sombre doublé d'un liseré clair, dedans (le global `:focus-visible` pose un trait d'accent dehors, que le bord de l'échiquier couperait). */
+.game-chess-square:focus-visible {
+  z-index: 1;
+  outline: 3px solid var(--chess-ring-dark);
+  outline-offset: -3px;
+  box-shadow: inset 0 0 0 6px var(--chess-ring-light);
+}
+
+/* Le dernier coup : une teinte jaune et un repère noir dans l'angle (la couleur n'est jamais seule à le dire). */
+.game-chess-square[data-last] {
+  background-image: linear-gradient(225deg, var(--chess-last-mark) 0 22%, transparent 22%), linear-gradient(var(--chess-last-tint), var(--chess-last-tint));
+}
+
+/* La pièce choisie : une teinte verte et le trait doublé. */
+.game-chess-square[data-selected] {
+  background-image: linear-gradient(var(--chess-select-tint), var(--chess-select-tint));
+  box-shadow: inset 0 0 0 3px var(--chess-ring-dark), inset 0 0 0 6px var(--chess-ring-light);
+}
+
+/* L'échec : la case du roi cerclée de rouge, liseré blanc, et une lueur. */
+.game-chess-square[data-check] {
+  background-image: radial-gradient(circle, var(--chess-check-glow) 0%, transparent 72%);
+  box-shadow: inset 0 0 0 4px var(--chess-check), inset 0 0 0 6px var(--chess-check-halo);
+}
+
+/* Les coordonnées, discrètes, dans les cases du bord : les chiffres à gauche, les lettres en bas. */
+.game-chess-coord {
+  position: absolute;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+  pointer-events: none;
+}
+
+.game-chess-coord[data-coord='rank'] {
+  top: 3px;
+  left: 4px;
+}
+
+.game-chess-coord[data-coord='file'] {
+  right: 4px;
+  bottom: 3px;
+}
+
+/* Les coups possibles : un point pour un coup simple, un anneau pour une prise. */
+.game-chess-hint {
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.game-chess-square[data-hint='move'] .game-chess-hint {
+  top: 50%;
+  left: 50%;
+  width: 28%;
+  height: 28%;
+  background: var(--chess-hint);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--chess-hint-halo);
+  transform: translate(-50%, -50%);
+}
+
+.game-chess-square[data-hint='capture'] .game-chess-hint {
+  inset: 5%;
+  border: 4px solid var(--chess-hint);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--chess-hint-halo), inset 0 0 0 2px var(--chess-hint-halo);
+}
+
+/* Les pièces : des SVG au trait net, à l'échelle entière, sans lissage. */
+.game-chess-piece {
+  position: relative;
+  display: block;
+  line-height: 0;
+}
+
+.game-chess-art {
+  display: block;
+  image-rendering: pixelated;
+}
+
+.game-chess-art[data-color='w'] .game-chess-tone-edge {
+  fill: var(--chess-edge-white);
+}
+
+.game-chess-art[data-color='w'] .game-chess-tone-body {
+  fill: var(--chess-white-body);
+}
+
+.game-chess-art[data-color='w'] .game-chess-tone-shade {
+  fill: var(--chess-white-shade);
+}
+
+.game-chess-art[data-color='b'] .game-chess-tone-edge {
+  fill: var(--chess-edge-black);
+}
+
+.game-chess-art[data-color='b'] .game-chess-tone-body {
+  fill: var(--chess-black-body);
+}
+
+.game-chess-art[data-color='b'] .game-chess-tone-shade {
+  fill: var(--chess-black-shade);
+}
+
+/* La pièce qui vient de jouer glisse de sa case de départ ; le plateau ne pose `data-slide` ni avec le mouvement réduit, ni après un saut d'état. */
+@keyframes game-chess-slide {
+  from {
+    transform: translate(calc(var(--chess-slide-x) * var(--chess-cell)), calc(var(--chess-slide-y) * var(--chess-cell)));
+  }
+
+  to {
+    transform: translate(0, 0);
+  }
+}
+
+.game-chess-piece[data-slide] {
+  z-index: 3;
+  animation: game-chess-slide var(--chess-slide-duration) var(--ease-out);
+}
+
+/* Les pièces prises, au-dessus et au-dessous : sur le bois de l'échiquier, que les deux camps y tranchent. */
+.game-chess-captured {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  padding: 0 8px;
+  color: var(--chess-on-dark);
+  background: var(--chess-dark);
+  border-radius: var(--radius-s);
+}
+
+.game-chess-captured-pieces {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+}
+
+.game-chess-captured-pieces .game-chess-art + .game-chess-art {
+  margin-left: -5px;
+}
+
+.game-chess-advantage {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le choix d'une promotion : un voile sur l'échiquier, quatre boutons. */
+.game-chess-promotion {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px;
+  background: var(--chess-scrim);
+  border-radius: var(--radius-s);
+}
+
+.game-chess-promotion-title {
+  margin: 0;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--chess-scrim-text);
+  text-align: center;
+}
+
+.game-chess-promotion-options {
+  display: flex;
+  gap: 6px;
+}
+
+.game-chess-promotion-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 56px;
+  min-height: 64px;
+  padding: 4px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--chess-on-light);
+  background: var(--chess-light);
+  border: 2px solid var(--chess-ring-dark);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.game-chess-promotion-option:focus-visible {
+  outline: 3px solid var(--chess-ring-light);
+  outline-offset: 1px;
+  box-shadow: 0 0 0 5px var(--chess-ring-dark);
+}
+
+/* La liste des coups : repliable, numérotée, en deux colonnes ; le dernier coup en évidence. */
+.game-chess-moves-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.game-chess-moves-toggle {
+  justify-content: space-between;
+  width: 100%;
+  min-width: 24px;
+  min-height: 36px;
+}
+
+.game-chess-moves-count {
+  font-weight: var(--weight-medium);
+  color: var(--text-soft);
+}
+
+.game-chess-moves {
+  display: grid;
+  gap: 2px;
+  max-height: 150px;
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  font-size: var(--text-s);
+  font-variant-numeric: tabular-nums;
+  list-style: none;
+  background: var(--surface-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+}
+
+.game-chess-move {
+  display: grid;
+  grid-template-columns: 2.8em 1fr 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.game-chess-move-number {
+  color: var(--text-muted);
+  text-align: right;
+}
+
+.game-chess-ply {
+  padding: 1px 8px;
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  border-radius: var(--radius-s);
+}
+
+.game-chess-ply[aria-current='true'] {
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
