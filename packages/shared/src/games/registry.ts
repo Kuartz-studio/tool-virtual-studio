@@ -1,4 +1,4 @@
-// Le registre des jeux : une ligne par jeu, ajoutée par l'agent du jeu (`export { chess } from './chess';`), que la fusion des quatre jeux réunit. Vide, il reste
-// un module : aucun jeu n'existe encore, et leurs tables restent fermées (« Bientôt disponible »).
-export {};
+// Le registre des jeux : une ligne par jeu (`export { chess } from './chess';`). `GAMES` (index.ts) est construit sur ses exports : un jeu qui n'y figure pas n'existe pas pour la
+// plateforme, et sa table reste fermée (« Bientôt disponible »). Un nouveau jeu s'ajoute ici, avec son dossier `games/<jeu>/` et son interface `apps/client/src/games/<jeu>/`.
+export { chess } from './chess';
 export { connect4 } from './connect4';
