@@ -1,0 +1,95 @@
+CRÉDITS : images et sons ajoutés avec les pièces, la machine à café, les portes et les modes
+(branche update-pieces-jeux)
+
+Ce fichier liste, avec leur source et leur licence, les ressources graphiques et sonores ajoutées par cette mise à jour.
+Celles d'avant (personnages, meubles, sols, murs et tuiles de LimeZu, les six ambiances d'Abstraction, les quinze
+premiers effets sonores, les icônes de Lucide, la police Instrument Sans) sont créditées dans
+apps/client/public/assets/CREDITS.txt, le fichier que l'appli sert.
+
+Quand une source ou une licence n'a pas pu être retrouvée dans le dépôt, c'est écrit « À CONFIRMER » : rien n'est inventé.
+La liste de ce qui reste à confirmer est en bas de ce fichier.
+
+
+=== IMAGES ===
+
+Auteur : LimeZu (https://limezu.itch.io)
+Pack : « Modern Interiors », version complète (https://limezu.itch.io/moderninteriors)
+Dossier du pack lu par les scripts : VIRTUAL-Desktop_V2_Ressources/moderninteriors-win (pnpm --filter @bureau/client gen:assets)
+
+1. Objets animés : 14 planches du dossier 3_Animated_objects/32x32/spritesheets, une planche par objet, recopiées sans
+   retouche dans apps/client/public/assets/props/ (apps/client/scripts/assets/animated.ts) :
+   - porte vitrée double des bureaux : animated_door_glass_double_32x32.png, rangée en door-glass-double.png (8 images de 64 x 96) ;
+   - machine à café : animated_coffee_32x32.png, rangée en coffee.png (6 images de 32 x 64) ;
+   - cheminée à feu animé de la salle de jeu, en quatre teintes : animated_chimney_32x32.png, animated_chimney_red_32x32.png,
+     animated_chimney_white_32x32.png et animated_chimney_yellow_32x32.png, rangées en chimney.png, chimney-red.png,
+     chimney-white.png et chimney-yellow.png (3 images de 64 x 96) ;
+   - enceintes : animated_amplifier_32x32.png et animated_amplifier_big_32x32.png, rangées en amplifier.png (3 images de 32 x 64)
+     et amplifier-big.png (3 images de 32 x 96) ;
+   - tapis de course de la salle de sport : animated_tapis_roulant_32x32.png, rangée en treadmill.png (12 images de 64 x 96) ;
+   - sacs de frappe : animated_punching_bag_left_32x32.png et animated_punching_bag_right_32x32.png, rangées en
+     punching-bag-left.png et punching-bag-right.png (6 images de 64 x 64) ;
+   - bougies, au sol et au mur : animated_candle_32x32.png et animated_wall_candle_32x32.png, rangées en candle.png et
+     wall-candle.png (3 images de 32 x 64) ;
+   - aquarium du salon : animated_fishtank_orange_32x32.png, rangée en fishtank.png (8 images de 64 x 64).
+
+2. Planches « Gym » et « Basement », dossier 1_Interiors/32x32/Theme_Sorter_32x32 du même pack :
+   - 8_Gym_32x32.png : 46 éléments (tapis de yoga, ballons et poufs, râteliers et supports, kettlebells, disques, haltères,
+     bancs et appareils, tapis de course, miroirs muraux). Curation : apps/client/scripts/assets/curation/gym.ts ;
+   - 14_Basement_32x32.png : 44 éléments (canapés, fauteuils, tabourets, tables rondes, ping-pong, billard, bornes d'arcade,
+     râtelier de queues, meuble télé, coussins, grand tapis, vases). Curation : apps/client/scripts/assets/curation/basement.ts.
+   Les éléments sont découpés dans les planches, certains recadrés sur leur case, puis regroupés en atlas par catégorie dans
+   apps/client/public/assets/decor/ : sport.png (nouveau, catégorie « Sport & jeux »), et bureaux.png, deco.png, detente.png
+   et sieges.png (agrandis des éléments du sous-sol et de la salle de sport).
+
+Licence de ces images (résumé repris de apps/client/public/assets/CREDITS.txt, docs/conception.md §5.4 et docs/recherche.md ;
+le texte de la licence n'est pas dans le dépôt) :
+   - usage libre dans un projet, commercial ou non ; la version gratuite du pack est réservée à un usage non commercial ;
+   - crédit obligatoire à LimeZu, avec un lien : « Illustrations : LimeZu (limezu.itch.io) », affiché dans les panneaux
+     Personnage et Décorer de l'appli ;
+   - il est interdit de revendre ou de redistribuer les images, seules ou modifiées : ces fichiers ne doivent donc pas se
+     retrouver dans un dépôt public (le dépôt reste privé). Les servir aux navigateurs pendant l'utilisation est normal.
+
+
+=== SONS ===
+
+Pack : « 400 Sounds Pack », dossier lu par les scripts : ~/Downloads/400 Sounds Pack (pnpm --filter @bureau/client gen:audio)
+Auteur ou vendeur : À CONFIRMER. Rien dans le dépôt ne nomme son auteur, sa page de vente ni sa licence.
+
+Dix effets sonores ajoutés, rangés dans apps/client/public/assets/audio/sfx/ sous le nom de leur effet, tels quels sauf mention
+contraire (apps/client/scripts/audio/build-audio.ts, SFX_SOURCES). Le volume de chacun est mesuré (apps/client/src/audio/
+measured.generated.ts) sans modifier le fichier :
+   - door-open.wav : une porte s'ouvre. Fichier du pack : Environment/door_open.wav ;
+   - door-close.wav : une porte se ferme. Environment/door_close.wav ;
+   - lock.wav : le verrou d'un bureau se ferme. Environment/lock_lock.wav ;
+   - unlock.wav : le verrou d'un bureau se rouvre. Environment/lock_unlock.wav ;
+   - coffee.wav : se servir un café. Other/drink_slurp.wav ;
+   - boost.wav : l'élan du café. Other/whoosh_2.wav ;
+   - teleport.wav : la téléportation d'un mode. Other/whoosh_1.wav ;
+   - dice.wav : un lancer de dés (rangé pour les jeux). Card and Board/dice_roll_1.wav ;
+   - piece.wav : un pion posé (rangé pour les jeux). Card and Board/chips_place_1.wav ;
+   - win.wav : la victoire (rangé pour les jeux). Other/applause.wav, écourté à 3,5 s avec une extinction de 0,8 s
+     (ffmpeg, SFX_TRIMS) : le seul fichier modifié.
+
+Licence : À CONFIRMER. Le dossier du pack ne contient aucun fichier de licence (apps/client/public/assets/CREDITS.txt). Tant
+qu'elle n'est pas vérifiée auprès du vendeur, ces extraits restent dans l'appli comme des fichiers servis, et ne vont pas
+dans un dépôt public.
+
+
+=== DESSINÉ EN CODE, SANS RESSOURCE EXTERNE ===
+
+Rien à créditer pour : la bulle de parole (apps/client/src/game/objects/SpeechBubble.ts), la tasse de café et sa vapeur
+(SteamCup.ts), la poussière derrière celui qui court (DustTrail.ts), l'anneau de lumière de la téléportation
+(apps/client/src/game/teleport-effect.ts) et le panneau « EN TRAVAUX » de la salle client (apps/client/src/game/map-signs.ts) :
+tout est tracé par le code, sans fichier d'image. Les icônes des modes (check, waves, gamepad-2 en plus) viennent de Lucide,
+déjà créditée dans apps/client/public/assets/CREDITS.txt.
+
+
+=== CE QUI RESTE À CONFIRMER ===
+
+1. « 400 Sounds Pack » : l'auteur ou le vendeur, la page d'où il vient, et surtout sa licence (usage dans une appli, extraits
+   servis aux navigateurs, dépôt public). Concerne ces dix effets et les quinze d'avant.
+2. LimeZu : une seule licence suffit-elle pour toute l'équipe, ou chaque membre doit-il avoir la sienne ? (question encore
+   ouverte, voir README.md, « Checklist du premier vrai lancement »).
+3. LimeZu : le numéro de version de « Modern Interiors » utilisé (le dépôt n'en note aucun ; seul « Modern Office » est daté,
+   Modern_Office_Revamped_v1.2, et il n'est pas concerné ici).
+4. Avant tout dépôt public : aucune des images ni aucun des sons ci-dessus ne peut y entrer, ni tel quel ni modifié.

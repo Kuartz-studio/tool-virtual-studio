@@ -28,8 +28,8 @@ export const WORLD_TICK_MS = 100;
 export const REMOTE_RENDER_DELAY_MS = 150;
 // Quand l'heure de rendu dépasse la dernière position reçue d'une personne qui marche, son avatar continue sur sa lancée au plus
 // pendant ce temps, puis attend là (jamais pour une personne arrêtée). 60 ms couvrent les 50 ms sans position que laisse encore un
-// tick vide avec 150 ms de retard (deux positions à 200 ms d'écart), sans dépasser de plus de 9,6 px (60 ms de marche) le point où
-// la personne s'est peut-être arrêtée. WorkAdventure extrapole de même, jusqu'à 100 ms.
+// tick vide avec 150 ms de retard (deux positions à 200 ms d'écart), sans dépasser de plus de 19,2 px (60 ms de marche, à
+// WALK_SPEED_PX_PER_S) le point où la personne s'est peut-être arrêtée. WorkAdventure extrapole de même, jusqu'à 100 ms.
 export const EXTRAPOLATION_MAX_MS = 60;
 // Un autre avatar saute au lieu de glisser quand la distance entre deux positions reçues dépasse de TELEPORT_SNAP_PX ce que la plus grande vitesse
 // (MAX_SPEED_PX_PER_S, le café) explique en ce temps-là. Le serveur annonce ses téléportations (`tp` dans le tick) : ce seuil ne sert plus qu'au

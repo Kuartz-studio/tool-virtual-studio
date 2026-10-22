@@ -1,7 +1,7 @@
 import { TILE_SIZE } from '@bureau/shared';
 
-// Ce que le jeu sait actionner de près, par la touche E ou d'un clic : l'interrupteur de la lumière, et bientôt la machine à café, les enceintes
-// et les tables de jeu. Un seul gestionnaire décide laquelle répond (la plus proche), pour qu'une touche n'en actionne pas plusieurs. Ce fichier
+// Ce que le jeu sait actionner de près, par la touche E ou d'un clic : l'interrupteur de la lumière, la machine à café, les enceintes et les
+// tables de jeu. Un seul gestionnaire décide laquelle répond (la plus proche), pour qu'une touche n'en actionne pas plusieurs. Ce fichier
 // ne dépend pas de Phaser : la scène lui donne les pieds de l'avatar, et dessine l'étiquette (objects/InteractionPrompt.ts).
 
 export interface Point {
