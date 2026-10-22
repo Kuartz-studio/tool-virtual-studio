@@ -807,4 +807,19 @@ describe('un siège sorti, la fin de la partie', () => {
     const arrival = horse(container, 0, 0);
     expect([Number(last.getAttribute('data-x')), Number(last.getAttribute('data-y'))]).toEqual([Number(arrival.getAttribute('data-x')), Number(arrival.getAttribute('data-y'))]);
   });
+
+  test('le dernier coup de celui qui vient de sortir n\'est plus marqué : ses chevaux ont quitté le plateau, le cadre serait sur une case vide', () => {
+    // Claire (siège 2) a joué le dernier coup, puis abandonne : l'état garde ce dernier coup (le moteur n'efface rien), mais son cheval n'est plus nulle part.
+    const playing = fabricateLudo({ horses: [[5, -1, -1, -1], [8, -1, -1, -1], [14, -1, -1, -1]], turn: 0, last: { seat: 2, horse: 0, from: 10, to: 14 } });
+    expect(mount(playing, { mySeat: 1, canAct: false }).container.querySelector('.ludo-last')).not.toBeNull();
+    const departed = ludo.forfeit(playing, 2, 'resign').state;
+    expect(departed.last?.seat).toBe(2);
+    const { container } = mount(departed, { mySeat: 1, canAct: false });
+    expect(horses(container).filter((element) => element.getAttribute('data-seat') === '2')).toHaveLength(0);
+    expect(container.querySelector('.ludo-last')).toBeNull();
+    // Mais le dernier coup d'un autre siège, lui, reste marqué quand quelqu'un sort.
+    const other = fabricateLudo({ horses: [[5, -1, -1, -1], [8, -1, -1, -1], [14, -1, -1, -1]], turn: 0, last: { seat: 1, horse: 0, from: 4, to: 8 } });
+    const left = ludo.forfeit(other, 2, 'resign').state;
+    expect(mount(left, { mySeat: 0, canAct: false }).container.querySelector('.ludo-last')).not.toBeNull();
+  });
 });

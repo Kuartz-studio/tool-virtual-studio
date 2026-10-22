@@ -104,7 +104,8 @@ export function BoardSvg({ state, horses, sliding, names, turnSeat, turns, cell,
   const isSliding = (seat: number, index: number): boolean => sliding?.seat === seat && sliding.horse === index;
   const order = [...drawn.filter((h) => !h.option && !isSliding(h.seat, h.index)), ...drawn.filter((h) => h.option && !isSliding(h.seat, h.index)), ...drawn.filter((h) => isSliding(h.seat, h.index))];
 
-  const last = state.last;
+  // Le dernier coup n'est marqué que si son cheval est encore sur le plateau : celui d'un siège sorti depuis (ses chevaux ont quitté le plateau) serait un cadre sur une case vide.
+  const last = state.last && !isOut(state.last.seat) ? state.last : null;
   const lastColor = last ? state.colors[last.seat] : undefined;
   const lastAt = last && lastColor !== undefined && last.to < LUDO_HOME ? turn(horseCenter(lastColor, last.horse, last.to)) : null;
   const myColor = mySeat === null ? undefined : state.colors[mySeat];
