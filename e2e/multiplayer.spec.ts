@@ -81,7 +81,8 @@ test('window.__office.teleport : A va là, et B l\'y voit sans glisser ; refusé
 
   // Une case libre de l'open space, loin de l'apparition.
   await a.page.evaluate(() => window.__office!.teleport(400, 420));
-  expect(await selfAt(a.page)).toEqual({ id: a.id, x: 400, y: 420 });
+  // `self` est tenu à jour à chaque image : sur une machine chargée, la lecture peut précéder l'image qui suit la téléportation.
+  await expect.poll(() => selfAt(a.page), { timeout: WALK_TIMEOUT }).toEqual({ id: a.id, x: 400, y: 420 });
   // Chez B, A saute directement (plus de TELEPORT_SNAP_PX) : jamais vu entre les deux.
   const seen: Array<{ x: number; y: number }> = [];
   await expect
