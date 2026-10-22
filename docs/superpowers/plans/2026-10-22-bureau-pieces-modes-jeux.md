@@ -147,6 +147,8 @@ Carte de **81 × 46 cases** (66 × 47 aujourd'hui). Un mur horizontal fait 2 cas
 
 ## Vague 1 : le ressenti
 
+**Faite le 22 oct. 2026**, en ligne et une tâche après l'autre (pas en cinq pistes : elles touchent toutes `Office.ts`) : T1 `614a72e`, T2 `d772f87`, T3 `9d068f7`, T4 `564e9b1`, T5 `05d000b`, plus `5dfeee0` (une course de test préexistante, vue sous la charge de la suite complète). `pnpm typecheck` vert ; `pnpm test` : 144 fichiers, 2 636 tests ; `pnpm e2e` : projet `chromium` 56 verts et 6 ignorés (LiveKit absent), projet `office` 10 verts en série. `get_usage` : 31 % de l'hebdo (toutes versions), 5 % sur les 5 heures. Captures envoyées avec `SendUserFile` (nuit, dock du zoom, bulle).
+
 ### Tâche 1 : un seul gestionnaire de la touche E (P0, S)
 
 **Pourquoi :** aujourd'hui chaque `LightSwitch` écoute la touche E pour lui. Avec la machine à café, les enceintes et les tables de jeu, E actionnerait plusieurs objets à la fois.
