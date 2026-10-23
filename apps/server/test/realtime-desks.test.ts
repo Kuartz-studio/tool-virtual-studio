@@ -350,7 +350,7 @@ describe('le décor d\'un bureau', () => {
     const a = await person(srv, 'a@x.fr');
     const raw = (payload: unknown) => new Promise<DeskAck>((resolve) => (a.socket as unknown as { emit(e: string, ...a: unknown[]): void }).emit('desk:do', payload, resolve));
 
-    expect(await raw({ type: 'decor', floor: 'noyer', wall: 'anthracite', items: [{ id: 'of-7-28', x: 0.5, y: 0 }] })).toEqual({ ok: false, error: 'invalid' });
+    expect(await raw({ type: 'decor', floor: 'noyer', wall: 'anthracite', items: [{ id: 'of-7-28', x: '0', y: 0 }] })).toEqual({ ok: false, error: 'invalid' });
     expect(await raw({ type: 'decor', floor: 'noyer', items: [] })).toEqual({ ok: false, error: 'invalid' });
     const tooMany = Array.from({ length: 81 }, () => ({ id: 'of-14-12', x: 0, y: 0 }));
     expect(await raw({ type: 'decor', floor: 'noyer', wall: 'anthracite', items: tooMany })).toEqual({ ok: false, error: 'invalid' });

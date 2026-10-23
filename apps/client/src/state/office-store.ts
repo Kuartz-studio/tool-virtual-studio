@@ -22,7 +22,7 @@ import {
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { clampZoomPercent, stepZoomPercent, ZOOM_DEFAULT_PERCENT, ZOOM_WHEEL_STEP } from '../game/zoom';
-import { anchorFor, planPlace, removeAt, roomOfDesk } from '../office/decor-draft';
+import { anchorFor, planPlace, removeAt, roomOfDesk, type DecorSnap } from '../office/decor-draft';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
 // dernière consigne audio/vidéo, et les messages du chat. Le serveur le dit à chaque (re)connexion (`init`), puis par événements
@@ -186,8 +186,9 @@ export interface OfficeState {
   // La gomme, ou de nouveau la pose (on ne tient plus rien dans les deux cas : en changeant d'outil, la main se vide).
   setDecorTool(tool: DecorTool): void;
   // Poser l'élément tenu : sur du vide, c'est fait ; sur un élément de la même sorte, la personne doit confirmer (confirmReplace) ou renoncer
-  // (cancelReplace) ; si la pièce ne serait plus valable, `error` dit pourquoi.
-  placeHeld(cell: { x: number; y: number }): void;
+  // (cancelReplace) ; si la pièce ne serait plus valable, `error` dit pourquoi. `point` est le pointeur, en cases de la pièce (anchorFor) ; `snap`,
+  // au dixième (`free`) ou à la case près (`cell`, par défaut : un point entier est alors une case).
+  placeHeld(point: { x: number; y: number }, snap?: DecorSnap): void;
   confirmReplace(): void;
   cancelReplace(): void;
   pickDecorItem(index: number): void;
@@ -495,12 +496,12 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           state.decorEditor ? { decorEditor: { ...state.decorEditor, held, tool: held === null ? state.decorEditor.tool : 'place', error: null, replace: null } } : state,
         ),
       setDecorTool: (tool) => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, tool, held: null, error: null, replace: null } } : state)),
-      placeHeld: (cell) =>
+      placeHeld: (point, snap = 'cell') =>
         set((state) => {
           const editor = state.decorEditor;
           if (!editor || editor.held === null || editor.replace !== null) return state;
           const room = roomOfDesk(state.officeMap, editor.deskKey);
-          const at = anchorFor(editor.held, cell, room);
+          const at = anchorFor(editor.held, point, room, snap);
           if (!at) return state;
           const plan = planPlace(editor.draft, editor.held, at, room);
           if (plan.kind === 'place') return { decorEditor: { ...editor, draft: plan.decor, error: null } };

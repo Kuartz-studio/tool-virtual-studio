@@ -355,6 +355,21 @@ describe('deskTarget : où l\'on s\'arrête dans son bureau', () => {
     expect(deskTarget(office, room('A1'), items)).toEqual(inRoom(room('A1'), 4, 4));
   });
 
+  test('au dixième de case : la chaise un peu décalée sous le bureau reste celle du poste, et l\'on s\'arrête sur la case entière devant elle', () => {
+    // Le bureau en (3,2 ; 1), la chaise en (4,3 ; 3,1) : un dixième sous le bord du bureau, à cheval sur deux rangées.
+    const items: PlacedItem[] = [{ id: 'of-0-17', x: 0, y: 4 }, { id: 'of-7-28', x: 3.2, y: 1 }, { id: 'of-0-8', x: 4.3, y: 3.1 }];
+    expect(deskTarget(office, room('A1'), items)).toEqual(inRoom(room('A1'), 4, 5));
+  });
+
+  test('un meuble à cheval sur des cases les bloque toutes pour la marche', () => {
+    const zone = room('A1');
+    const map = deskWalkMap(office, zone, [{ id: 'of-7-28', x: 3.2, y: 1 }]);
+    const [tx, ty] = [Math.round(zone.x / office.tileSize), Math.round(zone.y / office.tileSize)];
+    const blockedAt = (x: number, y: number) => map.blocked[(ty + y) * office.widthTiles + tx + x] === 1;
+    expect([2, 3, 4, 5, 6].map((x) => blockedAt(x, 1))).toEqual([false, true, true, true, true]);
+    expect(blockedAt(4, 3)).toBe(false);
+  });
+
   test('sans bureau, le premier siège venu : la case devant lui', () => {
     expect(deskTarget(office, room('A2'), [{ id: 'of-12-43', x: 2, y: 1 }])).toEqual(inRoom(room('A2'), 2, 2));
   });

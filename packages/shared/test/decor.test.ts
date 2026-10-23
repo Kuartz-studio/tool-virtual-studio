@@ -8,15 +8,18 @@ import {
   FLOOR_THEMES,
   MAX_DECOR_ITEMS,
   WALL_THEMES,
+  blockedCells,
   checkDecor,
   decorItem,
   defaultDeskDecor,
   doorEntryCells,
   decorItemsOf,
   floorTheme,
+  isDecorStep,
   isFloorTheme,
   isWallTheme,
   overlappingItems,
+  snapToDecorStep,
   type DeskDecor,
   type DeskRoomSpec,
   type PlacedItem,
@@ -84,7 +87,8 @@ describe('checkDecor', () => {
     expect(checkDecor(decor([], { floor: 'lave' }))).toEqual({ ok: false, error: 'unknown_theme' });
     expect(checkDecor(decor([], { wall: 'lave' }))).toEqual({ ok: false, error: 'unknown_theme' });
     expect(checkDecor(decor([{ id: 'nope', x: 0, y: 0 }]))).toEqual({ ok: false, error: 'unknown_item', index: 0 });
-    expect(checkDecor(decor([{ id: 'of-7-28', x: 0.5, y: 0 }]))).toEqual({ ok: false, error: 'bad_position', index: 0 });
+    // Au dixième de case près, pas plus fin.
+    expect(checkDecor(decor([{ id: 'of-7-28', x: 0.55, y: 0 }]))).toEqual({ ok: false, error: 'bad_position', index: 0 });
   });
 
   test('un élément qui déborde de la pièce : refusé', () => {
@@ -125,6 +129,46 @@ describe('checkDecor', () => {
     const blocked = Array.from({ length: DESK_ROOMS.standard.width }, (_, x) => ({ id: 'of-0-8', x, y: 3 }));
     expect(checkDecor(decor(blocked))).toEqual({ ok: true });
     expect(checkDecor(decor([{ id: 'cf-0-8', x: 0, y: 3 }]))).toEqual({ ok: true });
+  });
+});
+
+describe('le placement libre, au dixième de case', () => {
+  test('isDecorStep et snapToDecorStep : les dixièmes, à l\'arrondi des nombres à virgule près', () => {
+    expect([0, 3, 2.5, 0.1 + 0.2, -1.7].every(isDecorStep)).toBe(true);
+    expect([0.55, 0.01, Number.NaN, Number.POSITIVE_INFINITY].some(isDecorStep)).toBe(false);
+    expect(snapToDecorStep(0.1 + 0.2)).toBe(0.3);
+    expect(snapToDecorStep(2.26)).toBe(2.3);
+  });
+
+  test('un meuble se pose au dixième près ; deux meubles peuvent se toucher, pas se chevaucher d\'un dixième', () => {
+    expect(checkDecor(decor([{ id: 'of-7-28', x: 0.3, y: 1.7 }]))).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: 'of-7-28', x: 0.3, y: 0 }, { id: 'of-7-28', x: 3.3, y: 0 }]))).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: 'of-7-28', x: 0.3, y: 0 }, { id: 'of-7-28', x: 3.2, y: 0 }]))).toEqual({ ok: false, error: 'overlap', index: 1 });
+    expect(overlappingItems([{ id: 'of-7-28', x: 0.3, y: 0 }], 'of-7-28', { x: 3.2, y: 0 })).toEqual([0]);
+    expect(overlappingItems([{ id: 'of-7-28', x: 0.3, y: 0 }], 'of-7-28', { x: 3.3, y: 0 })).toEqual([]);
+  });
+
+  test('un dixième de trop, et c\'est hors de la pièce ; un élément mural reste contre le mur', () => {
+    expect(checkDecor(decor([{ id: 'of-7-28', x: DESK_ROOMS.standard.width - 3, y: 0 }]))).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: 'of-7-28', x: DESK_ROOMS.standard.width - 2.9, y: 0 }]))).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    expect(checkDecor(decor([{ id: 'of-15-0', x: 2.5, y: 0 }]))).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: 'of-15-0', x: 2.5, y: 0.1 }]))).toEqual({ ok: false, error: 'bad_position', index: 0 });
+  });
+
+  test('un meuble à cheval sur des cases les bloque toutes : la règle de passage compte en cases entières', () => {
+    const width = DESK_ROOMS.standard.width;
+    expect([...blockedCells([{ id: 'ki-9-23', x: 2.5, y: 3.2 }])].sort((a, b) => a - b)).toEqual([3 * width + 2, 3 * width + 3, 4 * width + 2, 4 * width + 3]);
+    // Une rangée de frigos décalée d'une demi-case en travers de la pièce : il ne reste qu'une demi-case au bout, où l'avatar ne passe pas.
+    const row = Array.from({ length: width - 1 }, (_, x) => ({ id: 'ki-9-23', x: x + 0.5, y: 3 }));
+    expect(checkDecor(decor(row))).toEqual({ ok: false, error: 'unreachable' });
+    // Collée au mur, la même rangée laisse une case entière au bout : on passe.
+    expect(checkDecor(decor(row.map((placed) => ({ ...placed, x: placed.x - 0.5 }))))).toEqual({ ok: true });
+  });
+
+  test('un meuble qui déborde d\'un dixième sur la dernière case libre de l\'entrée mure la porte', () => {
+    const doorRow = DESK_ROOMS.standard.height - 1;
+    expect(checkDecor(decor([{ id: 'of-7-28', x: 1, y: doorRow - 1 }]))).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: 'of-7-28', x: 1.1, y: doorRow - 1 }]))).toEqual({ ok: false, error: 'blocks_door' });
   });
 });
 
