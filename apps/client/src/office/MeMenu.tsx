@@ -1,16 +1,16 @@
-import { STATUSES, type ActivityState, type Status } from '@bureau/shared';
-import { useEffect, useId, useRef, type KeyboardEvent, type RefObject } from 'react';
+import type { ActivityState, Status } from '@bureau/shared';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
 import { fr } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
 import { LogOutIcon, ShirtIcon } from './icons';
-import { ModePresets } from './ModePresets';
+import { ModeEditor } from './ModeEditor';
+import { ModeList } from './ModeList';
 import type { PanelControls, PanelId } from './panels';
-import { StatusDot } from './StatusDot';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Popover } from './ui/Popover';
 
-// Les lignes qu'on choisit dans le menu : les statuts, les modes, et les autres lignes.
+// Les lignes qu'on choisit dans le menu : les statuts, les modes, leurs crayons, et les autres lignes.
 const ITEMS = '[role="menuitem"], [role="menuitemradio"]';
 
 export interface MeMenuProps {
@@ -24,7 +24,7 @@ export interface MeMenuProps {
   email: string;
   // La connexion au bureau, null avant que la page l'ouvre.
   socket: OfficeSocket | null;
-  // Comment ouvrir un panneau (l'apparence, les modes) : le focus reviendra à la puce quand il se fermera.
+  // Comment ouvrir un panneau (l'apparence) : le focus reviendra à la puce quand il se fermera.
   panels: PanelControls;
   onSignOut(): void;
   signingOut: boolean;
@@ -32,47 +32,64 @@ export interface MeMenuProps {
 
 // Le menu « Moi » (spec §10 pour le statut), qui s'ouvre au-dessus de la puce :
 // - en haut, ton portrait, ton nom, ton e-mail et « Changer d'apparence » (le panneau du personnage) ;
-// - « Statut » : les quatre statuts, choisis à la main ; ce que le serveur confirme (`status:changed`) est ce que la puce affiche ;
-// - « Mode » : des tuiles rondes à la manière d'Apple (ModePresets) : « Normal » (aucun mode : retour au statut), les modes tout prêts (Concentration, Sport),
-//   puis « Mes modes », les états d'activité que tu as créés (chacun avec son icône, ou le point de sa couleur), et « + Créer un mode » qui ouvre leur panneau ;
+// - « Mode » : une seule liste (ModeList), les quatre statuts d'abord (Disponible, l'état normal, puis Occupé, Absent, Ne pas déranger), puis tes modes (Manger,
+//   Sport, Concentration, que ton compte a reçus, et ceux que tu as créés), et « Nouveau mode ». Une seule ligne est cochée ; ce que le serveur confirme
+//   (`status:changed`, `activity:changed`) est ce que la puce et le menu affichent. Le crayon d'un mode, et « Nouveau mode », ouvrent son éditeur (ModeEditor)
+//   dans le menu même, à la place de la liste : le menu devient alors une petite fenêtre (dialog), et la liste revient quand l'éditeur se ferme ;
 // - Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu. Le bureau et le son sont dans le dock du
 //   milieu (MediaDock) : ce menu ne parle que de toi.
 //
-// Le menu suit le motif « menu » : le focus va, à l'ouverture, à ce qui est choisi (le mode en cours, sinon le statut) ; ↓ → et ↑ ← passent d'une
-// ligne à l'autre, Début et Fin vont aux extrémités, Entrée ou Espace choisit, Échap ferme et rend le focus à la puce, Tab aussi (la touche
-// continue depuis la puce). Celles que le menu prend ne vont pas plus loin : le clavier de l'avatar (game/input.ts) ignore une touche déjà
-// traitée, et ↓ ↑ dans le menu ne font pas marcher l'avatar.
+// La liste suit le motif « menu » : le focus va, à l'ouverture, à ce qui est choisi ; ↓ → et ↑ ← passent d'une ligne à l'autre (le crayon d'un mode en est
+// une), Début et Fin vont aux extrémités, Entrée ou Espace choisit, Échap ferme et rend le focus à la puce, Tab aussi (la touche continue depuis la puce).
+// Celles que le menu prend ne vont pas plus loin : le clavier de l'avatar (game/input.ts) ignore une touche déjà traitée, et ↓ ↑ dans le menu ne font pas
+// marcher l'avatar.
 //
-// Un état d'activité passe avant le statut : pris, il est coché seul, et aucun statut ne l'est. Le prendre retient le choix de cet onglet
-// (chosenActivityId) et oublie le statut choisi ; un statut ordinaire, au contraire, prend la place de l'état, même quand c'est le même statut
-// (le serveur efface l'état). Ces choix sont aussi retenus au magasin : la connexion les redit à un serveur redémarré, qui les a oubliés.
+// Un mode passe avant le statut : pris, il est coché seul. Le prendre retient le choix de cet onglet (chosenActivityId) et oublie le statut choisi ; un statut,
+// au contraire, prend la place du mode, même quand c'est le même statut (le serveur efface le mode) : Disponible, le premier, est ainsi « aucun mode ». Ces
+// choix sont aussi retenus au magasin : la connexion les redit à un serveur redémarré, qui les a oubliés.
 //
 // Rien ne part au serveur tant qu'il ne prendrait pas le message (pas de socket, pas encore d'`init`, connexion coupée, ou revenue mais pas
-// encore replacée par son `init`) : les statuts, les modes, l'apparence et le bureau sont alors inactifs. Le son et la déconnexion, eux, ne
-// dépendent pas du serveur : on doit pouvoir se déconnecter, et couper le son, sans lui.
+// encore replacée par son `init`) : les statuts, les modes et l'apparence sont alors inactifs. La déconnexion, elle, ne dépend pas du serveur : on doit
+// pouvoir se déconnecter sans lui.
 export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, panels, onSignOut, signingOut }: MeMenuProps) {
   const avatarKey = useOfficeStore((state) => state.self?.avatarKey ?? null);
   const current = useOfficeStore((state) => state.self?.status ?? null);
   const activity = useOfficeStore((state) => state.self?.activity ?? null);
   const myStates = useOfficeStore((state) => state.myStates);
+  const map = useOfficeStore((state) => state.officeMap);
   const ready = useOfficeStore((state) => state.ready);
   const enabled = socket !== null && ready && current !== null;
 
   const list = useRef<HTMLDivElement>(null);
-  const statusLabelId = useId();
   const modeLabelId = useId();
+  // L'éditeur ouvert à la place de la liste : pour ce mode, ou pour un nouveau (null) ; undefined : la liste.
+  const [editing, setEditing] = useState<ActivityState | null | undefined>(undefined);
+  // La ligne qui reprend le focus quand la liste revient : le mode (son identifiant), ou « Nouveau mode » (null).
+  const refocus = useRef<string | null | undefined>(undefined);
 
   // Les lignes qu'on peut choisir, dans l'ordre de la page : celles qui ne sont pas inactives.
   const lines = () => Array.from(list.current?.querySelectorAll<HTMLButtonElement>(ITEMS) ?? []).filter((line) => !line.disabled);
 
-  // À l'ouverture, le focus va à ce qui est choisi (le statut en cours, ou le mode : un seul des deux l'est dans l'ordre de la page), sinon à
-  // la première ligne qu'on peut choisir.
+  // À l'ouverture, le focus va à ce qui est choisi (le statut en cours, ou le mode : un seul des deux l'est), sinon à la première ligne qu'on peut choisir.
+  // Le menu fermé oublie l'éditeur : il rouvre sur la liste.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setEditing(undefined);
+      return;
+    }
     const all = lines();
     (all.find((line) => line.getAttribute('aria-checked') === 'true') ?? all[0])?.focus();
     // Seulement à l'ouverture (`open`) : un statut qui change menu ouvert ne déplace pas le focus.
   }, [open]);
+
+  // L'éditeur se ferme : la liste revient, et le focus va au mode qu'on vient de créer ou de modifier (sinon à « Nouveau mode »).
+  useEffect(() => {
+    if (!open || editing !== undefined || refocus.current === undefined) return;
+    const id = refocus.current;
+    refocus.current = undefined;
+    const line = id === null ? null : list.current?.querySelector<HTMLButtonElement>(`[data-mode="${CSS.escape(id)}"] .mode-pick`);
+    (line ?? list.current?.querySelector<HTMLButtonElement>('.mode-new'))?.focus();
+  }, [open, editing]);
 
   // La connexion tombe menu ouvert : les lignes qui en dépendent s'éteignent, et le focus, s'il était sur l'une d'elles, passe à une ligne qui
   // marche (la déconnexion ne dépend pas d'elle) : le clavier ne reste pas sur une ligne inactive.
@@ -97,21 +114,18 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
     if (status !== current || activity !== null) socket?.emit('status:set', status);
   }
 
-  // Un mode : celui-ci, ou aucun (null), qui rend le statut qu'on avait dessous (le serveur le garde pendant l'état). Le choix de cet onglet
-  // n'est plus l'état : si le serveur est redémarré, c'est ce statut-là qu'il faudra lui redire, et que le choix d'un état avait fait oublier.
-  function chooseMode(state: ActivityState | null) {
+  // Un mode : le prendre (le serveur le confirme, et conduit l'avatar là où le mode mène).
+  function chooseMode(state: ActivityState) {
     finish();
     const store = useOfficeStore.getState();
-    if (state === null) {
-      if (activity === null) return;
-      store.setChosenActivity(null);
-      store.setChosenStatus(current);
-      socket?.emit('state:set', null);
-      return;
-    }
     store.setChosenActivity(state.id);
     store.setChosenStatus(null);
     if (activity?.id !== state.id) socket?.emit('state:set', state.id);
+  }
+
+  function closeEditor(focusId: string | null) {
+    refocus.current = focusId;
+    setEditing(undefined);
   }
 
   function openPanel(panel: PanelId) {
@@ -156,6 +170,16 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
     event.stopPropagation();
   }
 
+  if (editing !== undefined) {
+    return (
+      <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top-start" label={editing === null ? fr.modes.titleCreate : fr.modes.titleEdit} role="dialog" id={id}>
+        <div className="me-menu">
+          <ModeEditor state={editing} map={map} onClose={closeEditor} />
+        </div>
+      </Popover>
+    );
+  }
+
   return (
     <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top-start" label={fr.me.menu} role="menu" id={id}>
       <div ref={list} className="me-menu" onKeyDown={onMenuKeyDown}>
@@ -175,36 +199,21 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
           </div>
         </div>
 
-        <div role="group" aria-labelledby={statusLabelId}>
-          <div className="me-label">
-            <span id={statusLabelId}>{fr.me.status}</span>
-            {activity === null && current !== null && <em>{fr.status[current]}</em>}
-          </div>
-          <div className="me-statuses">
-            {STATUSES.map((status) => (
-              <button
-                key={status}
-                type="button"
-                role="menuitemradio"
-                aria-checked={activity === null && status === current}
-                aria-label={fr.status[status]}
-                title={fr.status[status]}
-                tabIndex={-1}
-                className="status-tile"
-                disabled={!enabled}
-                onClick={() => chooseStatus(status)}
-              >
-                <StatusDot status={status} />
-              </button>
-            ))}
-          </div>
-        </div>
-
         <div role="group" aria-labelledby={modeLabelId}>
           <div className="me-label">
             <span id={modeLabelId}>{fr.me.mode}</span>
           </div>
-          <ModePresets activity={activity} myStates={myStates} enabled={enabled} onChoose={chooseMode} onManage={() => openPanel('states')} />
+          <ModeList
+            status={current}
+            activity={activity}
+            myStates={myStates}
+            map={map}
+            enabled={enabled}
+            onStatus={chooseStatus}
+            onMode={chooseMode}
+            onEdit={(state) => setEditing(state)}
+            onCreate={() => setEditing(null)}
+          />
         </div>
 
         <div className="menu-rule" role="separator" />

@@ -64,6 +64,13 @@
       "when": 1792653159108,
       "tag": "0008_games",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792745737000,
+      "tag": "0010_default_modes",
+      "breakpoints": true
     }
   ]
 }

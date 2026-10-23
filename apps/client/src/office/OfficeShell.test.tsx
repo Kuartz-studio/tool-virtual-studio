@@ -933,16 +933,15 @@ describe('les états d\'activité', () => {
     expect(screen.getByRole('menuitem', { name: fr.modes.create })).toBeTruthy();
   });
 
-  test('« + » ouvre le panneau des états ; Échap le ferme et le focus revient à la puce « Moi »', async () => {
+  test('« Nouveau mode » ouvre l\'éditeur dans le menu même, sans panneau à droite ; Échap revient à la liste', async () => {
     const user = userEvent.setup();
     renderShell();
-    expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
     await user.click(meChip());
     await user.click(screen.getByRole('menuitem', { name: fr.modes.create }));
-    expect(screen.getByRole('complementary', { name: fr.states.title })).toBeTruthy();
+    expect(screen.getByRole('dialog', { name: fr.modes.titleCreate })).toBeTruthy();
+    expect(screen.queryByRole('complementary')).toBeNull();
     await user.keyboard('{Escape}');
-    expect(screen.queryByRole('complementary', { name: fr.states.title })).toBeNull();
-    expect(document.activeElement).toBe(meChip());
+    expect(screen.getByRole('menu', { name: fr.me.menu })).toBeTruthy();
   });
 
   test('lecture impossible : le menu n\'a que les statuts ordinaires, sans erreur', async () => {

@@ -1,5 +1,5 @@
 import {
-  PRESET_MODES,
+  DEFAULT_MODES,
   buildOfficeTiledMap,
   freeSpotIn,
   isWalkablePoint,
@@ -18,8 +18,9 @@ import { createModeTravel } from '../src/modes/mode-travel';
 const map = parseOfficeMap(buildOfficeTiledMap());
 const slots = deskSlots(map);
 const gym = placeByKey(map, 'gym')!;
-const sport = PRESET_MODES.find((mode) => mode.id === 'preset:sport')!;
-const focus = PRESET_MODES.find((mode) => mode.id === 'preset:focus')!;
+// Les modes par défaut, tels que la base les rend (un identifiant en plus).
+const sport = { id: 'sport', ...DEFAULT_MODES.find((mode) => mode.label === 'Sport')! };
+const focus = { id: 'focus', ...DEFAULT_MODES.find((mode) => mode.label === 'Concentration')! };
 const toGame: ActivityState = { id: 'u-game', label: 'Jeux', color: '#0ea5e9', icon: 'gamepad-2', allowEntry: true, hear: true, heard: true, place: 'game' };
 const toCafe: ActivityState = { id: 'u-cafe', label: 'Café', color: '#f59e0b', allowEntry: true, hear: true, heard: true, place: 'cafe' };
 

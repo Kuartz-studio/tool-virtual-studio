@@ -1,9 +1,10 @@
-import { PRESET_MODES, STATUSES, type ActivityState, type PublicPlayer, type Status } from '@bureau/shared';
+import { STATUSES, type ActivityState, type OfficeMap, type PublicPlayer, type Status } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { bindKeyboard, DirectionInput } from '../game/input';
-import { fr } from '../i18n/fr';
+import { fr, t } from '../i18n/fr';
+import * as activityApi from '../lib/activity-api';
 import { statusCssColor } from '../lib/status';
 import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
@@ -29,6 +30,7 @@ const lunch: ActivityState = { id: 's2', label: 'À table', color: '#f59e0b', al
 
 beforeEach(() => {
   useOfficeStore.getState().reset();
+  vi.clearAllMocks();
 });
 
 // Le serveur a envoyé l'état de départ (self avec ce statut, et peut-être un état d'activité).
@@ -66,9 +68,10 @@ const item = (status: Status) => screen.getByRole('menuitemradio', { name: fr.st
 const mode = (label: string) => screen.getByRole('menuitemradio', { name: label });
 const entry = (name: string) => screen.getByRole('menuitem', { name }) as HTMLButtonElement;
 const manage = () => entry(fr.modes.create);
+const pencil = (label: string) => entry(t(fr.modes.edit, { label }));
 const dotOf = (element: HTMLElement) => element.querySelector('[data-status]');
 const group = (name: string) => screen.getByRole('group', { name });
-// Les lignes qu'on choisit dans cette zone (statuts, modes et autres), dans l'ordre de la page, par leur nom.
+// Les lignes qu'on choisit dans cette zone (statuts, modes, leurs crayons et autres), dans l'ordre de la page, par leur nom.
 const linesOf = (root: HTMLElement) =>
   Array.from(root.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"]')).map((line) => line.getAttribute('aria-label') ?? line.textContent);
 
@@ -169,15 +172,6 @@ describe('le menu', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  test('« + » ouvre le panneau des états depuis la puce', async () => {
-    const user = userEvent.setup();
-    const { panels } = renderChip();
-    await user.click(trigger());
-    await user.click(entry(fr.modes.create));
-    expect(panels.show).toHaveBeenCalledExactlyOnceWith('states', trigger());
-    expect(screen.queryByRole('menu')).toBeNull();
-  });
-
   test('le menu ne parle que de soi : le bureau et la musique sont dans le dock du milieu, pas ici', async () => {
     const user = userEvent.setup();
     renderChip();
@@ -202,7 +196,7 @@ describe('le menu', () => {
     expect(entry(fr.office.signingOut).disabled).toBe(true);
   });
 
-  test('le menu a, dans l\'ordre, l\'apparence, les statuts, les modes et la déconnexion', async () => {
+  test('le menu a, dans l\'ordre, l\'apparence, une seule liste (les statuts, puis les modes, chacun suivi de son crayon, puis « Nouveau mode ») et la déconnexion', async () => {
     const user = userEvent.setup();
     renderChip({ states: [focus, lunch] });
     await user.click(trigger());
@@ -212,18 +206,19 @@ describe('le menu', () => {
       'Occupé',
       'Absent',
       'Ne pas déranger',
-      fr.modes.normal,
-      'Concentration',
-      'Sport',
       'En focus',
+      t(fr.modes.edit, { label: 'En focus' }),
       'À table',
+      t(fr.modes.edit, { label: 'À table' }),
       fr.modes.create,
       'Se déconnecter',
     ]);
+    // Une seule section : plus de « Statut » à part, ni de « Mes modes ».
+    expect(screen.getAllByRole('group').map((section) => section.getAttribute('aria-labelledby') && document.getElementById(section.getAttribute('aria-labelledby')!)?.textContent)).toEqual([fr.me.mode]);
   });
 });
 
-describe('la section « Statut »', () => {
+describe('les statuts, en tête de la liste', () => {
   test('« Ne pas déranger » envoie status:set dnd', async () => {
     const user = userEvent.setup();
     const socket = renderChip({ status: 'available' });
@@ -241,16 +236,15 @@ describe('la section « Statut »', () => {
     expect(socket.sent).toEqual([['status:set', status]]);
   });
 
-  test('les quatre statuts dans l\'ordre de la spec, avec leurs libellés français, et celui en cours est coché et nommé à droite du titre', async () => {
+  test('les quatre statuts d\'abord, dans l\'ordre de la spec, avec leurs libellés français écrits ; celui en cours est coché ; ils n\'ont pas de crayon', async () => {
     const user = userEvent.setup();
     renderChip({ status: 'away' });
     await user.click(trigger());
-    const tiles = within(group(fr.me.status)).getAllByRole('menuitemradio');
-    expect(tiles.map((tile) => tile.getAttribute('aria-label'))).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger']);
-    expect(tiles.map((tile) => tile.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true', 'false']);
-    expect(within(group(fr.me.status)).getByText('Absent', { selector: 'em' })).toBeTruthy();
-    // Chaque tuile a aussi son nom en infobulle : elle n'a que son point à montrer.
-    expect(tiles.map((tile) => tile.getAttribute('title'))).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger']);
+    const lines = within(group(fr.me.mode)).getAllByRole('menuitemradio').slice(0, 4);
+    expect(lines.map((line) => line.getAttribute('aria-label'))).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger']);
+    expect(lines.map((line) => line.textContent)).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger']);
+    expect(lines.map((line) => line.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true', 'false']);
+    expect(screen.queryByRole('menuitem', { name: t(fr.modes.edit, { label: 'Disponible' }) })).toBeNull();
   });
 
   test.each(STATUSES)('le point de « %s » a la couleur du statut', async (status) => {
@@ -306,46 +300,30 @@ describe('la section « Statut »', () => {
   });
 });
 
-describe('la section « Mode »', () => {
-  test('sans état : « Normal », coché, les modes tout prêts, et « + » ; avec des états : les siens ensuite, chacun avec le point de sa couleur', async () => {
+describe('les modes, dans la même liste', () => {
+  test('sans mode : Disponible coché, puis « Nouveau mode » ; ses modes (ceux par défaut compris) viennent entre les deux, chacun avec le point de sa couleur', async () => {
     const user = userEvent.setup();
     const { view } = renderChip();
     await user.click(trigger());
-    expect(linesOf(group(fr.me.mode))).toEqual([fr.modes.normal, 'Concentration', 'Sport', fr.modes.create]);
-    expect(mode(fr.modes.normal).getAttribute('aria-checked')).toBe('true');
+    expect(linesOf(group(fr.me.mode))).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger', fr.modes.create]);
+    expect(item('available').getAttribute('aria-checked')).toBe('true');
     view.unmount();
 
     renderChip({ states: [focus, lunch] });
     await user.click(trigger());
-    expect(linesOf(group(fr.me.mode))).toEqual([fr.modes.normal, 'Concentration', 'Sport', 'En focus', 'À table', fr.modes.create]);
     expect((mode('En focus').querySelector('.status-dot') as HTMLElement).style.backgroundColor).toMatch(PURPLE);
     expect(mode('En focus').getAttribute('aria-checked')).toBe('false');
   });
 
-  test('« + Créer un mode » est nommé, et a la même infobulle', async () => {
+  test('un mode qui conduit quelque part dit la pièce, à côté de son nom ; son nom accessible reste le sien', async () => {
     const user = userEvent.setup();
-    renderChip();
+    const sport: ActivityState = { id: 's3', label: 'Sport', color: '#f97316', icon: 'dumbbell', allowEntry: true, hear: false, heard: false, place: 'gym' };
+    renderChip({ states: [sport] });
+    // Une carte réduite à ce que la liste lit : ses pièces.
+    act(() => useOfficeStore.getState().setOfficeMap({ places: [{ key: 'gym', label: 'Salle de sport', destination: true }] } as unknown as OfficeMap));
     await user.click(trigger());
-    expect(manage().getAttribute('title')).toBe(fr.modes.create);
-    expect(manage().getAttribute('aria-label')).toBe(fr.modes.create);
-  });
-
-  test('un mode tout prêt se prend comme les siens : Sport envoie state:set preset:sport, et le choix est retenu pour un serveur redémarré', async () => {
-    const user = userEvent.setup();
-    const socket = renderChip();
-    await user.click(trigger());
-    await user.click(mode('Sport'));
-    expect(socket.sentOf('state:set')).toEqual(['preset:sport']);
-    expect(useOfficeStore.getState().chosenActivityId).toBe('preset:sport');
-    expect(useOfficeStore.getState().chosenStatus).toBeNull();
-  });
-
-  test('Sport, en cours : seule sa tuile est cochée (« Normal » ne l\'est plus)', async () => {
-    const user = userEvent.setup();
-    renderChip({ activity: PRESET_MODES.find((preset) => preset.id === 'preset:sport') });
-    await user.click(trigger());
-    expect(mode('Sport').getAttribute('aria-checked')).toBe('true');
-    expect(mode(fr.modes.normal).getAttribute('aria-checked')).toBe('false');
+    expect(mode('Sport').querySelector('.mode-place')?.textContent).toBe('Salle de sport');
+    expect(screen.getByRole('menuitemradio', { name: 'Sport' })).toBe(mode('Sport'));
   });
 
   test('prendre un mode : state:set, retenu comme choix de l\'onglet, le statut choisi oublié', async () => {
@@ -362,48 +340,130 @@ describe('la section « Mode »', () => {
     expect(document.activeElement).toBe(trigger());
   });
 
-  test('le mode en cours : coché, jamais renvoyé ; aucun statut n\'est coché, ni nommé à côté du titre', async () => {
+  test('le mode en cours : seul coché (aucun statut ne l\'est), et jamais renvoyé', async () => {
     const user = userEvent.setup();
     const socket = renderChip({ activity: focus, states: [focus, lunch] });
     await user.click(trigger());
     expect(mode('En focus').getAttribute('aria-checked')).toBe('true');
-    expect(mode(fr.modes.normal).getAttribute('aria-checked')).toBe('false');
-    expect(item('available').getAttribute('aria-checked')).toBe('false');
-    expect(group(fr.me.status).querySelector('em')).toBeNull();
+    expect(within(group(fr.me.mode)).getAllByRole('menuitemradio', { checked: true })).toEqual([mode('En focus')]);
     await user.click(mode('En focus'));
     expect(socket.sentOf('state:set')).toEqual([]);
   });
 
-  test('un statut ordinaire pendant un mode : envoyé même si c\'est le même statut (le serveur efface le mode)', async () => {
+  test('Disponible pendant un mode le quitte : status:set, même si c\'est déjà le statut (le serveur efface le mode), et le choix de l\'onglet l\'oublie', async () => {
     const user = userEvent.setup();
     const socket = renderChip({ activity: focus, states: [focus] });
     useOfficeStore.getState().setChosenActivity('s1');
     await user.click(trigger());
     await user.click(item('available'));
     expect(socket.sentOf('status:set')).toEqual(['available']);
+    expect(socket.sentOf('state:set')).toEqual([]);
     expect(useOfficeStore.getState().chosenActivityId).toBeNull();
-  });
-
-  test('« Normal » quitte le mode (state:set null) et rend le statut de dessous, retenu pour un serveur redémarré', async () => {
-    const user = userEvent.setup();
-    const socket = renderChip({ status: 'busy', activity: focus, states: [focus] });
-    useOfficeStore.getState().setChosenActivity('s1');
-    await user.click(trigger());
-    await user.click(mode(fr.modes.normal));
-    expect(socket.sentOf('state:set')).toEqual([null]);
-    expect(socket.sentOf('status:set')).toEqual([]);
-    expect(useOfficeStore.getState().chosenActivityId).toBeNull();
-    expect(useOfficeStore.getState().chosenStatus).toBe('busy');
+    expect(useOfficeStore.getState().chosenStatus).toBe('available');
     expect(screen.queryByRole('menu')).toBeNull();
   });
+});
 
-  test('« Normal » sans mode en cours n\'envoie rien, et ferme le menu', async () => {
+// L'éditeur d'un mode : dans le menu même, à la place de la liste (aucun panneau à droite). Les requêtes sont celles de lib/activity-api, ici simulées.
+describe('l\'éditeur d\'un mode', () => {
+  test('le crayon ouvre l\'éditeur du mode, rempli : le menu devient une petite fenêtre, le focus va au nom ; « Revenir » rend la liste, le focus sur le mode', async () => {
     const user = userEvent.setup();
-    const socket = renderChip({ states: [focus] });
+    renderChip({ states: [focus, lunch] });
     await user.click(trigger());
-    await user.click(mode(fr.modes.normal));
-    expect(socket.sent).toEqual([]);
+    await user.click(pencil('À table'));
+    const dialog = screen.getByRole('dialog', { name: fr.modes.titleEdit });
     expect(screen.queryByRole('menu')).toBeNull();
+    const name = within(dialog).getByRole('textbox', { name: fr.modes.label }) as HTMLInputElement;
+    expect(name.value).toBe('À table');
+    expect(document.activeElement).toBe(name);
+    expect((within(dialog).getByRole('switch', { name: fr.modes.allowEntry }) as HTMLInputElement).checked).toBe(true);
+    expect((within(dialog).getByRole('switch', { name: fr.modes.hear }) as HTMLInputElement).checked).toBe(false);
+    await user.click(within(dialog).getByRole('button', { name: fr.modes.back }));
+    expect(screen.getByRole('menu', { name: fr.me.menu })).toBeTruthy();
+    expect(document.activeElement).toBe(mode('À table'));
+  });
+
+  test('Échap dans l\'éditeur revient à la liste, sans fermer le menu ; refermé, le menu rouvre sur la liste', async () => {
+    const user = userEvent.setup();
+    renderChip({ states: [focus] });
+    await user.click(trigger());
+    await user.click(manage());
+    expect(screen.getByRole('dialog', { name: fr.modes.titleCreate })).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('menu', { name: fr.me.menu })).toBeTruthy();
+    expect(document.activeElement).toBe(manage());
+    await user.click(manage());
+    await user.click(document.body);
+    await user.click(trigger());
+    expect(screen.getByRole('menu', { name: fr.me.menu })).toBeTruthy();
+  });
+
+  test('créer : le nom, une icône, une couleur ; « Créer » l\'envoie, le range au magasin, et la liste revient avec lui, focus dessus', async () => {
+    const user = userEvent.setup();
+    const created: ActivityState = { id: 's9', label: 'Pause', color: '#0d9488', icon: 'coffee', allowEntry: true, hear: true, heard: true };
+    vi.mocked(activityApi.createActivityState).mockResolvedValueOnce(created);
+    renderChip();
+    await user.click(trigger());
+    await user.click(manage());
+    const dialog = screen.getByRole('dialog');
+    const submit = within(dialog).getByRole('button', { name: fr.modes.submitCreate }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    await user.type(within(dialog).getByRole('textbox', { name: fr.modes.label }), '  Pause ');
+    await user.click(within(dialog).getByRole('button', { name: fr.states.icons.coffee }));
+    await user.click(within(dialog).getByRole('button', { name: t(fr.modes.colorPick, { color: '#0d9488' }) }));
+    await user.click(submit);
+    expect(activityApi.createActivityState).toHaveBeenCalledExactlyOnceWith({ label: 'Pause', color: '#0d9488', icon: 'coffee', allowEntry: true, hear: true, heard: true });
+    expect(useOfficeStore.getState().myStates).toEqual([created]);
+    expect(document.activeElement).toBe(mode('Pause'));
+  });
+
+  test('modifier : « Enregistrer » remplace le mode ; choisir de nouveau son icône la retire', async () => {
+    const user = userEvent.setup();
+    const withIcon: ActivityState = { ...focus, icon: 'headphones' };
+    vi.mocked(activityApi.updateActivityState).mockImplementationOnce(async (id, input) => ({ id, ...input }));
+    renderChip({ states: [withIcon] });
+    await user.click(trigger());
+    await user.click(pencil('En focus'));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: fr.states.icons.headphones }));
+    await user.click(within(dialog).getByRole('switch', { name: fr.modes.heard }));
+    await user.click(within(dialog).getByRole('button', { name: fr.modes.submitSave }));
+    expect(activityApi.updateActivityState).toHaveBeenCalledExactlyOnceWith('s1', { label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: true });
+    expect(useOfficeStore.getState().myStates[0]).toEqual({ id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: true });
+  });
+
+  test('supprimer : la corbeille demande une confirmation sur place ; « Garder » n\'envoie rien, « Oui, supprimer » le supprime, et la liste revient sans lui', async () => {
+    const user = userEvent.setup();
+    vi.mocked(activityApi.deleteActivityState).mockResolvedValueOnce(undefined);
+    renderChip({ states: [focus, lunch] });
+    await user.click(trigger());
+    await user.click(pencil('En focus'));
+    const dialog = screen.getByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: fr.modes.remove }));
+    expect(within(dialog).getByText(t(fr.modes.removeConfirm, { label: 'En focus' }))).toBeTruthy();
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: fr.modes.removeKeep }));
+    await user.click(within(dialog).getByRole('button', { name: fr.modes.removeKeep }));
+    expect(activityApi.deleteActivityState).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(within(dialog).getByRole('button', { name: fr.modes.remove }));
+    await user.click(within(dialog).getByRole('button', { name: fr.modes.remove }));
+    await user.click(within(dialog).getByRole('button', { name: fr.modes.removeYes }));
+    expect(activityApi.deleteActivityState).toHaveBeenCalledExactlyOnceWith('s1');
+    expect(useOfficeStore.getState().myStates).toEqual([lunch]);
+    expect(screen.queryByRole('menuitemradio', { name: 'En focus' })).toBeNull();
+  });
+
+  test('un nouveau mode n\'a pas de corbeille ; un échec de l\'API se dit, et l\'éditeur reste ouvert', async () => {
+    const user = userEvent.setup();
+    vi.mocked(activityApi.createActivityState).mockRejectedValueOnce(new Error('réseau'));
+    renderChip();
+    await user.click(trigger());
+    await user.click(manage());
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).queryByRole('button', { name: fr.modes.remove })).toBeNull();
+    await user.type(within(dialog).getByRole('textbox', { name: fr.modes.label }), 'Pause');
+    await user.click(within(dialog).getByRole('button', { name: fr.modes.submitCreate }));
+    expect(within(dialog).getByRole('alert').textContent).toBe(fr.states.errors.generic);
+    expect(screen.getByRole('dialog')).toBe(dialog);
   });
 });
 
@@ -506,19 +566,21 @@ describe('au clavier', () => {
 
   test('↓ et ↑ passent d\'une ligne à l\'autre en boucle, Début et Fin vont aux extrémités', async () => {
     const user = userEvent.setup();
-    renderChip({ status: 'available' });
+    renderChip({ status: 'available', states: [focus] });
     await user.tab();
     await user.keyboard('{Enter}');
     await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(item('busy'));
     await user.keyboard('{ArrowDown}{ArrowDown}');
     expect(document.activeElement).toBe(item('dnd'));
-    // Après les statuts : « Normal », les modes tout prêts, « + », puis les lignes du bas.
+    // Après les statuts : chaque mode, puis son crayon, « Nouveau mode », puis les lignes du bas.
     await user.keyboard('{ArrowDown}');
-    expect(document.activeElement).toBe(mode(fr.modes.normal));
-    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}');
+    expect(document.activeElement).toBe(mode('En focus'));
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(pencil('En focus'));
+    await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(manage());
-    await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}{ArrowUp}');
+    await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}');
     expect(document.activeElement).toBe(item('dnd'));
     await user.keyboard('{Home}');
     expect(document.activeElement).toBe(entry(fr.character.toggle));
@@ -531,7 +593,7 @@ describe('au clavier', () => {
     expect(document.activeElement).toBe(entry(fr.office.signOut));
   });
 
-  test('→ et ← passent aussi d\'une tuile ou d\'une pastille à la voisine', async () => {
+  test('→ et ← passent aussi d\'une ligne à la voisine', async () => {
     const user = userEvent.setup();
     renderChip({ status: 'available' });
     await user.tab();
@@ -702,7 +764,7 @@ describe('quand on ne peut pas changer de statut', () => {
     expect((trigger() as HTMLButtonElement).disabled).toBe(false);
     await user.click(trigger());
     expect((item('busy') as HTMLButtonElement).disabled).toBe(true);
-    expect((mode(fr.modes.normal) as HTMLButtonElement).disabled).toBe(true);
+    expect((item('available') as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
     expect(entry(fr.office.signOut).disabled).toBe(false);
   });
@@ -714,12 +776,11 @@ describe('quand on ne peut pas changer de statut', () => {
     render(<MeChip name="Léa" email="lea@exemple.fr" socket={socket.asSocket()} panels={fakePanels({ ready: false })} onSignOut={() => {}} signingOut={false} />);
     await user.click(trigger());
     for (const status of STATUSES) expect((item(status) as HTMLButtonElement).disabled).toBe(true);
-    expect((mode(fr.modes.normal) as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
     expect(entry(fr.character.toggle).disabled).toBe(true);
     expect(entry(fr.office.signOut).disabled).toBe(false);
     // Aucun statut n'est coché : on ne sait pas lequel est le sien.
-    expect(within(group(fr.me.status)).queryByRole('menuitemradio', { checked: true })).toBeNull();
+    expect(within(group(fr.me.mode)).queryByRole('menuitemradio', { checked: true })).toBeNull();
   });
 
   test('l\'apparence attend aussi que la coque ait dit qui est là (panels.ready)', async () => {

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sql } from 'drizzle-orm';
@@ -187,5 +187,32 @@ test('les migrations du dépôt donnent aux états d\'activité une icône facul
     sql`select data_type, is_nullable, column_default from information_schema.columns where table_name = 'activity_state' and column_name = 'icon'`,
   );
   expect(rows).toEqual([{ data_type: 'text', is_nullable: 'YES', column_default: null }]);
+  await close();
+});
+
+test('la migration 0010 donne les modes par défaut aux comptes qui existaient, avant leurs modes à eux, sans doubler un mode du même nom', async () => {
+  // Le dépôt jusqu'à la migration d'avant (son journal coupé là, ses fichiers tels quels), puis deux comptes : l'un a déjà un mode « concentration ».
+  const repo = join(import.meta.dirname, '..', 'drizzle');
+  const before = join(tmp, 'before-0010');
+  mkdirSync(join(before, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync(join(repo, 'meta', '_journal.json'), 'utf8')) as { entries: Array<{ idx: number; tag: string }> };
+  const earlier = journal.entries.filter((entry) => entry.idx < 10);
+  writeFileSync(join(before, 'meta', '_journal.json'), JSON.stringify({ ...journal, entries: earlier }));
+  for (const { tag } of earlier) copyFileSync(join(repo, `${tag}.sql`), join(before, `${tag}.sql`));
+
+  const { db, close } = await createDb('memory://');
+  await runMigrations(db, before);
+  await db.execute(sql`insert into "user" (id, name, email) values ('lea', 'Léa', 'lea@x.fr'), ('tom', 'Tom', 'tom@x.fr')`);
+  // Des comptes d'hier : leurs modes, créés ensuite, sont plus récents qu'eux.
+  await db.execute(sql`update "user" set created_at = now() - interval '1 day'`);
+  await db.execute(
+    sql`insert into activity_state (user_id, label, color, created_at) values ('tom', 'concentration', '#2f5fd0', now()), ('tom', 'Je mange', '#f59e0b', now() + interval '1 second')`,
+  );
+  await runMigrations(db);
+
+  const labels = async (userId: string) =>
+    (await db.execute<{ label: string }>(sql`select label from activity_state where user_id = ${userId} order by created_at, id`)).rows.map((row) => row.label);
+  expect(await labels('lea')).toEqual(['Manger', 'Sport', 'Concentration']);
+  expect(await labels('tom')).toEqual(['Manger', 'Sport', 'concentration', 'Je mange']);
   await close();
 });

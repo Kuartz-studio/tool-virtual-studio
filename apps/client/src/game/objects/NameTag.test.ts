@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { BUBBLE_HEIGHT, bubbleScale, DOT_STEP_MS } from './SpeechBubble';
-import { displayName, NAME_MAX_LENGTH, NameTag, SpeakingBubbles } from './NameTag';
+import { displayName, inkOn, modeLabelOf, NAME_MAX_LENGTH, NameTag, SpeakingBubbles } from './NameTag';
 import { CUP_HEIGHT, CUP_WIDTH, cupScale, steamAt } from './SteamCup';
 
 test('un nom de 20 caractères au plus est affiché tel quel', () => {
@@ -136,6 +136,7 @@ class FakeShape {
   originY = 0;
   alpha = 1;
   fill: number | undefined;
+  color: string | undefined;
   text = '';
   resolution = 1;
   destroyed = false;
@@ -161,6 +162,7 @@ class FakeShape {
   setDepth(depth: number) { this.depth = depth; return this; }
   setAlpha(alpha: number) { this.alpha = alpha; return this; }
   setFillStyle(fill: number) { this.fill = fill; return this; }
+  setColor(color: string) { this.color = color; return this; }
   setVertexRoundMode() { return this; }
   setText(text: string) { this.text = text; this.width = 6 * text.length; return this; }
   setResolution(resolution: number) { this.style.resolution = resolution; return this; }
@@ -268,7 +270,8 @@ describe('NameTag : la tasse de café', () => {
     const container = made.find((shape) => shape.kind === 'container')!;
     const background = made.find((shape) => shape.kind === 'rectangle' && shape.children.length === 0 && container.children.includes(shape))!;
     const [, cupImage] = made.filter((shape) => shape.kind === 'image');
-    const steam = made.filter((shape) => shape.kind === 'rectangle' && shape !== background).slice(3);
+    // Après les trois points de la bulle, la vapeur ; le dernier rectangle est le fond de l'étiquette du mode.
+    const steam = made.filter((shape) => shape.kind === 'rectangle' && shape !== background).slice(3, -1);
     return { tag, container, background, cupImage: cupImage!, steam };
   }
 
@@ -323,5 +326,63 @@ describe('NameTag : la tasse de café', () => {
     expect(CUP_WIDTH * cupImage.scaleX * 0.375).toBeGreaterThanOrEqual(12);
     expect(CUP_HEIGHT).toBe(7);
     expect(setup(0.375).cupImage.scaleX).toBe(cupScale(0.375));
+  });
+});
+
+// L'étiquette du mode, au-dessus du nom : ce que tout le monde voit de son mode (rien pour Disponible).
+describe('NameTag : l\'étiquette du mode', () => {
+  const sport = { id: 's1', label: 'Sport', color: '#f97316', allowEntry: true, hear: false, heard: false };
+
+  function setup(status: 'available' | 'busy' = 'available') {
+    const { scene, made } = tagScene();
+    const tag = new NameTag(scene, 'Alice', status, 1.5);
+    const container = made.find((shape) => shape.kind === 'container')!;
+    const [name, mode] = made.filter((shape) => shape.kind === 'text');
+    const [background] = made.filter((shape) => shape.kind === 'rectangle');
+    const modeBackground = made.filter((shape) => shape.kind === 'rectangle').at(-1)!;
+    const [bubbleImage] = made.filter((shape) => shape.kind === 'image');
+    return { tag, container, name: name!, mode: mode!, background: background!, modeBackground, bubbleImage: bubbleImage! };
+  }
+
+  test('ce qu\'elle dit : le nom du mode, sinon le statut ; rien pour Disponible', () => {
+    expect(modeLabelOf('available', null)).toBeNull();
+    expect(modeLabelOf('busy', null)).toBe('Occupé');
+    expect(modeLabelOf('dnd', null)).toBe('Ne pas déranger');
+    expect(modeLabelOf('busy', sport)).toBe('Sport');
+  });
+
+  test('l\'encre qui se lit le mieux : blanche sur un violet, sombre sur un gris ou un jaune', () => {
+    expect(inkOn(0x6d28d9)).toBe(0xffffff);
+    expect(inkOn(0x9ca3af)).toBe(0x15171c);
+    expect(inkOn(0xf59e0b)).toBe(0x15171c);
+  });
+
+  test('Disponible : cachée, et la bulle reste sur la pastille du nom', () => {
+    const { tag, mode, modeBackground, background, bubbleImage } = setup();
+    expect(mode.visible).toBe(false);
+    expect(modeBackground.visible).toBe(false);
+    expect(tag.modeText()).toBe('');
+    expect(bubbleImage.y).toBe(background.y - 1);
+  });
+
+  test('un mode : son nom sur sa couleur, au-dessus du nom, dans le conteneur ; la bulle monte au-dessus d\'elle ; sans mode, elle disparaît', () => {
+    const { tag, container, mode, modeBackground, background, bubbleImage } = setup();
+    tag.setActivity(sport);
+    expect(tag.modeText()).toBe('Sport');
+    expect(container.children).toEqual(expect.arrayContaining([mode, modeBackground]));
+    expect(modeBackground.fill).toBe(0xf97316);
+    expect(mode.color).toBe('#15171c');
+    expect(modeBackground.y + modeBackground.height).toBe(background.y - 1);
+    expect(bubbleImage.y).toBe(modeBackground.y - 1);
+    tag.setActivity(null);
+    expect(tag.modeText()).toBe('');
+    expect(bubbleImage.y).toBe(background.y - 1);
+  });
+
+  test('un statut qui n\'est pas Disponible se dit aussi, et suit le statut', () => {
+    const { tag } = setup('busy');
+    expect(tag.modeText()).toBe('Occupé');
+    tag.setStatus('available');
+    expect(tag.modeText()).toBe('');
   });
 });

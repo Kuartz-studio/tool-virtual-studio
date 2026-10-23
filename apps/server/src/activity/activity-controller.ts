@@ -1,4 +1,4 @@
-import { OFFICE_ROOM, isPresetId, presetById, type ActivityState } from '@bureau/shared';
+import { OFFICE_ROOM, type ActivityState } from '@bureau/shared';
 import type { Logger } from 'pino';
 import type { DeskController } from '../desks/desk-controller';
 import { logServerError } from '../logger';
@@ -21,7 +21,7 @@ export interface ActivityControllerDeps {
 // Ce que le serveur fait des états d'activité d'une personne présente : elle en prend un (`state:set`) ou revient à un statut ordinaire,
 // et tout le bureau le voit (`activity:changed`) ; ce qu'il change se traduit ailleurs (la porte de son bureau, ses groupes de
 // conversation et son micro lisent l'état du monde), et un mode qui a un emplacement la conduit à ce lieu, ou l'en ramène (ModeTravel).
-// Les modes tout prêts (`preset:focus`, `preset:sport`) viennent du partage, jamais de la base. Rien ici ne lève.
+// Les modes par défaut (Manger, Sport, Concentration) sont en base comme les autres (DEFAULT_MODES, donnés à la création du compte). Rien ici ne lève.
 export function createActivityController(d: ActivityControllerDeps) {
   function announce(userId: string, activity: ActivityState | null): void {
     d.io.to(OFFICE_ROOM).emit('activity:changed', { id: userId, activity });
@@ -31,11 +31,11 @@ export function createActivityController(d: ActivityControllerDeps) {
   }
 
   return {
-    // Prendre cet état (un identifiant d'elle, ou d'un mode tout prêt), ou null : plus d'état d'activité. Un identifiant qu'elle n'a pas (étranger, supprimé) est ignoré.
+    // Prendre cet état (un identifiant d'elle), ou null : plus d'état d'activité. Un identifiant qu'elle n'a pas (étranger, supprimé, ou qui n'est pas un uuid) est ignoré.
     async choose(userId: string, activityId: string | null): Promise<void> {
       try {
         if (activityId === null) return this.clear(userId);
-        const state = isPresetId(activityId) ? presetById(activityId) : await d.activities.get(userId, activityId);
+        const state = await d.activities.get(userId, activityId);
         // Elle a quitté le monde, ou l'état a disparu, pendant la lecture.
         if (!state || !d.world.get(userId)) return;
         const previous = d.world.get(userId)?.activity ?? null;

@@ -4,10 +4,11 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
+import { createActivityService } from '../activity/activity-service';
 import type { Db } from '../db/client';
 import * as schema from '../db/schema';
 import type { Env } from '../env';
-import { createLogger } from '../logger';
+import { createLogger, logServerError } from '../logger';
 import type { Mailer } from '../mail/mailer';
 import type { ServerEvents } from '../server-events';
 import { betterAuthLogger } from './auth-logger';
@@ -124,6 +125,15 @@ export function createAuth({
               throw new APIError('FORBIDDEN', { code: 'INVITATION_REQUIRED', message: 'Un compte ne peut être créé que sur invitation.' });
             }
             return { data: { ...user, emailVerified: true, role: invitation.role } };
+          },
+          // Le compte créé reçoit les modes par défaut (Manger, Sport, Concentration). Un échec ne défait pas le compte : il aura « Disponible », et
+          // créera ses modes lui-même.
+          after: async (user) => {
+            try {
+              await createActivityService(db).seedDefaults(user.id);
+            } catch (err) {
+              logServerError(logger, { err, userId: user.id }, 'Modes par défaut non créés');
+            }
           },
         },
       },
