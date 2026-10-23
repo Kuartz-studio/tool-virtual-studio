@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { MUSIC_SCENES } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { fr } from '../i18n/fr';
-import { MUSIC_FORMATS, musicUrls, SCENE_IDS, SCENES, SFX, SFX_IDS, sfxUrl } from './catalog';
+import { MUSIC_FORMATS, musicUrls, SCENE_IDS, SCENES, scenesOfTheme, SFX, SFX_IDS, sfxUrl, THEME_IDS, themeOf } from './catalog';
 import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
 
 // Les fichiers sont rangés dans le dossier public du client, servi tel quel (/assets/audio/…).
@@ -11,14 +11,15 @@ const PUBLIC = join(import.meta.dirname, '../../public');
 const file = (url: string) => join(PUBLIC, url);
 
 describe('le catalogue du son', () => {
-  test('les six ambiances sont proposées une fois chacune, et toutes ont leurs textes', () => {
+  test('les ambiances sont proposées une fois chacune, et toutes ont leurs textes ; seules celles du bureau disent où elles jouent', () => {
     expect([...SCENE_IDS].sort()).toEqual(Object.keys(MEASURED_MUSIC).sort());
     expect(new Set(SCENE_IDS).size).toBe(SCENE_IDS.length);
     for (const id of SCENE_IDS) {
       const text = fr.sound.scenes[id];
       expect(text.title.length, id).toBeGreaterThan(2);
       expect(text.mood.length, id).toBeGreaterThan(5);
-      expect(text.where.length, id).toBeGreaterThan(5);
+      if (themeOf(id) === 'default') expect(text.where?.length, id).toBeGreaterThan(5);
+      else expect(text.where, id).toBeNull();
       expect(SCENES[id].track, id).toMatch(/ — /);
     }
     // Aucun texte pour une ambiance qui n'existe plus.
@@ -27,6 +28,19 @@ describe('le catalogue du son', () => {
 
   test('la liste des ambiances est celle du partage : le serveur et la carte nomment les mêmes', () => {
     expect(SCENE_IDS).toBe(MUSIC_SCENES);
+  });
+
+  test('les thèmes : « Par défaut » (les six ambiances du bureau) puis « Pirate » (ses dix boucles), chacun nommé ; chaque ambiance est dans un seul', () => {
+    expect(THEME_IDS).toEqual(['default', 'pirate']);
+    expect(scenesOfTheme('default')).toEqual(['lobby', 'focus', 'sunny', 'dusk', 'drift', 'quest']);
+    expect(scenesOfTheme('pirate')).toHaveLength(10);
+    expect(THEME_IDS.flatMap(scenesOfTheme)).toEqual([...SCENE_IDS]);
+    for (const theme of THEME_IDS) {
+      expect(fr.sound.themes[theme].length, theme).toBeGreaterThan(2);
+      for (const id of scenesOfTheme(theme)) expect(themeOf(id), id).toBe(theme);
+    }
+    // Les identifiants sont gardés en base : en minuscules et tirets.
+    for (const id of SCENE_IDS) expect(id).toMatch(/^[a-z]+(-[a-z]+)*$/);
   });
 
   test('chaque ambiance a ses deux fichiers (ogg et m4a), qui existent et ne sont pas vides', () => {
@@ -54,18 +68,18 @@ describe('le catalogue du son', () => {
     }
   });
 
-  test('les gains ne sont ni nuls ni délirants : les ambiances ne font que baisser, les effets restent dans une plage raisonnable', () => {
+  test('les gains ne sont ni nuls ni délirants : les ambiances bougent de quelques dB (les pirates, plus douces, remontent un peu), les effets restent dans une plage raisonnable', () => {
     for (const id of SCENE_IDS) {
       expect(SCENES[id].gain, id).toBeGreaterThan(0.2);
-      expect(SCENES[id].gain, id).toBeLessThanOrEqual(1.2);
+      expect(SCENES[id].gain, id).toBeLessThanOrEqual(1.5);
     }
     for (const id of SFX_IDS) expect(SFX[id].gain, id).toBeLessThan(5);
   });
 
-  test('les durées mesurées sont celles de boucles : de 10 secondes à 2 minutes', () => {
+  test('les durées mesurées sont celles de boucles : de 10 secondes à 2 minutes pour celles du bureau, jusqu\'à 3 minutes et demie pour les pirates', () => {
     for (const id of SCENE_IDS) {
       expect(MEASURED_MUSIC[id].seconds, id).toBeGreaterThan(10);
-      expect(MEASURED_MUSIC[id].seconds, id).toBeLessThan(120);
+      expect(MEASURED_MUSIC[id].seconds, id).toBeLessThan(themeOf(id) === 'default' ? 120 : 210);
     }
   });
 });

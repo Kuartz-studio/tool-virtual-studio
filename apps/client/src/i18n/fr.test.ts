@@ -68,9 +68,13 @@ test('le juke-box : le nom du bouton et de sa fenêtre, ses interrupteurs et ses
   expect(fr.sound.effects.label).toBe('Effets sonores');
   expect(fr.sound.effects.volume).toBe('Volume des effets sonores');
   expect(fr.sound.effects.test).toBe('Écouter un effet');
-  expect(fr.sound.ambiance.auto).toBe('Selon la pièce');
-  expect(t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes.lobby.title })).toBe('Ici : Salle d\'attente');
-  expect(Object.values(fr.sound.scenes).map((scene) => scene.title)).toEqual(['Salle d\'attente', 'Concentration', 'Soleil', 'Crépuscule', 'Dérive', 'Expédition']);
+  // « J'écoute » : la pièce ou sa musique à soi ; la liste des musiques et ses thèmes.
+  expect([fr.sound.source.room, fr.sound.source.mine]).toEqual(['La pièce', 'Ma musique']);
+  expect([fr.sound.themes.default, fr.sound.themes.pirate]).toEqual(['Par défaut', 'Pirate']);
+  expect(fr.roomMusic.change).toBe('Changer la musique de la pièce');
+  expect(fr.sound.mine.change).toBe('Changer ma musique');
+  expect(t(fr.roomMusic.audience, { place: 'Café' })).toBe('Café · pour tout le monde ici');
+  expect(Object.values(fr.sound.scenes).map((scene) => scene.title).slice(0, 7)).toEqual(['Salle d\'attente', 'Concentration', 'Soleil', 'Crépuscule', 'Dérive', 'Expédition', 'Silent Harbor']);
 });
 
 test('le bouton du bureau : « Aller à mon bureau » dehors, « Réglages du bureau » dedans', () => {

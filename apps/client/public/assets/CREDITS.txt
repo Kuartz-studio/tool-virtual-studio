@@ -23,6 +23,10 @@ Musique : « Music Loop Bundle » d'Abstraction (Benjamin Burnes, Tallbeard Stud
   Les fichiers .ogg sont ceux du pack, sans leur pochette ni leurs étiquettes (le son est identique) ; les .m4a
   (pour Safari) sont des copies en AAC. Rangés par apps/client/scripts/audio (`pnpm --filter @bureau/client gen:audio`).
 
+Musique du thème Pirate : « Pirate Music Pack Vol. 2 », ses dix versions « Loop » (Silent Harbor, Hidden Booty,
+  Ocean's Grasp, Drunken Sailors, Blackened Tide, Windward Chase, Sea Wolves, Black Flag Rise, Tempest Call,
+  Foggy Shores), encodées en Ogg Vorbis et en AAC depuis les .wav du pack, dans audio/music/.
+
 Effets sonores : « 400 Sounds Pack » (dossiers UI, Musical Effects, Other, Environment et Card and Board), rangés dans audio/sfx/.
   Les portes, les serrures, le café, l'élan, la téléportation, les dés, les pions et la victoire en font partie
   (les applaudissements de la victoire sont écourtés à 3,5 s, avec une extinction).

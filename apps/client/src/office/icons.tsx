@@ -3,6 +3,7 @@ import {
   AudioLines,
   BookOpen,
   Check,
+  ChevronLeft,
   ChevronRight,
   ChevronUp,
   Coffee,
@@ -13,9 +14,12 @@ import {
   FlaskConical,
   Focus,
   Gamepad2,
+  Headphones,
   History,
   Lightbulb,
   LightbulbOff,
+  ListMusic,
+  Lock,
   LogOut,
   MapPin,
   Maximize,
@@ -241,4 +245,26 @@ export function CheckIcon() {
 
 export function TrashIcon() {
   return <Trash2 />;
+}
+
+// ---- La musique (le juke-box, la musique de la pièce) ----
+
+// Une liste de morceaux : la vignette d'une musique qu'on peut changer ouvre la liste.
+export function ListMusicIcon() {
+  return <ListMusic />;
+}
+
+// Un casque : sa musique à soi, que les autres n'entendent pas.
+export function HeadphonesIcon() {
+  return <Headphones />;
+}
+
+// Un chevron vers la gauche : revenir en arrière (de la liste des musiques à la fenêtre).
+export function ChevronLeftIcon() {
+  return <ChevronLeft />;
+}
+
+// Un cadenas : ce qu'on ne peut pas changer ici (la musique du bureau d'un autre).
+export function LockIcon() {
+  return <Lock />;
 }

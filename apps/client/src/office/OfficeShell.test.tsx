@@ -468,12 +468,16 @@ describe('le juke-box', () => {
     expect(document.activeElement).toBe(music());
   });
 
-  test('choisir une ambiance y change la musique voulue, et le bouton se barre quand la musique est coupée', async () => {
+  test('choisir sa musique y change la musique voulue, et le bouton se barre quand la musique est coupée', async () => {
     const user = userEvent.setup();
     renderShell();
     await user.click(music());
-    await user.click(screen.getByRole('radio', { name: new RegExp(`^${fr.sound.scenes.drift.title}`) }));
+    await user.click(screen.getByRole('tab', { name: fr.sound.source.mine }));
+    await user.click(screen.getByRole('button', { name: new RegExp(`^${fr.sound.mine.change}`) }));
+    await user.click(screen.getByRole('tab', { name: fr.sound.themes.default }));
+    await user.click(screen.getByRole('button', { name: new RegExp(`^${fr.sound.scenes.drift.title}`) }));
     expect(useAudioStore.getState().prefs.scene).toBe('drift');
+    await user.click(screen.getByRole('button', { name: fr.sound.picker.back }));
     await user.click(screen.getByRole('switch', { name: fr.sound.music.label }));
     expect(useAudioStore.getState().prefs.musicOn).toBe(false);
     expect(music().classList.contains('is-muted')).toBe(true);

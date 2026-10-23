@@ -54,8 +54,9 @@ const DUCK_RELEASE_S = 0.5;
 const SFX_MAX_VOICES = 8;
 // Un effet demandé avant d'être chargé part quand même, s'il arrive dans ce délai (l'arrivée au bureau, juste après l'« Entrer »).
 const SFX_LATE_MS = 1500;
-// Les ambiances gardées décodées (chacune pèse quelques dizaines de Mo en mémoire) : la courante, et les dernières entendues.
-const MUSIC_CACHE_SIZE = 3;
+// Les ambiances gardées décodées : la courante et la précédente, ce qu'il faut au fondu d'une pièce à l'autre (et au retour dans la pièce qu'on vient de
+// quitter). Pas plus : une boucle pirate de trois minutes pèse près de 60 Mo une fois décodée. Celle qui s'éteint reste jouée par sa voix jusqu'au bout.
+const MUSIC_CACHE_SIZE = 2;
 // Les points d'un fondu : assez pour une courbe lisse.
 const CURVE_POINTS = 64;
 

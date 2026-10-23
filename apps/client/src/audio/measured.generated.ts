@@ -8,6 +8,16 @@ export const MEASURED_MUSIC = {
   lobby: { gain: 0.603, seconds: 24.304 },
   dusk: { gain: 0.813, seconds: 36.852 },
   quest: { gain: 0.733, seconds: 15 },
+  'silent-harbor': { gain: 1.288, seconds: 159.273 },
+  'hidden-booty': { gain: 1.245, seconds: 132 },
+  'oceans-grasp': { gain: 1.189, seconds: 166.213 },
+  'drunken-sailors': { gain: 1.318, seconds: 168 },
+  'blackened-tide': { gain: 1.047, seconds: 148 },
+  'windward-chase': { gain: 0.902, seconds: 146 },
+  'sea-wolves': { gain: 0.944, seconds: 116.229 },
+  'black-flag-rise': { gain: 1.035, seconds: 124.8 },
+  'tempest-call': { gain: 0.989, seconds: 180.706 },
+  'foggy-shores': { gain: 1.084, seconds: 162.462 },
 } as const;
 
 export const MEASURED_SFX = {

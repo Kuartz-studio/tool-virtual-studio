@@ -2365,18 +2365,21 @@ svg.lucide.icon-s {
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    Le juke-box (SoundPopover) : une fenêtre de 320 px au-dessus du bouton « Musique et ambiances », centrée sur lui. En haut la musique (son
-   interrupteur et son volume), puis le choix de l'ambiance : « Selon la pièce », une carte large, et six cartes à pochette en pixel art ; en
-   bas les effets sonores, et les crédits. Les boutons radio sont de vrais boutons, invisibles, qui couvrent leur carte.
+   interrupteur et son volume), puis « J'écoute » et la carte de ce qu'on écoute ; en bas les effets sonores, et les crédits. Les cartes, la
+   liste des musiques et la fenêtre de la puce du lieu sont dans le bloc « Chantier musique », à la fin de la feuille.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .popover[data-placement='top'] {
   translate: -50% 0;
   transform-origin: bottom center;
 }
 
+/* Une largeur fixe, que la fenêtre ne dépasse jamais (max-width) : sur un écran étroit, ou quand une barre de défilement verticale lui prend de
+   la place, le contenu se resserre au lieu de déborder sur le côté. */
 .juke {
   display: grid;
   gap: 12px;
-  width: min(304px, calc(100vw - 48px));
+  width: 304px;
+  max-width: 100%;
   padding: 4px 0 0;
 }
 
@@ -2436,119 +2439,8 @@ svg.lucide.icon-s {
   height: 18px;
 }
 
-/* Le choix de l'ambiance. Musique coupée, il reste utilisable, mais en retrait. */
-.juke-scenes {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-  margin: 0;
-  padding: 0 4px;
-  border: 0;
-  transition: opacity var(--dur-fast) var(--ease-out);
-}
-
-.juke-scenes.is-off {
-  opacity: 0.5;
-}
-
-/* Le vrai bouton radio : invisible, sur toute la carte, et par-dessus ce qu'elle contient (un clic le choisit, les flèches passent d'une carte à
-   l'autre). */
-.juke-radio {
-  position: absolute;
-  inset: 0;
-  z-index: 1;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  cursor: pointer;
-  opacity: 0;
-}
-
-.juke-card,
-.juke-auto {
-  position: relative;
-  border-radius: var(--radius-m);
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
-}
-
-/* La carte choisie : l'anneau de l'accent, et son fond. Celle qui a le focus du clavier a le contour de partout. */
-.juke-card:has(.juke-radio:checked),
-.juke-auto:has(.juke-radio:checked) {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-
-.juke-card:has(.juke-radio:focus-visible),
-.juke-auto:has(.juke-radio:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-/* « Selon la pièce » : l'épingle du lieu, son titre, l'ambiance d'ici en dessous, et à droite sa pochette. */
-.juke-auto {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 8px 8px 12px;
-  background: var(--surface-soft);
-}
-
-.juke-auto:hover:not(:has(.juke-radio:checked)) {
-  background: var(--surface-sunk);
-}
-
-.juke-auto > svg.lucide {
-  width: 18px;
-  height: 18px;
-  color: var(--text-soft);
-}
-
-.juke-auto-text {
-  display: grid;
-  flex: 1;
-  min-width: 0;
-  gap: 1px;
-}
-
-.juke-auto-text .juke-name {
-  text-align: left;
-}
-
-.juke-auto-text small {
-  overflow: hidden;
-  font-size: var(--text-xs);
-  color: var(--text-soft);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.juke-auto .juke-art {
-  width: 48px;
-  height: 30px;
-  border-radius: 6px;
-}
-
-/* Les six cartes : trois par ligne. */
-.juke-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-}
-
-.juke-card {
-  display: grid;
-  justify-items: center;
-  align-content: start;
-  gap: 6px;
-  padding: 6px 3px 8px;
-}
-
-.juke-card:hover:not(:has(.juke-radio:checked)) {
-  background: var(--surface-soft);
-}
-
-/* Une pochette : 16 × 10 pixels agrandis ×5, sans lissage. L'égaliseur de l'ambiance qu'on entend est dessus, en bas à droite. */
+/* Une pochette : 16 × 10 pixels agrandis ×5 (×3 dans la liste : `is-small`), sans lissage. L'égaliseur de l'ambiance qu'on entend est dessus, en
+   bas à droite. */
 .juke-art {
   position: relative;
   display: block;
@@ -2566,16 +2458,6 @@ svg.lucide.icon-s {
   width: 100%;
   height: 100%;
   image-rendering: pixelated;
-}
-
-.juke-name {
-  max-width: 100%;
-  font-size: var(--text-s);
-  font-weight: var(--weight-semibold);
-  line-height: 1.25;
-  text-align: center;
-  text-wrap: balance;
-  overflow-wrap: anywhere;
 }
 
 /* Trois barres de 3 px, de hauteurs qui alternent (un cycle de 900 ms), sur un fond sombre qui les détache de la pochette, jour comme nuit. Le
@@ -2657,15 +2539,6 @@ svg.lucide.icon-s {
 
 .juke-fx > .volume .volume-slider {
   min-width: 0;
-}
-
-/* La musique de la pièce (RoomMusicButton) : la même fenêtre que le juke-box, sans volume ; qui l'a réglée en dernier, et la note du casque, en petit. */
-.room-music-by,
-.room-music-note {
-  margin: 0;
-  padding: 0 10px;
-  font-size: var(--text-xs);
-  color: var(--text-soft);
 }
 
 .juke-credits {
@@ -4501,4 +4374,335 @@ svg.lucide.icon-s {
 .place-picker .place-destination[aria-pressed='true'] rect {
   fill: var(--accent-soft);
   stroke: var(--accent);
+}
+
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Chantier musique : « J'écoute » dans le juke-box, les cartes de la musique (la pièce, la sienne), la liste des musiques et ses thèmes
+   (Music.tsx), et la fenêtre de la puce du lieu (RoomMusic.tsx). Les cartes sont sur le fond léger, ce qui joue en relief dans un cadre
+   blanc ; la nuit, les jetons suivent.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* « J'écoute » et la carte de ce qu'on écoute. Musique coupée, ils restent utilisables, en retrait. */
+.juke-listen {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 0 4px;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.juke-listen.is-off {
+  opacity: 0.5;
+}
+
+.juke-source {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-left: 6px;
+}
+
+.juke-source-label {
+  flex: none;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--text-soft);
+}
+
+.juke-source .seg,
+.music-picker .seg {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Une carte : l'auditoire en tête (son icône, « Musique de la pièce », pour qui elle joue), ce qui joue, puis ses réglages et ses notes. */
+.music-card {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.music-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.music-card-head > svg.lucide {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--text-soft);
+}
+
+.music-card-titles {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.music-card-title {
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+}
+
+.music-card-audience {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ce qui joue : la vignette, le nom et sa note, dans un cadre blanc. Quand on peut le changer, c'est un bouton : le chevron à droite, et, au survol,
+   l'icône de la liste sur la vignette. */
+.music-now {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 6px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: var(--surface);
+  border: 0;
+  border-radius: var(--radius-s);
+  box-shadow: 0 0 0 1px var(--border);
+}
+
+button.music-now {
+  padding-right: 10px;
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+button.music-now:hover {
+  box-shadow: 0 0 0 1px var(--border-strong), var(--shadow-s);
+}
+
+button.music-now:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.music-now > svg.lucide {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--text-soft);
+}
+
+.music-now-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.music-now-title {
+  overflow: hidden;
+  font-size: var(--text-m);
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-now-text small {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  color: var(--text-soft);
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* La pièce éteinte : une vignette vide, et le nom en retrait. */
+.music-card.is-silent .music-now-title {
+  color: var(--text-soft);
+}
+
+/* L'icône de la liste, sur la vignette d'une musique qu'on peut changer : au survol et au focus, sur un voile sombre (jour comme nuit). */
+.music-art-edit {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  background: rgb(0 0 0 / 45%);
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-out);
+}
+
+.music-art-edit svg.lucide {
+  width: 20px;
+  height: 20px;
+}
+
+button.music-now:is(:hover, :focus-visible) .music-art-edit {
+  opacity: 1;
+}
+
+/* L'interrupteur de la pièce, qui l'a réglée, et pourquoi on n'y touche pas : sous ce qui joue. */
+.music-card-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+  font-size: var(--text-s);
+}
+
+.music-card-note,
+.music-card-lock {
+  margin: 0;
+  padding: 0 2px;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-soft);
+}
+
+.music-card-lock {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.music-card-lock svg.lucide {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 1px;
+}
+
+/* La fenêtre de la puce du lieu : la carte de la pièce, et, en dessous, la note du casque. */
+.room-music > .music-card-note {
+  padding: 0 6px 4px;
+}
+
+/* La liste des musiques : « Retour » et le titre, « Par défaut de la pièce » à part, le thème, puis les lignes. */
+.music-picker {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 0 4px 4px;
+}
+
+.music-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.music-picker-head .juke-title {
+  font-size: var(--text-m);
+}
+
+.music-default {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.music-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Une ligne : la vignette ×3, le nom et ce que la musique évoque, la coche du choix en cours. Celle qu'on a choisie a le fond de l'accent. */
+.music-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 5px 10px 5px 5px;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.music-row:hover {
+  background: var(--surface-soft);
+}
+
+.music-row[aria-current='true'] {
+  background: var(--accent-soft);
+}
+
+.music-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.music-row .music-now-title {
+  font-size: var(--text-s);
+}
+
+.music-row .music-now-text small {
+  -webkit-line-clamp: 1;
+}
+
+.music-row > svg.lucide {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--accent-ink);
+}
+
+.juke-art.is-small {
+  width: 48px;
+  height: 30px;
+  border-radius: 6px;
+}
+
+.juke-art.is-small .juke-eq {
+  right: 2px;
+  bottom: 2px;
+  height: 11px;
+  padding: 2px;
+}
+
+.juke-art.is-small .juke-eq i {
+  width: 2px;
+}
+
+/* L'infobulle de « Écouter un effet », au bord droit de la fenêtre : alignée sur le bord droit de son bouton, et non centrée sur lui. Centrée, elle
+   dépassait de la fenêtre, même cachée (une infobulle invisible garde sa place) : la fenêtre, qui défile en hauteur (overflow-y: auto), défilait
+   alors aussi en largeur. C'était le défilement horizontal parasite du juke-box. */
+.juke-fx .icon-tip {
+  right: 0;
+  left: auto;
+  transform: translate(0, 4px);
+}
+
+.juke-fx .icon-btn:focus-visible .icon-tip {
+  transform: none;
+}
+
+@media (hover: hover) {
+  .juke-fx .icon-btn:hover .icon-tip {
+    transform: none;
+  }
 }

@@ -1,5 +1,18 @@
 import { describe, expect, test } from 'vitest';
-import { buildOfficeTiledMap, DEFAULT_ROOM_MUSIC, MUSIC_RATE_MS, MUSIC_SCENES, musicSetSchema, parseOfficeMap, placeByKey, roomSceneOf, type RoomMusic } from '../src';
+import {
+  buildOfficeTiledMap,
+  DEFAULT_ROOM_MUSIC,
+  MUSIC_RATE_MS,
+  MUSIC_SCENES,
+  MUSIC_THEME_IDS,
+  MUSIC_THEMES,
+  musicSetSchema,
+  parseOfficeMap,
+  placeByKey,
+  roomSceneOf,
+  themeOfScene,
+  type RoomMusic,
+} from '../src';
 
 const map = parseOfficeMap(buildOfficeTiledMap());
 const BY = { id: 'u1', name: 'Alice' };
@@ -27,7 +40,7 @@ describe('musicSetSchema : la demande de changer la musique d\'une pièce', () =
     expect(ok({ place: 'game', scene: null })).toBe(true);
   });
 
-  test('chacune des six ambiances, et aucune autre', () => {
+  test('chacune des ambiances, de tous les thèmes, et aucune autre', () => {
     for (const scene of MUSIC_SCENES) expect(ok({ place: 'game', scene })).toBe(true);
     expect(ok({ place: 'game', scene: 'auto' })).toBe(false);
     expect(ok({ place: 'game', scene: 'disco' })).toBe(false);
@@ -79,5 +92,19 @@ describe('roomSceneOf : ce que joue une pièce', () => {
     for (const key of ['plaza', 'client', 'street-n', 'street-s', 'street-e']) expect(settable(key), key).toBe(false);
     // Un bureau a sa musique, que son propriétaire règle.
     expect(placeByKey(map, 'desk:A1')!.music).toBe(true);
+  });
+});
+
+describe('les thèmes de musique', () => {
+  test('« Par défaut » puis « Pirate » ; toutes les ambiances, thème après thème, chacune une fois et dans son thème', () => {
+    expect(MUSIC_THEME_IDS).toEqual(['default', 'pirate']);
+    expect([...MUSIC_SCENES]).toEqual([...MUSIC_THEMES.default, ...MUSIC_THEMES.pirate]);
+    expect(new Set(MUSIC_SCENES).size).toBe(MUSIC_SCENES.length);
+    expect(themeOfScene('dusk')).toBe('default');
+    expect(themeOfScene('silent-harbor')).toBe('pirate');
+  });
+
+  test('une musique pirate se règle pour une pièce comme une autre', () => {
+    expect(musicSetSchema.safeParse({ place: 'game', scene: 'black-flag-rise' }).success).toBe(true);
   });
 });

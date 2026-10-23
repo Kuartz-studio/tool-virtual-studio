@@ -127,22 +127,25 @@ test('« Ici », dans Personnes, ne réunit que ceux du même lieu : deux person
   }
 });
 
-test('l\'ambiance choisie à la main prime sur l\'endroit, et « Selon la pièce » rend la main', async ({ page }) => {
+test('« Ma musique » prime sur l\'endroit, et « La pièce » rend la main', async ({ page }) => {
   test.slow();
   await joinOffice(page, 'Gaspard');
   await giveDeskBack(page);
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('lobby');
 
   const jukebox = await openJukebox(page);
-  await jukebox.getByRole('radio', { name: /^Expédition/ }).check();
+  await jukebox.getByRole('tab', { name: 'Ma musique' }).click();
+  await jukebox.getByRole('button', { name: /^Changer ma musique/ }).click();
+  await jukebox.getByRole('button', { name: /^Expédition/ }).click();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('quest');
+  await jukebox.getByRole('button', { name: 'Retour', exact: true }).click();
 
   // Ailleurs sur la carte, elle continue.
   await teleport(page, spotIn('conference'));
   await page.waitForTimeout(1500);
   expect(await playing(page)).toBe('quest');
 
-  // « Selon la pièce » : la salle de conférence, où l'on est.
-  await jukebox.getByRole('radio', { name: /^Selon la pièce/ }).check();
+  // « La pièce » : la salle de conférence, où l'on est.
+  await jukebox.getByRole('tab', { name: 'La pièce' }).click();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('drift');
 });

@@ -215,20 +215,21 @@ describe('la musique', () => {
     expect(playing(voices()[0]!)).toBe('/assets/audio/music/focus.ogg');
   });
 
-  test('les ambiances décodées pèsent lourd : seules les dernières sont gardées, et une ancienne se recharge', async () => {
+  test('les ambiances décodées pèsent lourd : seules la courante et la précédente sont gardées, et une plus ancienne se recharge', async () => {
     await startEngine();
     for (const scene of ['focus', 'sunny', 'dusk', 'drift'] as const) {
       engine.setMusic(scene);
       await settle();
     }
     expect(fetchedMusic()).toHaveLength(4);
+    // Le retour dans la pièce qu'on vient de quitter ne recharge rien.
+    engine.setMusic('dusk');
+    await settle();
+    expect(fetchedMusic().filter((url) => url.includes('dusk'))).toHaveLength(1);
     engine.setMusic('sunny');
     await settle();
-    expect(fetchedMusic().filter((url) => url.includes('sunny'))).toHaveLength(1);
-    engine.setMusic('focus');
-    await settle();
-    // « focus » était la plus ancienne : elle a été oubliée, il faut la recharger.
-    expect(fetchedMusic().filter((url) => url.includes('focus'))).toHaveLength(2);
+    // « sunny » était plus ancienne : elle a été oubliée, il faut la recharger.
+    expect(fetchedMusic().filter((url) => url.includes('sunny'))).toHaveLength(2);
   });
 
   test('le volume de la musique suit le curseur au carré, et rien ne change pour les effets', async () => {
