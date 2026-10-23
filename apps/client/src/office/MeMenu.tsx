@@ -3,9 +3,10 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject 
 import { fr } from '../i18n/fr';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
-import { LogOutIcon, ShirtIcon } from './icons';
+import { LogOutIcon, PencilIcon, ShirtIcon } from './icons';
 import { ModeEditor } from './ModeEditor';
 import { ModeList } from './ModeList';
+import { NameEditor } from './NameEditor';
 import type { PanelControls, PanelId } from './panels';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Popover } from './ui/Popover';
@@ -31,7 +32,8 @@ export interface MeMenuProps {
 }
 
 // Le menu « Moi » (spec §10 pour le statut), qui s'ouvre au-dessus de la puce :
-// - en haut, ton portrait, ton nom, ton e-mail et « Changer d'apparence » (le panneau du personnage) ;
+// - en haut, ton portrait, ton nom, ton e-mail, « Changer d'apparence » (le panneau du personnage) et « Changer de nom » (NameEditor, dans le menu même,
+//   à la place de la liste, comme l'éditeur d'un mode) ;
 // - « Mode » : une seule liste (ModeList), Disponible d'abord (l'état normal ; Occupé, Absent et Ne pas déranger ne s'y choisissent plus), puis tes modes (Manger,
 //   Sport, Concentration, que ton compte a reçus, et ceux que tu as créés), et « Nouveau mode ». Une seule ligne est cochée ; ce que le serveur confirme
 //   (`status:changed`, `activity:changed`) est ce que la puce et le menu affichent. Le crayon d'un mode, et « Nouveau mode », ouvrent son éditeur (ModeEditor)
@@ -66,6 +68,8 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
   const [editing, setEditing] = useState<ActivityState | null | undefined>(undefined);
   // La ligne qui reprend le focus quand la liste revient : le mode (son identifiant), ou « Nouveau mode » (null).
   const refocus = useRef<string | null | undefined>(undefined);
+  // Le nom en cours de changement, à la place de la liste.
+  const [renaming, setRenaming] = useState(false);
 
   // Les lignes qu'on peut choisir, dans l'ordre de la page : celles qui ne sont pas inactives.
   const lines = () => Array.from(list.current?.querySelectorAll<HTMLButtonElement>(ITEMS) ?? []).filter((line) => !line.disabled);
@@ -75,6 +79,7 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
   useEffect(() => {
     if (!open) {
       setEditing(undefined);
+      setRenaming(false);
       return;
     }
     const all = lines();
@@ -170,6 +175,23 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
     event.stopPropagation();
   }
 
+  if (renaming) {
+    return (
+      <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top-start" label={fr.me.renameTitle} role="dialog" id={id}>
+        <div className="me-menu">
+          <NameEditor
+            name={name}
+            onClose={() => {
+              setRenaming(false);
+              // La liste revient : le focus retourne à « Changer de nom ».
+              requestAnimationFrame(() => list.current?.querySelector<HTMLButtonElement>('.me-rename')?.focus());
+            }}
+          />
+        </div>
+      </Popover>
+    );
+  }
+
   if (editing !== undefined) {
     return (
       <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top-start" label={editing === null ? fr.modes.titleCreate : fr.modes.titleEdit} role="dialog" id={id}>
@@ -195,6 +217,10 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
             <button type="button" role="menuitem" tabIndex={-1} className="me-look" disabled={!panels.ready} onClick={() => openPanel('character')}>
               <ShirtIcon />
               <span>{fr.character.toggle}</span>
+            </button>
+            <button type="button" role="menuitem" tabIndex={-1} className="me-look me-rename" disabled={!enabled} onClick={() => setRenaming(true)}>
+              <PencilIcon />
+              <span>{fr.me.rename}</span>
             </button>
           </div>
         </div>

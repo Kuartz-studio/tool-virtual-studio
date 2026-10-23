@@ -196,12 +196,13 @@ describe('le menu', () => {
     expect(entry(fr.office.signingOut).disabled).toBe(true);
   });
 
-  test('le menu a, dans l\'ordre, l\'apparence, une seule liste (Disponible, puis les modes, chacun suivi de son crayon, puis « Nouveau mode ») et la déconnexion', async () => {
+  test('le menu a, dans l\'ordre, l\'apparence, le nom, une seule liste (Disponible, puis les modes, chacun suivi de son crayon, puis « Nouveau mode ») et la déconnexion', async () => {
     const user = userEvent.setup();
     renderChip({ states: [focus, lunch] });
     await user.click(trigger());
     expect(linesOf(screen.getByRole('menu'))).toEqual([
       'Changer d\'apparence',
+      'Changer de nom',
       'Disponible',
       'En focus',
       t(fr.modes.edit, { label: 'En focus' }),
@@ -592,6 +593,8 @@ describe('au clavier', () => {
     await user.keyboard('{Enter}{ArrowRight}');
     expect(document.activeElement).toBe(manage());
     await user.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(document.activeElement).toBe(entry(fr.me.rename));
+    await user.keyboard('{ArrowLeft}');
     expect(document.activeElement).toBe(entry(fr.character.toggle));
   });
 
@@ -615,7 +618,7 @@ describe('au clavier', () => {
     const user = userEvent.setup();
     const socket = renderChip({ status: 'away' });
     await user.tab();
-    await user.keyboard('{Enter}{Home}{ArrowDown}{Enter}');
+    await user.keyboard('{Enter}{Home}{ArrowDown}{ArrowDown}{Enter}');
     expect(socket.sentOf('status:set')).toEqual(['available']);
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger());

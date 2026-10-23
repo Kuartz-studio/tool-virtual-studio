@@ -98,6 +98,15 @@ export const fr = {
     // Ce qu'un lecteur d'écran annonce quand ton statut (ou ton mode) change.
     statusChanged: 'Statut : {status}',
     mode: 'Mode',
+    // Changer son nom affiché, depuis le menu.
+    rename: 'Changer de nom',
+    renameTitle: 'Changer de nom',
+    renameLabel: 'Ton nom',
+    renameHint: 'C\'est le nom que les autres voient au-dessus de ton avatar (40 caractères au plus).',
+    renameSave: 'Enregistrer',
+    renameSaving: 'Enregistrement…',
+    renameBack: 'Revenir au menu',
+    renameFailed: 'Le nom n\'a pas pu être changé. Réessaie dans un instant.',
   },
   // Les modes, dans le menu de la puce « Moi » : une seule liste, les statuts puis ses modes (ceux par défaut, Manger, Sport, Concentration, comme ceux qu'on crée),
   // et l'éditeur d'un mode, dans le menu même (son nom, son icône, sa couleur, la pièce où il conduit, ce qu'il change).
