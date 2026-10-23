@@ -42,8 +42,9 @@ export interface DecorItem {
   fy: number;
 }
 
-// Un élément posé dans la pièce d'un bureau : `x` et `y` sont les cases de son coin haut-gauche d'empreinte, comptées depuis le coin
-// haut-gauche de la pièce. Pour un élément `wall`, `y` est toujours 0 : il se pose sur la bande de mur, seul `x` compte.
+// Un élément posé dans la pièce d'un bureau : `x` et `y` sont la position du coin haut-gauche de son empreinte, en cases au dixième près (2.5 : au
+// milieu de la troisième case ; voir DECOR_STEPS), comptées depuis le coin haut-gauche de la pièce. Pour un élément `wall`, `y` est toujours 0 : il
+// se pose sur la bande de mur, seul `x` compte.
 export interface PlacedItem {
   id: string;
   x: number;

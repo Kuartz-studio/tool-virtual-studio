@@ -36,6 +36,12 @@ export function placedFromObjects(objects: readonly MapObject[]): PlacedAt[] {
   });
 }
 
+// Une position en cases (au dixième près pour un élément de bureau) en pixels entiers de la carte : un dixième de case fait 3,2 px, et l'image se
+// pose sur le pixel le plus proche, alignée sur ceux du sol.
+export function toPixels(cells: number): number {
+  return Math.round(cells * TILE_SIZE);
+}
+
 // Les profondeurs des éléments qui ne se trient pas par leur bas : un tapis est sous tout le monde, un élément mural juste au-dessus des murs.
 // Un meuble, lui, a pour profondeur le y (en pixels) du bas de son empreinte, comme un avatar a celui de ses pieds : qui est plus bas est devant.
 export const DECOR_DEPTH = { floor: 1.5, wall: 1.6 } as const;
@@ -59,14 +65,16 @@ export function layoutDecor(placed: readonly PlacedAt[]): Drawn[] {
   });
   const objects = known.filter(({ item }) => item.kind === 'object');
   return known.map(({ entry, item, footprint }) => {
-    const left = entry.x * TILE_SIZE;
-    const footBottom = (footprint.y + footprint.h) * TILE_SIZE;
+    const left = toPixels(entry.x);
+    const footBottom = toPixels(footprint.y + footprint.h);
     const nudge = entry.offsetY ?? 0;
-    if (item.kind === 'wall') return { placed: entry, item, left, bottom: entry.y * TILE_SIZE + nudge, depth: DECOR_DEPTH.wall, footprint };
+    if (item.kind === 'wall') return { placed: entry, item, left, bottom: toPixels(entry.y) + nudge, depth: DECOR_DEPTH.wall, footprint };
     if (item.kind === 'floor') return { placed: entry, item, left, bottom: footBottom + nudge, depth: DECOR_DEPTH.floor, footprint };
     if (item.kind === 'object') return { placed: entry, item, left, bottom: footBottom + nudge, depth: footBottom, footprint };
-    // Un objet posé sur un meuble se dessine devant lui, quel que soit le rang où il est : juste au-dessus du bas du meuble qui le porte.
-    const support = objects.filter((o) => contains(o.footprint, footprint.x, footprint.y)).map((o) => (o.footprint.y + o.footprint.h) * TILE_SIZE);
+    // Un objet posé sur un meuble se dessine devant lui, quel que soit le rang où il est : juste au-dessus du bas du meuble qui le porte (celui
+    // sous le milieu du haut de son empreinte : posé au dixième près, il peut déborder du plateau).
+    const [cx, cy] = [footprint.x + footprint.w / 2, footprint.y];
+    const support = objects.filter((o) => contains(o.footprint, cx, cy)).map((o) => toPixels(o.footprint.y + o.footprint.h));
     return { placed: entry, item, left, bottom: footBottom + nudge, depth: Math.max(footBottom, ...support) + 0.5, footprint };
   });
 }

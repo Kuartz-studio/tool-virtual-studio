@@ -4,6 +4,7 @@ import {
   decorItem,
   deskRoomSpecOf,
   overlappingItems,
+  snapToDecorStep,
   type DecorError,
   type DeskDecor,
   type DeskRoomSpec,
@@ -21,14 +22,29 @@ export function roomOfDesk(map: OfficeMap | null, key: string): DeskRoomSpec {
   return (map ? deskRoomSpecOf(map, key) : undefined) ?? DESK_ROOMS.standard;
 }
 
-// Là où l'élément se pose quand le pointeur est sur cette case de la pièce : le pointeur est au milieu du bas de l'empreinte (c'est là qu'on
-// tient un meuble), et un élément mural suit la colonne du pointeur, collé au mur.
-export function anchorFor(id: string, cell: { x: number; y: number }, room: DeskRoomSpec): { x: number; y: number } | null {
+// Comment l'élément tenu suit le pointeur : au dixième de case (`free`, le placement libre), ou à la case près (`cell` : pour l'aligner sur la
+// grille, Maj enfoncée dans la pièce).
+export type DecorSnap = 'free' | 'cell';
+
+// Le point de l'élément que le pointeur tient quand il est posé là : le milieu du bas de son empreinte (c'est là qu'on tient un meuble). En cases
+// de la pièce, avec leurs fractions.
+export function handleOf(id: string, at: { x: number; y: number }): { x: number; y: number } | null {
+  const item = decorItem(id);
+  return item ? { x: at.x + item.w / 2, y: at.y + item.claim - 0.5 } : null;
+}
+
+// Là où l'élément se pose quand le pointeur est en ce point de la pièce (en cases, avec leurs fractions) : le pointeur tient le milieu du bas de
+// l'empreinte (handleOf), arrondi au dixième ou à la case selon `snap`, et un élément mural suit le pointeur, collé au mur. L'élément ne sort pas
+// de la pièce : il est ramené contre le bord. À la case près, un pointeur dans une case pose un élément de largeur impaire de part et d'autre de
+// cette case, comme avant le placement libre.
+export function anchorFor(id: string, point: { x: number; y: number }, room: DeskRoomSpec, snap: DecorSnap): { x: number; y: number } | null {
   const item = decorItem(id);
   if (!item) return null;
-  const x = Math.min(Math.max(cell.x - Math.floor((item.w - 1) / 2), 0), room.width - item.w);
+  const round = snap === 'cell' ? Math.round : snapToDecorStep;
+  const clamp = (value: number, max: number) => Math.min(Math.max(round(value), 0), max);
+  const x = clamp(point.x - item.w / 2, room.width - item.w);
   if (item.kind === 'wall') return { x, y: 0 };
-  return { x, y: cell.y - (item.claim - 1) };
+  return { x, y: clamp(point.y - item.claim + 0.5, room.height - item.claim) };
 }
 
 export type PlaceResult = { ok: true; decor: DeskDecor } | { ok: false; error: DecorError };

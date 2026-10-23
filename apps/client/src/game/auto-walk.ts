@@ -1,4 +1,5 @@
 import {
+  blockedCells,
   decorItem,
   deskKey,
   deskRoomSpecOf,
@@ -126,26 +127,21 @@ function roomTiles(map: OfficeMap, room: Zone): { tx: number; ty: number; width:
 }
 
 // La carte comme la marche la voit : celle du jeu, plus les meubles solides que l'occupant a posés dans sa pièce (des obstacles pour l'avatar, mais
-// pas dans la carte, où chacun règle la sienne). Les sièges, tapis et éléments muraux ne bloquent rien.
+// pas dans la carte, où chacun règle la sienne). Les sièges, tapis et éléments muraux ne bloquent rien. Un meuble posé au dixième de case bloque
+// toutes les cases qu'il touche (blockedCells, la règle de passage de la déco) : le chemin passe par des cases entièrement libres.
 export function deskWalkMap(map: OfficeMap, room: Zone, items: readonly PlacedItem[]): OfficeMap {
   const rect = roomTiles(map, room);
   if (!rect.decorated) return map;
   const blocked = Uint8Array.from(map.blocked);
-  for (const placed of items) {
-    const item = decorItem(placed.id);
-    if (!item || !item.solid || item.kind === 'wall') continue;
-    const foot = footprintOf(item, placed);
-    for (let y = foot.y; y < foot.y + foot.h; y++) {
-      for (let x = foot.x; x < foot.x + foot.w; x++) {
-        if (x >= 0 && y >= 0 && x < rect.width && y < rect.height) blocked[(rect.ty + y) * map.widthTiles + rect.tx + x] = 1;
-      }
-    }
+  for (const cell of blockedCells(items, rect.width)) {
+    const [x, y] = [cell % rect.width, Math.floor(cell / rect.width)];
+    if (y < rect.height) blocked[(rect.ty + y) * map.widthTiles + rect.tx + x] = 1;
   }
   return { ...map, blocked };
 }
 
-// Le siège du poste de travail : celui qui est posé juste sous un bureau (même colonne), sinon le premier siège posé. Son empreinte, en cases de la
-// pièce ; null sans siège.
+// Le siège du poste de travail : celui qui est posé juste sous un bureau (même colonne, à moins d'une demi-case de son bord : la déco se pose au
+// dixième de case), sinon le premier siège posé. Son empreinte, en cases de la pièce ; null sans siège.
 function seatOf(items: readonly PlacedItem[]): Footprint | null {
   const placed = items.flatMap((p) => {
     const item = decorItem(p.id);
@@ -153,7 +149,8 @@ function seatOf(items: readonly PlacedItem[]): Footprint | null {
   });
   const seats = placed.filter(({ item }) => item.cat === 'sieges' && item.kind === 'object');
   const desks = placed.filter(({ item }) => item.cat === 'bureaux' && item.kind === 'object');
-  const atDesk = seats.find(({ foot }) => desks.some((d) => d.foot.y + d.foot.h === foot.y && foot.x < d.foot.x + d.foot.w && d.foot.x < foot.x + foot.w));
+  const below = (desk: Footprint, seat: Footprint) => seat.y - (desk.y + desk.h) > -1e-6 && seat.y - (desk.y + desk.h) < 0.5;
+  const atDesk = seats.find(({ foot }) => desks.some((d) => below(d.foot, foot) && foot.x < d.foot.x + d.foot.w && d.foot.x < foot.x + foot.w));
   return (atDesk ?? seats[0])?.foot ?? null;
 }
 
@@ -162,7 +159,8 @@ function seatOf(items: readonly PlacedItem[]): Footprint | null {
 function pickTarget(map: OfficeMap, room: Zone, items: readonly PlacedItem[]): Point | null {
   const rect = roomTiles(map, room);
   const seat = rect.decorated ? seatOf(items) : null;
-  const wanted = seat ? { x: seat.x + Math.floor(seat.w / 2), y: seat.y + seat.h } : { x: Math.floor(rect.width / 2), y: Math.floor(rect.height / 2) };
+  // La case sous le milieu du siège, et la première rangée entière au sud de lui (il peut être posé au dixième de case).
+  const wanted = seat ? { x: Math.floor(seat.x + seat.w / 2), y: Math.ceil(seat.y + seat.h - 1e-6) } : { x: Math.floor(rect.width / 2), y: Math.floor(rect.height / 2) };
   let best: { x: number; y: number; distance: number } | null = null;
   for (let y = 0; y < rect.height; y++) {
     for (let x = 0; x < rect.width; x++) {

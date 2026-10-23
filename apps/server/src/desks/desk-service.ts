@@ -5,6 +5,7 @@ import {
   defaultDeskDecor,
   deskKey,
   deskRoomSpecOf,
+  snapToDecorStep,
   type DeskAck,
   type DeskBan,
   type DeskDecor,
@@ -392,9 +393,10 @@ export class DeskService {
   }
 }
 
-// Les éléments posés réduits à { id, x, y }, dans des objets neufs.
+// Les éléments posés réduits à { id, x, y }, dans des objets neufs ; les positions (au dixième de case, checkDecor les a vérifiées) écrites au plus
+// court : 0.30000000000000004 devient 0.3, en mémoire comme en base.
 function copyItems(items: readonly PlacedItem[]): PlacedItem[] {
-  return items.map(({ id, x, y }) => ({ id, x, y }));
+  return items.map(({ id, x, y }) => ({ id, x: snapToDecorStep(x), y: snapToDecorStep(y) }));
 }
 
 // Un échec qui ne dit rien de plus que son nom (`bad_decor`, qui porte une raison, se construit à part).

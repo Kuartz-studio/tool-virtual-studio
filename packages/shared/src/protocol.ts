@@ -32,7 +32,8 @@ export const displayNameSchema = z.string().trim().min(1).max(DISPLAY_NAME_MAX_L
 //   réadmettre ;
 // - knock : toquer à la porte d'un bureau fermé (le propriétaire est prévenu) ; admit : laisser entrer quelqu'un qui a toqué ;
 // - goto : aller à son bureau ;
-// - decor : régler la pièce de son bureau (sol, murs et éléments posés, d'un seul bloc : checkDecor, côté serveur, le valide en entier).
+// - decor : régler la pièce de son bureau (sol, murs et éléments posés, d'un seul bloc : checkDecor, côté serveur, le valide en entier ; les
+//   positions sont en cases au dixième près, et checkDecor refuse celles qui ne tombent pas sur un dixième).
 const deskKeySchema = z.string().min(1).max(64);
 const userIdSchema = z.string().min(1).max(128);
 export const deskCommandSchema = z.discriminatedUnion('type', [
@@ -49,7 +50,7 @@ export const deskCommandSchema = z.discriminatedUnion('type', [
     type: z.literal('decor'),
     floor: z.string().min(1).max(40),
     wall: z.string().min(1).max(40),
-    items: z.array(z.object({ id: z.string().min(1).max(40), x: z.number().int().min(-100).max(100), y: z.number().int().min(-100).max(100) })).max(MAX_DECOR_ITEMS),
+    items: z.array(z.object({ id: z.string().min(1).max(40), x: z.number().min(-100).max(100), y: z.number().min(-100).max(100) })).max(MAX_DECOR_ITEMS),
   }),
 ]);
 

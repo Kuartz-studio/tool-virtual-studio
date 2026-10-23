@@ -21,6 +21,20 @@ export const DESK_ROOMS = {
 
 export const MAX_DECOR_ITEMS = 80;
 
+// Un élément se pose au dixième de case près : `x` et `y` sont des multiples de 1 / DECOR_STEPS. Une déco posée à la case près (toutes celles d'avant)
+// l'est aussi. Les calculs de place se font en dixièmes entiers (inSteps), sans erreur d'arrondi.
+export const DECOR_STEPS = 10;
+
+// Cette coordonnée tombe-t-elle sur un dixième de case ? (0.30000000000000004 y tombe : c'est 0,3 à l'arrondi des nombres à virgule près.)
+export function isDecorStep(value: number): boolean {
+  return Number.isFinite(value) && Math.abs(value * DECOR_STEPS - Math.round(value * DECOR_STEPS)) < 1e-6;
+}
+
+// La coordonnée ramenée au dixième de case le plus proche : 0.30000000000000004 devient 0.3.
+export function snapToDecorStep(value: number): number {
+  return Math.round(value * DECOR_STEPS) / DECOR_STEPS;
+}
+
 // La pièce d'une place de la carte : la taille de sa zone `desk` et le côté de sa zone `door` (au nord si elle est au-dessus de la pièce), en cases ;
 // undefined si la place n'existe pas, ou n'a pas de porte (les bureaux de la petite carte de développement n'ont pas de pièce décorée).
 export function deskRoomSpecOf(map: OfficeMap, key: string): DeskRoomSpec | undefined {
@@ -42,10 +56,10 @@ export interface DeskDecor {
   items: PlacedItem[];
 }
 
-// Pourquoi une déco est refusée : `too_many` (plus de MAX_DECOR_ITEMS éléments), `unknown_item` ou `unknown_theme`, `bad_position` (une case
-// qui n'est pas un entier, ou un élément mural qui n'est pas contre le mur), `out_of_room` (l'élément déborde de la pièce), `overlap` (deux
-// éléments sur les mêmes cases), `blocks_door` (un meuble devant la porte), `unreachable` (un coin de la pièce que plus personne ne peut
-// atteindre à pied).
+// Pourquoi une déco est refusée : `too_many` (plus de MAX_DECOR_ITEMS éléments), `unknown_item` ou `unknown_theme`, `bad_position` (une position
+// qui ne tombe pas sur un dixième de case, ou un élément mural qui n'est pas contre le mur), `out_of_room` (l'élément déborde de la pièce),
+// `overlap` (deux éléments qui se chevauchent), `blocks_door` (un meuble devant la porte), `unreachable` (un coin de la pièce que plus personne ne
+// peut atteindre à pied).
 export type DecorError = 'too_many' | 'unknown_item' | 'unknown_theme' | 'bad_position' | 'out_of_room' | 'overlap' | 'blocks_door' | 'unreachable';
 export type DecorCheck = { ok: true } | { ok: false; error: DecorError; index?: number };
 
@@ -56,34 +70,44 @@ export interface Footprint {
   h: number;
 }
 
-// Les cases qu'un élément occupe : sa largeur sur les `claim` rangées du bas de son image. Un élément mural n'occupe que sa place sur le mur
-// (une rangée : celle de la première case de la pièce, que le mur surplombe).
+// Ce qu'un élément occupe, en cases (au dixième près, comme sa position) : sa largeur sur les `claim` rangées du bas de son image. Un élément
+// mural n'occupe que sa place sur le mur (une rangée : celle de la première case de la pièce, que le mur surplombe).
 export function footprintOf(item: DecorItem, at: { x: number; y: number }): Footprint {
   return { x: at.x, y: at.y, w: item.w, h: item.kind === 'wall' ? 1 : item.claim };
 }
 
+// La même empreinte, en dixièmes de case entiers.
+function inSteps(f: Footprint): Footprint {
+  return { x: Math.round(f.x * DECOR_STEPS), y: Math.round(f.y * DECOR_STEPS), w: Math.round(f.w * DECOR_STEPS), h: Math.round(f.h * DECOR_STEPS) };
+}
+
+// Deux empreintes (en dixièmes) qui ne se chevauchent pas : elles peuvent se toucher par un bord.
 const apart = (a: Footprint, b: Footprint): boolean => a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
 
-// Les éléments déjà posés qui gênent celui-ci posé là : ceux de la même sorte dont l'empreinte touche la sienne (checkDecor refuse ce
+// Les éléments déjà posés qui gênent celui-ci posé là : ceux de la même sorte dont l'empreinte chevauche la sienne (checkDecor refuse ce
 // chevauchement). Leur rang dans `items`. C'est ce qu'un remplacement retire.
 export function overlappingItems(items: readonly PlacedItem[], id: string, at: { x: number; y: number }): number[] {
   const item = decorItem(id);
   if (!item) return [];
-  const target = footprintOf(item, at);
+  const target = inSteps(footprintOf(item, at));
   return items.flatMap((placed, index) => {
     const other = decorItem(placed.id);
-    return other && other.kind === item.kind && !apart(footprintOf(other, placed), target) ? [index] : [];
+    return other && other.kind === item.kind && !apart(inSteps(footprintOf(other, placed)), target) ? [index] : [];
   });
 }
 
-// Les cases de la pièce que les éléments bloquent (numéro de case = y × largeur + x).
+// Les cases de la pièce que les meubles solides touchent, même d'un dixième (numéro de case = y × largeur + x ; rien hors de la largeur ni
+// au-dessus de la pièce). La règle de passage compte en cases entières, comme la marche automatique : un meuble à cheval sur deux cases les prend
+// toutes les deux, et ce qui reste libre est toujours une case où l'avatar tient.
 export function blockedCells(items: readonly PlacedItem[], width: number = DESK_ROOMS.standard.width): Set<number> {
   const blocked = new Set<number>();
   for (const placed of items) {
     const item = decorItem(placed.id);
     if (!item || !item.solid || item.kind === 'wall') continue;
-    const f = footprintOf(item, placed);
-    for (let y = f.y; y < f.y + f.h; y++) for (let x = f.x; x < f.x + f.w; x++) blocked.add(y * width + x);
+    const f = inSteps(footprintOf(item, placed));
+    const [x0, x1] = [Math.max(0, Math.floor(f.x / DECOR_STEPS)), Math.min(width, Math.ceil((f.x + f.w) / DECOR_STEPS))];
+    const [y0, y1] = [Math.max(0, Math.floor(f.y / DECOR_STEPS)), Math.ceil((f.y + f.h) / DECOR_STEPS)];
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) blocked.add(y * width + x);
   }
   return blocked;
 }
@@ -101,18 +125,20 @@ export function checkDecor(decor: DeskDecor, room: DeskRoomSpec = DESK_ROOMS.sta
   if (!isFloorTheme(decor.floor) || !isWallTheme(decor.wall)) return { ok: false, error: 'unknown_theme' };
   if (decor.items.length > MAX_DECOR_ITEMS) return { ok: false, error: 'too_many' };
 
+  // Les empreintes, en dixièmes de case (inSteps), comme la pièce et sa porte.
   const placed: Array<{ item: DecorItem; at: Footprint; index: number }> = [];
+  const [roomW, roomH] = [room.width * DECOR_STEPS, room.height * DECOR_STEPS];
   for (const [index, entry] of decor.items.entries()) {
     const item = decorItem(entry.id);
     if (!item) return { ok: false, error: 'unknown_item', index };
-    if (!Number.isInteger(entry.x) || !Number.isInteger(entry.y)) return { ok: false, error: 'bad_position', index };
+    if (!isDecorStep(entry.x) || !isDecorStep(entry.y)) return { ok: false, error: 'bad_position', index };
     if (item.kind === 'wall' && (entry.y !== 0 || item.h > 2)) return { ok: false, error: 'bad_position', index };
-    const at = footprintOf(item, entry);
-    if (at.x < 0 || at.y < 0 || at.x + at.w > room.width || at.y + at.h > room.height) return { ok: false, error: 'out_of_room', index };
+    const at = inSteps(footprintOf(item, entry));
+    if (at.x < 0 || at.y < 0 || at.x + at.w > roomW || at.y + at.h > roomH) return { ok: false, error: 'out_of_room', index };
     placed.push({ item, at, index });
   }
 
-  // Deux éléments de la même sorte (meubles, tapis, objets posés, éléments muraux) ne partagent jamais une case.
+  // Deux éléments de la même sorte (meubles, tapis, objets posés, éléments muraux) ne se chevauchent jamais ; ils peuvent se toucher.
   for (let i = 0; i < placed.length; i++) {
     for (let j = i + 1; j < placed.length; j++) {
       const [a, b] = [placed[i]!, placed[j]!];
@@ -122,12 +148,14 @@ export function checkDecor(decor: DeskDecor, room: DeskRoomSpec = DESK_ROOMS.sta
 
   // Une porte au nord perce le mur où se posent les éléments muraux : aucun ne la surplombe.
   if (room.door.side === 'north') {
+    const [doorX0, doorX1] = [room.door.x * DECOR_STEPS, (room.door.x + room.door.width) * DECOR_STEPS];
     for (const { item, at, index } of placed) {
-      if (item.kind === 'wall' && at.x < room.door.x + room.door.width && at.x + at.w > room.door.x) return { ok: false, error: 'blocks_door', index };
+      if (item.kind === 'wall' && at.x < doorX1 && at.x + at.w > doorX0) return { ok: false, error: 'blocks_door', index };
     }
   }
 
-  // La porte n'est pas murée, et ce qui reste de libre se rejoint à pied depuis l'entrée.
+  // La porte n'est pas murée, et ce qui reste de libre se rejoint à pied depuis l'entrée, de case libre en case libre (blockedCells : une case
+  // qu'un meuble touche, même d'un dixième, n'est pas libre).
   const blocked = blockedCells(decor.items, room.width);
   const entries = doorEntryCells(room).filter(({ x, y }) => !blocked.has(y * room.width + x));
   if (entries.length === 0) return { ok: false, error: 'blocks_door' };

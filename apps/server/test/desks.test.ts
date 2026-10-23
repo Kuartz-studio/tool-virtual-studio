@@ -353,6 +353,16 @@ describe('le décor de la pièce', () => {
     expect(service.get('A2')?.items).toEqual(DEFAULT_SETUP.items);
   });
 
+  test('au dixième de case : accepté, et écrit au plus court (0.1 + 0.2 devient 0.3) en mémoire comme en base', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    const items = [{ id: 'of-7-28', x: 0.1 + 0.2, y: 3 }, { id: 'of-14-12', x: 1.3, y: 3 }, { id: 'of-6-10', x: 4.6, y: 2.9 }];
+    const stored = [{ id: 'of-7-28', x: 0.3, y: 3 }, { id: 'of-14-12', x: 1.3, y: 3 }, { id: 'of-6-10', x: 4.6, y: 2.9 }];
+    expect(await service.setDecor('ana', { ...CUSTOM_DECOR, items })).toMatchObject({ ok: true });
+    expect(service.get('A1')?.items).toEqual(stored);
+    expect((await db.select().from(deskSetup))[0]!.items).toEqual(stored);
+  });
+
   test('une base qui refuse l\'écriture : unavailable, et la mémoire n\'a pas changé', async () => {
     const { db, service } = await setup();
     await service.claim('ana', 'Ana', 'A1');

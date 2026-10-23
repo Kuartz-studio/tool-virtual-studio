@@ -1,6 +1,6 @@
 import { DEFAULT_DESK_DECOR, DESK_ROOMS, buildTiledMap, checkDecor, defaultDeskDecor, parseOfficeMap, type DeskDecor, type DeskRoomSpec } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { anchorFor, planPlace, removeAt, roomOfDesk, sameDecor, tryPlace } from './decor-draft';
+import { anchorFor, handleOf, planPlace, removeAt, roomOfDesk, sameDecor, tryPlace } from './decor-draft';
 
 const empty: DeskDecor = { floor: 'sable', wall: 'creme', items: [] };
 const standard = DESK_ROOMS.standard;
@@ -37,27 +37,60 @@ describe('roomOfDesk : la pièce de la place, lue sur la carte', () => {
   });
 });
 
-describe('anchorFor : le pointeur est au milieu du bas de l\'empreinte', () => {
-  test('un élément de 3 cases de large : la case du pointeur est celle du milieu', () => {
-    expect(anchorFor('of-7-28', { x: 4, y: 3 }, standard)).toEqual({ x: 3, y: 2 });   // bureau 3 × 2 : le pointeur à sa rangée du bas
+// Les points sont ceux du pointeur, en cases de la pièce : { x: 4.5, y: 3.5 } est le milieu de la case 4, 3.
+describe('anchorFor : le pointeur tient le milieu du bas de l\'empreinte', () => {
+  test('à la case près, un élément de 3 cases de large : la case du pointeur est celle du milieu', () => {
+    expect(anchorFor('of-7-28', { x: 4.5, y: 3.5 }, standard, 'cell')).toEqual({ x: 3, y: 2 });   // bureau 3 × 2 : le pointeur à sa rangée du bas
+    expect(anchorFor('of-7-28', { x: 4.1, y: 3.9 }, standard, 'cell')).toEqual({ x: 3, y: 2 });   // n'importe où dans la case
   });
 
-  test('un élément qu\'on ne peut pas tenir dehors : il est ramené dans la pièce', () => {
-    expect(anchorFor('of-7-28', { x: 0, y: 3 }, standard)).toEqual({ x: 0, y: 2 });
-    expect(anchorFor('of-7-28', { x: standard.width - 1, y: 3 }, standard)).toEqual({ x: standard.width - 3, y: 2 });
+  test('au dixième de case, l\'élément suit le pointeur, arrondi au dixième le plus proche', () => {
+    expect(anchorFor('of-7-28', { x: 4.5, y: 3.5 }, standard, 'free')).toEqual({ x: 3, y: 2 });
+    expect(anchorFor('of-7-28', { x: 4.83, y: 3.14 }, standard, 'free')).toEqual({ x: 3.3, y: 1.6 });
+    expect(anchorFor('of-6-10', { x: 2.26, y: 4.5 }, standard, 'free')).toEqual({ x: 1.8, y: 4 });   // plante 1 × 1 au sol
+  });
+
+  test('un élément qu\'on ne peut pas tenir dehors : il est ramené dans la pièce, dans les deux sens', () => {
+    for (const snap of ['cell', 'free'] as const) {
+      expect(anchorFor('of-7-28', { x: 0.5, y: 3.5 }, standard, snap)).toEqual({ x: 0, y: 2 });
+      expect(anchorFor('of-7-28', { x: standard.width - 0.5, y: 3.5 }, standard, snap)).toEqual({ x: standard.width - 3, y: 2 });
+      expect(anchorFor('of-7-28', { x: 4.5, y: 0.2 }, standard, snap)).toEqual({ x: 3, y: 0 });
+      expect(anchorFor('of-7-28', { x: 4.5, y: standard.height + 3 }, standard, snap)).toEqual({ x: 3, y: standard.height - 2 });
+    }
   });
 
   test('dans une pièce compacte, c\'est la largeur de la pièce compacte qui ramène l\'élément', () => {
-    expect(anchorFor('of-7-28', { x: compact.width - 1, y: 3 }, compact)).toEqual({ x: compact.width - 3, y: 2 });
-    expect(anchorFor('of-7-28', { x: compact.width - 1, y: 3 }, standard)).toEqual({ x: compact.width - 2, y: 2 });
+    expect(anchorFor('of-7-28', { x: compact.width - 0.5, y: 3.5 }, compact, 'cell')).toEqual({ x: compact.width - 3, y: 2 });
+    expect(anchorFor('of-7-28', { x: compact.width - 0.5, y: 3.5 }, standard, 'cell')).toEqual({ x: compact.width - 2, y: 2 });
   });
 
-  test('un élément mural suit la colonne du pointeur, collé au mur', () => {
-    expect(anchorFor('of-9-12', { x: 4, y: 5 }, standard)).toEqual({ x: 4, y: 0 });
+  test('un élément mural suit le pointeur, collé au mur', () => {
+    expect(anchorFor('of-9-12', { x: 5.2, y: 5.5 }, standard, 'cell')).toEqual({ x: 4, y: 0 });   // 2 cases de large : à cheval sur le pointeur
+    expect(anchorFor('of-9-12', { x: 5.27, y: -1 }, standard, 'free')).toEqual({ x: 4.3, y: 0 });
   });
 
   test('un élément inconnu : rien', () => {
-    expect(anchorFor('nope', { x: 1, y: 1 }, standard)).toBeNull();
+    expect(anchorFor('nope', { x: 1, y: 1 }, standard, 'cell')).toBeNull();
+  });
+
+  test('handleOf donne le point que anchorFor ramène à la même place : reprendre un élément ne le déplace pas', () => {
+    for (const at of [{ x: 2.3, y: 1.7 }, { x: 0, y: 0 }, { x: 5.9, y: 4.1 }]) expect(anchorFor('of-7-28', handleOf('of-7-28', at)!, standard, 'free')).toEqual(at);
+    expect(handleOf('nope', { x: 0, y: 0 })).toBeNull();
+  });
+});
+
+describe('placement libre : au dixième de case, mêmes règles', () => {
+  test('un élément se pose au dixième près, tout contre un autre ; un chevauchement d\'un dixième se remplace', () => {
+    const desk = tryPlace(empty, 'of-7-28', { x: 0.4, y: 1.3 }, standard);
+    if (!desk.ok) throw new Error('attendu : valable');
+    expect(planPlace(desk.decor, 'of-6-10', { x: 3.4, y: 2.3 }, standard)).toMatchObject({ kind: 'place' });
+    expect(planPlace(desk.decor, 'of-6-10', { x: 3.3, y: 2.3 }, standard)).toMatchObject({ kind: 'replace', replacing: [0] });
+  });
+
+  test('ce que l\'éditeur accepte au dixième, le serveur l\'accepte aussi', () => {
+    const plan = planPlace(DEFAULT_DESK_DECOR, 'of-6-10', anchorFor('of-6-10', { x: 1.37, y: 5.62 }, standard, 'free')!, standard);
+    if (plan.kind !== 'place') throw new Error('attendu : poser');
+    expect(checkDecor(plan.decor, standard)).toEqual({ ok: true });
   });
 });
 

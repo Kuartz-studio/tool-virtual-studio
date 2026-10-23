@@ -32,4 +32,6 @@ export const REFUSED_DECORS: Array<{ decor: DeskDecor; reason: DecorError }> = [
   { decor: { ...CUSTOM_DECOR, floor: 'lave' }, reason: 'unknown_theme' },
   { decor: { ...CUSTOM_DECOR, items: [{ id: 'of-7-28', x: 0, y: 0 }, { id: 'of-7-28', x: 2, y: 1 }] }, reason: 'overlap' },
   { decor: { ...CUSTOM_DECOR, items: [{ id: 'of-7-28', x: DESK_ROOMS.standard.door.x - 1, y: DESK_ROOMS.standard.height - 2 }] }, reason: 'blocks_door' },
+  // Au dixième de case près, pas plus fin.
+  { decor: { ...CUSTOM_DECOR, items: [{ id: 'of-7-28', x: 0.55, y: 3 }] }, reason: 'bad_position' },
 ];

@@ -53,6 +53,18 @@ describe('layoutDecor', () => {
   });
 });
 
+describe('layoutDecor au dixième de case', () => {
+  test('l\'image se pose sur le pixel le plus proche (un dixième fait 3,2 px), et se trie toujours par le bas de son empreinte', () => {
+    const [desk] = layoutDecor([{ id: DESK, x: 2.3, y: 1.1 }]);
+    expect(desk).toMatchObject({ left: 74, bottom: 99, depth: 99 });   // 2,3 × 32 = 73,6 ; (1,1 + 2) × 32 = 99,2
+  });
+
+  test('un objet posé qui déborde du plateau se dessine devant le meuble sous le milieu de son empreinte', () => {
+    const [desk, screen] = layoutDecor([{ id: DESK, x: 2, y: 1 }, { id: SCREEN, x: 1.6, y: 1 }]);
+    expect(screen!.depth).toBeGreaterThan(desk!.depth);
+  });
+});
+
 describe('placedFromObjects : les objets du calque de la carte', () => {
   test('le nom est la clé de l\'élément, la position (en pixels) devient le coin haut-gauche de son empreinte, en cases', () => {
     expect(placedFromObjects([{ name: DESK, x: 4 * 32, y: 5 * 32 }, { name: CHAIR, x: 6 * 32 + 1, y: 7 * 32 - 1 }])).toEqual([

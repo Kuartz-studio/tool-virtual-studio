@@ -564,7 +564,7 @@ export const fr = {
       confirm: 'Remplacer',
       cancel: 'Annuler',
     },
-    held: 'En main : {name}. Clic dans la pièce pour le poser, clic droit pour le lâcher.',
+    held: 'En main : {name}. Clic dans la pièce pour le poser (Maj enfoncée : aligné sur les cases), clic droit pour le lâcher.',
     drop: 'Lâcher',
     floorTitle: 'Sol',
     wallTitle: 'Murs',
