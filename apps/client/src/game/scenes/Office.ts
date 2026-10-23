@@ -29,6 +29,7 @@ import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
 import { ArenaLayer } from '../arena-layer';
+import { bindCameraDrag } from '../camera-drag';
 import { gameTableTarget, tableFocus, type TableState } from '../game-tables';
 import { PropLayer } from '../prop-layer';
 import { EventBus } from '../EventBus';
@@ -110,6 +111,8 @@ export class Office extends Scene {
   private editingRoom: Zone | null = null;
   // Le panneau d'une table de jeu aussi : la caméra est sur la table, dans la partie de l'écran qu'il laisse libre.
   private focusedTable: GameTable | null = null;
+  // La carte a été glissée à la souris : la caméra ne suit plus l'avatar, jusqu'à un double-clic ou jusqu'à ce qu'il se remette à marcher.
+  private cameraFree = false;
   // Le zoom que la caméra montre en ce moment, et celui où elle va : elle glisse de l'un à l'autre quand la personne change de pourcentage.
   private zoomShown = 1;
   private zoomTarget = 1;
@@ -251,6 +254,22 @@ export class Office extends Scene {
 
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
     // pas prendre pour le zoom de la page), et les touches + - 0. Le pourcentage est au magasin ; la caméra y glisse (glideZoom).
+    // La carte se fait glisser à la souris (la caméra quitte l'avatar), et un double-clic la recentre sur lui. Pas pendant l'éditeur de déco ni devant une
+    // table de jeu : la caméra y montre une pièce, ou une table.
+    const unbindDrag = bindCameraDrag(this, {
+      canDrag: () => this.editingRoom === null && this.focusedTable === null,
+      onStart: () => {
+        const camera = this.cameras.main;
+        camera.panEffect.reset();
+        camera.stopFollow();
+        this.cameraFree = true;
+      },
+      onDrag: (dx, dy) => {
+        const camera = this.cameras.main;
+        camera.setScroll(camera.scrollX - dx / camera.zoom, camera.scrollY - dy / camera.zoom);
+      },
+      onDoubleClick: () => this.recenterCamera(),
+    });
     const unbindWheel = bindWheelZoom(this.game.canvas, (steps) => useOfficeStore.getState().stepZoom(steps));
     const unbindZoomKeys = bindZoomKeys((step) => {
       const store = useOfficeStore.getState();
@@ -315,6 +334,7 @@ export class Office extends Scene {
       unbindArena();
       unbindZoomKeys();
       unbindWheel();
+      unbindDrag();
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
@@ -351,6 +371,8 @@ export class Office extends Scene {
     const now = clock();
     const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
     // Pendant le compte à rebours, les combattants attendent dans leur coin : le clavier ne les déplace pas.
+    // La carte avait été glissée ailleurs : l'avatar se remet en marche, la caméra revient à lui.
+    if (this.cameraFree && (autoDirection !== null || this.directions.current() !== null)) this.recenterCamera();
     if (this.arenaRole() === 'waiting') this.player.step(null);
     else if (autoDirection !== null) this.player.step(autoDirection);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
@@ -443,6 +465,7 @@ export class Office extends Scene {
   // laisse libre (il est à droite).
   private focusRoom(room: Zone): void {
     this.editingRoom = room;
+    this.cameraFree = false;
     const camera = this.cameras.main;
     camera.stopFollow();
     camera.pan(...this.roomFocus(room, camera.zoom), 450, 'Sine.easeInOut', true);
@@ -453,13 +476,20 @@ export class Office extends Scene {
     return [room.x + room.width / 2 + EDITOR_PANEL_WIDTH_PX / 2 / zoom, room.y + room.height / 2];
   }
 
+  // Un double-clic, ou l'avatar qui se remet en marche, après avoir glissé la carte : la caméra revient à l'avatar.
+  private recenterCamera(): void {
+    if (!this.cameraFree || this.editingRoom !== null || this.focusedTable !== null) return;
+    this.cameraFree = false;
+    this.followPlayer();
+  }
+
   // Il se ferme (ou le panneau de la table de jeu) : la caméra revient à l'avatar.
   private followPlayer(): void {
     this.editingRoom = null;
     this.focusedTable = null;
     const camera = this.cameras.main;
     camera.pan(this.player.x, this.player.y - this.player.displayHeight / 2, 350, 'Sine.easeInOut', true, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-      if (progress === 1 && this.editingRoom === null && this.focusedTable === null) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
+      if (progress === 1 && this.editingRoom === null && this.focusedTable === null && !this.cameraFree) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
     });
   }
 
@@ -503,6 +533,7 @@ export class Office extends Scene {
       return;
     }
     this.focusedTable = table;
+    this.cameraFree = false;
     const camera = this.cameras.main;
     camera.stopFollow();
     camera.pan(...tableFocus(table.rect, camera.zoom, this.scale.gameSize), 450, 'Sine.easeInOut', true);
@@ -608,6 +639,7 @@ export class Office extends Scene {
   // garde la pièce ou la table qu'elle montre : elle reviendra à l'avatar à leur fermeture (followPlayer).
   private snapCameraToPlayer(): void {
     if (this.editingRoom !== null || this.focusedTable !== null) return;
+    this.cameraFree = false;
     const camera = this.cameras.main;
     camera.panEffect.reset();
     camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
