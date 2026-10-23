@@ -83,7 +83,7 @@ test('au bureau : le jingle d\'arrivée, l\'ambiance de la petite carte, et les 
   await expect.poll(() => sinceThen(page, from)).toEqual(['panel-open', 'panel-close', 'toggle-off', 'toggle-on']);
 });
 
-test('le juke-box : choisir une ambiance la joue partout, « Selon la pièce » rend la main, couper la musique la fait taire', async ({ browser }) => {
+test('le juke-box : « Ma musique » joue partout (du thème Par défaut ou Pirate), « La pièce » rend la main, couper la musique la fait taire', async ({ browser }) => {
   test.slow();
   const { page } = await arrive(browser, 'Blandine');
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('focus');
@@ -96,24 +96,33 @@ test('le juke-box : choisir une ambiance la joue partout, « Selon la pièce » 
   await expect(button).toHaveAttribute('aria-pressed', 'true');
   await expect.poll(() => sinceThen(page, fromOpen)).toEqual(['panel-open']);
 
-  await expect(jukebox.getByRole('radio', { name: /^Selon la pièce/ })).toBeChecked();
-  // « Selon la pièce » dit l'ambiance d'ici : la petite carte n'a que la concentration.
-  await expect(jukebox.locator('.juke-auto')).toContainText('Ici : Concentration');
-  // L'ambiance qui joue a son égaliseur.
-  await expect(jukebox.locator('[data-playing="true"]')).toContainText('Concentration');
+  // « J'écoute » : la pièce, d'abord. Sa carte dit ce qu'elle joue : la petite carte n'a que la concentration, et pas d'enceinte (on ne la change pas, et la
+  // carte dit pourquoi). Ce qui joue a son égaliseur.
+  await expect(jukebox.getByRole('tab', { name: 'La pièce' })).toHaveAttribute('aria-selected', 'true');
+  const room = jukebox.getByRole('region', { name: 'Musique de la pièce' });
+  await expect(room).toContainText('Concentration');
+  await expect(room).toContainText('Pas d\'enceinte ici');
+  await expect(room.locator('.juke-eq')).toHaveCount(1);
 
-  await jukebox.getByRole('radio', { name: /^Crépuscule/ }).check();
+  // « Ma musique » garde ce qu'on entend ; sa vignette ouvre la liste, où l'on choisit le crépuscule, puis une boucle du thème Pirate.
+  await jukebox.getByRole('tab', { name: 'Ma musique' }).click();
+  await jukebox.getByRole('button', { name: /^Changer ma musique/ }).click();
+  await jukebox.getByRole('button', { name: /^Crépuscule/ }).click();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('dusk');
   await expect(jukebox.locator('[data-playing="true"]')).toContainText('Crépuscule');
-  await jukebox.getByRole('radio', { name: /^Selon la pièce/ }).check();
+  await jukebox.getByRole('tab', { name: 'Pirate' }).click();
+  await jukebox.getByRole('button', { name: /^Silent Harbor/ }).click();
+  await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('silent-harbor');
+  await jukebox.getByRole('button', { name: 'Retour', exact: true }).click();
+  await jukebox.getByRole('tab', { name: 'La pièce' }).click();
   await expect.poll(() => playing(page), { timeout: DECODE_TIMEOUT }).toBe('focus');
 
-  await jukebox.getByRole('switch', { name: 'Musique' }).uncheck();
+  await jukebox.getByRole('switch', { name: 'Musique', exact: true }).uncheck();
   await expect.poll(() => playing(page)).toBeNull();
-  // Le volume est éteint avec la musique, les effets ne le sont pas ; la grille reste utilisable, en retrait ; le bouton du dock est barré.
+  // Le volume est éteint avec la musique, les effets ne le sont pas ; « J'écoute » reste utilisable, en retrait ; le bouton du dock est barré.
   await expect(jukebox.getByRole('slider', { name: 'Volume de la musique' })).toBeDisabled();
   await expect(jukebox.getByRole('slider', { name: 'Volume des effets sonores' })).toBeEnabled();
-  await expect(jukebox.getByRole('radio', { name: /^Crépuscule/ })).toBeEnabled();
+  await expect(jukebox.getByRole('tab', { name: 'Ma musique' })).toBeEnabled();
   await expect(button).toHaveClass(/is-muted/);
 
   // Un exemple d'effet pour régler son volume : il sonne, mais son bouton n'a pas de clic à lui.

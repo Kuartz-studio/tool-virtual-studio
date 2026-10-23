@@ -85,15 +85,18 @@ test('Alice règle la musique de son bureau avec le bouton de la puce du lieu : 
   const place = placeByKey(map, `desk:${deskKey(room)}`)!;
   await expect.poll(() => playing(alice), { timeout: DECODE_TIMEOUT }).toBe('focus');
 
-  // Dans son bureau, la puce du lieu a son bouton haut-parleur : elle choisit « Expédition ».
-  const button = alice.getByRole('button', { name: 'Musique de la pièce' });
+  // Dans son bureau, la puce du lieu a son bouton haut-parleur ; la vignette de la carte ouvre la liste : elle choisit « Expédition ».
+  const button = alice.getByRole('button', { name: 'Musique de la pièce', exact: true });
   await button.click();
   const dialog = alice.getByRole('dialog', { name: 'Musique de la pièce' });
   await expect(dialog).toBeVisible();
-  // Le choix ne change qu'à l'annonce du serveur : on clique (le radio ne se coche pas de lui-même), puis on attend.
-  await dialog.getByRole('radio', { name: /^Expédition/ }).click();
-  await expect(dialog.getByRole('radio', { name: /^Expédition/ })).toBeChecked();
+  await dialog.getByRole('button', { name: /^Changer la musique de la pièce/ }).click();
+  // Le choix ne change qu'à l'annonce du serveur : on clique (la ligne ne se coche pas d'elle-même), puis on attend.
+  await dialog.getByRole('button', { name: /^Expédition/ }).click();
+  await expect(dialog.getByRole('button', { name: /^Expédition/ })).toHaveAttribute('aria-current', 'true');
   await expect.poll(() => playing(alice), { timeout: DECODE_TIMEOUT }).toBe('quest');
+  // Échap revient à la carte, qui dit qui l'a réglée ; un second Échap ferme la fenêtre.
+  await alice.keyboard.press('Escape');
   await expect(dialog.getByText('Réglée par Alice')).toBeVisible();
   await alice.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
@@ -101,7 +104,7 @@ test('Alice règle la musique de son bureau avec le bouton de la puce du lieu : 
   // Bastien entre dans son bureau (la porte est ouverte) : il entend l'ambiance d'Alice, et n'a pas de bouton pour la régler.
   await teleportTo(bastien, freeSpotIn(map, place, [here])!);
   await expect.poll(() => playing(bastien), { timeout: DECODE_TIMEOUT }).toBe('quest');
-  await expect(bastien.getByRole('button', { name: 'Musique de la pièce' })).toHaveCount(0);
+  await expect(bastien.getByRole('button', { name: 'Musique de la pièce', exact: true })).toHaveCount(0);
 
   // Alice le rend : le bureau est libre pour les tests suivants.
   await giveDeskBack(alice);

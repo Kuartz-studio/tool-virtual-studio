@@ -1,56 +1,152 @@
-import { DESK_PLACE_PREFIX, placeByKey, type MusicSetPayload } from '@bureau/shared';
-import { useEffect, useId, useRef, useState } from 'react';
+import { DESK_PLACE_PREFIX, roomSceneOf, type MusicSetPayload, type OfficeMap, type RoomMusic } from '@bureau/shared';
+import { useEffect, useRef, useState, type Ref } from 'react';
 import { useAudioStore } from '../audio/audio-store';
-import { SCENE_IDS, type SceneId } from '../audio/catalog';
+import type { SceneId } from '../audio/catalog';
+import { soundAt } from '../audio/scene-at';
 import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
 import { emitOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
-import { VolumeIcon } from './icons';
-import { Cover, keepArrows, Switch } from './SoundPopover';
+import { LockIcon, UsersIcon, VolumeIcon } from './icons';
+import { keepArrows, MusicCard, MusicPicker, sceneNote, Switch, useMusicPicking } from './Music';
 import { IconButton } from './ui/IconButton';
 import { Popover } from './ui/Popover';
-import { useMusicPlace } from './use-here';
+import { useFeetValue, useMusicPlace, usePlace } from './use-here';
 
-// Le bouton haut-parleur de la puce du lieu : la musique de la pièce où l'on est, que ceux qui y sont règlent pour tous. Il n'existe que dans une pièce qui a une enceinte (la rue,
-// la place, la salle client n'en ont pas), et dans un bureau, que pour son propriétaire. Il s'ouvre sur la même grille d'ambiances que le juke-box, plus « Par défaut » (celle que la
-// carte donne à la pièce), et un interrupteur : la musique de la pièce. Il ne change rien d'avance : il demande (`local:music`), et la fenêtre montre ce que le serveur annonce.
-// Sa note dit, quand on écoute une ambiance choisie dans le panneau Son (son casque), que ce réglage est pour les autres.
-export function RoomMusicButton() {
+// La musique de la pièce où l'on est : la même pour tous ceux qui y sont, réglée par eux (le serveur la garde et l'annonce : `music:changed`). Ce module la
+// montre et la change, à deux endroits qui ont la même carte : le juke-box du dock (SoundPopover, onglet « La pièce ») et le bouton haut-parleur de la puce
+// du lieu (RoomMusicButton). Rien n'y change d'avance : on demande (`local:music`), et la carte montre ce que le serveur annonce.
+
+export interface RoomMusicView {
+  // La pièce où l'on règle la musique (elle a une enceinte : `game`, `desk:A1`) ; null là où il n'y en a pas (la rue, la place, la salle client).
+  key: string | null;
+  // Le nom du lieu, tel que la puce l'écrit (« Café », « Bureau d'Alice »).
+  place: string;
+  // La musique que la carte donne à l'endroit, et ce qu'il joue : celle qu'on y a réglée, ou null s'il est éteint.
+  defaultScene: SceneId;
+  scene: SceneId | null;
+  // Le réglage de la pièce (undefined : personne n'y a touché).
+  state: RoomMusic | undefined;
+  // Peut-on la changer ? Sinon, pourquoi, en clair.
+  allowed: boolean;
+  reason: string | null;
+  ask(request: Omit<MusicSetPayload, 'place'>): void;
+}
+
+// L'ambiance par défaut de l'endroit où sont les pieds.
+const readScene = (x: number, y: number, map: OfficeMap): SceneId => soundAt(map, x, y).scene;
+
+// Ce qu'on sait de la musique de l'endroit où l'on est, et ce qu'on y peut ; null sans carte (le jeu n'est pas encore là). Partout où il y a une enceinte on
+// peut la changer, sauf dans le bureau d'un autre (son propriétaire seul y touche) ou dans un bureau libre (personne).
+export function useRoomMusic(): RoomMusicView | null {
   const key = useMusicPlace();
-  const selfId = useOfficeStore((state) => state.selfId);
-  const desks = useOfficeStore((state) => state.desks);
-  const map = useOfficeStore((state) => state.officeMap);
+  const defaultScene = useFeetValue(readScene);
+  const place = usePlace();
+  const selfId = useOfficeStore((s) => s.selfId);
+  const desks = useOfficeStore((s) => s.desks);
   const state = useOfficeStore((s) => (key === null ? undefined : s.music[key]));
+  if (defaultScene === null) return null;
+
+  // Dans un bureau : son propriétaire (null : le bureau est libre).
+  const deskKey = key?.startsWith(DESK_PLACE_PREFIX) ? key.slice(DESK_PLACE_PREFIX.length) : null;
+  const owner = deskKey === null ? null : (desks.find((desk) => desk.key === deskKey) ?? null);
+  const ownerId = owner?.ownerId ?? null;
+  const allowed = key !== null && (deskKey === null || (ownerId !== null && ownerId === selfId));
+  let reason: string | null = null;
+  if (key === null) reason = fr.roomMusic.locked.noSpeaker;
+  else if (!allowed) reason = ownerId === null ? fr.roomMusic.locked.freeDesk : t(fr.roomMusic.locked.desk, { name: owner?.ownerName ?? '' });
+
+  return {
+    key,
+    place: place ?? '',
+    defaultScene,
+    scene: key === null ? defaultScene : roomSceneOf({ scene: defaultScene, music: true }, state),
+    state,
+    allowed,
+    reason,
+    ask: (request) => {
+      if (key !== null) emitOnBus(EventBus, 'local:music', { place: key, ...request });
+    },
+  };
+}
+
+// La carte « Musique de la pièce » : pour tout le monde ici, sa vignette et son nom ; là où on peut la changer, la vignette ouvre la liste (`onChange`), et
+// l'interrupteur l'allume ou la coupe pour tous, avec qui l'a réglée en dernier. Ailleurs, la carte ne fait que montrer, et dit pourquoi.
+// `heard` : est-ce elle qu'on entend (on n'écoute pas sa propre musique) ? Son égaliseur bouge alors.
+export function RoomMusicCard({ view, heard, onChange, changeRef }: { view: RoomMusicView; heard: boolean; onChange(): void; changeRef?: Ref<HTMLButtonElement> }) {
+  const playing = useAudioStore((s) => s.playing);
+  const on = view.state?.on !== false;
+  const chosen = view.state?.scene ?? null;
+  const note = view.scene === null ? fr.roomMusic.offNote : chosen === null || view.key === null ? fr.roomMusic.default : sceneNote(chosen);
+  return (
+    <MusicCard
+      icon={<UsersIcon />}
+      title={fr.roomMusic.title}
+      audience={t(fr.roomMusic.audience, { place: view.place })}
+      scene={view.scene}
+      offTitle={fr.roomMusic.off}
+      note={note}
+      playing={heard && view.scene !== null && playing === view.scene}
+      change={view.allowed ? { label: fr.roomMusic.change, onClick: onChange, buttonRef: changeRef } : undefined}
+    >
+      {view.allowed ? (
+        <>
+          <div className="music-card-row">
+            <span>{fr.roomMusic.on}</span>
+            <Switch checked={on} label={fr.roomMusic.on} onChange={(next) => view.ask({ on: next })} />
+          </div>
+          {view.state?.by && <p className="music-card-note">{t(fr.roomMusic.by, { name: view.state.by.name })}</p>}
+        </>
+      ) : (
+        <p className="music-card-lock">
+          <LockIcon />
+          {view.reason}
+        </p>
+      )}
+    </MusicCard>
+  );
+}
+
+// La liste des musiques de la pièce : « Par défaut de la pièce », puis celles du thème choisi. Choisir une musique dans une pièce éteinte la rallume : on veut
+// l'entendre. Ce qui est déjà ainsi ne demande rien.
+export function RoomMusicPicker({ view, onBack }: { view: RoomMusicView; onBack(): void }) {
+  const playing = useAudioStore((s) => s.playing);
+  const on = view.state?.on !== false;
+  const chosen = view.state?.scene ?? null;
+  return (
+    <MusicPicker
+      title={fr.roomMusic.title}
+      audience={t(fr.roomMusic.audience, { place: view.place })}
+      value={chosen}
+      defaultScene={view.defaultScene}
+      playing={playing}
+      onPick={(scene) => {
+        if (on && scene === chosen) return;
+        view.ask(on ? { scene } : { on: true, scene });
+      }}
+      onBack={onBack}
+    />
+  );
+}
+
+// Le bouton haut-parleur de la puce du lieu : la musique de la pièce où l'on est, pour ceux qui peuvent la changer (une pièce à enceinte, son propre bureau). Il
+// s'ouvre sur la carte de la pièce, la même que dans le juke-box ; sa vignette ouvre la liste. Barré quand la pièce est éteinte. Quand on écoute sa propre
+// musique (son casque), la fenêtre rappelle que ce réglage est pour les autres.
+export function RoomMusicButton() {
+  const view = useRoomMusic();
   const headphones = useAudioStore((s) => s.prefs.scene !== 'auto');
   const [open, setOpen] = useState(false);
   const anchor = useRef<HTMLButtonElement>(null);
-  const groupName = useId();
+  const { picking, changeButton, pick, back } = useMusicPicking<'room'>(open);
+  const allowed = view?.allowed === true;
 
-  // Dans un bureau, son propriétaire seul règle la musique ; ailleurs, tous ceux qui y sont.
-  const allowed = key !== null && (!key.startsWith(DESK_PLACE_PREFIX) || (selfId !== null && desks.find((desk) => desk.key === key.slice(DESK_PLACE_PREFIX.length))?.ownerId === selfId));
   // Quitter la pièce (ou ne plus y avoir la main) ferme la fenêtre.
   useEffect(() => {
     if (!allowed) setOpen(false);
   }, [allowed]);
-  if (!allowed || key === null) return null;
+  if (view === null || !allowed) return null;
 
-  const on = state?.on !== false;
-  const chosen = state?.scene ?? null;
-  const defaultScene = map === null ? undefined : placeByKey(map, key)?.scene;
-  const ask = (request: Omit<MusicSetPayload, 'place'>) => emitOnBus(EventBus, 'local:music', { place: key, ...request });
-
-  // Une carte d'ambiance de la grille : son vrai bouton radio (invisible, sur toute la carte), sa pochette, son titre.
-  const card = (scene: SceneId) => (
-    <label key={scene} className="juke-card" title={`${fr.sound.scenes[scene].mood} · ${fr.sound.scenes[scene].where}`}>
-      <input type="radio" className="juke-radio" name={groupName} checked={chosen === scene} onChange={() => ask({ scene })} />
-      <span className="juke-art">
-        <Cover scene={scene} />
-      </span>
-      <span className="juke-name">{fr.sound.scenes[scene].title}</span>
-    </label>
-  );
-
+  const on = view.state?.on !== false;
   return (
     <>
       <IconButton
@@ -67,35 +163,14 @@ export function RoomMusicButton() {
       </IconButton>
       <Popover open={open} onClose={() => setOpen(false)} anchorRef={anchor} placement="bottom-start" label={fr.roomMusic.title} role="dialog">
         <div className="juke room-music" onKeyDown={keepArrows}>
-          <div className="juke-head">
-            <div className="juke-row">
-              <h3 className="juke-title">
-                <VolumeIcon off={!on} />
-                {fr.roomMusic.title}
-              </h3>
-              <Switch checked={on} label={fr.roomMusic.on} onChange={(next) => ask({ on: next })} />
-            </div>
-          </div>
-
-          <fieldset className={`juke-scenes${on ? '' : ' is-off'}`}>
-            <legend className="visually-hidden">{fr.roomMusic.scenes}</legend>
-            <label className="juke-auto" title={defaultScene === undefined ? undefined : t(fr.roomMusic.defaultHint, { scene: fr.sound.scenes[defaultScene].title })}>
-              <input type="radio" className="juke-radio" name={groupName} checked={chosen === null} onChange={() => ask({ scene: null })} />
-              <span className="juke-auto-text">
-                <span className="juke-name">{fr.roomMusic.default}</span>
-                {defaultScene !== undefined && <small>{fr.sound.scenes[defaultScene].title}</small>}
-              </span>
-              {defaultScene !== undefined && (
-                <span className="juke-art">
-                  <Cover scene={defaultScene} />
-                </span>
-              )}
-            </label>
-            <div className="juke-grid">{SCENE_IDS.map(card)}</div>
-          </fieldset>
-
-          {state?.by && <p className="room-music-by">{t(fr.roomMusic.by, { name: state.by.name })}</p>}
-          {headphones && <p className="room-music-note">{fr.roomMusic.headphones}</p>}
+          {picking === 'room' ? (
+            <RoomMusicPicker view={view} onBack={back} />
+          ) : (
+            <>
+              <RoomMusicCard view={view} heard={!headphones} onChange={() => pick('room')} changeRef={changeButton} />
+              {headphones && <p className="music-card-note">{fr.roomMusic.headphones}</p>}
+            </>
+          )}
         </div>
       </Popover>
     </>

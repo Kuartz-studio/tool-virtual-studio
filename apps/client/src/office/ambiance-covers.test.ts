@@ -1,5 +1,5 @@
 import { afterEach, expect, test, vi } from 'vitest';
-import { SCENE_IDS } from '../audio/catalog';
+import { SCENE_IDS, scenesOfTheme } from '../audio/catalog';
 import { COVERS, COVER_HEIGHT, COVER_WIDTH, drawCover } from './ambiance-covers';
 
 afterEach(() => {
@@ -26,6 +26,11 @@ test('chaque lettre d\'une pochette est dans sa palette, et chaque couleur de la
       expect(used.has(letter), `${id} : « ${letter} » n'est jamais écrite`).toBe(true);
     }
   }
+});
+
+test('les pochettes pirates : un tableau à elles chacune, sans en reprendre une autre', () => {
+  const pirate = scenesOfTheme('pirate').map((id) => COVERS[id].rows.join(''));
+  expect(new Set(pirate).size).toBe(pirate.length);
 });
 
 test('les couleurs du ciel de chaque pochette', () => {

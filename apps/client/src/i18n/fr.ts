@@ -309,23 +309,35 @@ export const fr = {
     use: 'Éteindre',
     useOn: 'Allumer',
   },
-  // La musique de la pièce où l'on est : l'enceinte (« [E] Couper la musique », de près) et le bouton haut-parleur de la puce du lieu, dont la fenêtre règle l'état de la
-  // pièce pour tous ceux qui y sont : allumée ou coupée, et son ambiance (« Par défaut » : celle que la carte lui donne). Dans un bureau, son propriétaire seul y touche.
+  // La musique de la pièce où l'on est, la même pour tous ceux qui y sont : l'enceinte (« [E] Couper la musique », de près), le bouton haut-parleur de la puce du lieu
+  // et la carte « Musique de la pièce » du juke-box (sa vignette ouvre la liste des musiques). Dans un bureau, son propriétaire seul y touche.
   roomMusic: {
     mute: 'Couper la musique',
     play: 'Lancer la musique',
-    // Le bouton de la puce du lieu, et la fenêtre qu'il ouvre : le même nom, qui est aussi l'infobulle.
+    // Le bouton de la puce du lieu, la fenêtre qu'il ouvre et la carte : le même nom, qui est aussi l'infobulle.
     button: 'Musique de la pièce',
     title: 'Musique de la pièce',
+    // Pour qui elle joue, après le nom de la pièce (« Café · pour tout le monde ici »).
+    audience: '{place} · pour tout le monde ici',
+    // L'interrupteur, qui l'allume ou la coupe pour tous (la carte dit déjà pour qui).
     on: 'Musique allumée',
-    // Le nom du groupe des ambiances, pour les lecteurs d'écran, et son premier choix : celle de la carte.
-    scenes: 'Ambiance de la pièce',
-    default: 'Par défaut',
-    defaultHint: 'L\'ambiance de la pièce : {scene}',
+    // La vignette, quand on peut changer la musique : son nom, pour les lecteurs d'écran.
+    change: 'Changer la musique de la pièce',
+    // La musique que la carte donne à la pièce : le premier choix de la liste, et ce que dit la carte quand c'est elle qui joue.
+    default: 'Par défaut de la pièce',
+    // La pièce éteinte : à la place du titre, et en dessous.
+    off: 'Musique coupée',
+    offNote: 'La pièce est silencieuse',
     // Qui a réglé la pièce en dernier.
     by: 'Réglée par {name}',
-    // Quand on écoute une ambiance choisie dans le panneau Son (son casque), le réglage de la pièce vaut pour les autres.
-    headphones: 'Tu écoutes l\'ambiance choisie dans le panneau Son : ce réglage est pour ceux qui sont ici.',
+    // Quand on écoute sa propre musique (son casque), le réglage de la pièce vaut pour les autres.
+    headphones: 'Tu écoutes ta musique : ce réglage est pour ceux qui sont ici.',
+    // Pourquoi on ne peut pas la changer ici, en clair.
+    locked: {
+      desk: 'C\'est le bureau de {name} : c\'est à {name} de choisir sa musique.',
+      freeDesk: 'Ce bureau est libre : sa musique se choisit quand on le prend.',
+      noSpeaker: 'Pas d\'enceinte ici : on entend la musique du lieu, qui ne se change pas.',
+    },
   },
   // Le café : la machine du bar (« [E] Prendre un café », de près) et la pastille qui compte ce qu'il en reste, sous la puce du lieu.
   coffee: {
@@ -493,9 +505,8 @@ export const fr = {
       table: 'Classement de {game}',
     },
   },
-  // Le son : la musique d'ambiance (celle de l'endroit où l'on est, ou celle qu'on choisit) et les effets sonores (clics, arrivées, messages,
-  // toc toc…), que l'on coupe et règle chacun de son côté, depuis le juke-box du dock du milieu. La voix des autres n'en fait pas partie : elle
-  // suit le micro et la sortie du système.
+  // Le son : la musique (celle de la pièce où l'on est, ou la sienne) et les effets sonores (clics, arrivées, messages, toc toc…), que l'on coupe et règle
+  // chacun de son côté, depuis le juke-box du dock du milieu. La voix des autres n'en fait pas partie : elle suit le micro et la sortie du système.
   sound: {
     // Le bouton du dock (une note de musique) et sa fenêtre, le juke-box : le même nom, qui est aussi l'infobulle.
     toggle: 'Musique et ambiances',
@@ -508,19 +519,30 @@ export const fr = {
       volume: 'Volume des effets sonores',
       test: 'Écouter un effet',
     },
-    ambiance: {
-      // Le nom du groupe des cartes, pour les lecteurs d'écran.
-      label: 'Ambiance',
-      auto: 'Selon la pièce',
-      // L'infobulle de « Selon la pièce », et son sous-titre : l'ambiance de la pièce où l'on est (celle que ses occupants ont réglée, sinon l'ambiance qui lui va), ou
-      // le silence quand ils ont coupé sa musique.
-      autoHint: 'La musique change avec la pièce où tu es : celle que ses occupants ont réglée, sinon l\'ambiance qui lui va.',
-      autoHere: 'Ici : {scene}',
-      autoOff: 'Ici : musique coupée',
-      // Dite aux lecteurs d'écran pour l'ambiance qu'on entend (l'égaliseur de sa carte est décoratif).
+    // Ce qu'on écoute : la musique de la pièce (la même pour tous ceux qui y sont) ou la sienne (rien que pour soi, comme un casque).
+    source: {
+      label: 'J\'écoute',
+      room: 'La pièce',
+      mine: 'Ma musique',
+    },
+    mine: {
+      title: 'Ma musique',
+      audience: 'Rien que pour toi',
+      change: 'Changer ma musique',
+      note: 'Les autres ne l\'entendent pas : ils écoutent la musique de la pièce.',
+    },
+    // La liste des musiques, que la vignette ouvre : le retour, le choix du thème, ce qui joue.
+    picker: {
+      back: 'Retour',
+      themes: 'Thème',
       playing: 'En cours',
     },
-    // Les six ambiances : leur nom, ce qu'elles évoquent, et où elles jouent d'elles-mêmes.
+    // Les thèmes du sélecteur : une famille de musiques chacun.
+    themes: {
+      default: 'Par défaut',
+      pirate: 'Pirate',
+    },
+    // Les ambiances : leur nom, ce qu'elles évoquent, et où elles jouent d'elles-mêmes (null : nulle part, on les choisit à la main).
     scenes: {
       lobby: { title: 'Salle d\'attente', mood: 'Calme, comme une ville la nuit', where: 'L\'accueil, la place et les rues, la connexion' },
       focus: { title: 'Concentration', mood: 'Chill, pour travailler ou se reposer', where: 'Les bureaux, la salle de réunion et la salle client' },
@@ -528,12 +550,22 @@ export const fr = {
       dusk: { title: 'Crépuscule', mood: 'Mystérieux, façon Moyen Âge le soir', where: 'La salle de jeu' },
       drift: { title: 'Dérive', mood: 'Étrange et planant, un peu science-fiction', where: 'La salle de conférence' },
       quest: { title: 'Expédition', mood: 'Plus rythmé : aventure et découverte', where: 'La salle de sport' },
+      'silent-harbor': { title: 'Silent Harbor', mood: 'Calme : un port endormi, la nuit', where: null },
+      'hidden-booty': { title: 'Hidden Booty', mood: 'Malicieux : un trésor qu\'on déterre', where: null },
+      'oceans-grasp': { title: 'Ocean’s Grasp', mood: 'Ample et sombre : la houle du large', where: null },
+      'drunken-sailors': { title: 'Drunken Sailors', mood: 'Joyeux et titubant : une chanson de taverne', where: null },
+      'blackened-tide': { title: 'Blackened Tide', mood: 'Menaçant : la marée noire qui monte', where: null },
+      'windward-chase': { title: 'Windward Chase', mood: 'Rapide : une poursuite au vent', where: null },
+      'sea-wolves': { title: 'Sea Wolves', mood: 'Fier et rythmé : l\'équipage en marche', where: null },
+      'black-flag-rise': { title: 'Black Flag Rise', mood: 'Épique : on hisse le pavillon noir', where: null },
+      'tempest-call': { title: 'Tempest Call', mood: 'Dramatique : la tempête approche', where: null },
+      'foggy-shores': { title: 'Foggy Shores', mood: 'Brumeux : une côte dans le brouillard', where: null },
     },
     status: {
       locked: 'Le son démarre dès que tu cliques ou appuies sur une touche.',
       unsupported: 'Ce navigateur ne sait pas jouer le son de l\'appli.',
     },
-    credits: 'Musique : Abstraction, « Music Loop Bundle » (CC0). Effets : « 400 Sounds Pack ».',
+    credits: 'Musique : Abstraction, « Music Loop Bundle » ; « Pirate Music Pack Vol. 2 ». Effets : « 400 Sounds Pack ».',
     // Le volume d'un curseur, lu par un lecteur d'écran.
     percent: '{percent} %',
   },

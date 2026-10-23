@@ -1,24 +1,13 @@
-import { roomSceneOf } from '@bureau/shared';
-import { useEffect, useId, useRef, type CSSProperties, type KeyboardEvent, type RefObject } from 'react';
+import { useEffect, useId, useRef, type CSSProperties, type RefObject } from 'react';
 import { audioEngine } from '../audio/audio';
 import { useAudioStore } from '../audio/audio-store';
-import { SCENE_IDS, type SceneId } from '../audio/catalog';
 import { fr, t } from '../i18n/fr';
-import { useOfficeStore } from '../state/office-store';
-import { COVER_HEIGHT, COVER_WIDTH, drawCover } from './ambiance-covers';
-import { MusicIcon, PlaceIcon, PlayIcon, VolumeIcon } from './icons';
+import { HeadphonesIcon, MusicIcon, PlayIcon, VolumeIcon } from './icons';
+import { keepArrows, MusicCard, MusicPicker, sceneNote, Switch, useMusicPicking } from './Music';
+import { RoomMusicCard, RoomMusicPicker, useRoomMusic } from './RoomMusic';
 import { IconButton } from './ui/IconButton';
 import { Popover } from './ui/Popover';
-
-// Un interrupteur : une case à cocher qui se lit et s'annonce comme un interrupteur (role=switch).
-export function Switch({ checked, label, onChange, inputRef }: { checked: boolean; label: string; onChange(checked: boolean): void; inputRef?: RefObject<HTMLInputElement | null> }) {
-  return (
-    <label className="switch">
-      <input ref={inputRef} type="checkbox" role="switch" aria-label={label} checked={checked} onChange={(event) => onChange(event.target.checked)} />
-      <span className="switch-track" aria-hidden="true" />
-    </label>
-  );
-}
+import { Segmented } from './ui/Segmented';
 
 // Un curseur de volume, de 0 à 100 %. Le pourcentage est lu par les lecteurs d'écran avec le curseur, et écrit à côté (sauf `compact`, où la
 // place manque : la ligne des effets).
@@ -48,23 +37,8 @@ function VolumeSlider({ label, value, disabled, compact = false, onChange }: { l
   );
 }
 
-// La pochette d'une ambiance : 16 × 10 pixels (ambiance-covers.ts), que le CSS agrandit ×5 sans lissage. Décorative : le titre est écrit à côté.
-// `data-cover` dit laquelle (les tests, et le suivi du lieu de « Selon la pièce »).
-export function Cover({ scene }: { scene: SceneId }) {
-  const canvas = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    if (canvas.current) drawCover(canvas.current, scene);
-  }, [scene]);
-  return <canvas ref={canvas} className="juke-cover" width={COVER_WIDTH} height={COVER_HEIGHT} data-cover={scene} aria-hidden="true" />;
-}
-
-const ARROWS: ReadonlySet<string> = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
-
-// Les flèches sont à ce qu'elles règlent (une carte, un volume) : elles ne vont pas jusqu'à l'avatar, dont le clavier (game/input.ts) ne les ignore que
-// dans un champ où l'on écrit, et non sur un bouton radio ou un curseur.
-export function keepArrows(event: KeyboardEvent<HTMLElement>): void {
-  if (ARROWS.has(event.key)) event.stopPropagation();
-}
+// Ce qu'on écoute : la musique de la pièce (`auto` dans les réglages) ou la sienne.
+type Source = 'room' | 'mine';
 
 export interface SoundPopoverProps {
   open: boolean;
@@ -74,119 +48,127 @@ export interface SoundPopoverProps {
   id?: string;
 }
 
-// Le juke-box (spec de la tâche 11a) : la musique et les effets sonores de l'appli, dans une fenêtre de 320 px au-dessus du bouton du dock. La
-// voix des autres n'en dépend pas (elle suit le micro et la sortie du système). Les réglages sont enregistrés dans le navigateur.
-// - En haut, la musique : son interrupteur, son volume, et le choix de l'ambiance : « Selon la pièce » (celle du lieu où l'on est, avec sa
-//   pochette), puis six cartes, chacune avec sa pochette en pixel art. Ce sont de vrais boutons radio (un seul groupe, au clavier : les flèches),
-//   cachés dans leur carte ; ce que l'ambiance évoque et où elle joue sont en infobulle (`title`) et décrits aux lecteurs d'écran
-//   (`aria-description`), avec « En cours » pour celle qu'on entend. Musique coupée, la grille reste utilisable, en retrait : le choix est gardé
-//   pour quand elle reviendra.
+// Le juke-box : la musique et les effets sonores de l'appli, dans une fenêtre au-dessus du bouton du dock. La voix des autres n'en dépend pas (elle suit le
+// micro et la sortie du système). Les réglages sont ceux de cet appareil, sauf la musique de la pièce, que le serveur garde pour tous.
+// - En haut, la musique chez soi : son interrupteur et son volume.
+// - Puis « J'écoute » : la pièce ou ma musique, deux onglets, chacun avec sa carte, qui dit pour qui elle joue. « La pièce » : la musique de la pièce
+//   où l'on est, la même pour tout le monde ici (RoomMusicCard : sa vignette ouvre la liste pour la changer, là où c'est permis ; ailleurs, la raison).
+//   « Ma musique » : celle qu'on n'écoute que pour soi, comme un casque, partout où l'on va (sa vignette ouvre la liste). Passer à « Ma musique » garde ce
+//   qu'on entend : on la change ensuite. Musique coupée, tout cela reste utilisable, en retrait.
+// - La liste (MusicPicker) remplace la fenêtre le temps du choix : le thème (« Par défaut », « Pirate »), puis ses musiques.
 // - En bas, les effets : interrupteur, volume, un exemple à écouter pour le régler ; puis les crédits.
-// Le focus va à l'interrupteur de la musique à l'ouverture ; Échap ferme et le rend au bouton du dock. Les flèches règlent les cartes et les volumes,
-// sans faire marcher l'avatar.
+// Le focus va à l'interrupteur de la musique à l'ouverture ; Échap ferme et le rend au bouton du dock (dans la liste, Échap revient d'abord à la fenêtre).
 export function SoundPopover({ open, onClose, anchorRef, id }: SoundPopoverProps) {
   const prefs = useAudioStore((state) => state.prefs);
   const playing = useAudioStore((state) => state.playing);
-  const place = useAudioStore((state) => state.place);
-  const placeKey = useAudioStore((state) => state.placeKey);
-  // Ce que la pièce où l'on est joue : son ambiance par défaut, celle que ses occupants ont réglée, ou rien s'ils l'ont coupée.
-  const heardHere = useOfficeStore((state) => roomSceneOf({ scene: place, music: placeKey !== null }, placeKey === null ? undefined : state.music[placeKey]));
   const status = useAudioStore((state) => state.status);
+  const place = useAudioStore((state) => state.place);
   const setPrefs = useAudioStore((state) => state.setPrefs);
-  const groupName = useId();
+  const room = useRoomMusic();
   const musicSwitch = useRef<HTMLInputElement>(null);
+  const { picking, changeButton, pick, back } = useMusicPicking<Source>(open);
+  const panelId = useId();
+  const tabId = (source: Source) => `${panelId}-${source}`;
+  const source: Source = prefs.scene === 'auto' ? 'room' : 'mine';
 
   useEffect(() => {
     if (open) musicSwitch.current?.focus();
   }, [open]);
 
-  // Une carte de la grille : le bouton radio (invisible, sur toute la carte), la pochette, le titre ; et, pour celle qu'on entend, l'égaliseur.
-  const card = (scene: SceneId) => {
-    const { title, mood, where } = fr.sound.scenes[scene];
-    const isPlaying = playing === scene;
-    const description = `${mood} · ${where}`;
-    return (
-      <label key={scene} className="juke-card" title={description} data-playing={isPlaying ? 'true' : undefined}>
-        <input
-          type="radio"
-          className="juke-radio"
-          name={groupName}
-          checked={prefs.scene === scene}
-          aria-description={isPlaying ? `${description} · ${fr.sound.ambiance.playing}` : description}
-          onChange={() => setPrefs({ scene })}
-        />
-        <span className="juke-art">
-          <Cover scene={scene} />
-          {isPlaying && (
-            <span className="juke-eq" aria-hidden="true">
-              <i />
-              <i />
-              <i />
-            </span>
-          )}
-        </span>
-        <span className="juke-name">{title}</span>
-      </label>
-    );
+  // Passer à « Ma musique » garde ce qu'on entend (ou, musique coupée, ce que joue la pièce) : rien ne change à l'oreille avant qu'on en choisisse une autre.
+  const listenTo = (next: Source) => {
+    if (next === source) return;
+    if (next === 'room') setPrefs({ scene: 'auto' });
+    else setPrefs({ scene: playing ?? room?.scene ?? place });
   };
+
+  const mine = prefs.scene === 'auto' ? null : prefs.scene;
 
   return (
     <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top" label={fr.sound.toggle} role="dialog" id={id}>
       <div className="juke" onKeyDown={keepArrows}>
-        {status !== 'running' && (
-          <p className="juke-status" role="status">
-            {fr.sound.status[status]}
-          </p>
+        {picking === 'room' && room !== null ? (
+          <RoomMusicPicker view={room} onBack={back} />
+        ) : picking === 'mine' && mine !== null ? (
+          <MusicPicker
+            title={fr.sound.mine.title}
+            audience={fr.sound.mine.audience}
+            value={mine}
+            playing={playing}
+            onPick={(scene) => scene !== null && setPrefs({ scene })}
+            onBack={back}
+          />
+        ) : (
+          <>
+            {status !== 'running' && (
+              <p className="juke-status" role="status">
+                {fr.sound.status[status]}
+              </p>
+            )}
+
+            <div className="juke-head">
+              <div className="juke-row">
+                <h3 className="juke-title">
+                  <MusicIcon off={!prefs.musicOn} />
+                  {fr.sound.music.label}
+                </h3>
+                <Switch inputRef={musicSwitch} checked={prefs.musicOn} label={fr.sound.music.label} onChange={(musicOn) => setPrefs({ musicOn })} />
+              </div>
+              <div className="juke-volume">
+                <VolumeIcon off={!prefs.musicOn} />
+                <VolumeSlider label={fr.sound.music.volume} value={prefs.musicVolume} disabled={!prefs.musicOn} onChange={(musicVolume) => setPrefs({ musicVolume })} />
+              </div>
+            </div>
+
+            <div className={`juke-listen${prefs.musicOn ? '' : ' is-off'}`}>
+              <div className="juke-source">
+                <span className="juke-source-label" aria-hidden="true">
+                  {fr.sound.source.label}
+                </span>
+                <Segmented
+                  label={fr.sound.source.label}
+                  value={source}
+                  options={[
+                    { id: 'room', label: fr.sound.source.room },
+                    { id: 'mine', label: fr.sound.source.mine },
+                  ]}
+                  onSelect={listenTo}
+                  panelId={panelId}
+                  tabId={tabId}
+                />
+              </div>
+              <div id={panelId} role="tabpanel" aria-labelledby={tabId(source)}>
+                {source === 'room'
+                  ? room !== null && <RoomMusicCard view={room} heard onChange={() => pick('room')} changeRef={changeButton} />
+                  : mine !== null && (
+                      <MusicCard
+                        icon={<HeadphonesIcon />}
+                        title={fr.sound.mine.title}
+                        audience={fr.sound.mine.audience}
+                        scene={mine}
+                        note={sceneNote(mine)}
+                        playing={playing === mine}
+                        change={{ label: fr.sound.mine.change, onClick: () => pick('mine'), buttonRef: changeButton }}
+                      >
+                        <p className="music-card-note">{fr.sound.mine.note}</p>
+                      </MusicCard>
+                    )}
+              </div>
+            </div>
+
+            <div className="juke-fx">
+              <span className="juke-fx-label">{fr.sound.effects.label}</span>
+              <Switch checked={prefs.sfxOn} label={fr.sound.effects.label} onChange={(sfxOn) => setPrefs({ sfxOn })} />
+              <VolumeSlider compact label={fr.sound.effects.volume} value={prefs.sfxVolume} disabled={!prefs.sfxOn} onChange={(sfxVolume) => setPrefs({ sfxVolume })} />
+              {/* Un exemple pour régler le volume : son clic n'a pas de bruit à lui, c'est l'exemple qui sonne. */}
+              <IconButton label={fr.sound.effects.test} small tip="top" data-sfx="none" disabled={!prefs.sfxOn} onClick={() => audioEngine.playSfx('message')}>
+                <PlayIcon />
+              </IconButton>
+            </div>
+
+            <p className="juke-credits">{fr.sound.credits}</p>
+          </>
         )}
-
-        <div className="juke-head">
-          <div className="juke-row">
-            <h3 className="juke-title">
-              <MusicIcon off={!prefs.musicOn} />
-              {fr.sound.music.label}
-            </h3>
-            <Switch inputRef={musicSwitch} checked={prefs.musicOn} label={fr.sound.music.label} onChange={(musicOn) => setPrefs({ musicOn })} />
-          </div>
-          <div className="juke-volume">
-            <VolumeIcon off={!prefs.musicOn} />
-            <VolumeSlider label={fr.sound.music.volume} value={prefs.musicVolume} disabled={!prefs.musicOn} onChange={(musicVolume) => setPrefs({ musicVolume })} />
-          </div>
-        </div>
-
-        <fieldset className={`juke-scenes${prefs.musicOn ? '' : ' is-off'}`}>
-          <legend className="visually-hidden">{fr.sound.ambiance.label}</legend>
-          <label className="juke-auto" title={fr.sound.ambiance.autoHint}>
-            <input
-              type="radio"
-              className="juke-radio"
-              name={groupName}
-              checked={prefs.scene === 'auto'}
-              aria-description={fr.sound.ambiance.autoHint}
-              onChange={() => setPrefs({ scene: 'auto' })}
-            />
-            <PlaceIcon />
-            <span className="juke-auto-text">
-              <span className="juke-name">{fr.sound.ambiance.auto}</span>
-              <small>{heardHere === null ? fr.sound.ambiance.autoOff : t(fr.sound.ambiance.autoHere, { scene: fr.sound.scenes[heardHere].title })}</small>
-            </span>
-            <span className="juke-art">
-              <Cover scene={heardHere ?? place} />
-            </span>
-          </label>
-          <div className="juke-grid">{SCENE_IDS.map(card)}</div>
-        </fieldset>
-
-        <div className="juke-fx">
-          <span className="juke-fx-label">{fr.sound.effects.label}</span>
-          <Switch checked={prefs.sfxOn} label={fr.sound.effects.label} onChange={(sfxOn) => setPrefs({ sfxOn })} />
-          <VolumeSlider compact label={fr.sound.effects.volume} value={prefs.sfxVolume} disabled={!prefs.sfxOn} onChange={(sfxVolume) => setPrefs({ sfxVolume })} />
-          {/* Un exemple pour régler le volume : son clic n'a pas de bruit à lui, c'est l'exemple qui sonne. */}
-          <IconButton label={fr.sound.effects.test} small tip="top" data-sfx="none" disabled={!prefs.sfxOn} onClick={() => audioEngine.playSfx('message')}>
-            <PlayIcon />
-          </IconButton>
-        </div>
-
-        <p className="juke-credits">{fr.sound.credits}</p>
       </div>
     </Popover>
   );

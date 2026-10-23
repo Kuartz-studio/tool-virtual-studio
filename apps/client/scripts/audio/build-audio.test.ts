@@ -1,3 +1,4 @@
+import { MUSIC_SCENES, MUSIC_THEMES } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import {
   MAX_PEAK_DB,
@@ -6,12 +7,14 @@ import {
   SFX_SOURCES,
   SFX_TARGET_RMS_DB,
   SFX_TRIMS,
+  VORBIS_QUALITY,
   fadeOutFilter,
   musicGain,
   parseLevels,
   parseLoudness,
   renderMeasuredSource,
   sfxGain,
+  vorbisArgs,
 } from './build-audio';
 
 // Le bilan que ffmpeg écrit pour le filtre ebur128 (peak=true), réduit à ce qui compte.
@@ -97,8 +100,16 @@ test('le fichier généré : un tableau par genre, les noms avec un tiret entre 
 });
 
 test('les ambiances et les effets listés sont ceux que le catalogue connaît', () => {
-  expect(Object.keys(MUSIC_SOURCES).sort()).toEqual(['drift', 'dusk', 'focus', 'lobby', 'quest', 'sunny']);
+  expect(Object.keys(MUSIC_SOURCES).sort()).toEqual([...MUSIC_SCENES].sort());
   expect(Object.keys(SFX_SOURCES)).toHaveLength(25);
+});
+
+test('les boucles d\'Abstraction sont des .ogg recopiés ; les pirates, les versions « Loop » en .wav, encodées en Vorbis par sox, sans étiquettes', () => {
+  for (const id of MUSIC_THEMES.default) expect(MUSIC_SOURCES[id]).toMatchObject({ pack: 'abstraction', file: expect.stringMatching(/\.ogg$/) });
+  for (const id of MUSIC_THEMES.pirate) expect(MUSIC_SOURCES[id]).toMatchObject({ pack: 'pirate', file: expect.stringMatching(/ \(Loop\)\.wav$/) });
+  const files = Object.values(MUSIC_SOURCES).map((source) => source.file);
+  expect(new Set(files).size).toBe(files.length);
+  expect(vorbisArgs('in.wav', 'out.ogg')).toEqual(['in.wav', '--comment', '', '-C', String(VORBIS_QUALITY), 'out.ogg']);
 });
 
 test('les effets des portes, du café, des modes et des jeux viennent des dossiers Environment, Other et Card and Board du pack', () => {

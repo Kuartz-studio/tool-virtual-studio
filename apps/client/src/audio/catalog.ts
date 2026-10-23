@@ -1,4 +1,4 @@
-import { MUSIC_SCENES } from '@bureau/shared';
+import { MUSIC_SCENES, MUSIC_THEME_IDS, MUSIC_THEMES, themeOfScene, type MusicTheme } from '@bureau/shared';
 import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
 
 // Les sons de l'appli : des ambiances (de la musique en boucle) et des effets (tout ce qui n'est pas de la musique). Les fichiers sont
@@ -10,25 +10,43 @@ import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
 
 export type SceneId = keyof typeof MEASURED_MUSIC;
 
-// Dans l'ordre où le panneau Son les propose : de la plus calme à la plus rythmée, ou presque. La liste est celle du partage (le serveur et la carte
-// nomment les mêmes ambiances) ; `satisfies` fait échouer la compilation si l'une n'a pas son fichier mesuré.
+// Thème après thème, dans l'ordre où le juke-box les propose (pour « Par défaut », de la plus calme à la plus rythmée, ou presque). La liste est celle
+// du partage (le serveur et la carte nomment les mêmes ambiances) ; `satisfies` fait échouer la compilation si l'une n'a pas son fichier mesuré.
 export const SCENE_IDS = MUSIC_SCENES satisfies readonly SceneId[];
+
+// Les thèmes (« Par défaut », « Pirate »), et les ambiances de chacun : le sélecteur de thème du juke-box n'affiche que celles du thème choisi.
+export type ThemeId = MusicTheme;
+export const THEME_IDS = MUSIC_THEME_IDS;
+export const scenesOfTheme = (theme: ThemeId): readonly SceneId[] => MUSIC_THEMES[theme];
+export const themeOf = (scene: SceneId): ThemeId => themeOfScene(scene);
 
 export interface Scene {
   id: SceneId;
-  // Le morceau, tel que son auteur le nomme (« Abstraction », Music Loop Bundle, CC0).
+  // Le morceau, tel que son auteur le nomme (« Abstraction », Music Loop Bundle ; « Pirate Music Pack Vol. 2 »).
   track: string;
   // Le rapport d'amplitude qui l'amène au niveau commun (mesuré).
   gain: number;
 }
 
+const scene = (id: SceneId, track: string): Scene => ({ id, track, gain: MEASURED_MUSIC[id].gain });
+
 export const SCENES: Record<SceneId, Scene> = {
-  lobby: { id: 'lobby', track: 'Distant Skyline — Night Drive', gain: MEASURED_MUSIC.lobby.gain },
-  focus: { id: 'focus', track: 'Seaside — Coral Reef', gain: MEASURED_MUSIC.focus.gain },
-  sunny: { id: 'sunny', track: 'Sunburn — Beach House', gain: MEASURED_MUSIC.sunny.gain },
-  dusk: { id: 'dusk', track: 'Dark Portents — Mysterious Traveler', gain: MEASURED_MUSIC.dusk.gain },
-  drift: { id: 'drift', track: 'Primordial Soup — Jangles', gain: MEASURED_MUSIC.drift.gain },
-  quest: { id: 'quest', track: 'The Walking Dunes — Evening Oasis', gain: MEASURED_MUSIC.quest.gain },
+  lobby: scene('lobby', 'Distant Skyline — Night Drive'),
+  focus: scene('focus', 'Seaside — Coral Reef'),
+  sunny: scene('sunny', 'Sunburn — Beach House'),
+  dusk: scene('dusk', 'Dark Portents — Mysterious Traveler'),
+  drift: scene('drift', 'Primordial Soup — Jangles'),
+  quest: scene('quest', 'The Walking Dunes — Evening Oasis'),
+  'silent-harbor': scene('silent-harbor', 'Pirate Music Pack Vol. 2 — Silent Harbor'),
+  'hidden-booty': scene('hidden-booty', 'Pirate Music Pack Vol. 2 — Hidden Booty'),
+  'oceans-grasp': scene('oceans-grasp', 'Pirate Music Pack Vol. 2 — Ocean’s Grasp'),
+  'drunken-sailors': scene('drunken-sailors', 'Pirate Music Pack Vol. 2 — Drunken Sailors'),
+  'blackened-tide': scene('blackened-tide', 'Pirate Music Pack Vol. 2 — Blackened Tide'),
+  'windward-chase': scene('windward-chase', 'Pirate Music Pack Vol. 2 — Windward Chase'),
+  'sea-wolves': scene('sea-wolves', 'Pirate Music Pack Vol. 2 — Sea Wolves'),
+  'black-flag-rise': scene('black-flag-rise', 'Pirate Music Pack Vol. 2 — Black Flag Rise'),
+  'tempest-call': scene('tempest-call', 'Pirate Music Pack Vol. 2 — Tempest Call'),
+  'foggy-shores': scene('foggy-shores', 'Pirate Music Pack Vol. 2 — Foggy Shores'),
 };
 
 // Les deux copies de chaque boucle : l'ogg (celui des boucles d'origine, qui se répète sans coupure) pour presque tous les navigateurs, et
