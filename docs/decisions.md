@@ -406,3 +406,16 @@ Ce sont des points connus, notés pour plus tard. Aucun ne bloque un premier usa
 - La LED d'une enceinte luit la nuit même quand la musique de sa pièce est coupée : les lumières viennent du catalogue des objets, non de l'état de la pièce.
 - Une vraie voix (la détection de LiveKit) et « ne plus entendre » sous Sport ne sont éprouvés que par des tests sur le faux média et par ceux du serveur : LiveKit n'est pas dans les tests de bout en bout.
 - Les 30 s entières d'un café ne sont jouées qu'en test unitaire.
+
+## Sélecteur d'assets (octobre 2026)
+
+L'onglet « Objets » du panneau Décorer devient un sélecteur à la manière d'un sélecteur d'émojis (`DecorPicker.tsx`, sa logique dans `decor-picker.ts`).
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **Une piste d'onglets à icônes** (une par catégorie de la banque, son nom en infobulle et pour les lecteurs d'écran) au lieu de la liste de boutons de texte ; le nom de la catégorie et son nombre d'éléments au-dessus de la grille | La liste de tags n'était pas claire et prenait trois rangées ; une icône se reconnaît d'un coup d'œil | Les icônes sont dans `icons.tsx` (`DECOR_CATEGORY_ICONS`) ; une catégorie inconnue y prend des formes |
+| Les onglets tiennent **sur une rangée, deux sur un téléphone** (la moitié des onglets par rangée) : jamais de défilement de côté | Le défilement horizontal d'un menu avait été relevé comme un bug | Le nombre par rangée est la variable `--shelves-half`, calculée par le composant |
+| **Les récents** : les 12 derniers éléments pris en main, gardés dans le navigateur (`bureau.decor-recents.v1`), en premier onglet quand il y en a ; le panneau rouvre dessus. Sur cet onglet, la grille ne se réordonne pas sous le pointeur | On reprend souvent les mêmes éléments ; un confort de l'appareil, rien à garder en base | Vider la clé du navigateur ; un élément sorti de la banque est écarté à la lecture |
+| **Grandes vignettes** (×2 pour un élément d'une case) ; **le nom, la taille en cases et la façon de se poser** (au sol, tapis, sur un meuble, au mur) dans une ligne sous la grille, au survol ou au focus, sinon l'élément tenu ; la ligne est cachée sur un écran tactile | Une infobulle native tarde et se coupe au bord du panneau ; c'est la ligne des sélecteurs d'émojis | `.decor-peek` dans styles.css |
+| La recherche ne tient compte **ni des accents ni des majuscules** (« canape » trouve « Canapé ») ; Échap la vide avant de fermer le panneau | On tape vite, souvent sans accents | `searchKey` dans `decor-picker.ts` |
+| **Plus de bouton « Fermer » (ni « Annuler ») au pied du panneau** : la croix de l'en-tête et Échap ferment ; le sélecteur reste monté sous « Murs et sol », on y retrouve sa catégorie et sa recherche | Le bouton doublait la croix | Le brouillon non enregistré part toujours avec l'éditeur, comme avant avec la croix |

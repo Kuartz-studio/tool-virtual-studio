@@ -47,6 +47,7 @@ async function ack(socket: FakeSocket, response: DeskAck = { ok: true }) {
 
 beforeEach(() => {
   useOfficeStore.getState().reset();
+  localStorage.clear();
 });
 
 describe('sans bureau', () => {
@@ -91,6 +92,35 @@ describe('avec un bureau', () => {
     expect(within(grid()).getAllByRole('button')).toHaveLength(decorItemsOf('plantes').length);
   });
 
+  test('le survol d\'une vignette montre son nom, sa taille en cases et comment elle se pose', async () => {
+    const user = userEvent.setup();
+    const { view } = setup();
+    const item = decorItem('of-14-12')!;
+    await user.hover(screen.getByRole('button', { name: item.name }));
+    const peek = view.container.querySelector('.decor-peek')!;
+    expect(peek.textContent).toContain(item.name);
+    expect(peek.textContent).toContain(item.w * item.h === 1 ? fr.decor.sizeOne : t(fr.decor.size, { w: item.w, h: item.h }));
+    expect(peek.textContent).toContain(fr.decor.kinds[item.kind]);
+    await user.unhover(screen.getByRole('button', { name: item.name }));
+    expect(peek.textContent).toBe(fr.decor.peekHint);
+  });
+
+  test('un élément pris rejoint les récents : un onglet de plus, en tête, et le panneau rouvre dessus', async () => {
+    const user = userEvent.setup();
+    const { view } = setup();
+    await user.click(screen.getByRole('button', { name: 'Plantes' }));
+    await user.click(screen.getByRole('button', { name: 'Plante en pot' }));
+    const shelves = within(screen.getByRole('group', { name: fr.decor.categories })).getAllByRole('button');
+    expect(shelves[0]!.textContent).toBe(fr.decor.recents);
+    expect(shelves).toHaveLength(DECOR_CATEGORIES.length + 1);
+
+    view.unmount();
+    setup();
+    expect(screen.getByRole('button', { name: fr.decor.recents }).getAttribute('aria-pressed')).toBe('true');
+    const grid = screen.getByRole('group', { name: t(fr.decor.items, { category: fr.decor.recents }) });
+    expect(within(grid).getAllByRole('button').map((b) => b.getAttribute('aria-label'))).toEqual(['Plante en pot']);
+  });
+
   test('cliquer un élément le prend en main (une fois de plus : le lâche) ; le panneau le dit', async () => {
     const user = userEvent.setup();
     setup();
@@ -105,13 +135,26 @@ describe('avec un bureau', () => {
   test('une recherche porte sur toute la banque', async () => {
     const user = userEvent.setup();
     setup();
-    await user.type(screen.getByLabelText(fr.decor.searchLabel), 'canapé');
+    await user.type(screen.getByLabelText(fr.decor.searchLabel), 'canape');
     const names = within(screen.getByRole('group', { name: /^Éléments :/ })).getAllByRole('button').map((b) => b.getAttribute('aria-label'));
     expect(names.length).toBeGreaterThan(3);
     expect(names.every((name) => name!.toLowerCase().includes('canapé'))).toBe(true);
     await user.clear(screen.getByLabelText(fr.decor.searchLabel));
     await user.type(screen.getByLabelText(fr.decor.searchLabel), 'zzzz');
     expect(screen.getByText(fr.decor.empty)).toBeTruthy();
+  });
+
+  test('Échap dans la recherche la vide sans fermer le panneau ; la fermeture n\'est que la croix de l\'en-tête', async () => {
+    const user = userEvent.setup();
+    const { closed } = setup();
+    const search = screen.getByLabelText(fr.decor.searchLabel) as HTMLInputElement;
+    await user.type(search, 'plante');
+    await user.keyboard('{Escape}');
+    expect(search.value).toBe('');
+    expect(closed()).toBe(0);
+    expect(screen.queryByRole('button', { name: 'Fermer' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: fr.decor.close }));
+    expect(closed()).toBe(1);
   });
 
   test('Murs et sol : choisir un thème change le brouillon', async () => {

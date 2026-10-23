@@ -3708,43 +3708,18 @@ svg.lucide.icon-s {
   gap: 12px;
 }
 
-.decor-search input {
-  width: 100%;
-  min-height: 40px;
-  padding: 0 14px;
-  background: var(--surface-soft);
-  border: 1px solid transparent;
-  border-radius: 12px;
-}
-
-.decor-search input:focus-visible {
-  outline: none;
-  background: var(--surface);
-  border-color: var(--accent);
-  box-shadow: var(--ring);
-}
-
-.decor-categories,
 .part-tabs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
 
-.decor-categories .bar-button,
 .part-tabs .bar-button {
   min-height: 32px;
   padding: 0 11px;
   font-size: var(--text-s);
 }
 
-.decor-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(68px, 1fr));
-  gap: 8px;
-}
-
-.decor-item,
 .swatch,
 .part-choice {
   padding: 4px;
@@ -3755,26 +3730,17 @@ svg.lucide.icon-s {
   transition: border-color 0.12s, background 0.12s;
 }
 
-.decor-item {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.decor-item:hover,
 .swatch:hover,
 .part-choice:hover {
   border-color: var(--border-strong);
 }
 
-.decor-item[aria-pressed='true'],
 .swatch[aria-pressed='true'],
 .part-choice[aria-pressed='true'] {
   border-color: var(--accent);
   background: var(--accent-soft);
 }
 
-.decor-item:focus-visible,
 .swatch:focus-visible,
 .part-choice:focus-visible,
 .decor-link:focus-visible {
@@ -3910,18 +3876,6 @@ svg.lucide.icon-s {
 
 .character-save {
   justify-content: center;
-}
-
-/* La gomme, au-dessus de la recherche : enfoncée, un clic sur un élément de la pièce l'efface. */
-.decor-tools {
-  display: flex;
-  gap: 8px;
-}
-
-.decor-tools .bar-button[aria-pressed='true'] {
-  color: var(--error-text);
-  background: var(--error-background);
-  border-color: var(--error-text);
 }
 
 /* La confirmation d'un remplacement : l'élément qui part, une flèche, celui qui arrive. */
@@ -4323,4 +4277,289 @@ svg.lucide.icon-s {
   text-align: center;
   color: var(--text-muted);
   border-bottom: 0;
+}
+
+/* ——— Chantier : sélecteur d'assets (DecorPicker) ———
+   L'onglet « Objets » du panneau Décorer, à la manière d'un sélecteur d'émojis : la recherche et la gomme, une piste d'onglets à icônes (une
+   seule rangée, deux sur un téléphone : jamais de défilement de côté), le nom de ce qu'on regarde, une grille de grandes vignettes qui défile
+   seule, et dessous l'élément survolé. Le sélecteur remplit le corps du panneau ; trop bas, c'est le corps qui défile. */
+.decor-picker {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.decor-picker[hidden] {
+  display: none;
+}
+
+.decor-picker-top {
+  display: flex;
+  gap: 8px;
+}
+
+.decor-search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.decor-search svg.lucide {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.decor-search input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px 0 36px;
+  font-size: var(--text-m);
+  color: var(--text);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-btn);
+}
+
+.decor-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.decor-search input:focus-visible {
+  outline: none;
+  background: var(--surface);
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.decor-erase {
+  flex: none;
+}
+
+.decor-erase svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+
+/* La gomme enfoncée : un clic sur un élément de la pièce l'efface. Rouge, pour qu'on ne l'oublie pas. */
+.decor-panel .decor-erase[aria-pressed='true'] {
+  color: var(--error-text);
+  background: var(--error-background);
+  border-color: var(--error-text);
+}
+
+/* Les onglets : la piste en retrait du sélecteur à positions (.seg), l'onglet choisi en relief et à la couleur de l'accent. */
+.decor-shelves {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(var(--shelves), minmax(0, 1fr));
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-soft);
+  border-radius: 11px;
+}
+
+.decor-shelf {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 34px;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.decor-shelf svg.lucide {
+  width: 18px;
+  height: 18px;
+}
+
+.decor-shelf:hover {
+  color: var(--text);
+}
+
+.decor-shelf[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgb(15 18 30 / 12%), 0 0 0 1px var(--border);
+}
+
+.decor-shelf:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (max-width: 719px) {
+  .decor-shelves {
+    grid-template-columns: repeat(var(--shelves-half), minmax(0, 1fr));
+  }
+}
+
+.decor-shelf-title {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 2px 0 -2px;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+}
+
+.decor-shelf-title > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.decor-shelf-count {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* La grille : elle seule défile, la recherche et les onglets restent en place. */
+.decor-tiles-scroll {
+  flex: 1;
+  min-height: 160px;
+  margin: 0 -6px;
+  padding: 2px 6px 6px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.decor-tiles-scroll .desk-hint {
+  margin: 12px 0;
+  text-align: center;
+}
+
+.decor-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 8px;
+}
+
+.decor-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 1;
+  min-width: 0;
+  padding: 0;
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: var(--radius-m);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out),
+    transform var(--dur-fast) var(--ease-out);
+}
+
+.decor-tile:hover {
+  background: var(--surface-sunk);
+  border-color: var(--border-strong);
+}
+
+.decor-tile:active {
+  transform: scale(0.96);
+}
+
+.decor-tile[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.decor-tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Sous la grille : l'élément survolé (ou tenu), sa vignette, son nom, sa taille en cases et comment il se pose. */
+.decor-peek {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  padding: 6px 10px 6px 6px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.decor-peek-thumb {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  background: var(--surface);
+  border-radius: var(--radius-s);
+  box-shadow: var(--edge);
+}
+
+.decor-peek-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.decor-peek-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.decor-peek-tag {
+  flex: none;
+  padding: 1px 6px;
+  font-size: 0.6875rem;
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: var(--radius-pill);
+}
+
+.decor-peek-meta,
+.decor-peek-hint {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.decor-peek-hint {
+  padding-left: 4px;
+}
+
+/* Sans survol (un écran tactile), la ligne ne dirait que l'élément tenu, que le pied du panneau dit déjà : la place va à la grille. */
+@media (hover: none) {
+  .decor-peek {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .decor-tile:active {
+    transform: none;
+  }
 }
