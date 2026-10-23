@@ -391,7 +391,7 @@ describe('le panneau Personnes', () => {
       coffees: [],
       speakers: [],
       tables: [],
-      signs: [],
+      signs: [], arena: null,
       zones: [zone('1', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' })],
     } as unknown as OfficeMap;
     const user = userEvent.setup();

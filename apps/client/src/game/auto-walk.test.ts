@@ -37,7 +37,7 @@ function grid(rows: string[]): OfficeMap {
     coffees: [],
     speakers: [],
     tables: [],
-    signs: [],
+    signs: [], arena: null,
   };
 }
 const open = (width: number, height: number): OfficeMap => grid(Array.from({ length: height }, () => '.'.repeat(width)));

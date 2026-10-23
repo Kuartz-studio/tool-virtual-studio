@@ -7,6 +7,7 @@ import { MAX_DECOR_ITEMS } from './decor/placement';
 import type { PlacedItem } from './decor/types';
 import type { DebugGamePayload, GameAck, GameCommand, GameInvite, GameNotice, GameTableView, LadderAck } from './games/protocol';
 import type { GameId } from './games/types';
+import type { ArenaAck, ArenaAction, ArenaCommand, ArenaState } from './arena/arena';
 import type { SimRoomPayload } from './sim';
 
 export const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
@@ -162,6 +163,8 @@ export interface InitPayload {
   games?: GameTableView[];
   // Les invitations à une table qui attendent la réponse de cette personne.
   gameInvites?: GameInvite[];
+  // L'octogone : qui s'y bat, qui regarde, où en est le combat. Absent : la carte n'en a pas.
+  arena?: ArenaState;
 }
 // Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
 // le voient sauter à sa nouvelle place au lieu de glisser jusqu'à elle à travers les murs.
@@ -202,6 +205,8 @@ export interface ServerToClientEvents {
   'game:invite': (p: GameInvite) => void;                 // à une personne : on l'invite à une table
   'game:invite:gone': (p: { id: string; reason: 'expired' | 'cancelled' | 'answered' }) => void;   // à une personne : l'invitation n'est plus à montrer
   'game:notice': (p: GameNotice) => void;                 // à l'invitante : la réponse, le silence ou le départ de l'invitée
+  'arena:state': (p: ArenaState) => void;                 // à tout le bureau : l'octogone a changé (rôles, points de vie, phase)
+  'arena:action': (p: ArenaAction) => void;               // à tout le bureau : un coup vient d'être porté (touché ou dans le vide)
   'media:join': (p: MediaJoinPayload) => void;
   'media:leave': () => void;
   'session:replaced': () => void;
@@ -220,7 +225,8 @@ export interface ClientToServerEvents {
   'music:set': (p: MusicSetPayload) => void;   // régler la musique de la pièce où l'on est (dans un bureau : le sien) ; sans réponse : `music:changed` dit ce qui a changé
   'coffee:take': () => void;   // prendre un café, de près (2 cases au plus de la machine) ; sans réponse : `coffee:changed` dit ce qui a changé
   'game:do': (p: GameCommand, ack: (r: GameAck) => void) => void;   // une commande de jeu (regarder, s'asseoir, jouer un coup, inviter…) ; `game:table` dit ce qui a changé
-  'game:ladder': (p: { game: GameId }, ack: (r: LadderAck) => void) => void;   // le classement d'un jeu : les meilleurs, et son rang
+  'game:ladder': (p: { game: GameId }, ack: (r: LadderAck) => void) => void;
+  'arena:do': (p: ArenaCommand, ack: (r: ArenaAck) => void) => void;   // une commande de l'octogone (rôle, start, coup, garde) ; `arena:state` dit ce qui a changé   // le classement d'un jeu : les meilleurs, et son rang
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
   'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1
   'debug:game': (p: DebugGamePayload) => void;   // accepté seulement si E2E=1 : remplace l'état de la partie en cours à une table

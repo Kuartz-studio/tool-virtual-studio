@@ -29,6 +29,7 @@ import type { Auth } from '../auth/auth';
 import { createChatService } from '../chat/chat-service';
 import { createActivityController } from '../activity/activity-controller';
 import { createActivityService, type ActivityService } from '../activity/activity-service';
+import { createArenaController, type ArenaController } from '../arena/arena-controller';
 import { createDeskController } from '../desks/desk-controller';
 import { createModeTravel } from '../modes/mode-travel';
 import { createTeleport } from '../teleport';
@@ -134,6 +135,8 @@ export interface Realtime {
   music: MusicService;
   /** Les tables de jeu : leurs chaises, leurs parties, les invitations ; le classement est en base. */
   games: GamesController;
+  /** L'octogone : ses combattants, ses spectateurs, son combat (en mémoire). */
+  arena: ArenaController;
   /** Les groupes de conversation et leurs rooms LiveKit : groupMembersOf sert au chat « À proximité ». */
   coordinator: MediaCoordinator;
   /**
@@ -283,6 +286,9 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     logger,
   });
 
+  // L'octogone (en mémoire) : les combattants posés dans le ring au début d'un combat (teleport).
+  const arena = createArenaController({ io, world, map: d.map, teleport, now, logger });
+
   const presence = createPresence({
     io,
     world,
@@ -297,6 +303,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     lights,
     music,
     games,
+    arena,
     onWelcome: (socket) => {
       resyncMedia(socket);
       games.onWelcome(socket.data.userId);
@@ -371,6 +378,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       deskOwnerOf: (key) => desks.get(key)?.ownerId ?? null,
       coffeeLimiter,
       coffees: d.map.coffees,
+      arena,
     });
   });
   // Un membre retiré : sa place est libre pour les autres.
@@ -388,6 +396,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     world.setProfile(profile.id, { name: profile.name, avatarKey: profile.avatarKey });
     deskController.renameOwner(profile.id, profile.name);
     games.profileChanged(profile.id, profile.name, profile.avatarKey);
+    arena.profileChanged(profile.id);
     io.to(OFFICE_ROOM).emit('profile:changed', { id: profile.id, name: profile.name, avatarKey: profile.avatarKey });
   });
   const stopTicks = startWorldTicks(io, world, d.tickMs ?? WORLD_TICK_MS, now, logger);
@@ -404,7 +413,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     logger,
   });
 
-  d.sim?.start({ world, io, map: d.map, now, logger, roomFor: (groupId) => coordinator.roomFor(groupId), enteredSockets });
+  d.sim?.start({ world, io, map: d.map, now, logger, roomFor: (groupId) => coordinator.roomFor(groupId), enteredSockets, arena });
 
   const saveTimer = setInterval(() => presence.savePeriodically(), saveMs);
   saveTimer.unref();
@@ -418,6 +427,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       offActivityEdited();
       // Les jeux d'abord : plus de balayage, plus de commande, plus rien d'écrit.
       games.stop();
+      arena.stop();
       clearInterval(saveTimer);
       d.sim?.stop();
       stopTicks();
@@ -443,6 +453,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     lights,
     music,
     games,
+    arena,
     coordinator,
     stop,
   };

@@ -27,3 +27,4 @@ export * from './decor/placement';
 export * from './map/builder';
 export * from './activity/defaults';
 export * from './games';
+export * from './arena/arena';

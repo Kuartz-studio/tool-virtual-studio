@@ -1,6 +1,8 @@
 import {
   CHAT_HISTORY_LIMIT,
+  EMPTY_ARENA,
   type ActivityState,
+  type ArenaState,
   type ChatMessage,
   type DecorError,
   type DeskBan,
@@ -137,6 +139,9 @@ export interface OfficeState {
   // La table où une partie que l'on jouait a disparu pendant une coupure (le serveur a redémarré : les parties en cours ne sont pas gardées) : le panneau dit
   // « Partie interrompue ». null sans interruption à signaler.
   gameInterrupted: GameId | null;
+  // L'octogone, tel que le serveur l'annonce (`arena:state`), et l'heure (horloge de la page, performance.now) de la fin de son compte à rebours.
+  arena: ArenaState;
+  arenaCountdownEndsAt: number;
   // La carte, lue par le jeu au chargement (la même que celle du serveur) : l'interface y lit les zones (qui est dans mon bureau ?).
   // null avant le jeu, et en dehors de lui.
   officeMap: OfficeMap | null;
@@ -165,6 +170,8 @@ export interface OfficeState {
   setDeskNotice(text: string | null): void;
   // Une table a changé (`game:table`) : la vue remplace celle de ce jeu si sa version est plus récente ; une version égale ou plus ancienne est ignorée.
   setGameTable(view: GameTableView): void;
+  // L'octogone a changé (`arena:state`, ou l'init) : le serveur fait foi.
+  setArena(arena: ArenaState): void;
   // Une invitation arrive (`game:invite`) : elle remplace celle de même identifiant ; elle est retirée quand on répond ou que le serveur la retire.
   addGameInvite(invite: GameInvite): void;
   removeGameInvite(id: string): void;
@@ -256,6 +263,8 @@ type Data = Pick<
   | 'gameInvites'
   | 'gameOpen'
   | 'gameInterrupted'
+  | 'arena'
+  | 'arenaCountdownEndsAt'
   | 'officeMap'
   | 'decorEditor'
   | 'zoomPercent'
@@ -291,6 +300,8 @@ const initialData = (): Data => ({
   gameInvites: [],
   gameOpen: null,
   gameInterrupted: null,
+  arena: EMPTY_ARENA,
+  arenaCountdownEndsAt: 0,
   officeMap: null,
   decorEditor: null,
   zoomPercent: ZOOM_DEFAULT_PERCENT,
@@ -413,6 +424,8 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           // Les tables et les invitations du moment ; une partie qu'on jouait et que le serveur ne connaît plus est signalée (et le reste jusqu'à ce qu'on l'ait lue).
           games: gamesOf(p.games),
           gameInvites: (p.gameInvites ?? []).map(inviteEntry),
+          arena: p.arena ?? EMPTY_ARENA,
+          arenaCountdownEndsAt: performance.now() + (p.arena?.countdownMs ?? 0),
           gameInterrupted: interruptedGame(state.games, gamesOf(p.games), p.self.id) ?? state.gameInterrupted,
         }));
       },
@@ -455,6 +468,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       dismissDeskKnock: (userId) => set((state) => ({ deskKnocks: state.deskKnocks.filter((k) => k.userId !== userId) })),
       setOfficeMap: (officeMap) => set({ officeMap }),
       setLights: (lights) => set({ lights }),
+      setArena: (arena) => set({ arena, arenaCountdownEndsAt: performance.now() + arena.countdownMs }),
       setGameTable: (view) =>
         set((state) => {
           const known = state.games[view.game];

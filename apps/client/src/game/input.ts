@@ -170,3 +170,17 @@ export function bindUseKey(onUse: () => void): () => void {
   window.addEventListener('keydown', onKeyDown);
   return () => window.removeEventListener('keydown', onKeyDown);
 }
+
+// La touche de l'octogone, par sa position sur le clavier (KeyboardEvent.code) : Espace ou J, une attaque avec son arme. Comme la touche E : ni dans un
+// champ de saisie, ni avec Ctrl, Alt ou ⌘, ni à la répétition d'une touche maintenue. `active` dit si l'on se bat en ce moment : sinon, rien n'est pris
+// (Espace garde son rôle ailleurs). Renvoie la fonction qui débranche.
+export function bindArenaKeys(active: () => boolean, attack: () => void): () => void {
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.ctrlKey || event.altKey || event.metaKey || isTypingField(event.target) || isTypingField(document.activeElement) || !active()) return;
+    if (event.code !== 'Space' && event.code !== 'KeyJ') return;
+    event.preventDefault();
+    if (!event.repeat) attack();
+  };
+  window.addEventListener('keydown', onKeyDown);
+  return () => window.removeEventListener('keydown', onKeyDown);
+}

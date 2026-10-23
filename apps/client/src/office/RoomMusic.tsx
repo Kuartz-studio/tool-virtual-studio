@@ -18,7 +18,7 @@ import { useFeetValue, useMusicPlace, usePlace } from './use-here';
 // du lieu (RoomMusicButton). Rien n'y change d'avance : on demande (`local:music`), et la carte montre ce que le serveur annonce.
 
 export interface RoomMusicView {
-  // La pièce où l'on règle la musique (elle a une enceinte : `game`, `desk:A1`) ; null là où il n'y en a pas (la rue, la place, la salle client).
+  // La pièce où l'on règle la musique (elle a une enceinte : `game`, `desk:A1`) ; null là où il n'y en a pas (la rue, la place).
   key: string | null;
   // Le nom du lieu, tel que la puce l'écrit (« Café », « Bureau d'Alice »).
   place: string;

@@ -25,9 +25,9 @@ describe('l\'ambiance de chaque endroit du bureau', () => {
     }
   });
 
-  test('chaque lieu a l\'ambiance que la carte lui donne : la réunion et la salle client en « focus », la conférence en « drift », le sport en « quest », le jeu en « dusk », le café et la détente en « sunny »', () => {
+  test('chaque lieu a l\'ambiance que la carte lui donne : la réunion en « focus », la conférence en « drift », le sport et l\'octogone en « quest », le jeu en « dusk », le café et la détente en « sunny »', () => {
     expect(inPlace('meeting')).toBe('focus');
-    expect(inPlace('client')).toBe('focus');
+    expect(inPlace('arena')).toBe('quest');
     expect(inPlace('conference')).toBe('drift');
     expect(inPlace('gym')).toBe('quest');
     expect(inPlace('game')).toBe('dusk');
@@ -92,10 +92,9 @@ describe('soundAt : l\'ambiance d\'un endroit, et la pièce dont on y règle la 
     expect(inside('cafe')).toEqual({ scene: 'sunny', key: 'cafe' });
   });
 
-  test('la place, les rues et la salle client n\'ont pas d\'enceinte : leur ambiance par défaut, aucune pièce à régler', () => {
+  test('la place et les rues n\'ont pas d\'enceinte : leur ambiance par défaut, aucune pièce à régler', () => {
     expect(soundAt(map, px(60), px(28))).toEqual({ scene: 'lobby', key: null });
     expect(inside('street-n')).toEqual({ scene: 'lobby', key: null });
-    expect(inside('client')).toEqual({ scene: 'focus', key: null });
   });
 
   test('un bureau : « focus », et sa pièce est celle du bureau (desk:<clé>)', () => {

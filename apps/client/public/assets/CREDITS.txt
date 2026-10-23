@@ -37,3 +37,6 @@ Icônes de l'interface : Lucide (https://lucide.dev), licence ISC, par le paquet
 
 Police de l'interface : Instrument Sans (https://fonts.google.com/specimen/Instrument+Sans), licence SIL Open Font License 1.1,
   par le paquet @fontsource-variable/instrument-sans.
+
+Armes de l'octogone : une planche de 14 × 14 icônes de 32 px (weapons/weapons.png : épées, lances, bâtons, arcs, boucliers…),
+  fournie pour le projet ; source et licence à préciser ici. Seules six icônes servent (packages/shared/src/arena/arena.ts, ARENA_WEAPONS).

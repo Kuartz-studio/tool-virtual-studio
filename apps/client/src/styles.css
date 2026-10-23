@@ -5373,3 +5373,424 @@ button.desk-place:disabled {
     transform: none;
   }
 }
+
+/* L'octogone : le panneau de la salle de combat, en haut à gauche sous la puce du lieu. Une carte sombre quelle que soit l'heure, rouge et bleu pour
+   les deux coins. */
+.arena-card {
+  position: absolute;
+  top: calc(var(--bar-gap) + 76px);
+  left: var(--bar-gap);
+  width: min(320px, calc(100vw - 2 * var(--bar-gap)));
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+  color: #f3f4f7;
+  background: linear-gradient(180deg, #1d1f26 0%, #15161a 100%);
+  border-radius: var(--radius-l);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 6%), 0 18px 40px -12px rgb(0 0 0 / 55%);
+  pointer-events: auto;
+  animation: arena-in var(--dur-pop) var(--ease-out);
+}
+
+@keyframes arena-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.98);
+  }
+}
+
+.arena-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.arena-card__head h2 {
+  margin: 0;
+  font-size: var(--text-m);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.arena-card__phase {
+  padding: 2px 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: #c9ccd6;
+  background: rgb(255 255 255 / 8%);
+  border-radius: var(--radius-pill);
+}
+
+.arena-card[data-phase='fight'] .arena-card__phase,
+.arena-card[data-phase='countdown'] .arena-card__phase {
+  color: #fff;
+  background: #c8102e;
+}
+
+.arena-card__corners {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+}
+
+.arena-card__vs {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  font-size: 0.625rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: #c9ccd6;
+  background: #15161a;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 10%);
+}
+
+/* Un coin : une carte teintée de sa couleur, un contour fin tout autour (jamais un seul côté), une pastille « Rouge » ou « Bleu », l'arme dans sa
+   vignette à côté du nom, puis la vie : la barre et le nombre de points. Le coin bleu est en miroir. */
+.arena-corner {
+  --corner-rgb: 229 56 59;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border-radius: var(--radius-m);
+  background: linear-gradient(160deg, rgb(var(--corner-rgb) / 16%) 0%, rgb(var(--corner-rgb) / 4%) 70%);
+  box-shadow: inset 0 0 0 1px rgb(var(--corner-rgb) / 22%);
+  transition: box-shadow var(--dur-fast), background var(--dur-fast);
+}
+
+.arena-corner--blue {
+  --corner-rgb: 59 130 246;
+  background: linear-gradient(200deg, rgb(var(--corner-rgb) / 16%) 0%, rgb(var(--corner-rgb) / 4%) 70%);
+}
+
+.arena-corner[data-empty] {
+  background: rgb(255 255 255 / 3%);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 7%);
+}
+
+.arena-corner[data-winner] {
+  box-shadow: inset 0 0 0 1px rgb(242 194 48 / 60%), 0 0 0 3px rgb(242 194 48 / 14%);
+}
+
+.arena-corner__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  padding: 2px 8px 2px 6px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--corner-rgb));
+  background: rgb(var(--corner-rgb) / 14%);
+  border-radius: var(--radius-pill);
+}
+
+.arena-corner__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgb(var(--corner-rgb));
+  box-shadow: 0 0 6px rgb(var(--corner-rgb) / 70%);
+}
+
+.arena-corner--blue .arena-corner__tag {
+  justify-self: end;
+  flex-direction: row-reverse;
+  padding: 2px 6px 2px 8px;
+}
+
+.arena-corner__who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.arena-corner--blue .arena-corner__who {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.arena-corner__weapon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  background: rgb(0 0 0 / 22%);
+  border-radius: var(--radius-s);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 6%);
+}
+
+.arena-corner[data-empty] .arena-corner__weapon {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 10%);
+}
+
+.arena-corner--blue .arena-corner__weapon .weapon-icon {
+  transform: scaleX(-1);
+}
+
+.arena-corner__name {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.arena-corner[data-empty] .arena-corner__name {
+  color: #7d8291;
+  font-weight: var(--weight-medium);
+}
+
+.arena-corner__you {
+  font-size: 0.6875rem;
+  font-weight: var(--weight-medium);
+  color: #9aa0ae;
+}
+
+.arena-corner__life {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.arena-corner--blue .arena-corner__life {
+  flex-direction: row-reverse;
+}
+
+.arena-corner__bar {
+  flex: 1;
+  height: 6px;
+  overflow: hidden;
+  background: rgb(0 0 0 / 30%);
+  border-radius: var(--radius-pill);
+}
+
+.arena-corner--blue .arena-corner__bar {
+  direction: rtl;
+}
+
+.arena-corner__fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  transition: width 0.25s var(--ease-out), background 0.25s;
+}
+
+.arena-corner__fill[data-level='high'] {
+  background: linear-gradient(90deg, #2fb35b, #4ade80);
+}
+
+.arena-corner--blue .arena-corner__fill[data-level='high'] {
+  background: linear-gradient(270deg, #2fb35b, #4ade80);
+}
+
+.arena-corner__fill[data-level='mid'] {
+  background: #f2c230;
+}
+
+.arena-corner__fill[data-level='low'] {
+  background: #e5383b;
+}
+
+.arena-corner__hp {
+  min-width: 20px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #c9ccd6;
+  text-align: center;
+}
+
+.arena-card__status {
+  margin: 0;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  text-align: center;
+}
+
+.arena-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.arena-btn {
+  min-height: 34px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: var(--text-s);
+  font-weight: 700;
+  color: #f3f4f7;
+  background: rgb(255 255 255 / 10%);
+  border: 0;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  transition: background var(--dur-fast), transform 0.06s;
+}
+
+.arena-btn:hover:not(:disabled) {
+  background: rgb(255 255 255 / 16%);
+}
+
+.arena-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.arena-btn:focus-visible {
+  outline: 2px solid #f2c230;
+  outline-offset: 2px;
+}
+
+.arena-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.arena-btn--fight {
+  background: #c8102e;
+}
+
+.arena-btn--fight:hover:not(:disabled) {
+  background: #a50d26;
+}
+
+.arena-btn--start {
+  min-width: 120px;
+  color: #15161a;
+  background: #f2c230;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.arena-btn--start:hover:not(:disabled) {
+  background: #ffd447;
+}
+
+.arena-btn--ghost {
+  color: #c9ccd6;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 16%);
+}
+
+.arena-card__note {
+  font-size: var(--text-xs);
+  color: #c9ccd6;
+}
+
+.arena-card__controls {
+  margin: 0;
+  padding: 8px;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: #c9ccd6;
+  text-align: center;
+  background: rgb(255 255 255 / 5%);
+  border-radius: var(--radius-s);
+}
+
+.arena-card__error {
+  margin: 0;
+  font-size: var(--text-xs);
+  color: #ff8a8d;
+  text-align: center;
+}
+
+.arena-card__crowd {
+  margin: 0;
+  overflow: hidden;
+  font-size: 0.6875rem;
+  color: #7d8291;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arena-card {
+    animation: none;
+  }
+}
+
+/* Les armes de l'octogone : une icône de la planche (32 px, sans lissage), et le choix de l'arme, une grille de six cases. */
+.weapon-icon {
+  display: inline-block;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+}
+
+
+.weapon-picker {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.weapon-picker legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #9aa0ae;
+}
+
+.weapon-picker__option {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: #e6e8ee;
+  background: rgb(255 255 255 / 5%);
+  border: 0;
+  border-radius: var(--radius-s);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 8%);
+  cursor: pointer;
+  transition: background var(--dur-fast), box-shadow var(--dur-fast), transform 0.06s;
+}
+
+.weapon-picker__option:hover:not(:disabled) {
+  background: rgb(255 255 255 / 10%);
+}
+
+.weapon-picker__option:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.weapon-picker__option[aria-pressed='true'] {
+  background: rgb(242 194 48 / 16%);
+  box-shadow: inset 0 0 0 2px #f2c230;
+}
+
+.weapon-picker__option:focus-visible {
+  outline: 2px solid #f2c230;
+  outline-offset: 2px;
+}
+
+.weapon-picker__option:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

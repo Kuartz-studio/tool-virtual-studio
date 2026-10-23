@@ -8,6 +8,7 @@ import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from './io';
 import { loadPosition, savePositions } from './positions';
 import type { DeskController } from '../desks/desk-controller';
+import type { ArenaController } from '../arena/arena-controller';
 import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
 import type { MusicService } from '../music/music-service';
@@ -34,6 +35,8 @@ export interface PresenceDeps {
   music: Pick<MusicService, 'ready' | 'all'>;
   /** Les tables de jeu : chaque init les dit ; la présence les prévient quand la dernière socket d'une personne tombe, qu'elle quitte le monde ou qu'un membre est retiré. */
   games?: Pick<GamesController, 'initFor' | 'onSocketsGone' | 'onDepart' | 'onRemoved'>;
+  /** L'octogone : chaque init le dit (ses départs, il les voit seul à son balayage). */
+  arena?: Pick<ArenaController, 'initFor'>;
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -124,6 +127,7 @@ export function createPresence(d: PresenceDeps) {
       chatHistory,
       ...d.desks.initFor(socket),
       ...d.games?.initFor(socket),
+      ...d.arena?.initFor(),
       lights: d.lights.get(),
       // Seulement les pièces qu'on a réglées : sans réglage, le champ n'y est pas.
       ...(Object.keys(music).length > 0 ? { music } : {}),

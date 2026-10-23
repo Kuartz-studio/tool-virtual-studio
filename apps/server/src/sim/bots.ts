@@ -68,6 +68,8 @@ interface Bot {
   target: Point | null;
   // L'heure (horloge du serveur) de son dernier pas.
   stepAt: number;
+  // Sa vitesse de marche (px/s) : SIM_BOT_SPEED_PX_PER_S, sauf pour le sparring de l'octogone, plus vif.
+  speed: number;
 }
 
 export interface SimBotsDeps {
@@ -129,11 +131,12 @@ export class SimBots {
 
   // Fait apparaître une personne fictive, près de l'apparition de la carte, sur une case libre où personne n'est. Son nom : « Fictif 1 »,
   // « Fictif 2 »… sauf si on lui en donne un. Son fichier audio doit être dans le dossier (unknown_audio sinon).
-  async spawn(options: { name?: string; audio?: string | null } = {}): Promise<SimBotInfo> {
+  // `at` : là où elle apparaît (une case libre), au lieu de près de l'apparition ; `speed` : sa vitesse de marche.
+  async spawn(options: { name?: string; audio?: string | null; at?: Point; speed?: number } = {}): Promise<SimBotInfo> {
     const audio = options.audio ?? null;
     if (audio !== null && !(await this.d.audio.has(audio))) throw new SimError('unknown_audio');
     const n = ++this.counter;
-    const spot = this.freeSpot();
+    const spot = options.at ?? this.freeSpot();
     const bot: Bot = {
       id: `${SIM_BOT_PREFIX}${randomUUID().slice(0, 8)}`,
       name: options.name ?? `Fictif ${n}`,
@@ -143,6 +146,7 @@ export class SimBots {
       path: [],
       target: null,
       stepAt: this.d.now(),
+      speed: options.speed ?? SIM_BOT_SPEED_PX_PER_S,
     };
     this.bots.set(bot.id, bot);
     const player = this.d.world.join({ id: bot.id, name: bot.name, avatarKey: bot.avatarKey, x: spot.x, y: spot.y, dir: 'down', status: 'available' });
@@ -180,12 +184,29 @@ export class SimBots {
   moveTo(id: string, x: number, y: number): Point {
     const bot = this.bots.get(id);
     if (!bot) throw new SimError('unknown_bot');
+    this.resync(bot);
     const found = findPath(this.d.map, bot.pos, { x, y });
     if (!found) throw new SimError('unreachable');
     bot.path = found.path;
     bot.target = found.goal;
     bot.stepAt = this.d.now();
     return found.goal;
+  }
+
+  // L'arrête là où elle est, tournée vers `dir` (le sparring fait face à son adversaire).
+  stopFacing(id: string, dir: Direction): void {
+    const bot = this.bots.get(id);
+    if (!bot) throw new SimError('unknown_bot');
+    this.resync(bot);
+    bot.path = [];
+    bot.target = null;
+    this.d.world.applyMove(id, { x: Math.round(bot.pos.x), y: Math.round(bot.pos.y), dir, moving: false });
+  }
+
+  // À l'arrêt, sa position est celle du monde : le serveur a pu la poser ailleurs (l'octogone place ses combattants dans le ring).
+  private resync(bot: Bot): void {
+    const seen = this.d.world.get(bot.id);
+    if (seen && bot.path.length === 0) bot.pos = { x: seen.x, y: seen.y };
   }
 
   // Les groupes du dernier calcul (startGroupTicks) : ce que chaque personne réelle doit entendre en dépend.
@@ -229,7 +250,7 @@ export class SimBots {
     for (const bot of this.bots.values()) {
       if (bot.path.length === 0) continue;
       const at = now();
-      let remaining = (SIM_BOT_SPEED_PX_PER_S * Math.min(at - bot.stepAt, MAX_STEP_MS)) / 1000;
+      let remaining = (bot.speed * Math.min(at - bot.stepAt, MAX_STEP_MS)) / 1000;
       bot.stepAt = at;
       let dir = world.get(bot.id)?.dir ?? 'down';
       while (remaining > 0 && bot.path.length > 0) {

@@ -1,4 +1,4 @@
-import type { OfficeMap, PublicPlayer } from '@bureau/shared';
+import { placeAt as placeOf, type OfficeMap, type PublicPlayer } from '@bureau/shared';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { EventBus } from '../game/EventBus';
 import { listenOnBus } from '../net/office-connection';
@@ -101,5 +101,19 @@ export function usePeopleHere(place: string | null): PublicPlayer[] {
             .filter((player) => places.get(player.id) === place)
             .sort((a, b) => a.name.localeCompare(b.name, 'fr')),
     [players, places, place],
+  );
+}
+
+// Est-on dans la salle de l'octogone (le lieu qui contient le milieu du ring) ? Faux sans carte, et sur une carte sans octogone.
+export function useInArenaRoom(): boolean {
+  return (
+    useFeetValue(
+      useCallback((x: number, y: number, map: OfficeMap) => {
+        const ring = map.arena;
+        if (!ring) return false;
+        const room = placeOf(map, ring.x + ring.width / 2, ring.y + ring.height / 2);
+        return room !== null && placeOf(map, x, y)?.key === room.key;
+      }, []),
+    ) ?? false
   );
 }

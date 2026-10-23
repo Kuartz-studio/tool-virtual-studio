@@ -60,7 +60,7 @@ function reachableFrom(m: OfficeMap, tx: number, ty: number): Set<number> {
 }
 
 // Les pièces fermées de la carte (les bureaux, les salles) : ce que les murs enferment, et que ne traversent que les ouvertures.
-const ROOMS = ['meeting', 'client', 'conference', 'gym', 'game', 'lounge'] as const;
+const ROOMS = ['meeting', 'arena', 'conference', 'gym', 'game', 'lounge'] as const;
 
 describe('la carte du bureau', () => {
   test('81 × 46 cases, bien plus grande que la carte de développement (24 × 16)', () => {
@@ -204,7 +204,7 @@ describe('les lieux', () => {
     ['street-s', 'Couloir', 'street', 'lobby', false, false],
     ['street-e', 'Couloir', 'street', 'lobby', false, false],
     ['meeting', 'Salle de réunion', 'room', 'focus', true, false],
-    ['client', 'Salle client', 'room', 'focus', false, false],
+    ['arena', 'Octogone', 'room', 'quest', true, false],
     ['conference', 'Salle de conférence', 'room', 'drift', true, false],
     ['gym', 'Salle de sport', 'room', 'quest', true, true],
     ['game', 'Salle de jeu', 'room', 'dusk', true, true],
@@ -223,7 +223,7 @@ describe('les lieux', () => {
     expect(areaOf('street-s')).toEqual({ x: 1, y: 26, w: 78, h: 4 });
     expect(areaOf('street-e')).toEqual({ x: 74, y: 11, w: 6, h: 19 });
     expect(areaOf('meeting')).toEqual({ x: 51, y: 2, w: 14, h: 7 });
-    expect(areaOf('client')).toEqual({ x: 66, y: 2, w: 14, h: 7 });
+    expect(areaOf('arena')).toEqual({ x: 66, y: 2, w: 14, h: 7 });
     expect(areaOf('conference')).toEqual({ x: 51, y: 17, w: 22, h: 7 });
     expect(areaOf('gym')).toEqual({ x: 1, y: 32, w: 12, h: 12 });
     expect(areaOf('game')).toEqual({ x: 14, y: 32, w: 22, h: 12 });
@@ -239,7 +239,7 @@ describe('les lieux', () => {
     expect(at(10, 27)).toBe('street-s');
     expect(at(76, 20)).toBe('street-e');
     expect(at(55, 5)).toBe('meeting');
-    expect(at(70, 5)).toBe('client');
+    expect(at(70, 5)).toBe('arena');
     expect(at(60, 20)).toBe('conference');
     expect(at(5, 38)).toBe('gym');
     expect(at(20, 38)).toBe('game');
@@ -256,7 +256,7 @@ describe('les lieux', () => {
   test('la salle de sport et la salle de jeu sont les seules destinations ; les pièces fermées sont aussi des zones privées', () => {
     expect(map.places.filter((p) => p.destination).map((p) => p.key)).toEqual(['gym', 'game']);
     const privates = map.zones.filter((zone) => zone.type === 'private').map((zone) => zone.name);
-    expect(privates.sort()).toEqual(['Détente et piscine', 'Salle client', 'Salle de conférence', 'Salle de jeu', 'Salle de réunion', 'Salle de sport']);
+    expect(privates.sort()).toEqual(['Détente et piscine', 'Octogone', 'Salle de conférence', 'Salle de jeu', 'Salle de réunion', 'Salle de sport']);
   });
 
   test('chaque place de musique a exactement une enceinte, posée contre une case libre', () => {
@@ -312,17 +312,15 @@ describe('les lieux', () => {
     }
   });
 
-  test('la salle client ne contient qu\'un panneau « EN TRAVAUX » au milieu, ni meuble, ni objet animé, ni enceinte', () => {
-    const client = areaOf('client');
-    expect(map.signs).toHaveLength(1);
-    expect(map.signs[0]!.text).toBe('EN TRAVAUX');
-    const [sx, sy] = [tileOf(map.signs[0]!.x), tileOf(map.signs[0]!.y)];
-    expect(Math.abs(sx - (client.x + client.w / 2))).toBeLessThanOrEqual(1);
-    expect(Math.abs(sy - (client.y + client.h / 2))).toBeLessThanOrEqual(1);
-    const objects = (json.layers.filter((layer) => layer.name === 'objets' || layer.name === 'props') as TiledObjectLayer[]).flatMap((layer) => layer.objects);
-    const here = objects.filter((o) => inside(client, Math.floor(o.x / tile), Math.floor(o.y / tile)));
-    expect(here).toEqual([]);
-    expect(map.speakers.some((s) => s.place === 'client')).toBe(false);
+  test('l\'octogone : un ring au milieu de sa salle, contre le mur nord, sur des cases libres ; plus de panneau « EN TRAVAUX »', () => {
+    const room = areaOf('arena');
+    expect(map.signs).toEqual([]);
+    const ring = map.arena!;
+    expect(ring).toEqual({ x: 68 * tile, y: 2 * tile, width: 10 * tile, height: 6 * tile });
+    const [x0, y0] = [tileOf(ring.x), tileOf(ring.y)];
+    expect(inside(room, x0, y0) && inside(room, x0 + 9, y0 + 5)).toBe(true);
+    for (let y = y0; y < y0 + 6; y++) for (let x = x0; x < x0 + 10; x++) expect(map.blocked[y * map.widthTiles + x], `${x}, ${y}`).toBe(0);
+    expect(map.speakers.some((s) => s.place === 'arena')).toBe(true);
   });
 });
 

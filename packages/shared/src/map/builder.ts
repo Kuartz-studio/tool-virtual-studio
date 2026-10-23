@@ -218,6 +218,11 @@ export class MapCanvas {
     this.zones.push({ type: 'sign', text, x, y, w, h });
   }
 
+  // Le ring de l'octogone, que le client trace dans son rectangle (une cage à huit pans).
+  arena(area: Area): void {
+    this.zones.push({ type: 'arena', ...area });
+  }
+
   // Un bassin : de l'eau avec sa margelle, les cases du bord sont des obstacles (on ne marche pas dans l'eau).
   pool(x: number, y: number, w: number, h: number): void {
     for (let yy = y; yy < y + h; yy++) {

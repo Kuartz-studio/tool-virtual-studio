@@ -66,11 +66,9 @@ const defaultRow = () => screen.getByRole('button', { name: new RegExp(`^${fr.ro
 const isCurrent = (element: HTMLElement) => element.getAttribute('aria-current') === 'true';
 
 describe('qui peut régler la musique, et où', () => {
-  test('dans une rue, une salle sans enceinte : pas de bouton', () => {
+  test('dans une rue, un lieu sans enceinte : pas de bouton', () => {
     enterAt(middleOf('street-n'));
     const { container } = render(<RoomMusicButton />);
-    expect(container.firstChild).toBeNull();
-    walkTo('client');
     expect(container.firstChild).toBeNull();
   });
 

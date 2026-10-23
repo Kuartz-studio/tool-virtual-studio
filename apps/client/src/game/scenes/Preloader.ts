@@ -1,10 +1,11 @@
-import type { TiledMapJson } from '@bureau/shared';
+import { WEAPON_SHEET, type TiledMapJson } from '@bureau/shared';
 import { Scale, Scene, Scenes } from 'phaser';
 import { fr } from '../../i18n/fr';
 import { resolveAvatarKey } from '../avatars';
 import { decorAtlasImages, decorAtlasesLoaded, registerDecorFrames } from '../decor-textures';
 import { addSwitchTextures } from '../light-switch';
 import { addSignTexture } from '../map-signs';
+import { WEAPONS_TEXTURE } from '../arena-layer';
 import { createLightTextures } from '../light-textures';
 import { tilesetImages } from '../map-layers';
 import { avatarLibraryOf } from '../objects/avatar-skin';
@@ -65,6 +66,8 @@ export class Preloader extends Scene {
     for (const { key, url } of decorAtlasImages()) this.load.image(key, url);
     // Les objets animés de la carte : une planche d'images chacun. Une planche qui manque n'empêche pas le bureau de s'afficher.
     for (const { key, url, frameWidth, frameHeight } of propSheets()) this.load.spritesheet(key, url, { frameWidth, frameHeight });
+    // Les armes de l'octogone : une planche d'icônes de 32 px.
+    this.load.spritesheet(WEAPONS_TEXTURE, WEAPON_SHEET.url, { frameWidth: WEAPON_SHEET.frameSize, frameHeight: WEAPON_SHEET.frameSize });
   }
 
   create() {

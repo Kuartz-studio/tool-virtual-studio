@@ -61,15 +61,15 @@ test('map:check sur la grande carte du bureau : 81 × 46 cases, 6 bureaux avec l
   expect(run.stdout).toMatch(/Taille : 81 × 46 cases de 32 px/);
   expect(run.stdout).toMatch(/^\s+desk : 6$/m);
   expect(run.stdout).toMatch(/^\s+door : 6$/m);
-  expect(run.stdout).toMatch(/^\s+private : 6$/m);   // la réunion, la salle client, la conférence, le sport, le jeu, la détente
+  expect(run.stdout).toMatch(/^\s+private : 6$/m);   // la réunion, l'octogone, la conférence, le sport, le jeu, la détente
   expect(run.stdout).toMatch(/^\s+spawn : 1$/m);
   expect(run.stdout).toMatch(/^\s+switch : 1$/m);   // l'interrupteur de la lumière, dans la rue nord
   expect(run.stdout).toMatch(/^\s+place : 12$/m);
-  expect(run.stdout).toMatch(/^\s+speaker : 7$/m);   // une enceinte par lieu qui a de la musique
+  expect(run.stdout).toMatch(/^\s+speaker : 8$/m);   // une enceinte par lieu qui a de la musique
   expect(run.stdout).toMatch(/^\s+coffee : 1$/m);
   expect(run.stdout).toMatch(/^\s+game : 4$/m);
   expect(run.stdout).toMatch(/^\s+seat : 10$/m);
-  expect(run.stdout).toMatch(/^\s+sign : 1$/m);
+  expect(run.stdout).toMatch(/^\s+arena : 1$/m);   // le ring de l'octogone
   expect(run.stdout).toMatch(/Point d'apparition : x = 1296, y = 720 \(case 40, 22\)/);
 }, 60_000);
 

@@ -4,7 +4,7 @@ import { DECOR_DEPTH } from './decor-layout';
 import { LABEL_STYLE } from './map-layers';
 import { snapToPixels } from './pixel-snap';
 
-// Les panneaux de la carte (zones `sign`) : celui de la salle client, « EN TRAVAUX ». Un panneau de chantier de 24 × 20 pixels, tracé en code comme la plaque
+// Les panneaux de la carte (zones `sign`), comme « EN TRAVAUX ». Un panneau de chantier de 24 × 20 pixels, tracé en code comme la plaque
 // de l'interrupteur (pas de fichier à charger) : une planche à bandes en biais jaunes et noires dans un cadre sombre, sur deux pieds, avec leur ombre. Posé au
 // milieu de la case de sa zone, ses pieds au bas de la case ; son texte est écrit sous lui, comme les inscriptions de la carte.
 

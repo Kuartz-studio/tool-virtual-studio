@@ -10,8 +10,9 @@ import type { TiledLayer, TiledMapJson, TiledObject, TiledObjectLayer, TiledTile
 // - place : un lieu (nom = sa clé ; propriétés label, kind `room` `open` ou `street`, scene, music, destination) ;
 // - coffee : la case, 1 × 1, devant la machine à café ; speaker : l'enceinte, 1 × 1 (nom = la clé du lieu qu'elle règle, qui a de la musique) ;
 // - game : la table d'un jeu (nom = chess, backgammon, connect4 ou ludo) ; seat : une chaise, 1 × 1 (nom = `<jeu>:<n>`, n à partir de 1) ;
-// - sign : un panneau (propriété text).
-export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch', 'place', 'coffee', 'speaker', 'game', 'seat', 'sign'] as const;
+// - sign : un panneau (propriété text) ;
+// - arena : le ring de l'octogone (une seule zone : arena/arena.ts).
+export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch', 'place', 'coffee', 'speaker', 'game', 'seat', 'sign', 'arena'] as const;
 export type ZoneType = (typeof ZONE_TYPES)[number];
 
 // Les zones dont les propriétés Tiled sont gardées (`Zone.properties`) : celles qui en portent.
@@ -63,6 +64,8 @@ export interface OfficeMap {
   tables: GameTable[];
   // Les panneaux : leur rectangle, en pixels, et leur texte.
   signs: Array<Rect & { text: string }>;
+  // Le ring de l'octogone, en pixels ; null si la carte n'en a pas.
+  arena: Rect | null;
 }
 
 // Pourquoi une carte est refusée :
@@ -122,6 +125,7 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
     speakers: readSpeakers(zones, places, tileSize),
     tables: readTables(zones, tileSize),
     signs: readSigns(zones),
+    arena: readArena(zones),
   };
   if (!isWalkablePoint(map, map.spawn.x, map.spawn.y)) {
     throw new MapError(
@@ -398,6 +402,14 @@ function readSigns(zones: Zone[]): Array<Rect & { text: string }> {
       if (text === null) throw new MapError('bad_zone', `${labelOf(zone)} : ce panneau (zone sign) n'a pas de propriété « text ».`);
       return { x: zone.x, y: zone.y, width: zone.width, height: zone.height, text };
     });
+}
+
+// Le ring de l'octogone : au plus une zone `arena`.
+function readArena(zones: Zone[]): Rect | null {
+  const arenas = zones.filter((z) => z.type === 'arena');
+  if (arenas.length > 1) throw new MapError('bad_zone', `La carte a ${arenas.length} zones arena (n° ${arenas.map((zone) => zone.id).join(', ')}) : une seule est permise.`);
+  const zone = arenas[0];
+  return zone ? { x: zone.x, y: zone.y, width: zone.width, height: zone.height } : null;
 }
 
 function pickSpawnZone(zones: Zone[]): Zone {

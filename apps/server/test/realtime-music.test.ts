@@ -108,11 +108,11 @@ describe('l\'état de la musique des pièces', () => {
     expect(changes(seen)[0]).toMatchObject({ place: 'cafe' });
   });
 
-  test('une pièce sans enceinte (la rue, la salle client) n\'a pas de réglage : la demande est ignorée', async () => {
+  test('un lieu sans enceinte (la rue) n\'a pas de réglage : la demande est ignorée', async () => {
     const srv = await startMusic();
     const a = await person(srv, 'a@x.fr');
     const seen = record(a.socket);
-    for (const key of ['street-n', 'client']) {
+    for (const key of ['street-n']) {
       await teleport(srv, a, spotIn(srv, key));
       a.socket.emit('music:set', { place: key, on: false });
     }

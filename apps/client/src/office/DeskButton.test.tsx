@@ -23,7 +23,7 @@ const map = {
   coffees: [],
   speakers: [],
   tables: [],
-  signs: [],
+  signs: [], arena: null,
   zones: [zone('1', 'desk', 0, 0, 288, 224, { name: 'A1' }), zone('2', 'desk', 320, 0, 288, 224, { name: 'A2' })],
 } as unknown as OfficeMap;
 

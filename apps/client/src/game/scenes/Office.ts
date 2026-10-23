@@ -1,9 +1,11 @@
 import {
   avatarBodyFits,
   deskKey,
+  insideRing,
   isSimBot,
   parseOfficeMap,
   type ActivityState,
+  type ArenaState,
   type GameId,
   type GameTable,
   type InitPayload,
@@ -26,11 +28,12 @@ import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
 import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
+import { ArenaLayer } from '../arena-layer';
 import { gameTableTarget, tableFocus, type TableState } from '../game-tables';
 import { PropLayer } from '../prop-layer';
 import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
-import { bindKeyboard, bindUseKey, bindWheelZoom, bindZoomKeys, DirectionInput } from '../input';
+import { bindArenaKeys, bindKeyboard, bindUseKey, bindWheelZoom, bindZoomKeys, DirectionInput } from '../input';
 import { Interactions } from '../interactions';
 import { sourcesFromItems, sourcesFromProps } from '../light-sources';
 import { LightSwitch } from '../light-switch';
@@ -110,6 +113,10 @@ export class Office extends Scene {
   // Le zoom que la caméra montre en ce moment, et celui où elle va : elle glisse de l'un à l'autre quand la personne change de pourcentage.
   private zoomShown = 1;
   private zoomTarget = 1;
+  // L'octogone (la carte en a un) : la cage, les barres de vie et les coups. Les pieds de l'avatar local à la dernière image où il était là où il en a le
+  // droit (un combattant dans le ring, les autres dehors pendant un combat).
+  private arena: ArenaLayer | null = null;
+  private arenaFeet: { x: number; y: number } | null = null;
   // Le faux live (VITE_SIM=1) : le glisser-déposer des personnes fictives. Absent d'un build normal.
   private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
@@ -158,6 +165,7 @@ export class Office extends Scene {
     const { collisions, sol, murs } = buildMapLayers(this, this.tilemap);
     addZoneLabels(this, this.officeMap.zones);
     addMapSigns(this, this.officeMap.signs);
+    if (this.officeMap.arena) this.arena = new ArenaLayer(this, this.officeMap.arena);
     // Les meubles de la carte, et dans chaque bureau le décor de son occupant (thèmes compris).
     this.decorLayer = new DecorLayer(this, this.tilemap, { sol, murs }, this.officeMap);
     // Les objets animés de la carte (machine à café, cheminée, enceintes, sport, bougies, aquarium).
@@ -231,6 +239,12 @@ export class Office extends Scene {
     const unbindKeyboard = bindKeyboard(this.directions);
     // La touche E actionne la cible la plus proche (une seule, quel que soit le nombre d'objets à portée).
     const unbindUse = bindUseKey(() => void this.interactions.use());
+    // L'octogone : son état du moment, puis les attaques, au clavier, quand on s'y bat.
+    this.showArena();
+    const unbindArena = bindArenaKeys(
+      () => this.arenaRole() === 'fighting',
+      () => emitOnBus(EventBus, 'local:arena', { type: 'attack', dir: this.player.movePayload().dir }),
+    );
     // La marche automatique le dit à l'interface (`walk:state`) à chaque départ et à chaque arrêt ; une touche de déplacement l'interrompt.
     this.autoWalk = new AutoWalk((walking) => emitOnBus(EventBus, 'walk:state', { walking }));
     const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
@@ -269,6 +283,7 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'coffee:changed', ({ ms }) => {
         if (ms > 0) this.machineExcitedUntil = clock() + MACHINE_EXCITED_MS;
       }),
+      listenOnBus(EventBus, 'arena:action', (action) => this.arena?.play(action, this.selfId, clock())),
       listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
       listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
       useOfficeStore.subscribe((state, previous) => {
@@ -283,6 +298,7 @@ export class Office extends Scene {
         }
         if (state.zoomPercent !== previous.zoomPercent) this.retargetZoom();
         if (state.gameOpen !== previous.gameOpen) this.syncGameFocus(state.gameOpen);
+        if (state.arena !== previous.arena) this.showArena();
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
@@ -296,6 +312,7 @@ export class Office extends Scene {
       unbindWalkKeys();
       unbindKeyboard();
       unbindUse();
+      unbindArena();
       unbindZoomKeys();
       unbindWheel();
       for (const off of unlisten.splice(0)) off();
@@ -312,6 +329,8 @@ export class Office extends Scene {
       this.decorEditor.destroy();
       this.decorLayer.destroy();
       this.propLayer.destroy();
+      this.arena?.destroy();
+      this.arena = null;
       useOfficeStore.getState().setOfficeMap(null);
       this.debug.ready = false;
       this.debug.self = null;
@@ -331,11 +350,14 @@ export class Office extends Scene {
   update() {
     const now = clock();
     const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
-    if (autoDirection !== null) this.player.step(autoDirection);
+    // Pendant le compte à rebours, les combattants attendent dans leur coin : le clavier ne les déplace pas.
+    if (this.arenaRole() === 'waiting') this.player.step(null);
+    else if (autoDirection !== null) this.player.step(autoDirection);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     this.player.tick(now);
     this.shakeMachine(now);
     this.teleportEffect.tick(now);
+    this.arena?.tick(now, this.game.loop.delta);
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
       const entry = this.debug.players[remote.id];
@@ -356,6 +378,7 @@ export class Office extends Scene {
   private afterPhysics(): void {
     // La caméra glisse vers son zoom avant que la nuit ne se dessine : elle la dessine à la vue de cette image.
     this.glideZoom();
+    this.keepArenaRules();
     this.sendLocalState(clock());
     const feet = this.feet();
     if (this.debug.self) Object.assign(this.debug.self, feet);
@@ -363,6 +386,42 @@ export class Office extends Scene {
     this.prompt.show(this.interactions.update(feet));
     // La nuit, d'après les avatars à leur place de cette image.
     this.lighting.update();
+  }
+
+  // Ce qu'est la personne pour l'octogone en ce moment : `fighting` (elle s'y bat), `waiting` (elle va s'y battre : le compte à rebours), `outside`
+  // (un combat a lieu et elle n'y est pas : le ring lui est fermé), ou null (aucun combat).
+  private arenaRole(): 'fighting' | 'waiting' | 'outside' | null {
+    const { arena } = useOfficeStore.getState();
+    if (!this.arena || (arena.phase !== 'countdown' && arena.phase !== 'fight')) return null;
+    if (!arena.fighters.some((fighter) => fighter.id === this.selfId)) return 'outside';
+    return arena.phase === 'fight' ? 'fighting' : 'waiting';
+  }
+
+  // L'état de l'octogone, d'après le magasin.
+  private showArena(): void {
+    const { arena, arenaCountdownEndsAt } = useOfficeStore.getState();
+    this.arena?.setState(arena as ArenaState, arenaCountdownEndsAt, clock());
+  }
+
+  // Après la physique : la cage de l'octogone est un mur. Un combattant, du compte à rebours à la fin du combat, reste dedans ; tous les autres, tout le
+  // temps, restent dehors (le serveur pose les combattants dans le ring au Start, et les en sort à la fin). Un pas qui traverse la cage est défait, un
+  // axe après l'autre (on glisse le long du grillage au lieu de s'y coller). Quelqu'un qui se trouve du mauvais côté (une ancienne position, le serveur
+  // qui ne l'a pas encore sorti) n'est pas retenu : il peut rejoindre son côté, pas en repartir.
+  private keepArenaRules(): void {
+    const ring = this.officeMap.arena;
+    const feet = { x: this.player.x, y: this.player.y };
+    if (!ring) return;
+    const { arena } = useOfficeStore.getState();
+    const caged = arena.fighters.some((fighter) => fighter.id === this.selfId) && (arena.phase === 'countdown' || arena.phase === 'fight' || arena.phase === 'over');
+    const allowed = (x: number, y: number) => (caged ? insideRing(ring, x, y, 12) : !insideRing(ring, x, y, -6));
+    const last = this.arenaFeet;
+    if (allowed(feet.x, feet.y) || last === null || !allowed(last.x, last.y)) {
+      this.arenaFeet = feet;
+      return;
+    }
+    const slide = allowed(feet.x, last.y) ? { x: feet.x, y: last.y } : allowed(last.x, feet.y) ? { x: last.x, y: feet.y } : last;
+    this.player.placeAt(slide.x, slide.y);
+    this.arenaFeet = slide;
   }
 
   // Les lumières de la nuit : les lampes, le feu et les écrans posés, ceux de la carte et ceux des bureaux tels qu'on les voit.
@@ -489,6 +548,7 @@ export class Office extends Scene {
     // L'avatar est replacé là où le serveur le voit : le trajet qu'il suivait n'est plus le sien.
     this.autoWalk.cancel();
     this.player.placeAt(p.self.x, p.self.y, p.self.dir);
+    this.arenaFeet = null;
     this.player.setAvatar(p.self.avatarKey);
     this.player.setDisplayedName(p.self.name);
     this.player.setStatus(p.self.status);
@@ -536,6 +596,8 @@ export class Office extends Scene {
       this.teleportEffect.play(this.aroundFeet({ x, y }), now);
     }
     this.player.placeAt(x, y);
+    // Le serveur pose l'avatar là (dans la cage au début d'un combat, dehors à la fin) : la règle de la cage repart de cette position.
+    this.arenaFeet = null;
     if (reason === 'teleport') this.snapCameraToPlayer();
     this.moveSender.reset();
     this.sendLocalState(clock());

@@ -21,7 +21,7 @@ function grid(rows: string[]): OfficeMap {
     coffees: [],
     speakers: [],
     tables: [],
-    signs: [],
+    signs: [], arena: null,
   };
 }
 

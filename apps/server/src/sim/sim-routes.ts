@@ -5,6 +5,7 @@ import type { Auth } from '../auth/auth';
 import { requireSession } from '../auth/require-session';
 import { SimError } from './bots';
 import type { SimHost } from './sim-host';
+import { SparringError } from './sparring';
 
 const createSchema = z.object({ name: displayNameSchema.optional(), audio: z.string().nullable().optional() });
 const patchSchema = z.object({ audio: z.string().nullable() });
@@ -19,6 +20,7 @@ const STATUS: Record<SimError['code'], number> = { unknown_bot: 404, unknown_aud
 // - PATCH  /api/sim/bots/:id        → { audio } : change son fichier audio (null : silence) ;
 // - DELETE /api/sim/bots/:id        → la retire ;
 // - POST   /api/sim/bots/:id/move   → { x, y } : la fait marcher vers ce point (pixels) ; répond { target }, où elle s'arrêtera ;
+// - POST   /api/sim/sparring        → un sparring dans l'octogone, qui prend un coin libre et se bat (sparring.ts) ; répond { id, name } ;
 // - GET    /api/sim/audio/:file     → le fichier, que les navigateurs lisent en boucle ;
 // - POST   /api/sim/audio?name=…    → le corps est le fichier : l'écrit dans le dossier.
 export function simRoutes({ auth, sim }: { auth: Auth; sim: SimHost }): Router {
@@ -95,6 +97,19 @@ export function simRoutes({ auth, sim }: { auth: Auth; sim: SimHost }): Router {
       res.json({ target: list.moveTo(req.params.id, body.data.x, body.data.y) });
     } catch (err) {
       fail(res, err);
+    }
+  });
+
+  router.post('/sparring', async (_req, res) => {
+    if (!sim.sparring) {
+      res.status(503).json({ error: 'unavailable' });
+      return;
+    }
+    try {
+      res.status(201).json(await sim.sparring.add());
+    } catch (err) {
+      if (!(err instanceof SparringError)) throw err;
+      res.status(err.code === 'no_arena' ? 404 : 409).json({ error: err.code });
     }
   });
 

@@ -19,7 +19,7 @@ const map = {
   coffees: [],
   speakers: [],
   tables: [],
-  signs: [],
+  signs: [], arena: null,
   zones: [zone('1', 'label', 0, 320, 320, 64, { text: 'ACCUEIL' }), zone('2', 'private', 640, 0, 320, 320, { name: 'Salle de réunion' })],
 } as unknown as OfficeMap;
 

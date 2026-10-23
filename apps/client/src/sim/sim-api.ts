@@ -32,6 +32,8 @@ export const simApi = {
   // Fait marcher cette personne vers (x, y) ; rend le point où elle s'arrêtera.
   moveBot: (id: string, x: number, y: number) =>
     api<{ target: { x: number; y: number } }>(`/api/sim/bots/${encodeURIComponent(id)}/move`, { method: 'POST', ...json({ x, y }) }),
+  // Un sparring dans l'octogone : il prend un coin libre et se bat.
+  addSparring: () => api<{ id: string; name: string }>('/api/sim/sparring', { method: 'POST' }),
   // Envoie un fichier audio dans le dossier du serveur.
   uploadAudio: (file: File) =>
     api<SimAudioFile>(`/api/sim/audio?name=${encodeURIComponent(file.name)}`, {

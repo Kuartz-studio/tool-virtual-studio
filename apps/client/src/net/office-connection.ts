@@ -1,4 +1,4 @@
-import type { ActivityState, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { ActivityState, ArenaAction, ArenaCommand, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -33,6 +33,8 @@ export interface OfficeBusEvents {
   // L'invitée a répondu à l'une de nos invitations à une table (elle accepte, refuse, ne dit rien, ou a quitté le bureau), ou n'a pas répondu à temps : un message
   // passager (la file de toasts). Le magasin n'en garde rien.
   'game:notice': (p: GameNotice) => void;
+  'arena:action': (p: ArenaAction) => void;
+  'local:arena': (p: ArenaCommand) => void;
   'local:move': (p: MovePayload) => void;
   // Le jeu : la personne a cliqué sur la porte fermée de ce bureau, près de elle. La connexion toque pour elle (`desk:do`, knock).
   'local:knock': (p: { key: string }) => void;
@@ -201,6 +203,8 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     'game:invite': (invite) => state().addGameInvite(invite),
     'game:invite:gone': ({ id }) => state().removeGameInvite(id),
     'game:notice': (notice) => emitOnBus(bus, 'game:notice', notice),
+    'arena:state': (arena) => state().setArena(arena),
+    'arena:action': (action) => emitOnBus(bus, 'arena:action', action),
     // Le café : le magasin d'abord (il en tient l'échéance, que le jeu et la pastille y lisent), puis le bus, pour le jeu et le son.
     'coffee:changed': (p) => {
       state().setCoffee(p.id, p.ms);
@@ -239,6 +243,10 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:coffee', () => {
       if (state().ready) socket.emit('coffee:take');
+    }),
+    // Les coups et la garde de l'octogone, depuis le jeu : sans attendre la réponse (`arena:state` et `arena:action` disent ce qui s'est passé).
+    listenOnBus(bus, 'local:arena', (command) => {
+      if (state().ready) socket.emit('arena:do', command, () => {});
     }),
     listenOnBus(bus, 'local:music', (p) => {
       if (state().ready) socket.emit('music:set', p);

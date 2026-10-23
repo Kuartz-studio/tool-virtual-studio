@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
+  ARENA_RATE,
   COFFEE_DURATION_MS,
   DESK_PLACE_PREFIX,
   EMPTY_GROUPING,
@@ -13,6 +14,7 @@ import {
   SPEAKING_RATE,
   STATUS_RATE,
   activityIdSchema,
+  arenaCommandSchema,
   chatSendSchema,
   debugBoostSchema,
   debugGameSchema,
@@ -29,6 +31,7 @@ import {
   statusSchema,
   withinCoffeeReach,
   withinSwitchReach,
+  type ArenaAck,
   type ChatAck,
   type ChatMessage,
   type DeskAck,
@@ -40,6 +43,7 @@ import {
 } from '@bureau/shared';
 import type { Logger } from 'pino';
 import type { ActivityController } from '../activity/activity-controller';
+import type { ArenaController } from '../arena/arena-controller';
 import type { ChatService } from '../chat/chat-service';
 import type { DeskController } from '../desks/desk-controller';
 import type { Env } from '../env';
@@ -90,6 +94,8 @@ export interface HandlerDeps {
   coffeeLimiter: RateLimiter;
   /** Les cases de service des machines à café de la carte (leur centre, en pixels) : sans l'une d'elles à portée, on ne se sert pas. */
   coffees: ReadonlyArray<{ x: number; y: number }>;
+  /** L'octogone : `arena:do` y passe. */
+  arena: Pick<ArenaController, 'run'>;
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
@@ -112,6 +118,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   const deskLimiter = createRateLimiter({ ...DESK_RATE, now: d.now });
   const gameLimiter = createRateLimiter({ ...GAME_RATE, now: d.now });
   const ladderLimiter = createRateLimiter({ ...GAME_LADDER_RATE, now: d.now });
+  const arenaLimiter = createRateLimiter({ ...ARENA_RATE, now: d.now });
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
   // flot de messages invalides ne coûte presque rien. Refusé par le monde (trop vite, case bloquante, hors carte), il renvoie à
@@ -279,6 +286,19 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     );
   });
 
+  // Les commandes de l'octogone (prendre un rôle, lancer le combat, frapper, garder), avec accusé de réception : `arena:state` dit ce qui a changé à
+  // tout le bureau. Même tronc que `game:do` : ignorée sans init ; au-delà de ARENA_RATE par socket : `rate_limited` ; invalide : `invalid`.
+  socket.on('arena:do', (payload, ack) => {
+    const reply = (r: ArenaAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!arenaLimiter.take(socket.id)) return reply({ ok: false, error: 'rate_limited' });
+    const command = arenaCommandSchema.safeParse(payload);
+    if (!command.success) return reply({ ok: false, error: 'invalid' });
+    reply(d.arena.run(userId, command.data));
+  });
+
   // Allumer ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
   // monde voit la personne (jamais là où elle dit être). Aucune réponse, quoi qu'il arrive : la confirmation est `lights:changed`, que tout
   // le bureau reçoit, émetteur compris. Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme
@@ -308,7 +328,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   // ailleurs aussi : ils en ont besoin en y entrant). Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme pour le
   // chat. Puis, dans cet ordre, ce qui ne passe pas est ignoré :
   // 1. charge utile invalide (musicSetSchema) ;
-  // 2. la clé n'est pas celle du lieu où est la personne, ou ce lieu n'a pas d'enceinte (la rue, la salle client), ou c'est le bureau d'un autre ;
+  // 2. la clé n'est pas celle du lieu où est la personne, ou ce lieu n'a pas d'enceinte (la rue, la place), ou c'est le bureau d'un autre ;
   // 3. la pièce est déjà dans l'état demandé : la demande est idempotente, elle ne change rien et ne compte pas dans la limite ;
   // 4. plus d'un réglage par personne et par MUSIC_RATE_MS : la limite est celle du compte, que se reconnecter ne remet pas à zéro.
   // Les réglages d'une même pièce passent l'un après l'autre (MusicService) : deux personnes qui demandent le même état en même temps ne le changent qu'une

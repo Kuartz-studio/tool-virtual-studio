@@ -78,7 +78,7 @@ export function placeAt(map: OfficeMap, x: number, y: number): Place | null {
 }
 
 // Ce que joue un lieu : son ambiance par défaut, ou celle qu'on lui a réglée ; le silence (null) s'il a été éteint. `state` est son réglage (`RoomMusic`), ou
-// undefined si personne n'y a touché. Un lieu sans enceinte (la rue, la place, la salle client) n'a pas de réglage : il joue toujours son ambiance par défaut,
+// undefined si personne n'y a touché. Un lieu sans enceinte (la rue, la place) n'a pas de réglage : il joue toujours son ambiance par défaut,
 // quoi que dise `state`.
 export function roomSceneOf(place: Pick<Place, 'scene' | 'music'>, state: Pick<RoomMusic, 'on' | 'scene'> | undefined): MusicScene | null {
   if (!place.music || state === undefined) return place.scene;

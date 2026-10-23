@@ -27,7 +27,7 @@ const map = {
   coffees: [],
   speakers: [],
   tables: [],
-  signs: [],
+  signs: [], arena: null,
   zones: [
     zone('1', 'label', 64, 320, 192, 32, { text: 'ACCUEIL' }),
     zone('2', 'label', 320, 320, 96, 32),
@@ -108,9 +108,9 @@ describe('les lieux de la grande carte', () => {
     expect(at(47, 24)).toBe('Accueil');
   });
 
-  test('les salles : réunion, client, conférence, sport, jeu, détente et piscine', () => {
+  test('les salles : réunion, octogone, conférence, sport, jeu, détente et piscine', () => {
     expect(at(55, 5)).toBe('Salle de réunion');
-    expect(at(70, 5)).toBe('Salle client');
+    expect(at(70, 5)).toBe('Octogone');
     expect(at(60, 20)).toBe('Salle de conférence');
     expect(at(5, 38)).toBe('Salle de sport');
     expect(at(20, 38)).toBe('Salle de jeu');
@@ -140,7 +140,7 @@ describe('les lieux de la grande carte', () => {
       for (let tx = 0; tx < office.widthTiles; tx++) names.add(at(tx, ty) ?? '?');
     }
     expect([...names].sort()).toEqual(
-      ['Accueil', 'Café', 'Couloir', 'Détente et piscine', 'Place centrale', 'Place A1', 'Place A2', 'Place A3', 'Place A4', 'Place A5', 'Place A6', 'Salle client', 'Salle de conférence', 'Salle de jeu', 'Salle de réunion', 'Salle de sport'].sort(),
+      ['Accueil', 'Café', 'Couloir', 'Détente et piscine', 'Place centrale', 'Place A1', 'Place A2', 'Place A3', 'Place A4', 'Place A5', 'Place A6', 'Octogone', 'Salle de conférence', 'Salle de jeu', 'Salle de réunion', 'Salle de sport'].sort(),
     );
   });
 

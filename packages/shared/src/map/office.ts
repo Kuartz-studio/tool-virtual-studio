@@ -10,7 +10,7 @@ import type { TiledMapJson } from './tiled-types';
 // milieu ; deux rues (nord et sud) la traversent, reliées à l'est par un connecteur : pas de cul-de-sac.
 //
 //   y  0 ┌ murs du nord ─────────────────────────────────────────────────────────────────────────────────────────────────┐
-//   y  2 │ A5 · A1 · A2 │ place centrale : le café │ salle de réunion │ salle client                                       │
+//   y  2 │ A5 · A1 · A2 │ place centrale : le café │ salle de réunion │ l'octogone (salle de combat)                       │
 //   y 11 ├ rue nord (y 11 à 14), qui traverse la place ──────────────────────────────────────────────────────────────────┤
 //   y 17 │ A6 · A3 · A4 │ place centrale : l'accueil (apparition) │ salle de conférence │ connecteur est                   │
 //   y 26 ├ rue sud (y 26 à 29) ─────────────────────────────────────────────────────────────────────────────────────────┤
@@ -62,7 +62,7 @@ function deskSlot({ key, x, y, spec, side }: (typeof DESKS)[number]): OfficeDesk
 
 export const OFFICE_DESK_SLOTS: OfficeDeskSlot[] = DESKS.map(deskSlot);
 
-// Les ouvertures de la carte : les portes des bureaux, celles de trois salles (réunion, client, conférence) et les quatre arches des salles du sud.
+// Les ouvertures de la carte : les portes des bureaux, celles de trois salles (réunion, octogone, conférence) et les quatre arches des salles du sud.
 // `room` est la pièce qu'elles ferment (la clé d'un bureau ou d'un lieu).
 export interface OfficeOpening extends Area {
   key: string;
@@ -73,7 +73,7 @@ export interface OfficeOpening extends Area {
 export const OFFICE_OPENINGS: OfficeOpening[] = [
   ...OFFICE_DESK_SLOTS.map((slot): OfficeOpening => ({ key: `door:${slot.key}`, kind: 'door', room: slot.key, ...slot.door })),
   { key: 'door:meeting', kind: 'door', room: 'meeting', x: 57, y: 9, w: 2, h: 2 },
-  { key: 'door:client', kind: 'door', room: 'client', x: 72, y: 9, w: 2, h: 2 },
+  { key: 'door:arena', kind: 'door', room: 'arena', x: 72, y: 9, w: 2, h: 2 },
   { key: 'door:conference', kind: 'door', room: 'conference', x: 68, y: 15, w: 3, h: 2 },
   { key: 'arch:gym', kind: 'arch', room: 'gym', x: 6, y: 30, w: 2, h: 2 },
   { key: 'arch:game', kind: 'arch', room: 'game', x: 23, y: 30, w: 4, h: 2 },
@@ -91,7 +91,9 @@ const STREET_N: Area = { x: 1, y: 11, w: 78, h: 4 };
 const STREET_S: Area = { x: 1, y: 26, w: 78, h: 4 };
 const STREET_E: Area = { x: 74, y: 11, w: 6, h: 19 };
 const MEETING: Area = { x: 51, y: 2, w: 14, h: 7 };
-const CLIENT: Area = { x: 66, y: 2, w: 14, h: 7 };
+const ARENA_ROOM: Area = { x: 66, y: 2, w: 14, h: 7 };
+// Le ring de l'octogone, au milieu de la salle contre le mur nord : le public se tient sur les côtés et sur la rangée du sud, devant la porte.
+export const OFFICE_RING: Area = { x: 68, y: 2, w: 10, h: 6 };
 const CONFERENCE: Area = { x: 51, y: 17, w: 22, h: 7 };
 const GYM: Area = { x: 1, y: 32, w: 12, h: 12 };
 const GAME: Area = { x: 14, y: 32, w: 22, h: 12 };
@@ -120,7 +122,7 @@ export function buildOffice(): OfficeBuild {
   for (const street of [STREET_N, STREET_S, STREET_E]) floorOf(street, 'gris');   // les rues traversent la place
   floorOf(CAFE, 'damier');
   floorOf(MEETING, 'bleu-clair');
-  floorOf(CLIENT, 'blanc');
+  floorOf(ARENA_ROOM, 'beton');
   floorOf(CONFERENCE, 'graphite');
   floorOf(GYM, 'beton');
   floorOf(GAME, 'parquet-brun');
@@ -143,12 +145,12 @@ export function buildOffice(): OfficeBuild {
     floorOf(slot.door, 'gris');
   }
 
-  // La salle de réunion (bande au sud, pans à l'ouest et à l'est) et la salle client, qui partage son pan est.
+  // La salle de réunion (bande au sud, pans à l'ouest et à l'est) et l'octogone, qui partage son pan est (des murs rouges : une salle de combat).
   c.hWall(MEETING.x - 1, MEETING.x + MEETING.w, MEETING.y + MEETING.h, 'bleu-ciel');
   c.vWall(MEETING.x - 1, MEETING.y, MEETING.y + MEETING.h - 1, 'bleu-ciel');
   c.vWall(MEETING.x + MEETING.w, MEETING.y, MEETING.y + MEETING.h - 1, 'bleu-ciel');
-  c.hWall(CLIENT.x, CLIENT.x + CLIENT.w, CLIENT.y + CLIENT.h, 'creme');
-  c.vWall(CLIENT.x + CLIENT.w, CLIENT.y, CLIENT.y + CLIENT.h - 1, 'creme');
+  c.hWall(ARENA_ROOM.x, ARENA_ROOM.x + ARENA_ROOM.w, ARENA_ROOM.y + ARENA_ROOM.h, 'rouge');
+  c.vWall(ARENA_ROOM.x + ARENA_ROOM.w, ARENA_ROOM.y, ARENA_ROOM.y + ARENA_ROOM.h - 1, 'rouge');
 
   // La salle de conférence : bandes au nord et au sud, pans à l'ouest et à l'est.
   c.hWall(CONFERENCE.x - 1, CONFERENCE.x + CONFERENCE.w, CONFERENCE.y - 2, 'anthracite');
@@ -179,7 +181,7 @@ export function buildOffice(): OfficeBuild {
   c.zone({ type: 'spawn', x: OFFICE_SPAWN.x, y: OFFICE_SPAWN.y, w: 1, h: 1 });
   for (const [name, room] of [
     ['Salle de réunion', MEETING],
-    ['Salle client', CLIENT],
+    ['Octogone', ARENA_ROOM],
     ['Salle de conférence', CONFERENCE],
     ['Salle de sport', GYM],
     ['Salle de jeu', GAME],
@@ -200,13 +202,13 @@ export function buildOffice(): OfficeBuild {
   c.place('street-s', 'Couloir', STREET_S, { kind: 'street' });
   c.place('street-e', 'Couloir', STREET_E, { kind: 'street' });
   c.place('meeting', 'Salle de réunion', MEETING, { scene: 'focus', music: true });
-  c.place('client', 'Salle client', CLIENT, { scene: 'focus' });
+  c.place('arena', 'Octogone', ARENA_ROOM, { scene: 'quest', music: true });
   c.place('conference', 'Salle de conférence', CONFERENCE, { scene: 'drift', music: true });
   c.place('gym', 'Salle de sport', GYM, { scene: 'quest', music: true, destination: true });
   c.place('game', 'Salle de jeu', GAME, { scene: 'dusk', music: true, destination: true });
   c.place('lounge', 'Détente et piscine', LOUNGE, { scene: 'sunny', music: true });
 
-  // Les enceintes (une par lieu qui a de la musique), la case devant la machine à café, les tables des jeux et leurs sièges, le panneau de la salle client.
+  // Les enceintes (une par lieu qui a de la musique), la case devant la machine à café, les tables des jeux et leurs sièges, le ring de l'octogone.
   c.speaker('cafe', 46, 3);
   c.speaker('reception', 47, 24);
   c.speaker('meeting', 64, 6);
@@ -214,6 +216,7 @@ export function buildOffice(): OfficeBuild {
   c.speaker('gym', 12, 33);
   c.speaker('game', 34, 33);
   c.speaker('lounge', 79, 33);
+  c.speaker('arena', 79, 7);
   c.coffee(40, 5);
   c.table('chess', { x: 24, y: 35, w: 3, h: 2 });
   c.seat('chess', 1, 25, 34);
@@ -229,7 +232,7 @@ export function buildOffice(): OfficeBuild {
   c.seat('ludo', 2, 32, 41);
   c.seat('ludo', 3, 30, 43);
   c.seat('ludo', 4, 28, 41);
-  c.sign('EN TRAVAUX', 73, 5);
+  c.arena(OFFICE_RING);
 
   // Quelques inscriptions au sol.
   c.zone({ type: 'label', text: 'CAFÉ', x: 36, y: 9, w: 8, h: 1 });
@@ -238,6 +241,8 @@ export function buildOffice(): OfficeBuild {
   // L'interrupteur de la lumière : sur la face du mur nord de la rue (la rangée y 10, que l'on voit de la rue), entre la porte du grand bureau A2 et la
   // place. Le client y pose la plaque. En dernier : les numéros des autres zones ne changent pas.
   c.zone({ type: 'switch', x: 28, y: 10, w: 1, h: 1 });
+  // L'inscription de l'octogone, entre les fauteuils du public et la porte.
+  c.zone({ type: 'label', text: 'OCTOGONE', x: 70, y: 8, w: 4, h: 1 });
 
   return { canvas: c, ascii: c.ascii(), zones: c.zones };
 }
@@ -384,6 +389,15 @@ function furnish(c: MapCanvas): void {
     ['ms-7-2', 71, 34], ['ms-10-2', 75, 34], ['ms-6-15', 71, 38], ['ms-7-15', 74, 38],
   ]);
   props([['fishtank', 66, 42], ['amplifier', 76, 40], ['amplifier-big', 79, 33]]);
+
+  // L'octogone : le ring (tracé par le client) contre le mur nord ; de chaque côté, un sac de frappe pour s'échauffer, et un pouf à l'ouest ; au
+  // sud, devant la porte, une rangée de fauteuils de dos (ils regardent le ring), l'allée de la porte laissée libre. L'enceinte dans le coin sud-est.
+  props([['punching-bag-left', 66, 3], ['punching-bag-right', 78, 3], ['amplifier-big', 79, 7]]);
+  at([
+    ['gy-7-14', 66, 5],
+    ['of-0-8', 66, 8], ['of-1-8', 67, 8], ['of-0-8', 68, 8], ['of-1-8', 69, 8],
+    ['of-1-8', 76, 8], ['of-0-8', 77, 8], ['of-1-8', 78, 8],
+  ]);
 }
 
 // La carte telle que le serveur la charge, et son plan pour les tests.

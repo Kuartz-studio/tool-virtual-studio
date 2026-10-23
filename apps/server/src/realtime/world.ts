@@ -55,6 +55,7 @@ export class World {
   // sa fin a déjà été rendue par expireBoosts (la ligne reste MOVE_JITTER_MS de plus, pour la limite de vitesse).
   private readonly boosts = new Map<string, { until: number; announced: boolean }>();
   private entryGuard: EntryGuard = () => true;
+  private readonly extraGuards: EntryGuard[] = [];
 
   constructor(
     private readonly map: OfficeMap,
@@ -64,6 +65,11 @@ export class World {
   // Dit qui peut entrer où (les bureaux). Un seul garde à la fois : le dernier posé remplace le précédent.
   setEntryGuard(guard: EntryGuard): void {
     this.entryGuard = guard;
+  }
+
+  // Un garde de plus, qui s'ajoute à celui des bureaux au lieu de le remplacer (la cage de l'octogone) : un pas doit passer tous les gardes.
+  addEntryGuard(guard: EntryGuard): void {
+    this.extraGuards.push(guard);
   }
 
   // Fait entrer un joueur à (x, y), à l'arrêt, sans micro, caméra ni partage d'écran. L'appelant donne une position praticable
@@ -158,7 +164,7 @@ export class World {
 
     const p = entry.player;
     const at = this.now();
-    if (!validateMove(this.map, { x: p.x, y: p.y, at: entry.at }, { x: m.x, y: m.y, at }, this.maxSpeedOf(id)).ok || !this.entryGuard(id, p, m)) {
+    if (!validateMove(this.map, { x: p.x, y: p.y, at: entry.at }, { x: m.x, y: m.y, at }, this.maxSpeedOf(id)).ok || !this.entryGuard(id, p, m) || !this.extraGuards.every((guard) => guard(id, p, m))) {
       return { ok: false, correct: { x: p.x, y: p.y } };
     }
     p.x = m.x;
