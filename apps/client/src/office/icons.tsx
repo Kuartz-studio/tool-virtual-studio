@@ -1,6 +1,7 @@
 import {
   ArrowLeft,
   ArrowLeftRight,
+  Armchair,
   AudioLines,
   BookOpen,
   Check,
@@ -11,6 +12,7 @@ import {
   Coffee,
   DoorClosed,
   DoorOpen,
+  Dumbbell,
   Ellipsis,
   Eraser,
   FlaskConical,
@@ -18,6 +20,9 @@ import {
   Gamepad2,
   Headphones,
   History,
+  Image as Picture,
+  LampDesk,
+  Library,
   Lightbulb,
   LightbulbOff,
   ListMusic,
@@ -30,13 +35,17 @@ import {
   MicOff,
   Minimize,
   Minus,
+  Monitor,
   MonitorUp,
   Music,
   Pencil,
+  Paperclip,
   Play,
   Plus,
+  Search,
   SendHorizontal,
   Settings2,
+  Shapes,
   ShieldCheck,
   Shirt,
   Slash,
@@ -45,6 +54,7 @@ import {
   Trash2,
   Undo2,
   UserX,
+  Sprout,
   Users,
   Video,
   VideoOff,
@@ -52,6 +62,7 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 // Le point d'import des icônes des boutons et des menus : celles de Lucide (licence ISC, voir public/assets/CREDITS.txt), sous le nom de leur
@@ -293,4 +304,34 @@ export function KickIcon() {
 
 export function UnbanIcon() {
   return <Undo2 />;
+}
+
+// Une loupe : la recherche dans la banque de déco.
+export function SearchIcon() {
+  return <Search />;
+}
+
+// Une horloge qui recule : les éléments de déco pris récemment.
+export function RecentIcon() {
+  return <History />;
+}
+
+// L'icône de chaque catégorie de la banque de déco (les onglets du sélecteur, DecorPicker). Une catégorie qui n'est pas ici (le catalogue
+// en a gagné une) prend des formes.
+const DECOR_CATEGORY_ICONS: Readonly<Record<string, LucideIcon>> = {
+  ecrans: Monitor,
+  bureaux: LampDesk,
+  sieges: Armchair,
+  rangement: Library,
+  papeterie: Paperclip,
+  plantes: Sprout,
+  deco: Picture,
+  cafe: Coffee,
+  detente: Sofa,
+  sport: Dumbbell,
+};
+
+export function DecorCategoryIcon({ category }: { category: string }) {
+  const Icon = DECOR_CATEGORY_ICONS[category] ?? Shapes;
+  return <Icon />;
 }

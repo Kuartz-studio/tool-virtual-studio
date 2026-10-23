@@ -1,14 +1,4 @@
-import {
-  DECOR_CATEGORIES,
-  FLOOR_THEMES,
-  MAX_DECOR_ITEMS,
-  WALL_THEMES,
-  decorCategoryLabel,
-  decorItem,
-  decorItemsOf,
-  defaultDeskDecor,
-  type DecorCategoryId,
-} from '@bureau/shared';
+import { FLOOR_THEMES, MAX_DECOR_ITEMS, WALL_THEMES, decorItem, defaultDeskDecor } from '@bureau/shared';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { sendDeskCommand } from '../net/desk-commands';
@@ -16,16 +6,18 @@ import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { roomOfDesk, sameDecor } from './decor-draft';
-import { EraserIcon, CloseIcon } from './icons';
+import { DecorPicker } from './DecorPicker';
+import { CloseIcon } from './icons';
 import { deskErrorText } from './desks';
 import { ReplaceDialog } from './ReplaceDialog';
-import { DecorThumb, FloorSwatch, WallSwatch } from './sprites';
+import { FloorSwatch, WallSwatch } from './sprites';
 
-// Le panneau Décorer mon bureau : la banque d'éléments (9 catégories, le poste de travail d'abord), et les murs et le sol. Il pilote le
+// Le panneau Décorer mon bureau : la banque d'éléments (le sélecteur, DecorPicker), et les murs et le sol. Il pilote le
 // brouillon de l'éditeur (le magasin) que le jeu montre dans la pièce : on choisit un élément, on le pose en cliquant dans la pièce
 // (DecorEditorView). « Enregistrer » envoie toute la déco d'un bloc ; le serveur la valide à son tour et la diffuse à tout le bureau.
 // Ouvrir le panneau ouvre l'éditeur sur son bureau ; le fermer le ferme. La gomme efface d'un clic l'élément qu'on vise ; poser sur un autre
-// élément le remplace, après la confirmation de ReplaceDialog. Échap lâche l'élément tenu (ou quitte la gomme), puis ferme.
+// élément le remplace, après la confirmation de ReplaceDialog. Échap lâche l'élément tenu (ou quitte la gomme), puis ferme ; la croix
+// de l'en-tête ferme aussi (sans enregistrer : le brouillon part avec l'éditeur).
 type Tab = 'items' | 'themes';
 
 export function DecorPanel({ id, socket, onClose }: { id?: string; socket: OfficeSocket | null; onClose(): void }) {
@@ -51,14 +43,6 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
   }, []);
 
   const [tab, setTab] = useState<Tab>('items');
-  const [category, setCategory] = useState<DecorCategoryId>(DECOR_CATEGORIES[0].id);
-  const [search, setSearch] = useState('');
-  const items = useMemo(() => {
-    const needle = search.trim().toLocaleLowerCase('fr');
-    // Une recherche porte sur toute la banque ; sans elle, on voit la catégorie choisie.
-    if (needle === '') return decorItemsOf(category);
-    return DECOR_CATEGORIES.flatMap(({ id: c }) => decorItemsOf(c)).filter((item) => item.name.toLocaleLowerCase('fr').includes(needle));
-  }, [category, search]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,65 +105,9 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
           </div>
 
           <div className="people-lists decor-body">
-            {tab === 'items' ? (
-              <>
-                <div className="decor-tools" role="group" aria-label={fr.decor.tools}>
-                  <button
-                    type="button"
-                    className="bar-button"
-                    aria-pressed={editor?.tool === 'erase'}
-                    onClick={() => store().setDecorTool(editor?.tool === 'erase' ? 'place' : 'erase')}
-                  >
-                    <EraserIcon />
-                    {fr.decor.erase}
-                  </button>
-                </div>
-                <div className="decor-search">
-                  <label className="visually-hidden" htmlFor={`${titleId}-search`}>
-                    {fr.decor.searchLabel}
-                  </label>
-                  <input
-                    id={`${titleId}-search`}
-                    type="search"
-                    value={search}
-                    placeholder={fr.decor.searchPlaceholder}
-                    onChange={(event) => setSearch(event.target.value)}
-                  />
-                </div>
-                <div className="decor-categories" role="group" aria-label={fr.decor.categories}>
-                  {DECOR_CATEGORIES.map(({ id: c, label }) => (
-                    <button
-                      key={c}
-                      type="button"
-                      className="bar-button"
-                      aria-pressed={search.trim() === '' && category === c}
-                      onClick={() => {
-                        setCategory(c);
-                        setSearch('');
-                      }}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <div className="decor-grid" role="group" aria-label={t(fr.decor.items, { category: search.trim() === '' ? decorCategoryLabel(category) : search.trim() })}>
-                  {items.length === 0 && <p className="desk-hint">{fr.decor.empty}</p>}
-                  {items.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className="decor-item"
-                      aria-pressed={editor?.held === item.id}
-                      title={item.name}
-                      aria-label={item.name}
-                      onClick={() => store().holdDecorItem(editor?.held === item.id ? null : item.id)}
-                    >
-                      <DecorThumb item={item} />
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
+            {/* Le sélecteur reste monté sous « Murs et sol » : on y retrouve sa catégorie et sa recherche. */}
+            <DecorPicker idPrefix={titleId} hidden={tab !== 'items'} />
+            {tab === 'themes' && (
               <>
                 <h3 className="desk-subtitle">{fr.decor.floorTitle}</h3>
                 <div className="swatch-grid" role="group" aria-label={fr.decor.floorTitle}>
@@ -251,9 +179,6 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
             <div className="decor-footer-row">
               <button type="button" className="bar-button" disabled={busy || !ready || !dirty} onClick={() => void save()}>
                 {busy ? fr.decor.saving : fr.decor.save}
-              </button>
-              <button type="button" className="bar-button" onClick={onClose}>
-                {dirty ? fr.decor.cancel : fr.decor.done}
               </button>
             </div>
             <div className="decor-footer-row">
