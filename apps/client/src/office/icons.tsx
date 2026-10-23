@@ -6,7 +6,6 @@ import {
   BookOpen,
   Check,
   ChevronLeft,
-  Check,
   ChevronRight,
   ChevronUp,
   Coffee,
