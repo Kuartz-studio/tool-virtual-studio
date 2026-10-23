@@ -536,8 +536,20 @@ export class Office extends Scene {
       this.teleportEffect.play(this.aroundFeet({ x, y }), now);
     }
     this.player.placeAt(x, y);
+    if (reason === 'teleport') this.snapCameraToPlayer();
     this.moveSender.reset();
     this.sendLocalState(clock());
+  }
+
+  // Un voyage (un mode qui conduit ailleurs) : la caméra saute avec l'avatar, au lieu de rester où il était ou de glisser derrière lui. Un glissement en cours
+  // (le retour à l'avatar après la fermeture d'un panneau) s'arrête, et elle le suit de nouveau. Pendant l'éditeur de déco ou devant une table de jeu, elle
+  // garde la pièce ou la table qu'elle montre : elle reviendra à l'avatar à leur fermeture (followPlayer).
+  private snapCameraToPlayer(): void {
+    if (this.editingRoom !== null || this.focusedTable !== null) return;
+    const camera = this.cameras.main;
+    camera.panEffect.reset();
+    camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
+    camera.centerOn(this.player.x, this.player.y - this.player.displayHeight / 2);
   }
 
   private onStatus(id: string, status: Status): void {

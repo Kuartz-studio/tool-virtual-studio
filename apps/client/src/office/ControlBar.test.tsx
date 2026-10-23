@@ -321,17 +321,12 @@ describe('la barre', () => {
     expect((screen.getByRole('menuitem', { name: fr.office.signingOut }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test('la puce « Moi » ouvre l\'apparence et les modes, depuis son bouton ; le menu « Plus » n\'en a aucun', async () => {
+  test('la puce « Moi » ouvre l\'apparence, depuis son bouton ; le menu « Plus » ne l\'a pas', async () => {
     const user = userEvent.setup();
     const { panels } = renderBar();
-    for (const [name, id] of [
-      [fr.character.toggle, 'character'],
-      [fr.modes.create, 'states'],
-    ] as const) {
-      await user.click(button(fr.me.chip));
-      await user.click(screen.getByRole('menuitem', { name }));
-      expect(panels.show).toHaveBeenLastCalledWith(id, button(fr.me.chip));
-    }
+    await user.click(button(fr.me.chip));
+    await user.click(screen.getByRole('menuitem', { name: fr.character.toggle }));
+    expect(panels.show).toHaveBeenLastCalledWith('character', button(fr.me.chip));
     await user.click(button('Plus'));
     const more = screen.getAllByRole('menuitem').map((line) => line.getAttribute('aria-label') ?? line.textContent);
     expect(more).toEqual([fr.decor.toggle, fr.zoom.reset]);

@@ -1,4 +1,4 @@
-import { ACTIVITY_MAX_PER_USER, type ActivityInput } from '@bureau/shared';
+import { ACTIVITY_MAX_PER_USER, DEFAULT_MODES, type ActivityInput } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
 import { createActivityService } from '../src/activity/activity-service';
@@ -149,5 +149,14 @@ describe('modifier, supprimer', () => {
     await service.create('ana', focus);
     await db.delete(user).where(eq(user.id, 'ana'));
     expect(await db.select().from(activityState)).toEqual([]);
+  });
+});
+
+describe('les modes par défaut', () => {
+  test('seedDefaults : Manger, Sport, Concentration, à elle seule, dans cet ordre, comme DEFAULT_MODES les décrit', async () => {
+    const { service } = await setup();
+    await service.seedDefaults('ana');
+    expect((await service.list('ana')).map(({ id: _id, ...input }) => input)).toEqual(DEFAULT_MODES);
+    expect(await service.list('bob')).toEqual([]);
   });
 });

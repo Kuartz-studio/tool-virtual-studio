@@ -1,4 +1,4 @@
-import { ACTIVITY_MAX_PER_USER, type ActivityState } from '@bureau/shared';
+import { ACTIVITY_MAX_PER_USER, DEFAULT_MODES, type ActivityState } from '@bureau/shared';
 import request from 'supertest';
 import { describe, expect, test } from 'vitest';
 import { createTestApp } from './helpers/test-app';
@@ -7,6 +7,9 @@ const body = { label: 'En focus', color: '#6D28D9', allowEntry: false, hear: tru
 
 type TestApp = Awaited<ReturnType<typeof createTestApp>>;
 const post = (t: TestApp, cookie: string, payload: unknown) => request(t.app).post('/api/me/states').set('Cookie', cookie).send(payload as object);
+const list = (t: TestApp, cookie: string) => request(t.app).get('/api/me/states').set('Cookie', cookie);
+// Ses états après les modes par défaut, que le compte a reçus à sa création (les premiers de la liste).
+const ownStates = async (t: TestApp, cookie: string): Promise<ActivityState[]> => (await list(t, cookie)).body.slice(DEFAULT_MODES.length);
 
 describe('/api/me/states', () => {
   test('sans session : 401, partout', async () => {
@@ -20,12 +23,22 @@ describe('/api/me/states', () => {
   test('créer : 201, l\'état avec son identifiant, la couleur en minuscules ; la liste le rend', async () => {
     const t = await createTestApp();
     const lea = await t.inviteAndAccept('lea@x.fr');
-    const created = await post(t, lea.cookie, body);
-    expect(created.status).toBe(201);
-    expect(created.body).toMatchObject({ label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false });
-    const list = await request(t.app).get('/api/me/states').set('Cookie', lea.cookie);
-    expect(list.status).toBe(200);
-    expect(list.body).toEqual([created.body]);
+    const made = await post(t, lea.cookie, body);
+    expect(made.status).toBe(201);
+    expect(made.body).toMatchObject({ label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false });
+    expect((await list(t, lea.cookie)).status).toBe(200);
+    expect(await ownStates(t, lea.cookie)).toEqual([made.body]);
+  });
+
+  test('un compte créé reçoit les modes par défaut, dans l\'ordre : ils sont à lui, se modifient et se suppriment comme les autres', async () => {
+    const t = await createTestApp({ env: { MAP_KEY: 'office' } });
+    const lea = await t.inviteAndAccept('lea@x.fr');
+    const defaults = (await list(t, lea.cookie)).body as ActivityState[];
+    expect(defaults.map(({ id: _id, ...input }) => input)).toEqual(DEFAULT_MODES);
+    const [meal, sport] = defaults;
+    expect((await request(t.app).put(`/api/me/states/${meal!.id}`).set('Cookie', lea.cookie).send({ ...body, label: 'Déjeuner' })).status).toBe(200);
+    expect((await request(t.app).delete(`/api/me/states/${sport!.id}`).set('Cookie', lea.cookie)).status).toBe(204);
+    expect(((await list(t, lea.cookie)).body as ActivityState[]).map((state) => state.label)).toEqual(['Déjeuner', 'Concentration']);
   });
 
   test.each([
@@ -58,10 +71,10 @@ describe('/api/me/states', () => {
     expect(created.body).toMatchObject({ label: 'En focus', icon: 'coffee' });
     const plain = await post(t, lea.cookie, { ...body, label: 'Sans icône' });
     expect('icon' in plain.body).toBe(false);
-    const list = await request(t.app).get('/api/me/states').set('Cookie', lea.cookie);
-    expect(list.body).toHaveLength(2);
-    expect(list.body).toContainEqual(created.body);
-    expect(list.body).toContainEqual(plain.body);
+    const mine = await ownStates(t, lea.cookie);
+    expect(mine).toHaveLength(2);
+    expect(mine).toContainEqual(created.body);
+    expect(mine).toContainEqual(plain.body);
 
     const changed = await request(t.app).put(`/api/me/states/${created.body.id}`).set('Cookie', lea.cookie).send({ ...body, icon: 'plane' });
     expect(changed.status).toBe(200);
@@ -79,7 +92,8 @@ describe('/api/me/states', () => {
   test('au plus ACTIVITY_MAX_PER_USER : le suivant répond 409 limit', async () => {
     const t = await createTestApp();
     const lea = await t.inviteAndAccept('lea@x.fr');
-    for (let i = 0; i < ACTIVITY_MAX_PER_USER; i++) expect((await post(t, lea.cookie, { ...body, label: `État ${i}` })).status).toBe(201);
+    // Les modes par défaut comptent : il en reste ACTIVITY_MAX_PER_USER - DEFAULT_MODES.length à créer.
+    for (let i = DEFAULT_MODES.length; i < ACTIVITY_MAX_PER_USER; i++) expect((await post(t, lea.cookie, { ...body, label: `État ${i}` })).status).toBe(201);
     const res = await post(t, lea.cookie, body);
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: 'limit' });
@@ -90,10 +104,10 @@ describe('/api/me/states', () => {
     const lea = await t.inviteAndAccept('lea@x.fr');
     const tom = await t.inviteAndAccept('tom@x.fr');
     const created = (await post(t, lea.cookie, body)).body as ActivityState;
-    expect((await request(t.app).get('/api/me/states').set('Cookie', tom.cookie)).body).toEqual([]);
+    expect(await ownStates(t, tom.cookie)).toEqual([]);
     expect((await request(t.app).put(`/api/me/states/${created.id}`).set('Cookie', tom.cookie).send(body)).status).toBe(404);
     expect((await request(t.app).delete(`/api/me/states/${created.id}`).set('Cookie', tom.cookie)).status).toBe(404);
-    expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toEqual([created]);
+    expect(await ownStates(t, lea.cookie)).toEqual([created]);
   });
 
   test('modifier : l\'état remplacé, et le temps réel est prévenu (activity:edited) ; invalide : 400, inconnu : 404', async () => {
@@ -124,7 +138,7 @@ describe('/api/me/states', () => {
     expect((await request(t.app).delete(`/api/me/states/${created.id}`).set('Cookie', lea.cookie)).status).toBe(204);
     expect(edited).toEqual([{ userId: lea.userId, id: created.id, state: null }]);
     expect((await request(t.app).delete(`/api/me/states/${created.id}`).set('Cookie', lea.cookie)).status).toBe(404);
-    expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toEqual([]);
+    expect(await ownStates(t, lea.cookie)).toEqual([]);
   });
 });
 
@@ -138,7 +152,7 @@ describe('l\'emplacement d\'un mode', () => {
     const created = await post(t, lea.cookie, { ...body, place: 'gym' });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({ label: 'En focus', place: 'gym' });
-    expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toEqual([created.body]);
+    expect(await ownStates(t, lea.cookie)).toEqual([created.body]);
 
     const moved = await request(t.app).put(`/api/me/states/${created.body.id}`).set('Cookie', lea.cookie).send({ ...body, place: 'game' });
     expect(moved.status).toBe(200);
@@ -172,14 +186,13 @@ describe('l\'emplacement d\'un mode', () => {
     expect((await post(t, lea.cookie, { ...body, place: 'gym' })).status).toBe(400);
   });
 
-  test('les modes tout prêts ne sont pas à soi : on ne les modifie ni ne les supprime (404), et la liste ne les contient pas', async () => {
+  test('un identifiant qui n\'est pas un uuid (les anciens modes tout prêts, `preset:`) n\'est à personne : 404, sans rien dire au temps réel', async () => {
     const t = await createTestApp(office);
     const lea = await t.inviteAndAccept('lea@x.fr');
     const edited: unknown[] = [];
     t.events.on('activity:edited', (change) => edited.push(change));
     expect((await request(t.app).put('/api/me/states/preset:sport').set('Cookie', lea.cookie).send(body)).status).toBe(404);
     expect((await request(t.app).delete('/api/me/states/preset:focus').set('Cookie', lea.cookie)).status).toBe(404);
-    expect((await request(t.app).get('/api/me/states').set('Cookie', lea.cookie)).body).toEqual([]);
     expect(edited).toEqual([]);
   });
 });

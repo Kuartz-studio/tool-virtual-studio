@@ -16,7 +16,6 @@ test('les textes attendus par les tests de bout en bout', () => {
   expect(fr.office.replaced).toBe('Ouvert dans un autre onglet');
   expect(fr.office.useHere).toBe('Utiliser ici');
   expect(fr.office.people.toggle).toBe('Personnes');
-  expect(fr.me.status).toBe('Statut');
   expect(t(fr.me.statusChanged, { status: fr.status.dnd })).toBe('Statut : Ne pas déranger');
   expect(fr.office.people.you).toBe('toi');
   expect(fr.media.check.title).toBe('Prêt à entrer ?');
@@ -46,13 +45,13 @@ test('les noms des boutons de la barre du bas et de ses menus', () => {
 });
 
 // La puce « Moi » et son menu : les noms que lisent les tests de bout en bout (e2e/helpers.ts) et ceux des lignes qui ouvrent un panneau.
-test('la puce « Moi » : son nom, celui de son menu, ses sections, et les lignes qui ouvrent un panneau', () => {
+test('la puce « Moi » : son nom, celui de son menu, sa section, et les lignes qui ouvrent un panneau ou l\'éditeur', () => {
   expect(fr.me.chip).toBe('Mon profil');
   expect(fr.me.menu).toBe('Menu de mon profil');
-  expect(fr.me.status).toBe('Statut');
   expect(fr.me.mode).toBe('Mode');
-  expect(fr.modes.normal).toBe('Normal');
-  expect(fr.modes.create).toBe('Créer un mode');
+  // « Disponible » est le premier statut de la liste des modes, l'état normal (il n'y a plus de « Normal ») ; « Nouveau mode » ouvre l'éditeur, dans le menu.
+  expect(fr.status.available).toBe('Disponible');
+  expect(fr.modes.create).toBe('Nouveau mode');
   // Les lignes du menu portent le nom du panneau qu'elles ouvrent, ou celui de l'action : « Personnage » est devenu « Changer d'apparence ». Le
   // bureau et le son n'y sont plus : ils sont dans le dock du milieu (test suivant).
   expect(fr.character.toggle).toBe('Changer d\'apparence');

@@ -19,7 +19,6 @@ import { ControlBar } from './ControlBar';
 import { DeskPanel } from './DeskPanel';
 import type { PanelControls, PanelId } from './panels';
 import { PeoplePanel } from './PeoplePanel';
-import { StatesPanel } from './StatesPanel';
 import { ReplacedScreen } from './ReplacedScreen';
 import { Toasts } from './Toasts';
 import { usePlace } from './use-here';
@@ -221,7 +220,6 @@ export function OfficeShell({
           {panel === 'character' && <CharacterBuilder id={idOf('character')} onClose={close} />}
           {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
           {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}
-          {panel === 'states' && <StatesPanel id={idOf('states')} socket={socket} onClose={close} />}
           {panel === 'game' && gameOpen !== null && <GamePanel id={idOf('game')} socket={socket} onClose={close} />}
           {isAdmin && panel === 'admin' && <AdminPanel id={idOf('admin')} selfId={user.id} mail={mail} onClose={close} />}
           {__SIM__ && panel === 'sim' && <SimPanel id={idOf('sim')} onClose={close} />}

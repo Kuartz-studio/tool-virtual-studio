@@ -2,8 +2,8 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 import { buildOfficeTiledMap, parseOfficeMap, placeAt } from '../packages/shared/src/index';
 import { giveDeskBack, joinOffice, meChip, openDeskPanel, openMeMenu, openPanel, playerSeenBy, selfAt } from './helpers';
 
-// Les modes qui conduisent quelque part, sur la vraie carte (le second serveur des tests : playwright.config.ts) : « Sport » téléporte à la salle de sport, et « Normal » (ou n'importe quel autre
-// mode) ramène à son bureau, ou à l'accueil quand on n'en a pas. Les autres voient l'avatar arriver là ; le départ et l'arrivée ont leur anneau de lumière et leur son.
+// Les modes qui conduisent quelque part, sur la vraie carte (le second serveur des tests : playwright.config.ts) : « Sport » (un mode par défaut, que chaque compte reçoit) téléporte à la
+// salle de sport, et « Disponible » (ou n'importe quel autre mode) ramène à son bureau, ou à l'accueil quand on n'en a pas. Les autres voient l'avatar arriver là ; le départ et l'arrivée ont leur anneau de lumière et leur son.
 
 // Un seul navigateur à la fois : plusieurs personnes, et le reste de la suite qui tourne sur ce serveur (les tests de personnalisation cherchent un bureau libre).
 test.describe.configure({ mode: 'default' });
@@ -31,7 +31,7 @@ async function arrive(browser: Browser, name: string, desk: 'given back' | 'kept
 // Où est l'avatar local, comme lieu de la carte.
 const aliceAt = async (page: Page) => placeOf(await selfAt(page));
 
-test('Alice prend « Sport » depuis son bureau : elle arrive à la salle de sport, où Bastien la voit ; « Normal » la ramène à son bureau', async ({ browser }) => {
+test('Alice prend « Sport » depuis son bureau : elle arrive à la salle de sport, où Bastien la voit ; « Disponible » la ramène à son bureau', async ({ browser }) => {
   test.slow();
   const alice = await arrive(browser, 'Alice', 'kept');
   const bastien = await arrive(browser, 'Bastien');
@@ -65,8 +65,8 @@ test('Alice prend « Sport » depuis son bureau : elle arrive à la salle de spo
   const rowOfAlice = people.locator(`[data-user="${desk.id}"]`);
   await expect(rowOfAlice).toContainText('Sport');
 
-  // « Normal » : le statut est de retour, et elle revient à son bureau.
-  await (await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Normal', exact: true }).click();
+  // « Disponible » : le statut est de retour, et elle revient à son bureau.
+  await (await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Disponible', exact: true }).click();
   await expect(meChip(alice)).toContainText('Disponible');
   await expect(rowOfAlice).not.toContainText('Sport');
   await expect.poll(() => aliceAt(alice), { timeout: TRAVEL_TIMEOUT }).toBe(deskPlace);
@@ -86,33 +86,33 @@ test('Alice crée un mode « Muscu » avec la salle de sport pour emplacement, s
   const alice = await arrive(browser, 'Alice');
   expect(await aliceAt(alice)).not.toBe('gym');
 
-  // Le panneau de ses états : un nom, l'icône haltère, et la salle de sport choisie sur la mini-carte (un clic la choisit, un second la retire).
-  await (await openMeMenu(alice)).getByRole('menuitem', { name: 'Créer un mode', exact: true }).click();
-  const panel = alice.getByRole('complementary', { name: 'Mes états d\'activité' });
-  await expect(panel).toBeVisible();
-  await panel.getByLabel('Nom de l\'état', { exact: true }).fill('Muscu');
-  await panel.getByRole('button', { name: 'Haltère', exact: true }).click();
-  const gym = panel.getByRole('button', { name: 'Salle de sport', exact: true });
+  // L'éditeur, dans le menu même (« Nouveau mode ») : un nom, l'icône haltère, et la salle de sport choisie sur la mini-carte (un clic la choisit, un second la retire).
+  await (await openMeMenu(alice)).getByRole('menuitem', { name: 'Nouveau mode', exact: true }).click();
+  const editor = alice.getByRole('dialog', { name: 'Nouveau mode' });
+  await expect(editor).toBeVisible();
+  await editor.getByRole('textbox', { name: 'Nom', exact: true }).fill('Muscu');
+  await editor.getByRole('button', { name: 'Haltère', exact: true }).click();
+  const gym = editor.getByRole('button', { name: 'Salle de sport', exact: true });
   await gym.click();
   await expect(gym).toHaveAttribute('aria-pressed', 'true');
   await gym.click();
   await expect(gym).toHaveAttribute('aria-pressed', 'false');
   await gym.click();
   await expect(gym).toHaveAttribute('aria-pressed', 'true');
-  await panel.getByRole('button', { name: 'Créer l\'état' }).click();
+  await editor.getByRole('button', { name: 'Créer', exact: true }).click();
 
-  // Il est dans la liste, avec son icône et le lieu où il conduit.
-  const row = panel.getByRole('listitem').filter({ hasText: 'Muscu' });
-  await expect(row.locator('svg.lucide-dumbbell')).toBeVisible();
-  await expect(row).toContainText('à Salle de sport');
+  // La liste revient, avec lui : son icône et la pièce où il conduit.
+  const muscu = alice.getByRole('menu', { name: 'Menu de mon profil' }).getByRole('menuitemradio', { name: 'Muscu', exact: true });
+  await expect(muscu.locator('svg.lucide-dumbbell')).toBeVisible();
+  await expect(muscu).toContainText('Salle de sport');
 
   // Le prendre : elle est conduite à la salle de sport.
-  await row.getByRole('button', { name: 'Prendre l\'état Muscu' }).click();
+  await muscu.click();
   await expect(meChip(alice)).toContainText('Muscu');
   await expect.poll(() => aliceAt(alice), { timeout: TRAVEL_TIMEOUT }).toBe('gym');
 
   // Un autre mode (ici « Concentration », sans emplacement) la fait sortir de la salle : elle n'a pas de bureau, elle revient à l'accueil.
-  await (await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Concentration', exact: true }).first().click();
+  await (await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Concentration', exact: true }).click();
   await expect(meChip(alice)).toContainText('Concentration');
   await expect.poll(() => aliceAt(alice), { timeout: TRAVEL_TIMEOUT }).not.toBe('gym');
 });

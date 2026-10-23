@@ -1,6 +1,7 @@
 import type { ActivityState, Status } from '@bureau/shared';
 import type { GameObjects, Scene } from 'phaser';
-import { indicatorRgb } from '../../lib/status';
+import { fr } from '../../i18n/fr';
+import { cssColor, indicatorRgb } from '../../lib/status';
 import { DEPTH } from '../map-layers';
 import { snapToPixels } from '../pixel-snap';
 import { textResolution } from '../zoom';
@@ -38,11 +39,42 @@ const GAP_ABOVE_HEAD = 1;
 const GAP_ABOVE_TAG = 1;
 // L'espace entre le bord droit de la pastille et la tasse de café.
 const GAP_BESIDE_TAG = 2;
+// L'étiquette du mode, au-dessus de la pastille du nom : un texte plus petit et gras, sur la couleur du mode (ou du statut), à un pixel du nom.
+const MODE_TEXT_STYLE = { ...TAG_TEXT_STYLE, fontSize: '8px', fontStyle: 'bold' };
+const MODE_PAD_X = 3;
+const GAP_ABOVE_NAME = 1;
+// Le texte posé sur une couleur : blanc, ou l'encre presque noire de l'interface.
+const LIGHT_INK = 0xffffff;
+const DARK_INK = 0x15171c;
+
+// Ce que dit l'étiquette du mode : le nom du mode en cours, sinon le statut s'il n'est pas « Disponible » ; null pour Disponible, l'état normal : rien.
+export function modeLabelOf(status: Status, activity: Pick<ActivityState, 'label'> | null): string | null {
+  if (activity) return activity.label;
+  return status === 'available' ? null : fr.status[status];
+}
+
+// La luminance relative d'une couleur 0xrrggbb (WCAG).
+function luminance(rgb: number): number {
+  const channel = (value: number) => {
+    const c = value / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * channel((rgb >> 16) & 0xff) + 0.7152 * channel((rgb >> 8) & 0xff) + 0.0722 * channel(rgb & 0xff);
+}
+
+// L'encre d'un texte posé sur cette couleur : le blanc ou l'encre sombre, celle des deux qui contraste le plus avec elle (un mode jaune ou gris s'écrit en sombre).
+export function inkOn(rgb: number): number {
+  const background = luminance(rgb);
+  const onLight = (background + 0.05) / (luminance(DARK_INK) + 0.05);
+  const onDark = (luminance(LIGHT_INK) + 0.05) / (background + 0.05);
+  return onDark >= onLight ? LIGHT_INK : DARK_INK;
+}
 
 // L'étiquette au-dessus de la tête d'un avatar : un point de statut (de la couleur de l'état d'activité, ou du statut, STATUS_COLORS : celle du menu des
-// statuts et du panneau Personnes aussi) et son nom, surmontés d'une bulle de parole quand la personne parle (SpeechBubble), et suivis d'une tasse de café
-// fumante quand elle en a un (SteamCup, à droite de la pastille : elle ne la décale pas). Elle passe devant tout le reste (DEPTH.nameTags). Elle n'importe
-// de Phaser que des types : la scène lui donne de quoi dessiner.
+// statuts et du panneau Personnes aussi) et son nom ; au-dessus, l'étiquette de son mode (son nom sur sa couleur, ou le statut s'il n'est pas « Disponible » :
+// modeLabelOf), que tout le monde voit, de jour comme de nuit ; plus haut encore, une bulle de parole quand la personne parle (SpeechBubble) ; et à droite
+// une tasse de café fumante quand elle en a un (SteamCup, à droite de la pastille : elle ne la décale pas). Elle passe devant tout le reste, la nuit comprise
+// (DEPTH.nameTags). Elle n'importe de Phaser que des types : la scène lui donne de quoi dessiner.
 export class NameTag {
   private readonly container: GameObjects.Container;
   private readonly background: GameObjects.Rectangle;
@@ -50,6 +82,8 @@ export class NameTag {
   private readonly dot: GameObjects.Arc;
   private readonly bubble: SpeechBubble;
   private readonly cup: SteamCup;
+  private readonly modeBackground: GameObjects.Rectangle;
+  private readonly modeLabel: GameObjects.Text;
   private status: Status;
   private activity: ActivityState | null = null;
 
@@ -63,8 +97,12 @@ export class NameTag {
     this.bubble.setZoom(zoom);
     this.cup = new SteamCup(scene);
     this.cup.setZoom(zoom);
-    this.container = scene.add.container(0, 0, [this.background, this.dot, this.label, ...this.bubble.objects, ...this.cup.objects]).setDepth(DEPTH.nameTags);
-    this.layout();
+    this.modeBackground = snapToPixels(scene.add.rectangle(0, 0, 1, 1, 0x000000, 0.92).setOrigin(0, 0));
+    this.modeLabel = snapToPixels(scene.add.text(0, 0, '', { ...MODE_TEXT_STYLE, resolution: textResolution(zoom) }).setOrigin(0, 0.5));
+    this.container = scene.add
+      .container(0, 0, [this.background, this.dot, this.label, this.modeBackground, this.modeLabel, ...this.bubble.objects, ...this.cup.objects])
+      .setDepth(DEPTH.nameTags);
+    this.paintMode();
   }
 
   setName(name: string): void {
@@ -77,16 +115,35 @@ export class NameTag {
   setStatus(status: Status): void {
     this.status = status;
     this.paintDot();
+    this.paintMode();
   }
 
-  // L'état d'activité de la personne : son point prend la couleur qu'elle a choisie ; null, celle de son statut.
+  // L'état d'activité de la personne : son point prend la couleur qu'elle a choisie ; null, celle de son statut. L'étiquette du mode dit son nom.
   setActivity(activity: ActivityState | null): void {
     this.activity = activity;
     this.paintDot();
+    this.paintMode();
   }
 
   private paintDot(): void {
     this.dot.setFillStyle(indicatorRgb(this.status, this.activity));
+  }
+
+  // L'étiquette du mode : son nom, sur la couleur du point, dans l'encre qui s'y lit le mieux ; cachée sans mode ni statut à dire. La bulle de parole monte ou
+  // descend avec elle (layout).
+  private paintMode(): void {
+    const text = modeLabelOf(this.status, this.activity);
+    const color = indicatorRgb(this.status, this.activity);
+    this.modeLabel.setText(text === null ? '' : displayName(text)).setColor(cssColor(inkOn(color)));
+    this.modeBackground.setFillStyle(color, 0.92);
+    this.modeLabel.setVisible(text !== null);
+    this.modeBackground.setVisible(text !== null);
+    this.layout();
+  }
+
+  // Le texte de l'étiquette du mode, tel qu'on le voit (vide sans mode à dire).
+  modeText(): string {
+    return this.modeLabel.visible ? this.modeLabel.text : '';
   }
 
   // La bulle de parole au-dessus de l'étiquette : montrée tant que la personne parle.
@@ -117,6 +174,7 @@ export class NameTag {
     const resolution = textResolution(zoom);
     if (this.label.style.resolution === resolution) return;
     this.label.setResolution(resolution);
+    this.modeLabel.setResolution(resolution);
     this.layout();
   }
 
@@ -134,8 +192,8 @@ export class NameTag {
     this.container.destroy();
   }
 
-  // La pastille, centrée sur x, son bas sur l'origine du conteneur : le point, puis le nom ; la bulle de parole juste au-dessus, et la tasse de café à
-  // droite, son bas à celui de la pastille.
+  // La pastille, centrée sur x, son bas sur l'origine du conteneur : le point, puis le nom ; l'étiquette du mode au-dessus, centrée elle aussi ; la bulle
+  // de parole juste au-dessus de la plus haute des deux, et la tasse de café à droite, son bas à celui de la pastille.
   private layout(): void {
     const width = TAG_PAD_X + 2 * DOT_RADIUS + DOT_GAP + this.label.width + TAG_PAD_X;
     const height = this.label.height + 2 * TAG_PAD_Y;
@@ -144,7 +202,16 @@ export class NameTag {
     const middle = -height / 2;
     this.dot.setPosition(left + TAG_PAD_X + DOT_RADIUS, middle);
     this.label.setPosition(left + TAG_PAD_X + 2 * DOT_RADIUS + DOT_GAP, middle);
-    this.bubble.placeAbove(0, -height - GAP_ABOVE_TAG);
+    let top = -height;
+    if (this.modeLabel.visible) {
+      const modeWidth = this.modeLabel.width + 2 * MODE_PAD_X;
+      const modeHeight = this.modeLabel.height + 2 * TAG_PAD_Y;
+      const modeLeft = -Math.round(modeWidth / 2);
+      top = -height - GAP_ABOVE_NAME - modeHeight;
+      this.modeBackground.setPosition(modeLeft, top).setSize(modeWidth, modeHeight);
+      this.modeLabel.setPosition(modeLeft + MODE_PAD_X, top + modeHeight / 2);
+    }
+    this.bubble.placeAbove(0, top - GAP_ABOVE_TAG);
     this.cup.placeAt(left + width + GAP_BESIDE_TAG, 0);
   }
 }

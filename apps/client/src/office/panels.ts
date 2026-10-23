@@ -1,5 +1,5 @@
 // Les panneaux latéraux du bureau : un seul est ouvert à la fois (`panel: PanelId | null` dans OfficeShell). Ouvrir l'un ferme l'autre.
-export type PanelId = 'chat' | 'people' | 'character' | 'desk' | 'decor' | 'states' | 'game' | 'admin' | 'sim';
+export type PanelId = 'chat' | 'people' | 'character' | 'desk' | 'decor' | 'game' | 'admin' | 'sim';
 
 // Ce que la coque donne à la barre du bas pour ouvrir et fermer les panneaux.
 export interface PanelControls {

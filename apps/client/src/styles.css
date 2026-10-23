@@ -1826,8 +1826,8 @@ svg.lucide.icon-s {
   box-shadow: none;
 }
 
-/* Le menu « Moi » (MeMenu), dans une fenêtre (Popover) de 316 px : en-tête (portrait, nom, e-mail, apparence), les quatre statuts en tuiles, les
-   modes en pastilles, puis les lignes (bureau, son, déconnexion), qui sont celles du menu « Plus » (.menu-item, .menu-rule). */
+/* Le menu « Moi » (MeMenu), dans une fenêtre (Popover) de 316 px : en-tête (portrait, nom, e-mail, apparence), la liste des modes (statuts compris : voir
+   « Chantier : modes de concentration », à la fin), puis la déconnexion, une ligne du menu « Plus » (.menu-item, .menu-rule). */
 .me-menu {
   width: min(300px, calc(100vw - 48px));
 }
@@ -1894,7 +1894,7 @@ svg.lucide.icon-s {
   opacity: 0.45;
 }
 
-/* Le titre d'une section (« Statut », « Mode »), et à droite le nom de celui qui est choisi. */
+/* Le titre d'une section (« Mode »). */
 .me-label {
   display: flex;
   justify-content: space-between;
@@ -1904,140 +1904,8 @@ svg.lucide.icon-s {
   color: var(--text-muted);
 }
 
-.me-label em {
-  font-style: normal;
-  color: var(--text);
-}
-
-.me-statuses {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  padding: 6px 8px 4px;
-}
-
-/* Un statut : une tuile avec son point (son nom est dans `aria-label`, et à droite du titre quand il est choisi). */
-.status-tile {
-  color: var(--text-soft);
-  background: var(--surface-soft);
-  border: 0;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.status-tile {
-  display: grid;
-  place-items: center;
-  height: 38px;
-  padding: 0;
-  border-radius: 11px;
-}
-
-.status-tile .status-dot {
-  box-shadow: none;
-}
-
-/* Les modes à la manière d'Apple : des tuiles rondes (un disque de la couleur du mode, avec son icône, et son nom dessous). La tuile choisie est cerclée de sa couleur. */
-.mode-tiles {
-  display: grid;
-  /* Trois tuiles par ligne dans le menu : « Concentration » et « Créer un mode » tiennent entiers (quatre par ligne les tronquaient). */
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-  gap: 6px 4px;
-  padding: 6px 8px 8px;
-}
-
-.mode-tile {
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  min-width: 0;
-  padding: 4px 2px;
-  font-size: 0.72rem;
-  font-weight: var(--weight-medium);
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  border-radius: 12px;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-out);
-}
-
-.mode-tile:hover:not(:disabled) {
-  background: var(--surface-soft);
-}
-
-.mode-tile-disc {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  color: #ffffff;
-  background: var(--tile, var(--text-soft));
-  border-radius: 50%;
-  transition: box-shadow var(--dur-fast) var(--ease-out);
-}
-
-.mode-tile-disc .status-dot {
-  width: 14px;
-  height: 14px;
-  background: #ffffff !important;
-  box-shadow: none;
-}
-
-.mode-tile-disc svg.lucide {
-  width: 22px;
-  height: 22px;
-  color: #ffffff;
-}
-
-.mode-tile-name {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mode-tile[aria-checked='true'] .mode-tile-disc {
-  box-shadow: 0 0 0 2.5px var(--surface), 0 0 0 5px var(--tile, var(--accent));
-}
-
-.mode-tile[aria-checked='true'] .mode-tile-name {
-  font-weight: var(--weight-semibold);
-}
-
-/* « + » : un disque creux, qui ne porte que son signe. */
-.mode-tile.is-add .mode-tile-disc {
-  color: var(--text-soft);
-  background: var(--surface-soft);
-  border: 1.5px dashed var(--border);
-}
-
-.mode-tile.is-add .mode-tile-disc svg.lucide {
-  color: var(--text-soft);
-}
-
-.mode-tile:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
-.status-tile[aria-checked='false']:hover:not(:disabled) {
-  background: var(--surface-sunk);
-}
-
-.status-tile[aria-checked='true'] {
-  color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1.5px var(--accent);
-}
-
-.status-tile:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
-}
-
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   Les panneaux de droite. Personnes, Chat et Mes états sont dans la coque Drawer (voir plus haut) ; Mon bureau, Personnage, la déco et le bac à
+   Les panneaux de droite. Personnes et Chat sont dans la coque Drawer (voir plus haut) ; Mon bureau, Personnage, la déco et le bac à
    sable gardent celle de .people-panel (l'en-tête, puis un contenu qui défile), et l'admin la sienne, à l'identique.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 .people-panel,
@@ -3421,230 +3289,6 @@ svg.lucide.icon-s {
 }
 
 /* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-   Le panneau Mes états d'activité : la liste de ses états, puis le formulaire pour en créer ou en modifier un.
-   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
-.state-row {
-  padding: 10px 12px;
-  background: var(--surface-soft);
-  border-radius: var(--radius-m);
-}
-
-.state-row[data-current] {
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 2px var(--accent);
-}
-
-.state-row-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-}
-
-.state-summary {
-  margin: 2px 0 8px;
-  font-size: var(--text-s);
-  color: var(--text-soft);
-}
-
-.state-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-/* Les modes prêts à l'emploi : des lignes comme celles de ses états, avec leur seul bouton « Dupliquer en mode perso ». */
-.state-presets {
-  display: grid;
-  gap: 8px;
-}
-
-/* La mini-carte des pièces où un mode peut conduire : les destinations sont des boutons, les autres pièces un fond. */
-.place-picker {
-  width: 100%;
-  max-height: 240px;
-  background: var(--surface-soft);
-  border-radius: 12px;
-}
-
-.place-picker .place-room {
-  fill: var(--surface-sunk);
-}
-
-.place-picker .place-destination {
-  cursor: pointer;
-  outline: none;
-}
-
-.place-picker .place-destination rect {
-  fill: var(--surface);
-  stroke: var(--border);
-  stroke-width: 12;
-  transition: fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out);
-}
-
-.place-picker .place-destination text {
-  font-size: 76px;
-  font-weight: 600;
-  fill: var(--text);
-  pointer-events: none;
-}
-
-.place-picker .place-destination:hover rect,
-.place-picker .place-destination:focus-visible rect {
-  stroke: var(--accent);
-}
-
-.place-picker .place-destination[aria-pressed='true'] rect {
-  fill: var(--accent-soft);
-  stroke: var(--accent);
-}
-
-.state-actions .bar-button {
-  min-height: 32px;
-  padding: 0 11px;
-  font-size: var(--text-s);
-}
-
-.state-form {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--border);
-}
-
-.state-field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: none;
-}
-
-.state-field > label,
-.state-field > legend {
-  padding: 0;
-  font-size: var(--text-s);
-  font-weight: 600;
-  color: var(--text-soft);
-}
-
-.state-field input[type='text'] {
-  min-height: 40px;
-  padding: 0 12px;
-  background: var(--surface);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px;
-}
-
-.state-field input[type='text']:focus-visible {
-  outline: none;
-  border-color: var(--accent);
-  box-shadow: var(--ring);
-}
-
-/* La grille des douze icônes : des boutons à bascule, dont celle qui est choisie prend l'accent (la retirer : un nouveau clic dessus). */
-.state-icon-grid {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-}
-
-.state-icon-button {
-  display: grid;
-  place-items: center;
-  height: 38px;
-  padding: 0;
-  color: var(--text-soft);
-  background: var(--surface-soft);
-  border: 0;
-  border-radius: 10px;
-  cursor: pointer;
-  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
-}
-
-.state-icon-button svg.lucide {
-  width: 18px;
-  height: 18px;
-}
-
-.state-icon-button[aria-pressed='false']:hover {
-  background: var(--surface-sunk);
-}
-
-.state-icon-button[aria-pressed='true'] {
-  color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1.5px var(--accent);
-}
-
-.state-swatches {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-
-.state-swatch {
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 2px solid transparent;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.state-swatch[aria-pressed='true'] {
-  border-color: var(--text);
-  box-shadow: 0 0 0 2px var(--surface) inset;
-}
-
-.state-swatch:focus-visible,
-.state-color-input:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.state-color-input {
-  width: 36px;
-  height: 30px;
-  padding: 0;
-  background: none;
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.state-switch {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 34px;
-  padding: 2px 0;
-  font-size: var(--text-m);
-  cursor: pointer;
-}
-
-.state-switch input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent);
-}
-
-.state-submit {
-  color: var(--on-accent);
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.state-submit:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
    La déco du bureau et le personnage : les images du pack dans l'interface, la banque d'éléments, les pièces du personnage.
    ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
 /* Les images du pack dans l'interface : un morceau d'atlas, sans flou. */
@@ -4323,4 +3967,538 @@ svg.lucide.icon-s {
   text-align: center;
   color: var(--text-muted);
   border-bottom: 0;
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Chantier : modes de concentration. La liste des modes du menu « Moi » (ModeList : les statuts, puis ses modes, puis « Nouveau mode ») et l'éditeur
+   d'un mode, dans le menu même (ModeEditor). Les rayons sont ceux du reste de l'interface : 11 px pour une ligne (celles du menu « Plus »), --radius-s
+   pour une marque, un bouton ou une pastille de couleur, 10 px pour un champ. La couleur d'un mode est la sienne (`--mode`) ; le reste suit les jetons,
+   la nuit comprise.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.mode-list {
+  display: grid;
+  gap: 2px;
+  padding: 4px 0 2px;
+}
+
+.mode-row {
+  position: relative;
+  display: flex;
+}
+
+/* Une ligne : la marque, le nom, la pièce où le mode conduit, la coche. À droite, la place du crayon (celle des statuts aussi : les coches s'alignent). */
+.mode-pick {
+  display: flex;
+  flex: 1;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  min-height: 38px;
+  padding: 5px 40px 5px 6px;
+  font-size: var(--text-m);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 11px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.mode-pick:hover:not(:disabled),
+.mode-pick:focus-visible {
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.mode-row[data-checked] .mode-pick {
+  background: var(--accent-soft);
+}
+
+.mode-row[data-checked] .mode-name {
+  font-weight: var(--weight-semibold);
+}
+
+.mode-pick:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+/* La marque : un carré arrondi plein de la couleur du mode, son icône (ou son point) en blanc. Un statut, plus simple, a le point de sa couleur sur un fond
+   teinté de la même. */
+.mode-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: #ffffff;
+  background: var(--mode, var(--surface-soft));
+  border-radius: var(--radius-s);
+}
+
+.mode-mark svg.lucide {
+  width: 16px;
+  height: 16px;
+  color: #ffffff;
+}
+
+.mode-mark .status-dot {
+  width: 9px;
+  height: 9px;
+  background: #ffffff !important;
+  box-shadow: none;
+}
+
+.mode-row[data-mode^='status:'] .mode-mark {
+  background: color-mix(in srgb, var(--mode) 16%, transparent);
+}
+
+.mode-row[data-mode^='status:'] .mode-mark .status-dot {
+  width: 10px;
+  height: 10px;
+  background: var(--mode) !important;
+}
+
+.mode-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mode-place {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+  align-items: center;
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.mode-place svg.lucide {
+  width: 12px;
+  height: 12px;
+}
+
+.mode-check {
+  display: grid;
+  flex: none;
+  margin-left: auto;
+  color: var(--accent-ink);
+}
+
+.mode-place + .mode-check {
+  margin-left: 4px;
+}
+
+.mode-check svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+
+/* Le crayon d'un mode, sur la droite de sa ligne : discret, il se montre au survol de la ligne ou au clavier (toujours sur un écran tactile). */
+.mode-edit {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.mode-edit svg.lucide {
+  width: 15px;
+  height: 15px;
+}
+
+.mode-row:hover .mode-edit,
+.mode-edit:focus-visible {
+  opacity: 1;
+}
+
+.mode-edit:hover:not(:disabled),
+.mode-edit:focus-visible {
+  color: var(--text);
+  background: var(--surface-sunk);
+  outline: none;
+}
+
+.mode-edit:disabled {
+  display: none;
+}
+
+@media (hover: none) {
+  .mode-edit {
+    opacity: 1;
+  }
+}
+
+/* « Nouveau mode » : une marque creuse, en pointillés, qui ne porte que son signe. */
+.mode-new {
+  padding-right: 10px;
+  color: var(--text-soft);
+}
+
+.mode-new .mode-mark {
+  color: var(--text-soft);
+  background: transparent;
+  border: 1.5px dashed var(--border-strong);
+}
+
+.mode-new .mode-mark svg.lucide {
+  color: var(--text-soft);
+}
+
+/* L'éditeur d'un mode, à la place de la liste. */
+.mode-editor {
+  display: grid;
+  gap: 12px;
+  padding: 2px 4px 4px;
+}
+
+/* La mini-carte, plus basse dans le menu : l'éditeur tient sans défiler sur un écran ordinaire. */
+.mode-editor .place-picker {
+  max-height: 112px;
+}
+
+.mode-editor-head {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.mode-editor-head h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: var(--weight-semibold);
+}
+
+.mode-editor-back,
+.mode-editor-remove {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.mode-editor-back svg.lucide,
+.mode-editor-remove svg.lucide {
+  width: 18px;
+  height: 18px;
+}
+
+.mode-editor-back:hover,
+.mode-editor-back:focus-visible {
+  color: var(--text);
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.mode-editor-remove {
+  margin-right: auto;
+  color: var(--danger);
+}
+
+.mode-editor-remove:hover:not(:disabled),
+.mode-editor-remove:focus-visible {
+  background: var(--danger-soft);
+  outline: none;
+}
+
+.mode-editor-name {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.mode-editor-name .mode-mark {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+}
+
+.mode-editor-name .mode-mark svg.lucide {
+  width: 20px;
+  height: 20px;
+}
+
+.mode-editor-name input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: var(--text-m);
+  color: var(--text);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.mode-editor-name input::placeholder {
+  color: var(--text-muted);
+}
+
+.mode-editor-name input:focus-visible {
+  background: var(--surface);
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.mode-editor-field {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.mode-editor-field legend {
+  margin-bottom: 8px;
+  padding: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.mode-editor-icons {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 4px;
+}
+
+.mode-editor-icons button {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  padding: 0;
+  color: var(--text-soft);
+  background: var(--surface-soft);
+  border: 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.mode-editor-icons button svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+
+.mode-editor-icons button[aria-pressed='false']:hover {
+  color: var(--text);
+  background: var(--surface-sunk);
+}
+
+.mode-editor-icons button[aria-pressed='true'] {
+  color: var(--on-accent);
+  background: var(--accent);
+}
+
+.mode-editor-colors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mode-editor-colors button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  background: var(--swatch);
+  border: 0;
+  border-radius: var(--radius-s);
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-out);
+}
+
+.mode-editor-colors button[aria-pressed='true'] {
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--swatch);
+}
+
+.mode-editor-colors input[type='color'] {
+  width: 34px;
+  height: 24px;
+  padding: 0 2px;
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+
+.mode-editor-icons button:focus-visible,
+.mode-editor-colors button:focus-visible,
+.mode-editor-colors input[type='color']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Un interrupteur : le texte, puis la glissière à droite, en rectangle arrondi comme le reste (pas de pilule). */
+.mode-switch {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  font-size: var(--text-s);
+  cursor: pointer;
+}
+
+.mode-switch input {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  background: var(--border-strong);
+  border-radius: 6px;
+  cursor: pointer;
+  appearance: none;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.mode-switch input::before {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  border-radius: 4px;
+  box-shadow: var(--shadow-s);
+  content: '';
+  transition: transform var(--dur-fast) var(--ease-out);
+}
+
+.mode-switch input:checked {
+  background: var(--accent);
+}
+
+.mode-switch input:checked::before {
+  transform: translateX(14px);
+}
+
+.mode-switch input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mode-editor-hint {
+  margin: 0;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.mode-editor-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.mode-editor-question {
+  flex: 1 1 100%;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+}
+
+.mode-editor .bar-button {
+  min-height: 34px;
+  padding: 0 12px;
+}
+
+.mode-editor .bar-button.is-primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.mode-editor .bar-button.is-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.mode-editor .bar-button.is-danger {
+  color: var(--on-danger);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.mode-editor .bar-button.is-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 88%, #000000);
+}
+
+.mode-editor .bar-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* La mini-carte des pièces où un mode peut conduire : les destinations sont des boutons, les autres pièces un fond. */
+.place-picker {
+  width: 100%;
+  max-height: 240px;
+  background: var(--surface-soft);
+  border-radius: 12px;
+}
+
+.place-picker .place-room {
+  fill: var(--surface-sunk);
+}
+
+.place-picker .place-destination {
+  cursor: pointer;
+  outline: none;
+}
+
+.place-picker .place-destination rect {
+  fill: var(--surface);
+  stroke: var(--border);
+  stroke-width: 12;
+  transition: fill var(--dur-fast) var(--ease-out), stroke var(--dur-fast) var(--ease-out);
+}
+
+.place-picker .place-destination text {
+  font-size: 76px;
+  font-weight: 600;
+  fill: var(--text);
+  pointer-events: none;
+}
+
+.place-picker .place-destination:hover rect,
+.place-picker .place-destination:focus-visible rect {
+  stroke: var(--accent);
+}
+
+.place-picker .place-destination[aria-pressed='true'] rect {
+  fill: var(--accent-soft);
+  stroke: var(--accent);
 }

@@ -1,6 +1,8 @@
 import {
+  ArrowLeft,
   AudioLines,
   BookOpen,
+  Check,
   ChevronRight,
   ChevronUp,
   Coffee,
@@ -24,6 +26,7 @@ import {
   Minus,
   MonitorUp,
   Music,
+  Pencil,
   Play,
   Plus,
   SendHorizontal,
@@ -33,6 +36,7 @@ import {
   Slash,
   SlidersHorizontal,
   Sofa,
+  Trash2,
   Users,
   Video,
   VideoOff,
@@ -220,4 +224,21 @@ export function GamepadIcon() {
 // Un livre ouvert : les règles d'un jeu.
 export function RulesIcon() {
   return <BookOpen />;
+}
+
+// Les modes, dans le menu « Moi » : modifier un mode (le crayon), revenir à la liste, la coche du mode choisi, et supprimer un mode (l'emplacement où il conduit est PlaceIcon).
+export function PencilIcon() {
+  return <Pencil />;
+}
+
+export function BackIcon() {
+  return <ArrowLeft />;
+}
+
+export function CheckIcon() {
+  return <Check />;
+}
+
+export function TrashIcon() {
+  return <Trash2 />;
 }

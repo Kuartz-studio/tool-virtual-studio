@@ -1,4 +1,4 @@
-import { GROUP_DEBOUNCE_MS, GROUPS_TICK_MS, PRESET_MODES, placeAt, zoneAt, type ActivityInput, type ActivityState, type WorldTick } from '@bureau/shared';
+import { GROUP_DEBOUNCE_MS, GROUPS_TICK_MS, placeAt, zoneAt, type ActivityInput, type ActivityState, type WorldTick } from '@bureau/shared';
 import { describe, expect, test, vi } from 'vitest';
 import { createActivityService } from '../src/activity/activity-service';
 import { enter, nextEvent, record, sleep, startTestServer, type TestServer } from './helpers/realtime';
@@ -15,6 +15,13 @@ async function stateOf(srv: TestServer, userId: string, input: ActivityInput): P
   const created = await createActivityService(srv.db).create(userId, input);
   if (!created.ok) throw new Error('création refusée');
   return created.state;
+}
+
+// Le mode par défaut de ce nom (Manger, Sport, Concentration), que le compte a reçu à sa création.
+async function defaultMode(srv: TestServer, userId: string, label: string): Promise<ActivityState> {
+  const mode = (await createActivityService(srv.db).list(userId)).find((state) => state.label === label);
+  if (!mode) throw new Error(`pas de mode « ${label} »`);
+  return mode;
 }
 
 const startOffice = () => startTestServer({ env: { MAP_KEY: 'office' } });
@@ -208,14 +215,13 @@ describe('entendre et être entendu', () => {
   });
 });
 
-// Les modes tout prêts (Concentration, Sport : ceux du partage, jamais de la base) et l'emplacement d'un mode : le prendre conduit à ce lieu, en sortir ramène au bureau.
-describe('les modes tout prêts et leur emplacement', () => {
-  const preset = (id: string) => PRESET_MODES.find((mode) => mode.id === id)!;
+// Les modes par défaut (Concentration, Sport : en base, donnés au compte à sa création) et l'emplacement d'un mode : le prendre conduit à ce lieu, en sortir ramène au bureau.
+describe('les modes par défaut et leur emplacement', () => {
   const inRoom = (srv: TestServer, key: string, at: { x: number; y: number }) => placeAt(srv.map, at.x, at.y)?.key === key;
   const inDesk = (srv: TestServer, key: string, at: { x: number; y: number }) => zoneAt(srv.map, at.x, at.y, ['desk'])?.name === key;
   const toGym: ActivityInput = { label: 'Muscu', color: '#f97316', allowEntry: true, hear: false, heard: false, place: 'gym' };
 
-  test('« Concentration » : pris comme un mode à soi, sans la base : annoncé à tout le bureau, la porte du bureau se ferme, et personne ne bouge', async () => {
+  test('« Concentration » : pris comme un mode à soi : annoncé à tout le bureau, la porte du bureau se ferme, et personne ne bouge', async () => {
     const srv = await startOffice();
     const a = await person(srv, 'a@x.fr');
     const b = await person(srv, 'b@x.fr');
@@ -223,8 +229,9 @@ describe('les modes tout prêts et leur emplacement', () => {
     const changed = nextEvent(b.socket, 'activity:changed');
     const door = nextEvent(b.socket, 'desk:changed');
     const seen = record(a.socket);
-    a.socket.emit('state:set', 'preset:focus');
-    expect(await changed).toEqual({ id: a.id, activity: preset('preset:focus') });
+    const focusMode = await defaultMode(srv, a.id, 'Concentration');
+    a.socket.emit('state:set', focusMode.id);
+    expect(await changed).toEqual({ id: a.id, activity: focusMode });
     expect(await door).toMatchObject({ key: 'A1', closedByState: true });
     await sleep(100);
     expect(seen.names()).not.toContain('move:correct');
@@ -238,11 +245,12 @@ describe('les modes tout prêts et leur emplacement', () => {
     const moved = nextEvent(a.socket, 'move:correct');
     const changed = nextEvent(b.socket, 'activity:changed');
     const seenByB = record(b.socket);
-    a.socket.emit('state:set', 'preset:sport');
+    const sport = await defaultMode(srv, a.id, 'Sport');
+    a.socket.emit('state:set', sport.id);
     const correct = await moved;
     expect(correct.reason).toBe('teleport');
     expect(inRoom(srv, 'gym', correct)).toBe(true);
-    expect(await changed).toEqual({ id: a.id, activity: preset('preset:sport') });
+    expect(await changed).toEqual({ id: a.id, activity: sport });
     expect(srv.realtime.world.get(a.id)).toMatchObject({ x: correct.x, y: correct.y });
     await vi.waitFor(() => {
       const jump = (seenByB.payloadsOf('world:tick') as WorldTick[]).flatMap((tick) => tick.moves).find((move) => move.id === a.id && move.tp === true);
@@ -254,7 +262,7 @@ describe('les modes tout prêts et leur emplacement', () => {
     const srv = await startOffice();
     const a = await person(srv, 'a@x.fr');
     const desk = srv.realtime.desks.deskOf(a.id)!.key;
-    a.socket.emit('state:set', 'preset:sport');
+    a.socket.emit('state:set', (await defaultMode(srv, a.id, 'Sport')).id);
     await nextEvent(a.socket, 'move:correct');
     const home = nextEvent(a.socket, 'move:correct');
     a.socket.emit('state:set', null);
@@ -264,7 +272,7 @@ describe('les modes tout prêts et leur emplacement', () => {
     expect(srv.realtime.world.get(a.id)).toMatchObject({ x: back.x, y: back.y });
 
     // Un statut ordinaire prend la place du mode : il ramène de même.
-    a.socket.emit('state:set', 'preset:sport');
+    a.socket.emit('state:set', (await defaultMode(srv, a.id, 'Sport')).id);
     await nextEvent(a.socket, 'move:correct');
     const again = nextEvent(a.socket, 'move:correct');
     a.socket.emit('status:set', 'busy');
@@ -276,7 +284,7 @@ describe('les modes tout prêts et leur emplacement', () => {
     const a = await person(srv, 'a@x.fr');
     a.socket.emit('desk:do', { type: 'release' }, () => undefined);
     await vi.waitFor(() => expect(srv.realtime.desks.deskOf(a.id)).toBeUndefined());
-    a.socket.emit('state:set', 'preset:sport');
+    a.socket.emit('state:set', (await defaultMode(srv, a.id, 'Sport')).id);
     await nextEvent(a.socket, 'move:correct');
     const home = nextEvent(a.socket, 'move:correct');
     a.socket.emit('state:set', null);
@@ -289,7 +297,7 @@ describe('les modes tout prêts et leur emplacement', () => {
     const desk = srv.realtime.desks.deskOf(a.id)!.key;
     const toGame = await stateOf(srv, a.id, { ...toGym, label: 'Jeux', place: 'game' });
     expect(toGame.place).toBe('game');
-    a.socket.emit('state:set', 'preset:sport');
+    a.socket.emit('state:set', (await defaultMode(srv, a.id, 'Sport')).id);
     await nextEvent(a.socket, 'move:correct');
     const next = nextEvent(a.socket, 'move:correct');
     a.socket.emit('state:set', toGame.id);
@@ -332,19 +340,20 @@ describe('les modes tout prêts et leur emplacement', () => {
     const cookie = await srv.inviteAndLogin('a@x.fr');
     const a = await enter(srv, cookie);
     const moved = nextEvent(a.socket, 'move:correct');
-    a.socket.emit('state:set', 'preset:sport');
+    const sport = await defaultMode(srv, a.id, 'Sport');
+    a.socket.emit('state:set', sport.id);
     const gone = await moved;
     a.socket.disconnect();
     const back = await enter(srv, cookie);
-    expect(back.init.self.activity).toEqual(preset('preset:sport'));
+    expect(back.init.self.activity).toEqual(sport);
     expect(back.init.self).toMatchObject({ x: gone.x, y: gone.y });
   });
 
-  test('un mode tout prêt qui n\'existe pas, ou celui d\'un autre nom : ignoré, sans rien dire à personne', async () => {
+  test('un identifiant qui n\'est pas un uuid (les anciens modes tout prêts, `preset:`) : ignoré, sans rien dire à personne', async () => {
     const srv = await startOffice();
     const a = await person(srv, 'a@x.fr');
     const seen = record(a.socket);
-    a.socket.emit('state:set', 'preset:inconnu');
+    a.socket.emit('state:set', 'preset:sport');
     a.socket.emit('state:set', 'preset:');
     await sleep(150);
     expect(seen.names()).not.toContain('activity:changed');
@@ -357,10 +366,10 @@ describe('les modes tout prêts et leur emplacement', () => {
     const a = await person(srv, 'a@x.fr');
     const b = await person(srv, 'b@x.fr');
     const first = nextEvent(a.socket, 'move:correct');
-    a.socket.emit('state:set', 'preset:sport');
+    a.socket.emit('state:set', (await defaultMode(srv, a.id, 'Sport')).id);
     const spotA = await first;
     const second = nextEvent(b.socket, 'move:correct');
-    b.socket.emit('state:set', 'preset:sport');
+    b.socket.emit('state:set', (await defaultMode(srv, b.id, 'Sport')).id);
     const spotB = await second;
     expect(inRoom(srv, 'gym', spotB)).toBe(true);
     expect(Math.hypot(spotA.x - spotB.x, spotA.y - spotB.y)).toBeGreaterThanOrEqual(2 * srv.map.tileSize);

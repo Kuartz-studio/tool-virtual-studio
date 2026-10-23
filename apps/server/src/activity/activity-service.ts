@@ -1,4 +1,4 @@
-import { ACTIVITY_ICONS, ACTIVITY_MAX_PER_USER, type ActivityIcon, type ActivityInput, type ActivityState } from '@bureau/shared';
+import { ACTIVITY_ICONS, ACTIVITY_MAX_PER_USER, DEFAULT_MODES, type ActivityIcon, type ActivityInput, type ActivityState } from '@bureau/shared';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { activityState } from '../db/schema';
@@ -14,6 +14,8 @@ export interface ActivityService {
   update(userId: string, id: string, input: ActivityInput): Promise<ActivityState | undefined>;
   /** Supprime un de ses états ; faux s'il n'est pas à elle. */
   remove(userId: string, id: string): Promise<boolean>;
+  /** Donne à un compte qui vient d'être créé les modes par défaut (DEFAULT_MODES : Manger, Sport, Concentration), dans cet ordre. */
+  seedDefaults(userId: string): Promise<void>;
 }
 
 // Une icône que la table garde : un nom de ACTIVITY_ICONS, ou rien. Un nom que l'appli ne connaît plus (une icône retirée de la liste) n'est
@@ -97,6 +99,24 @@ export function createActivityService(db: Db): ActivityService {
         .where(and(eq(activityState.userId, userId), eq(activityState.id, id)))
         .returning({ id: activityState.id });
       return rows.length > 0;
+    },
+
+    // Une milliseconde d'écart entre eux, à l'horloge de la base comme `create` : la liste suit la date de création, et ils gardent l'ordre de DEFAULT_MODES (des
+    // dates égales iraient à l'ordre de leurs uuid).
+    async seedDefaults(userId) {
+      await db.insert(activityState).values(
+        DEFAULT_MODES.map((mode, index) => ({
+          userId,
+          label: mode.label,
+          color: mode.color,
+          icon: mode.icon ?? null,
+          place: mode.place ?? null,
+          allowEntry: mode.allowEntry,
+          hear: mode.hear,
+          heard: mode.heard,
+          createdAt: sql<Date>`now() + ${index}::int * interval '1 millisecond'`,
+        })),
+      );
     },
   };
 }

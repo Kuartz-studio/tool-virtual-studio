@@ -9,7 +9,7 @@ import type { ActivityService } from './activity-service';
 // DELETE /:id. Ils ne sont jamais ceux de quelqu'un d'autre : un identifiant étranger répond 404, comme un inconnu. Le corps passe par
 // activityInputSchema (nom de 1 à 24 caractères, couleur #rrggbb, icône facultative parmi ACTIVITY_ICONS, trois interrupteurs) ; au plus 12 états
 // par personne (409 `limit`). PUT remplace l'état en entier : sans `icon`, il n'a plus d'icône, et sans `place`, plus d'emplacement. Un `place` qui n'est pas une destination
-// de la carte (la salle de sport, la salle de jeu) répond 400 `invalid`. Les modes tout prêts (`preset:`) ne sont pas dans la base : PUT et DELETE sur leur identifiant répondent 404.
+// de la carte (la salle de sport, la salle de jeu) répond 400 `invalid`. Les modes par défaut (Manger, Sport, Concentration) sont des états comme les autres : ils se modifient et se suppriment ici.
 // Un état modifié ou supprimé est dit au temps réel (activity:edited) : s'il est celui que la personne a pris, tout le bureau le voit changer.
 export function activityRoutes({
   auth,

@@ -236,64 +236,63 @@ test('le clavier : le menu « Moi » garde ses flèches ; fermé, l\'avatar marc
   await page.keyboard.up('ArrowDown');
 });
 
-// Les modes à la Apple, dans le menu « Moi » : « Normal » (aucun mode : le statut), puis les modes tout prêts, des tuiles rondes qu'un clic prend. Pris, le mode passe
-// avant le statut sur la puce, avec son icône ; « Normal » rend le statut.
-test('un mode : « Concentration » (tout prêt) se prend d\'un clic depuis le menu « Moi », et « Normal » rend le statut', async ({ browser }) => {
+// Les modes, dans le menu « Moi » : une seule liste, les statuts (Disponible, l'état normal, en tête) puis les modes, ceux par défaut compris (Manger, Sport, Concentration). Pris,
+// le mode passe avant le statut sur la puce, avec son icône ; « Disponible » rend le statut.
+test('un mode : « Concentration » (par défaut) se prend d\'un clic depuis le menu « Moi », et « Disponible » rend le statut', async ({ browser }) => {
   const a = await arrive(browser, 'Aurore');
   const page = a.page;
   await expectStatus(page, 'Disponible');
 
-  // Normal est coché au départ : aucun mode.
+  // Disponible est coché au départ : aucun mode. Les modes par défaut sont là.
   const menu = await openMeMenu(page);
-  await expect(menu.getByRole('menuitemradio', { name: 'Normal', exact: true })).toBeChecked();
+  await expect(menu.getByRole('menuitemradio', { name: 'Disponible', exact: true })).toBeChecked();
+  await expect(menu.getByRole('menuitemradio', { name: 'Manger', exact: true })).not.toBeChecked();
   await expect(menu.getByRole('menuitemradio', { name: 'Sport', exact: true })).not.toBeChecked();
 
-  // Le prendre : la puce montre l'icône et le nom du mode, à la place du statut ; dans le menu, seule sa tuile est cochée.
-  await menu.getByRole('menuitemradio', { name: 'Concentration', exact: true }).first().click();
+  // Le prendre : la puce montre l'icône et le nom du mode, à la place du statut ; dans le menu, seule sa ligne est cochée.
+  await menu.getByRole('menuitemradio', { name: 'Concentration', exact: true }).click();
   await expect(meChip(page)).toContainText('Concentration');
   await expect(meChip(page).locator('svg.lucide-headphones')).toBeVisible();
   await expect(meChip(page)).not.toContainText('Disponible');
   const again = await openMeMenu(page);
-  await expect(again.getByRole('menuitemradio', { name: 'Concentration', exact: true }).first()).toBeChecked();
-  await expect(again.getByRole('menuitemradio', { name: 'Normal', exact: true })).not.toBeChecked();
+  await expect(again.getByRole('menuitemradio', { name: 'Concentration', exact: true })).toBeChecked();
+  await expect(again.getByRole('menuitemradio', { name: 'Disponible', exact: true })).not.toBeChecked();
 
-  // « Normal » : le statut est de retour, sans icône.
-  await again.getByRole('menuitemradio', { name: 'Normal', exact: true }).click();
+  // « Disponible » : le statut est de retour, sans icône.
+  await again.getByRole('menuitemradio', { name: 'Disponible', exact: true }).click();
   await expectStatus(page, 'Disponible');
   await expect(meChip(page).locator('svg.lucide-headphones')).toHaveCount(0);
 });
 
-// Les modes perso : la tuile « Créer un mode » du menu ouvre leur panneau, où les modes tout prêts se copient d'un clic (ils ne se modifient pas), avec leur icône. Le serveur
-// la garde (colonne `icon`) : après un rechargement, la tuile de la copie la montre encore, dans « Mes modes ».
-test('un mode perso : on copie « Concentration » dans le panneau, la copie garde son icône après un rechargement, et se prend', async ({ browser }) => {
+// Les modes se modifient dans le menu même, sans panneau : le crayon d'un mode ouvre son éditeur à la place de la liste. Le serveur garde le mode modifié (et son icône) :
+// après un rechargement, la ligne le montre encore. La corbeille le supprime, après une confirmation sur place.
+test('un mode par défaut se modifie au crayon dans le menu « Moi », garde son icône après un rechargement, puis se supprime', async ({ browser }) => {
   const a = await arrive(browser, 'Aurore');
   const page = a.page;
   await expectStatus(page, 'Disponible');
 
-  await (await openMeMenu(page)).getByRole('menuitem', { name: 'Créer un mode', exact: true }).click();
-  const panel = page.getByRole('complementary', { name: 'Mes états d\'activité' });
-  await expect(panel).toBeVisible();
-  // Les modes tout prêts sont là, sans « Modifier » ni « Supprimer » ; la liste des siens est encore vide.
-  const presets = panel.getByRole('group', { name: 'Modes prêts à l\'emploi' });
-  await expect(presets).toContainText('Concentration');
-  await expect(presets).toContainText('Sport');
-  await expect(presets.getByRole('button', { name: /^(Modifier|Supprimer)/ })).toHaveCount(0);
-  await expect(panel.getByRole('listitem')).toHaveCount(0);
+  await (await openMeMenu(page)).getByRole('menuitem', { name: 'Modifier le mode Manger', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'Modifier le mode' });
+  await expect(editor).toBeVisible();
+  await expect(page.getByRole('complementary')).toHaveCount(0);
+  await editor.getByRole('textbox', { name: 'Nom', exact: true }).fill('Déjeuner');
+  await editor.getByRole('button', { name: 'Enregistrer', exact: true }).click();
 
-  await presets.getByRole('button', { name: 'Dupliquer Concentration en mode perso' }).click();
-  const row = panel.getByRole('listitem').filter({ hasText: 'Concentration' });
-  await expect(row.locator('svg.lucide-headphones')).toBeVisible();
+  // La liste revient : « Manger » s'appelle « Déjeuner », et garde son icône.
+  const menu = page.getByRole('menu', { name: 'Menu de mon profil' });
+  await expect(menu.getByRole('menuitemradio', { name: 'Déjeuner', exact: true }).locator('svg.lucide-utensils')).toBeVisible();
+  await expect(menu.getByRole('menuitemradio', { name: 'Manger', exact: true })).toHaveCount(0);
 
-  // Le serveur garde l'icône : lue de nouveau à l'arrivée, elle est sur la tuile de « Mes modes ».
+  // Le serveur l'a gardé : lu de nouveau à l'arrivée, il est dans la liste, avec son icône.
   await page.reload();
   await enterOffice(page);
   await waitForOffice(page);
-  const mine = (await openMeMenu(page)).locator('.mode-tiles').nth(1).getByRole('menuitemradio', { name: 'Concentration', exact: true });
-  await expect(mine.locator('svg.lucide-headphones')).toBeVisible();
+  const again = await openMeMenu(page);
+  await expect(again.getByRole('menuitemradio', { name: 'Déjeuner', exact: true }).locator('svg.lucide-utensils')).toBeVisible();
 
-  // La prendre : la puce montre son nom et son icône.
-  await mine.click();
-  await expect(meChip(page)).toContainText('Concentration');
-  await expect(meChip(page).locator('svg.lucide-headphones')).toBeVisible();
-  await expect(meChip(page)).not.toContainText('Disponible');
+  // La corbeille, puis la confirmation : il n'est plus là.
+  await again.getByRole('menuitem', { name: 'Modifier le mode Déjeuner', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Modifier le mode' }).getByRole('button', { name: 'Supprimer', exact: true }).click();
+  await page.getByRole('dialog', { name: 'Modifier le mode' }).getByRole('button', { name: 'Oui, supprimer', exact: true }).click();
+  await expect(page.getByRole('menu', { name: 'Menu de mon profil' }).getByRole('menuitemradio', { name: 'Déjeuner', exact: true })).toHaveCount(0);
 });
