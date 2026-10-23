@@ -37,4 +37,8 @@ export const SHEETS: Record<string, string> = {
   gy: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/8_Gym_32x32.png',
   ba: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/14_Basement_32x32.png',
   mu: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/22_Museum_32x32.png',
+  ar: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/7_Art_32x32.png',
+  jp: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/20_Japanese_interiors_32x32.png',
+  xm: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/15_Christmas_32x32.png',
+  bd: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/10_Birthday_party_32x32.png',
 };

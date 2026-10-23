@@ -33,6 +33,22 @@ const LIVING_ROOM: Entry[] = [
   ...named('Armoire en bois', [[7, 4], [11, 4], [13, 4]], lrStore, { claim: 1 }),
   lrStore('Grande armoire', [7, 7], { claim: 1 }),
   lrStore('Buffet', [9, 7, 2, 3], { claim: 1 }),
+  lrStore('Vitrine en bois', [9, 5, 2, 2], { claim: 1 }),
+  lrStore('Commode basse', [3, 11, 2, 2], { claim: 1 }),
+  lrStore('Bahut à portes', [1, 15, 2, 2], { claim: 1 }),
+  ...named('Meuble bas en bois', [[3, 15, 2, 2], [5, 15, 2, 2]], lrStore, { claim: 1 }),
+  lrStore('Vaisselier en merisier', [14, 15, 1, 3], { claim: 1 }),
+  lrStore('Vaisselier en chêne', [15, 15, 1, 3], { claim: 1 }),
+  lrStore('Rayonnages de bibliothèque', [10, 24, 6, 3], { claim: 1 }),
+  lrStuff('Lampe boule', [0, 7, 1, 1], { kind: 'onTop' }),
+  ...named('Lampe bleue', [[14, 11, 1, 2], [15, 11, 1, 2]], lrStuff, { kind: 'onTop' }),
+  lrDeco('Lampadaire en papier', [11, 11, 1, 2], { kind: 'object', claim: 1, solid: false }),
+  lrDeco('Vase en terre', [0, 22, 1, 2]),
+  lrDeco('Vase doré', [1, 22, 1, 2]),
+  lrDeco('Vase bleu', [2, 22, 1, 2]),
+  ...named('Jarre', [[0, 24, 1, 2], [1, 24, 1, 2]], lrDeco),
+  lrDeco('Miroir sur pied', [8, 22, 2, 3]),
+  lrDeco('Carte du monde', [10, 22, 2, 2], { kind: 'wall' }),
 ];
 
 // ---- Salle de conférence ----------------------------------------------------------------------------------------------
@@ -133,6 +149,7 @@ const KITCHEN: Entry[] = [
 // ---- Bibliothèque -----------------------------------------------------------------------------------------------------
 const clStore = on('cl', 'rangement');
 const clStuff = on('cl', 'papeterie');
+const clDeco = on('cl', 'deco');
 
 const LIBRARY: Entry[] = [
   ...named('Bibliothèque claire', [[0, 13], [4, 13], [6, 13], [8, 13], [10, 13]], clStore, { claim: 1 }),
@@ -149,6 +166,14 @@ const LIBRARY: Entry[] = [
   clStuff('Globe terrestre (B)', [14, 1]),
   clStuff('Pupitre à livre (A)', [14, 14]),
   clStuff('Pupitre à livre (B)', [14, 17]),
+  // Les grandes, de 3, 4 ou 5 cases de large et 4 de haut, dans les mêmes trois bois.
+  ...([['rousse', 22], ['claire', 26], ['sable', 30]] as const).flatMap(([wood, y]) =>
+    ([[0, 3], [3, 4], [7, 5]] as const).map(([x, w]) => clStore(`Grande bibliothèque ${wood} (${w} cases)`, [x, y, w, 4], { claim: 1 })),
+  ),
+  clDeco('Tableau noir', [13, 5, 2, 2], { kind: 'wall' }),
+  clDeco('Tableau de liège', [0, 6, 2, 1], { kind: 'wall' }),
+  clDeco('Escabeau en bois', [0, 7, 1, 2]),
+  clDeco('Escabeau en métal', [1, 7, 1, 2]),
 ];
 
 // ---- Musique ------------------------------------------------------------------------------------------------------------
@@ -190,6 +215,7 @@ const geDesk = on('ge', 'bureaux');
 const geSeat = on('ge', 'sieges');
 const gePlant = on('ge', 'plantes');
 const geStuff = on('ge', 'papeterie');
+const geStore = on('ge', 'rangement');
 
 const GENERIC: Entry[] = [
   ...named('Tapis', [[9, 4], [13, 5], [9, 7], [13, 9], [9, 10], [11, 10], [8, 13], [12, 21], [0, 44], [0, 46], [9, 31]], geDeco, { kind: 'floor' }),
@@ -209,6 +235,18 @@ const GENERIC: Entry[] = [
   geSeat('Canapé rouge (de face)', [6, 11, 4, 2], { claim: 2, solid: false }),
   ...named('Grande table', [[0, 5], [0, 8], [0, 34], [5, 34], [0, 37], [5, 37]], geDesk, { claim: 3 }),
   ...named('Table carrée', [[10, 33], [13, 33], [10, 35], [13, 35]], geDesk, { claim: 2 }),
+  geDeco('Fenêtre à rideaux beiges', [5, 48, 3, 2], { kind: 'wall' }),
+  geDeco('Fenêtre à rideaux rouges', [8, 48, 3, 2], { kind: 'wall' }),
+  geDeco('Fenêtre à rideaux lilas', [11, 48, 3, 2], { kind: 'wall' }),
+  geDeco('Cadre bleu et or', [11, 12, 2, 2], { kind: 'wall' }),
+  geDeco('Miroir ovale doré', [14, 66, 1, 2], { kind: 'wall' }),
+  geDeco('Miroir ovale', [15, 66, 1, 2], { kind: 'wall' }),
+  gePlant('Plante en colonne', [7, 56, 1, 3]),
+  gePlant('Grande plante touffue', [8, 56, 2, 3]),
+  gePlant('Plante en pot de terre', [6, 57, 1, 2]),
+  gePlant('Petit palmier', [14, 63, 1, 2]),
+  gePlant('Plante d\'angle', [15, 63, 1, 3]),
+  ...named('Chiffonnier', [[7, 63, 1, 2], [8, 63, 1, 2], [9, 63, 1, 2]], geStore, { claim: 1 }),
 ];
 
 export const INTERIOR_ENTRIES: Entry[] = [
