@@ -1,6 +1,8 @@
 import {
+  ArrowLeftRight,
   AudioLines,
   BookOpen,
+  Check,
   ChevronRight,
   ChevronUp,
   Coffee,
@@ -13,6 +15,7 @@ import {
   Gamepad2,
   Lightbulb,
   LightbulbOff,
+  Lock,
   LogOut,
   MapPin,
   Maximize,
@@ -23,6 +26,7 @@ import {
   Minus,
   MonitorUp,
   Music,
+  Pencil,
   Play,
   Plus,
   SendHorizontal,
@@ -32,6 +36,8 @@ import {
   Slash,
   SlidersHorizontal,
   Sofa,
+  Undo2,
+  UserX,
   Users,
   Video,
   VideoOff,
@@ -214,4 +220,30 @@ export function GamepadIcon() {
 // Un livre ouvert : les règles d'un jeu.
 export function RulesIcon() {
   return <BookOpen />;
+}
+
+// Le bureau (DeskPanel) : le cadenas de la porte fermée, le crayon du nom, la coche d'un enregistrement, les flèches du déménagement, exclure
+// quelqu'un de son bureau et le réadmettre.
+export function LockIcon() {
+  return <Lock />;
+}
+
+export function RenameIcon() {
+  return <Pencil className="icon-s" />;
+}
+
+export function CheckIcon() {
+  return <Check className="icon-s" />;
+}
+
+export function MoveIcon() {
+  return <ArrowLeftRight />;
+}
+
+export function KickIcon() {
+  return <UserX />;
+}
+
+export function UnbanIcon() {
+  return <Undo2 />;
 }

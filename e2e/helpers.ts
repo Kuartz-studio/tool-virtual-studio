@@ -330,6 +330,7 @@ export async function giveDeskBack(page: Page): Promise<void> {
   const giveBack = panel.getByRole('button', { name: 'Rendre mon bureau' });
   await expect(giveBack).toBeVisible();
   await giveBack.click();
+  await panel.getByRole('button', { name: 'Oui, le rendre' }).click();   // la confirmation
   await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
   await panel.getByRole('button', { name: 'Fermer le panneau Mon bureau' }).click();
   await expect(panel).toHaveCount(0);

@@ -50,9 +50,10 @@ test('le propriétaire ferme sa porte : elle se ferme chez tous, l\'autre bute, 
   await teleport(bruno, street);
   await expect.poll(async () => (await doorsOf(bruno))[key]).toBe('open');
 
-  // Elle ferme : le verrou et la porte, pour elle ; la porte, pour Bruno qui est à deux cases.
-  await panel.getByRole('button', { name: 'Fermer la porte' }).click();
-  await expect(panel.getByRole('button', { name: 'Ouvrir la porte' })).toHaveAttribute('aria-pressed', 'true');
+  // Elle ferme (l'interrupteur de la porte) : le verrou et la porte, pour elle ; la porte, pour Bruno qui est à deux cases.
+  const lock = panel.getByRole('switch', { name: 'Fermer la porte' });
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-checked', 'true');
   await expect.poll(async () => (await doorsOf(bruno))[key], { timeout: 10_000 }).toBe('closed');
   await expect.poll(async () => (await doorsOf(alice))[key], { timeout: 10_000 }).toBe('closed');
   await expect.poll(() => sfxOf(alice)).toEqual(expect.arrayContaining(['lock', 'door-close']));
@@ -86,7 +87,8 @@ test('le propriétaire ferme sa porte : elle se ferme chez tous, l\'autre bute, 
   await bruno.keyboard.up(toward);
 
   // Alice rouvre sa porte pour tout le monde : elle s'ouvre chez tous.
-  await alice.getByRole('button', { name: 'Ouvrir la porte' }).click();
+  await lock.click();
+  await expect(lock).toHaveAttribute('aria-checked', 'false');
   await expect.poll(async () => (await doorsOf(alice))[key], { timeout: 10_000 }).toBe('open');
   await expect.poll(async () => (await doorsOf(bruno))[key], { timeout: 10_000 }).toBe('open');
   await expect.poll(() => sfxOf(alice)).toContain('unlock');
