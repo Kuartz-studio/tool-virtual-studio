@@ -71,11 +71,12 @@ beforeEach(() => {
 });
 
 describe('sans bureau', () => {
-  test('les places libres se prennent d\'un clic (claim)', async () => {
+  test('le plan des places : les libres se prennent d\'un clic (claim), les prises disent qui les a', async () => {
     const user = userEvent.setup();
-    const { socket } = setup({ desks: [owned('A1', 'bob', 'Bob'), free('A2'), free('A3')] });
+    const { socket } = setup({ desks: [free('A3'), owned('A1', 'bob', 'Bob'), free('A2')] });
     expect(screen.getByText(fr.desk.none)).toBeTruthy();
-    expect(screen.getAllByRole('button', { name: /^Prendre la place/ }).map((b) => b.textContent)).toEqual(['Prendre la place A2', 'Prendre la place A3']);
+    expect(screen.getAllByRole('button', { name: /^Prendre la place/ }).map((b) => b.getAttribute('aria-label'))).toEqual(['Prendre la place A2', 'Prendre la place A3']);
+    expect(screen.getByRole('img', { name: 'Place A1, prise par Bob' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Prendre la place A3' }));
     expect(socket.sentOf('desk:do')).toEqual([{ type: 'claim', key: 'A3' }]);
     await ack(socket);
@@ -96,20 +97,35 @@ describe('sans bureau', () => {
 });
 
 describe('avec un bureau', () => {
-  test('le nom : proposé par défaut en indice, enregistré à l\'envoi, borné à 40 caractères', async () => {
+  test('le nom, sur place : proposé par défaut en indice, borné à 40 caractères, enregistré avec Entrée (en quittant le champ)', async () => {
     const user = userEvent.setup();
     const { socket } = setup({ desks: [owned('A1', 'moi', 'Léa'), free('A2')] });
     const input = screen.getByLabelText(fr.desk.nameLabel) as HTMLInputElement;
     expect(input.value).toBe('');
     expect(input.placeholder).toBe('Bureau de Léa');
     expect(input.maxLength).toBe(40);
-    const save = screen.getByRole('button', { name: fr.desk.nameSave });
-    expect((save as HTMLButtonElement).disabled).toBe(true);   // rien n'a changé
-    await user.type(input, 'Le labo');
-    await user.click(save);
+    // Quitter le champ sans rien changer n'envoie rien.
+    await user.click(input);
+    await user.tab();
+    expect(socket.sentOf('desk:do')).toEqual([]);
+    await user.type(input, 'Le labo{Enter}');
+    expect(document.activeElement).not.toBe(input);
     expect(socket.sentOf('desk:do')).toEqual([{ type: 'rename', name: 'Le labo' }]);
     await ack(socket);
-    expect(screen.getByText(fr.desk.nameSaved)).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toBe(fr.desk.nameSaved);
+  });
+
+  test('le nom : Échap rend celui du serveur sans fermer le panneau ; un second Échap ferme', async () => {
+    const user = userEvent.setup();
+    const { socket, closed } = setup({ desks: [owned('A1', 'moi', 'Léa', { name: 'Atelier' })] });
+    const input = screen.getByLabelText(fr.desk.nameLabel) as HTMLInputElement;
+    await user.type(input, ' 2');
+    await user.keyboard('{Escape}');
+    expect(input.value).toBe('Atelier');
+    expect(closed()).toBe(0);
+    await user.keyboard('{Escape}');
+    expect(closed()).toBe(1);
+    expect(socket.sentOf('desk:do')).toEqual([]);
   });
 
   test('le nom du serveur remplit le champ (un autre onglet l\'a changé)', () => {
@@ -117,17 +133,19 @@ describe('avec un bureau', () => {
     expect((screen.getByLabelText(fr.desk.nameLabel) as HTMLInputElement).value).toBe('Atelier');
   });
 
-  test('la porte : « Fermer la porte » (lock true), puis « Ouvrir la porte » quand elle l\'est', async () => {
+  test('la porte : un interrupteur qui dit son état ; allumé, lock true ; éteint, lock false', async () => {
     const user = userEvent.setup();
     const { socket } = setup({ desks: [owned('A1', 'moi', 'Léa')] });
-    await user.click(screen.getByRole('button', { name: fr.desk.lock }));
+    const door = screen.getByRole('switch', { name: fr.desk.lockSwitch });
+    expect(door.getAttribute('aria-checked')).toBe('false');
+    expect(door.textContent).toContain(fr.desk.doorOpen);
+    await user.click(door);
     expect(socket.sentOf('desk:do')).toEqual([{ type: 'lock', locked: true }]);
     await ack(socket);
     act(() => useOfficeStore.getState().setDesk(owned('A1', 'moi', 'Léa', { locked: true })));
-    const unlock = screen.getByRole('button', { name: fr.desk.unlock });
-    expect(unlock.getAttribute('aria-pressed')).toBe('true');
-    expect(screen.getByText(fr.desk.lockHint)).toBeTruthy();
-    await user.click(unlock);
+    expect(door.getAttribute('aria-checked')).toBe('true');
+    expect(door.textContent).toContain(fr.desk.doorLocked);
+    await user.click(door);
     expect(socket.sentOf('desk:do').at(-1)).toEqual({ type: 'lock', locked: false });
   });
 
@@ -136,12 +154,21 @@ describe('avec un bureau', () => {
     expect(screen.getByText(fr.desk.closedByState)).toBeTruthy();
   });
 
-  test('aller à mon bureau, rendre mon bureau', async () => {
+  test('y aller (goto) ; rendre mon bureau demande confirmation, qu\'Échap annule', async () => {
     const user = userEvent.setup();
-    const { socket } = setup({ desks: [owned('A1', 'moi', 'Léa')] });
-    await user.click(screen.getByRole('button', { name: fr.desk.goto }));
+    const { socket, closed } = setup({ desks: [owned('A1', 'moi', 'Léa')] });
+    await user.click(screen.getByRole('button', { name: fr.desk.gotoShort }));
     await ack(socket);
     await user.click(screen.getByRole('button', { name: fr.desk.release }));
+    // La confirmation : le focus est sur « Annuler » ; Échap y renonce sans fermer le panneau, et rend le focus au bouton.
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.desk.releaseNo }));
+    await user.keyboard('{Escape}');
+    expect(closed()).toBe(0);
+    expect(screen.queryByRole('button', { name: fr.desk.releaseYes })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.desk.release }));
+    expect(socket.sentOf('desk:do')).toEqual([{ type: 'goto' }]);
+    await user.click(screen.getByRole('button', { name: fr.desk.release }));
+    await user.click(screen.getByRole('button', { name: fr.desk.releaseYes }));
     expect(socket.sentOf('desk:do')).toEqual([{ type: 'goto' }, { type: 'release' }]);
   });
 
@@ -153,7 +180,7 @@ describe('avec un bureau', () => {
       others: [player('bob', 'Bob', { x: 400, y: 144 }), player('zoe', 'Zoé', { x: 80, y: 400 })],
     });
     const inside = screen.getByRole('region', { name: fr.desk.insideTitle });
-    expect(within(inside).getAllByRole('listitem').map((li) => li.querySelector('.person-name')?.textContent)).toEqual(['Bob']);
+    expect(within(inside).getAllByRole('listitem').map((li) => li.querySelector('.desk-person-name')?.textContent)).toEqual(['Bob']);
     await user.click(within(inside).getByRole('button', { name: t(fr.desk.kickLabel, { name: 'Bob' }) }));
     expect(socket.sentOf('desk:do')).toEqual([{ type: 'kick', userId: 'bob' }]);
   });
@@ -177,11 +204,12 @@ describe('avec un bureau', () => {
     expect(socket.sentOf('desk:do')).toEqual([{ type: 'unban', userId: 'cleo' }]);
   });
 
-  test('changer de place : la liste des places libres s\'ouvre, en choisir une envoie claim et la referme', async () => {
+  test('déménager : le plan des places s\'ouvre (la sienne, « Toi »), en choisir une libre envoie claim et le referme', async () => {
     const user = userEvent.setup();
     const { socket } = setup({ desks: [owned('A1', 'moi', 'Léa'), free('A2'), owned('A3', 'bob', 'Bob')] });
     expect(screen.queryByRole('button', { name: 'Prendre la place A2' })).toBeNull();
     await user.click(screen.getByRole('button', { name: fr.desk.moveTitle }));
+    expect(screen.getByRole('img', { name: 'Place A1, la tienne' })).toBeTruthy();
     await user.click(screen.getByRole('button', { name: 'Prendre la place A2' }));
     expect(socket.sentOf('desk:do')).toEqual([{ type: 'claim', key: 'A2' }]);
     await ack(socket);
@@ -203,7 +231,7 @@ describe('avec un bureau', () => {
       useOfficeStore.getState().setReady(false);
     });
     render(<DeskPanel socket={socket.asSocket()} onClose={() => {}} onDecorate={() => {}} />);
-    expect((screen.getByRole('button', { name: fr.desk.lock }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole('switch', { name: fr.desk.lockSwitch }) as HTMLButtonElement).disabled).toBe(true);
     expect(socket.sentOf('desk:do')).toEqual([]);
   });
 });

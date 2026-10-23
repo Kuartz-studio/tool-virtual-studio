@@ -1,9 +1,11 @@
 import {
   ArrowLeft,
+  ArrowLeftRight,
   AudioLines,
   BookOpen,
   Check,
   ChevronLeft,
+  Check,
   ChevronRight,
   ChevronUp,
   Coffee,
@@ -41,6 +43,8 @@ import {
   SlidersHorizontal,
   Sofa,
   Trash2,
+  Undo2,
+  UserX,
   Users,
   Video,
   VideoOff,
@@ -264,7 +268,29 @@ export function ChevronLeftIcon() {
   return <ChevronLeft />;
 }
 
-// Un cadenas : ce qu'on ne peut pas changer ici (la musique du bureau d'un autre).
+// Un cadenas : ce qu'on ne peut pas changer ici (la musique du bureau d'un autre), la porte fermée d'un bureau.
 export function LockIcon() {
   return <Lock />;
+}
+
+// Le bureau (DeskPanel) : le cadenas de la porte fermée, le crayon du nom, la coche d'un enregistrement, les flèches du déménagement, exclure
+// quelqu'un de son bureau et le réadmettre (le cadenas est LockIcon, plus haut).
+export function RenameIcon() {
+  return <Pencil className="icon-s" />;
+}
+
+export function SmallCheckIcon() {
+  return <Check className="icon-s" />;
+}
+
+export function MoveIcon() {
+  return <ArrowLeftRight />;
+}
+
+export function KickIcon() {
+  return <UserX />;
+}
+
+export function UnbanIcon() {
+  return <Undo2 />;
 }

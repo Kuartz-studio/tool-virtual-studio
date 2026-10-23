@@ -27,7 +27,10 @@ async function arrive(browser: Browser, name: string, desk: 'needed' | 'given ba
   const panel = await openPanel(page, 'Mon bureau');
   if (desk === 'given back') {
     await expect(panel.getByRole('button', { name: 'Rendre mon bureau' }).or(panel.getByText('Tu n\'as pas de bureau.'))).toBeVisible();
-    if (await panel.getByRole('button', { name: 'Rendre mon bureau' }).isVisible()) await panel.getByRole('button', { name: 'Rendre mon bureau' }).click();
+    if (await panel.getByRole('button', { name: 'Rendre mon bureau' }).isVisible()) {
+      await panel.getByRole('button', { name: 'Rendre mon bureau' }).click();
+      await panel.getByRole('button', { name: 'Oui, le rendre' }).click();   // la confirmation
+    }
     await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
   } else {
     await expect(async () => {

@@ -450,3 +450,18 @@ Le thème Pirate, et la refonte du choix de la musique : on ne savait pas si l'o
 | Les lignes sont des **boutons** (le choix en cours porte `aria-current`), non des boutons radio | Avec des radios, chaque flèche du clavier changeait la musique de la pièce pour tous (une demande au serveur par pas) | — |
 | **Partout où il y a une enceinte**, on change la musique de la pièce, sauf dans le bureau d'un autre ou un bureau libre ; la rue, la place et la salle client (sans enceinte) restent en affichage seul, avec la raison | La règle d'avant (une pièce sans enceinte n'a pas de réglage) est tenue par le serveur ; les lieux sans enceinte sont des lieux de passage | Une enceinte à poser (`c.speaker`, `music: true`) dans le lieu |
 | Le **défilement horizontal parasite** venait de l'infobulle cachée de « Écouter un effet », centrée sur un bouton au bord droit : elle dépassait de 20 px la fenêtre, qui défile (`overflow-y: auto`, donc aussi en largeur). Elle est désormais alignée sur le bord droit de son bouton, et le juke-box a une largeur que la fenêtre borne (`max-width: 100%`) | Mesuré dans le bac à sable : `scrollWidth` 340 pour 320 avant, 320 après | — |
+
+
+## Mon bureau
+
+Le panneau « Mon bureau » refait pour être compris d'un coup d'œil : moins de texte, des états visibles (`DeskPanel.tsx`, styles en fin de `styles.css`).
+
+| Choix | Pourquoi | Ce qui le changerait |
+|---|---|---|
+| En tête, **la pièce en petit** : une rangée de ses murs sur une rangée de son sol, les tuiles de sa déco, la place en pastille | Un aperçu qui ressemble à son bureau, sans dessiner toute la pièce (ses éléments, sa porte) dans le panneau | Une vraie miniature de la pièce avec ses meubles : un rendu de plus à tenir à jour avec l'éditeur |
+| **Le nom se modifie sur place**, sans bouton « Enregistrer » : il part en quittant le champ (Entrée le quitte) s'il a changé ; Échap rend le nom du serveur ; « Nom enregistré. » s'affiche 2,5 s | Le bouton à part se lisait comme un formulaire ; un nom est une petite chose | Un enregistrement à chaque frappe (et le débit qu'il faudrait limiter) |
+| **La porte est un interrupteur** (`role="switch"`, nommé « Fermer la porte ») : toute la carte bascule, une porte sur fond vert ou un cadenas sur l'accent, et une phrase d'état | « Fermer / Ouvrir la porte » changeait de nom à chaque clic et ne montrait pas l'état ; les e2e cherchent désormais l'interrupteur | — |
+| **Trois tuiles** : Y aller (dans son bureau : « Tu y es », un état), Décorer, **Déménager** (le plan des places s'ouvre dessous) | Les actions principales d'un coup d'œil ; « Déménager » dit la même chose que « Changer de place » en un mot | — |
+| **Le plan des places** montre toutes les places : une libre est un bouton, une prise montre le portrait de qui l'a, la sienne « Toi » | Voir où sont les autres aide à choisir ; la liste des seules places libres ne disait rien du bureau | — |
+| Les gens (dans la pièce, exclus) en **pastilles** : portrait, nom, un bouton d'icône (exclure, réadmettre) avec son infobulle | Les lignes « nom + bouton texte » prenaient de la place pour peu | — |
+| **Rendre mon bureau** est un lien discret tout en bas, qui **demande confirmation** (« Oui, le rendre ») | Le nom et le verrou partent avec la place (la déco, elle, suit sa propriétaire) : un clic par mégarde coûtait cher ; les e2e qui rendent leur bureau confirment | — |
