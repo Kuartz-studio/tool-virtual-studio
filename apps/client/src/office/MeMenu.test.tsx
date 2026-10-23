@@ -196,16 +196,13 @@ describe('le menu', () => {
     expect(entry(fr.office.signingOut).disabled).toBe(true);
   });
 
-  test('le menu a, dans l\'ordre, l\'apparence, une seule liste (les statuts, puis les modes, chacun suivi de son crayon, puis « Nouveau mode ») et la déconnexion', async () => {
+  test('le menu a, dans l\'ordre, l\'apparence, une seule liste (Disponible, puis les modes, chacun suivi de son crayon, puis « Nouveau mode ») et la déconnexion', async () => {
     const user = userEvent.setup();
     renderChip({ states: [focus, lunch] });
     await user.click(trigger());
     expect(linesOf(screen.getByRole('menu'))).toEqual([
       'Changer d\'apparence',
       'Disponible',
-      'Occupé',
-      'Absent',
-      'Ne pas déranger',
       'En focus',
       t(fr.modes.edit, { label: 'En focus' }),
       'À table',
@@ -218,49 +215,48 @@ describe('le menu', () => {
   });
 });
 
-describe('les statuts, en tête de la liste', () => {
-  test('« Ne pas déranger » envoie status:set dnd', async () => {
+describe('Disponible, en tête de la liste', () => {
+  // Un statut laissé par une version d'avant (Ne pas déranger) : Disponible le quitte.
+  test('« Disponible » envoie status:set available, et rien d\'autre', async () => {
     const user = userEvent.setup();
-    const socket = renderChip({ status: 'available' });
+    const socket = renderChip({ status: 'dnd' });
     await user.click(trigger());
-    await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
-    expect(socket.sentOf('status:set')).toEqual(['dnd']);
+    await user.click(item('available'));
+    expect(socket.sent).toEqual([['status:set', 'available']]);
   });
 
-  test.each(STATUSES)('choisir « %s » envoie ce statut, et rien d\'autre', async (status) => {
-    const user = userEvent.setup();
-    const from: Status = status === 'available' ? 'dnd' : 'available';
-    const socket = renderChip({ status: from });
-    await user.click(trigger());
-    await user.click(item(status));
-    expect(socket.sent).toEqual([['status:set', status]]);
-  });
-
-  test('les quatre statuts d\'abord, dans l\'ordre de la spec, avec leurs libellés français écrits ; celui en cours est coché ; ils n\'ont pas de crayon', async () => {
-    const user = userEvent.setup();
-    renderChip({ status: 'away' });
-    await user.click(trigger());
-    const lines = within(group(fr.me.mode)).getAllByRole('menuitemradio').slice(0, 4);
-    expect(lines.map((line) => line.getAttribute('aria-label'))).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger']);
-    expect(lines.map((line) => line.textContent)).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger']);
-    expect(lines.map((line) => line.getAttribute('aria-checked'))).toEqual(['false', 'false', 'true', 'false']);
-    expect(screen.queryByRole('menuitem', { name: t(fr.modes.edit, { label: 'Disponible' }) })).toBeNull();
-  });
-
-  test.each(STATUSES)('le point de « %s » a la couleur du statut', async (status) => {
+  test('Occupé, Absent et Ne pas déranger ne se choisissent plus dans la liste', async () => {
     const user = userEvent.setup();
     renderChip({ status: 'available' });
     await user.click(trigger());
-    const dot = dotOf(item(status)) as HTMLElement;
-    expect(dot.getAttribute('data-status')).toBe(status);
-    expect(dot.style.backgroundColor).toBe(statusCssColor(status));
+    for (const status of ['busy', 'away', 'dnd'] as const) expect(screen.queryByRole('menuitemradio', { name: fr.status[status] })).toBeNull();
+  });
+
+  test('Disponible d\'abord, avec son libellé écrit et sans crayon ; avec un statut d\'avant (Absent), il n\'est pas coché', async () => {
+    const user = userEvent.setup();
+    renderChip({ status: 'away' });
+    await user.click(trigger());
+    const first = within(group(fr.me.mode)).getAllByRole('menuitemradio')[0]!;
+    expect(first.getAttribute('aria-label')).toBe('Disponible');
+    expect(first.textContent).toBe('Disponible');
+    expect(first.getAttribute('aria-checked')).toBe('false');
+    expect(screen.queryByRole('menuitem', { name: t(fr.modes.edit, { label: 'Disponible' }) })).toBeNull();
+  });
+
+  test('le point de Disponible a la couleur du statut', async () => {
+    const user = userEvent.setup();
+    renderChip({ status: 'available' });
+    await user.click(trigger());
+    const dot = dotOf(item('available')) as HTMLElement;
+    expect(dot.getAttribute('data-status')).toBe('available');
+    expect(dot.style.backgroundColor).toBe(statusCssColor('available'));
   });
 
   test('choisir le statut en cours n\'envoie rien, et ferme le menu', async () => {
     const user = userEvent.setup();
-    const socket = renderChip({ status: 'busy' });
+    const socket = renderChip({ status: 'available' });
     await user.click(trigger());
-    await user.click(item('busy'));
+    await user.click(item('available'));
     expect(socket.sent).toEqual([]);
     expect(screen.queryByRole('menu')).toBeNull();
   });
@@ -268,33 +264,33 @@ describe('les statuts, en tête de la liste', () => {
   // La connexion le redit au serveur après chaque init qui ne le dit pas (un serveur redémarré l'a oublié) : office-connection.ts.
   test('le statut choisi est retenu au magasin (chosenStatus), même s\'il est déjà celui en cours', async () => {
     const user = userEvent.setup();
-    renderChip({ status: 'available' });
+    renderChip({ status: 'busy' });
     expect(useOfficeStore.getState().chosenStatus).toBeNull();
     await user.click(trigger());
-    await user.click(item('dnd'));
-    expect(useOfficeStore.getState().chosenStatus).toBe('dnd');
-    act(() => useOfficeStore.getState().setStatus('moi', 'dnd'));
+    await user.click(item('available'));
+    expect(useOfficeStore.getState().chosenStatus).toBe('available');
+    act(() => useOfficeStore.getState().setStatus('moi', 'available'));
     act(() => useOfficeStore.getState().setChosenStatus(null));
     await user.click(trigger());
-    await user.click(item('dnd'));
-    expect(useOfficeStore.getState().chosenStatus).toBe('dnd');
+    await user.click(item('available'));
+    expect(useOfficeStore.getState().chosenStatus).toBe('available');
   });
 
   test('le statut change quand le serveur le confirme, pas avant', async () => {
     const user = userEvent.setup();
-    renderChip({ status: 'available' });
+    renderChip({ status: 'away' });
     await user.click(trigger());
-    await user.click(item('dnd'));
+    await user.click(item('available'));
+    expect(trigger().querySelector('.me-mode')?.textContent).toBe('Absent');
+    act(() => useOfficeStore.getState().setStatus('moi', 'available'));
     expect(trigger().querySelector('.me-mode')?.textContent).toBe('Disponible');
-    act(() => useOfficeStore.getState().setStatus('moi', 'dnd'));
-    expect(trigger().querySelector('.me-mode')?.textContent).toBe('Ne pas déranger');
   });
 
   test('choisir ferme le menu et rend le focus à la puce', async () => {
     const user = userEvent.setup();
-    renderChip();
+    renderChip({ status: 'away' });
     await user.click(trigger());
-    await user.click(item('away'));
+    await user.click(item('available'));
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger());
   });
@@ -305,7 +301,7 @@ describe('les modes, dans la même liste', () => {
     const user = userEvent.setup();
     const { view } = renderChip();
     await user.click(trigger());
-    expect(linesOf(group(fr.me.mode))).toEqual(['Disponible', 'Occupé', 'Absent', 'Ne pas déranger', fr.modes.create]);
+    expect(linesOf(group(fr.me.mode))).toEqual(['Disponible', fr.modes.create]);
     expect(item('available').getAttribute('aria-checked')).toBe('true');
     view.unmount();
 
@@ -499,11 +495,11 @@ describe('les icônes des modes', () => {
 describe('au clavier', () => {
   test('Entrée ouvre le menu, le focus va au statut en cours', async () => {
     const user = userEvent.setup();
-    renderChip({ status: 'busy' });
+    renderChip({ status: 'available' });
     await user.tab();
     expect(document.activeElement).toBe(trigger());
     await user.keyboard('{Enter}');
-    expect(document.activeElement).toBe(item('busy'));
+    expect(document.activeElement).toBe(item('available'));
   });
 
   test('Espace ouvre aussi le menu ; Échap le referme, et rend le focus à la puce', async () => {
@@ -552,9 +548,9 @@ describe('au clavier', () => {
     const directions = new DirectionInput();
     const unbind = bindKeyboard(directions);
     try {
-      renderChip({ status: 'available' });
+      renderChip({ status: 'busy' });
       await user.click(trigger());
-      await user.click(item('away'));
+      await user.click(item('available'));
       expect(document.activeElement).toBe(trigger());
       await user.keyboard('{ArrowDown>}');
       expect(directions.current()).toBe('down');
@@ -569,11 +565,7 @@ describe('au clavier', () => {
     renderChip({ status: 'available', states: [focus] });
     await user.tab();
     await user.keyboard('{Enter}');
-    await user.keyboard('{ArrowDown}');
-    expect(document.activeElement).toBe(item('busy'));
-    await user.keyboard('{ArrowDown}{ArrowDown}');
-    expect(document.activeElement).toBe(item('dnd'));
-    // Après les statuts : chaque mode, puis son crayon, « Nouveau mode », puis les lignes du bas.
+    // Après Disponible : chaque mode, puis son crayon, « Nouveau mode », puis les lignes du bas.
     await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(mode('En focus'));
     await user.keyboard('{ArrowDown}');
@@ -581,7 +573,7 @@ describe('au clavier', () => {
     await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(manage());
     await user.keyboard('{ArrowUp}{ArrowUp}{ArrowUp}');
-    expect(document.activeElement).toBe(item('dnd'));
+    expect(document.activeElement).toBe(item('available'));
     await user.keyboard('{Home}');
     expect(document.activeElement).toBe(entry(fr.character.toggle));
     // ↑ de la première ligne : la dernière.
@@ -598,7 +590,7 @@ describe('au clavier', () => {
     renderChip({ status: 'available' });
     await user.tab();
     await user.keyboard('{Enter}{ArrowRight}');
-    expect(document.activeElement).toBe(item('busy'));
+    expect(document.activeElement).toBe(manage());
     await user.keyboard('{ArrowLeft}{ArrowLeft}');
     expect(document.activeElement).toBe(entry(fr.character.toggle));
   });
@@ -619,12 +611,12 @@ describe('au clavier', () => {
     expect(document.activeElement).toBe(entry(fr.office.signOut));
   });
 
-  test('Entrée sur un statut le choisit', async () => {
+  test('Entrée sur Disponible le choisit', async () => {
     const user = userEvent.setup();
-    const socket = renderChip({ status: 'available' });
+    const socket = renderChip({ status: 'away' });
     await user.tab();
-    await user.keyboard('{Enter}{ArrowDown}{ArrowDown}{Enter}');
-    expect(socket.sentOf('status:set')).toEqual(['away']);
+    await user.keyboard('{Enter}{Home}{ArrowDown}{Enter}');
+    expect(socket.sentOf('status:set')).toEqual(['available']);
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger());
   });
@@ -670,13 +662,13 @@ describe('au clavier', () => {
       await user.keyboard('{Enter}');
       // Touche gardée enfoncée (« > ») : sans le menu pour la prendre, l'avatar marcherait tant qu'elle l'est.
       await user.keyboard('{ArrowDown>}');
-      expect(document.activeElement).toBe(item('busy'));
+      expect(document.activeElement).toBe(manage());
       expect(directions.current()).toBeNull();
       await user.keyboard('{/ArrowDown}{ArrowUp>}');
       expect(document.activeElement).toBe(item('available'));
       expect(directions.current()).toBeNull();
       await user.keyboard('{/ArrowUp}{ArrowRight>}');
-      expect(document.activeElement).toBe(item('busy'));
+      expect(document.activeElement).toBe(manage());
       expect(directions.current()).toBeNull();
       await user.keyboard('{/ArrowRight}');
     } finally {
@@ -763,7 +755,6 @@ describe('quand on ne peut pas changer de statut', () => {
     render(<MeChip name="Léa" email="lea@exemple.fr" socket={null} panels={fakePanels()} onSignOut={() => {}} signingOut={false} />);
     expect((trigger() as HTMLButtonElement).disabled).toBe(false);
     await user.click(trigger());
-    expect((item('busy') as HTMLButtonElement).disabled).toBe(true);
     expect((item('available') as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
     expect(entry(fr.office.signOut).disabled).toBe(false);
@@ -775,7 +766,7 @@ describe('quand on ne peut pas changer de statut', () => {
     socket.serverAccepts();
     render(<MeChip name="Léa" email="lea@exemple.fr" socket={socket.asSocket()} panels={fakePanels({ ready: false })} onSignOut={() => {}} signingOut={false} />);
     await user.click(trigger());
-    for (const status of STATUSES) expect((item(status) as HTMLButtonElement).disabled).toBe(true);
+    expect((item('available') as HTMLButtonElement).disabled).toBe(true);
     expect(manage().disabled).toBe(true);
     expect(entry(fr.character.toggle).disabled).toBe(true);
     expect(entry(fr.office.signOut).disabled).toBe(false);
@@ -795,9 +786,9 @@ describe('quand on ne peut pas changer de statut', () => {
     const user = userEvent.setup();
     renderChip();
     await user.click(trigger());
-    expect((item('busy') as HTMLButtonElement).disabled).toBe(false);
+    expect((item('available') as HTMLButtonElement).disabled).toBe(false);
     act(() => useOfficeStore.getState().setReady(false));
-    expect((item('busy') as HTMLButtonElement).disabled).toBe(true);
+    expect((item('available') as HTMLButtonElement).disabled).toBe(true);
   });
 
   // Le serveur n'écoute une socket revenue qu'après l'avoir replacée (son init) : avant, status:set serait ignoré.
@@ -810,9 +801,9 @@ describe('quand on ne peut pas changer de statut', () => {
       useOfficeStore.getState().setReady(false);
     });
     act(() => socket.serverAccepts());
-    expect((item('busy') as HTMLButtonElement).disabled).toBe(true);
+    expect((item('available') as HTMLButtonElement).disabled).toBe(true);
     arriveWith('available');
-    expect((item('busy') as HTMLButtonElement).disabled).toBe(false);
+    expect((item('available') as HTMLButtonElement).disabled).toBe(false);
   });
 
   test('la connexion tombe menu ouvert : il reste ouvert (on peut se déconnecter), le focus passe à une ligne qui marche, et rien n\'est envoyé', async () => {
@@ -823,7 +814,7 @@ describe('quand on ne peut pas changer de statut', () => {
     act(() => useOfficeStore.getState().setReady(false));
     expect(screen.getByRole('menu')).toBeTruthy();
     expect(document.activeElement).toBe(entry(fr.character.toggle));
-    await user.click(item('busy'));
+    await user.click(item('available'));
     expect(socket.sent).toEqual([]);
     expect(entry(fr.office.signOut).disabled).toBe(false);
   });

@@ -332,16 +332,18 @@ describe('la barre', () => {
     expect(more).toEqual([fr.decor.toggle, fr.zoom.reset]);
   });
 
-  test('le menu « Moi » est dans la barre, et parle à la socket de la page : un statut, puis un mode', async () => {
+  test('le menu « Moi » est dans la barre, et parle à la socket de la page : Disponible, puis un mode', async () => {
     const user = userEvent.setup();
     const { socket } = renderBar();
+    // Un statut laissé par une version d'avant, que Disponible quitte.
+    act(() => useOfficeStore.getState().setStatus('moi', 'dnd'));
     act(() => useOfficeStore.getState().setMyStates([{ id: 's1', label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false }]));
     await user.click(button(fr.me.chip));
-    await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
+    await user.click(screen.getByRole('menuitemradio', { name: 'Disponible' }));
     await user.click(button(fr.me.chip));
     await user.click(screen.getByRole('menuitemradio', { name: 'En focus' }));
     expect(socket.sent).toEqual([
-      ['status:set', 'dnd'],
+      ['status:set', 'available'],
       ['state:set', 's1'],
     ]);
   });

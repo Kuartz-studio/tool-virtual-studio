@@ -294,12 +294,14 @@ describe('Se déconnecter', () => {
 });
 
 describe('le statut', () => {
-  test('« Ne pas déranger » part au serveur (status:set) par la socket de la page', async () => {
+  test('« Disponible » part au serveur (status:set) par la socket de la page', async () => {
     const user = userEvent.setup();
     const { socket } = renderShell();
+    // Un statut laissé par une version d'avant, que Disponible quitte.
+    act(() => useOfficeStore.getState().setStatus('moi', 'dnd'));
     await user.click(meChip());
-    await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
-    expect(socket.sentOf('status:set')).toEqual(['dnd']);
+    await user.click(screen.getByRole('menuitemradio', { name: 'Disponible' }));
+    expect(socket.sentOf('status:set')).toEqual(['available']);
   });
 });
 

@@ -32,7 +32,7 @@ export interface MeMenuProps {
 
 // Le menu « Moi » (spec §10 pour le statut), qui s'ouvre au-dessus de la puce :
 // - en haut, ton portrait, ton nom, ton e-mail et « Changer d'apparence » (le panneau du personnage) ;
-// - « Mode » : une seule liste (ModeList), les quatre statuts d'abord (Disponible, l'état normal, puis Occupé, Absent, Ne pas déranger), puis tes modes (Manger,
+// - « Mode » : une seule liste (ModeList), Disponible d'abord (l'état normal ; Occupé, Absent et Ne pas déranger ne s'y choisissent plus), puis tes modes (Manger,
 //   Sport, Concentration, que ton compte a reçus, et ceux que tu as créés), et « Nouveau mode ». Une seule ligne est cochée ; ce que le serveur confirme
 //   (`status:changed`, `activity:changed`) est ce que la puce et le menu affichent. Le crayon d'un mode, et « Nouveau mode », ouvrent son éditeur (ModeEditor)
 //   dans le menu même, à la place de la liste : le menu devient alors une petite fenêtre (dialog), et la liste revient quand l'éditeur se ferme ;

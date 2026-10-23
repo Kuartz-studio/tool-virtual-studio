@@ -1,4 +1,4 @@
-import { ACTIVITY_MAX_PER_USER, STATUSES, type ActivityState, type OfficeMap, type Status } from '@bureau/shared';
+import { ACTIVITY_MAX_PER_USER, type ActivityState, type OfficeMap, type Status } from '@bureau/shared';
 import type { CSSProperties, ReactNode } from 'react';
 import { fr, t } from '../i18n/fr';
 import { statusCssColor } from '../lib/status';
@@ -66,27 +66,25 @@ function Row({ id, label, color, mark, place, checked, enabled, onPick, onEdit }
   );
 }
 
-// Les modes du menu « Moi », en une seule liste : d'abord les quatre statuts (Disponible, le premier, est l'état normal : aucun mode), qui ne se modifient pas, puis ses
-// modes (Manger, Sport, Concentration, que le compte a reçus, et ceux qu'il a créés : tous se modifient et se suppriment, au crayon), et « Nouveau mode ». Une seule
-// ligne est cochée : le mode pris, sinon le statut. Prendre un statut quitte le mode (le serveur l'efface).
+// Les modes du menu « Moi », en une seule liste : d'abord Disponible, l'état normal (aucun mode), qui ne se modifie pas, puis ses modes (Manger, Sport,
+// Concentration, que le compte a reçus, et ceux qu'il a créés : tous se modifient et se suppriment, au crayon), et « Nouveau mode ». Occupé, Absent et Ne pas
+// déranger ne s'y choisissent plus : un statut laissé par une version d'avant se lit encore (sur la puce, au-dessus de la tête) et Disponible le quitte. Une seule
+// ligne est cochée : le mode pris, sinon Disponible quand c'est le statut. Prendre Disponible quitte le mode (le serveur l'efface).
 export function ModeList({ status, activity, myStates, map, enabled, onStatus, onMode, onEdit, onCreate }: ModeListProps) {
   // Le nom de la pièce où ce mode conduit : une destination de cette carte, sinon rien (il ne conduit nulle part ici).
   const placeOf = (state: ActivityState) => (state.place === undefined ? undefined : map?.places.find((place) => place.key === state.place && place.destination)?.label);
   const full = myStates.length >= ACTIVITY_MAX_PER_USER;
   return (
     <div className="mode-list">
-      {STATUSES.map((choice) => (
-        <Row
-          key={choice}
-          id={`status:${choice}`}
-          label={fr.status[choice]}
-          color={statusCssColor(choice)}
-          mark={<StatusDot status={choice} />}
-          checked={activity === null && status === choice}
-          enabled={enabled}
-          onPick={() => onStatus(choice)}
-        />
-      ))}
+      <Row
+        id="status:available"
+        label={fr.status.available}
+        color={statusCssColor('available')}
+        mark={<StatusDot status="available" />}
+        checked={activity === null && status === 'available'}
+        enabled={enabled}
+        onPick={() => onStatus('available')}
+      />
       {myStates.map((state) => (
         <Row
           key={state.id}
