@@ -258,7 +258,7 @@ describe('une ligne', () => {
     await expandOffline(user);
     expect(row('zoe').querySelector('.visually-hidden')?.textContent).toBe(fr.status.dnd);
     expect(row('zoe').querySelector('.portrait')?.getAttribute('aria-hidden')).toBe('true');
-    // Hors ligne, rien de plus que le nom (le portrait, caché, n'a que ses initiales avant d'être dessiné).
+    // Hors ligne et jamais venue, rien de plus que le nom (le portrait, caché, n'a que ses initiales avant d'être dessiné).
     expect(row('alice').querySelector('.person-text')?.textContent).toBe('Alice');
     expect(row('alice').querySelector('.person-sub')).toBeNull();
   });
@@ -320,14 +320,14 @@ describe('une ligne', () => {
       expect(sub('bob')?.textContent).toBe('Concentration');
     });
 
-    test('sinon le lieu : celui de la carte, pour chacun, soi compris ; sans carte, rien', async () => {
+    test('sinon le lieu : celui de la carte, pour chacun, soi compris ; sans carte, « En ligne »', async () => {
       fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
       arrive([player('bob', 'Bob', 'available', LOBBY), player('zoe', 'Zoé', 'available', MEETING), player('alice', 'Alice', 'available', HALL)], player('moi', 'Moi', 'available', LOBBY));
       render(<PeoplePanel place={AT_LOBBY} onClose={() => {}} />);
       const user = userEvent.setup();
       await user.click(tab(/^Tout le bureau/));
-      // Sans carte, les autres n'ont pas de lieu.
-      expect(sub('bob')?.textContent ?? '').toBe('');
+      // Sans carte, les autres n'ont pas de lieu : on sait seulement qu'ils sont en ligne.
+      expect(sub('bob')?.textContent).toBe(fr.office.people.seen.online);
       withMap();
       expect(sub('moi')?.textContent).toBe('Accueil');
       expect(sub('bob')?.textContent).toBe('Accueil');
@@ -444,6 +444,51 @@ describe('en direct', () => {
   });
 });
 
+describe('la dernière connexion', () => {
+  const NOW = Date.parse('2026-10-23T14:00:00Z');
+  const iso = (ms: number) => new Date(ms).toISOString();
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('sous un membre hors ligne : depuis quand, la date exacte dans <time>, et pour un lecteur d\'écran « Dernière connexion »', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });
+    fakeApi({ 'GET /api/members': () => json(200, MEMBERS.map((m) => (m.id === 'bob' ? { ...m, lastSeenAt: iso(NOW - 3 * 3600_000) } : m))) });
+    arrive();
+    const user = await renderAll();
+    await expandOffline(user);
+    expect(sub('bob')?.textContent).toBe(`${fr.office.people.lastSeen} Il y a 3 h`);
+    expect(sub('bob')?.querySelector('time')?.getAttribute('dateTime')).toBe(iso(NOW - 3 * 3600_000));
+    expect(sub('bob')?.querySelector('svg.lucide')).not.toBeNull();
+  });
+
+  test('le libellé avance chaque minute', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });
+    fakeApi({ 'GET /api/members': () => json(200, MEMBERS.map((m) => (m.id === 'bob' ? { ...m, lastSeenAt: iso(NOW - 59 * 60_000) } : m))) });
+    arrive();
+    const user = await renderAll();
+    await expandOffline(user);
+    expect(sub('bob')?.querySelector('time')?.textContent).toBe('Il y a 59 min');
+    act(() => vi.advanceTimersByTime(60_000));
+    expect(sub('bob')?.querySelector('time')?.textContent).toBe('Il y a 1 h');
+  });
+
+  test('qui part pendant que le panneau est ouvert : la liste est rechargée, avec sa dernière connexion', async () => {
+    let members = MEMBERS;
+    const api = fakeApi({ 'GET /api/members': () => json(200, members) });
+    arrive([player('alice', 'Alice')]);
+    const user = await renderAll();
+    await expandOffline(user);
+    expect(api).toHaveBeenCalledTimes(1);
+
+    members = MEMBERS.map((m) => (m.id === 'alice' ? { ...m, lastSeenAt: new Date().toISOString() } : m));
+    act(() => useOfficeStore.getState().removePlayer('alice'));
+    await waitFor(() => expect(sub('alice')?.querySelector('time')?.textContent).toBe('À l\'instant'));
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe('chargement et échec', () => {
   test('en attendant la liste : les personnes en ligne (déjà connues) et « Chargement… » à la place des hors ligne', async () => {
     const pending = deferred<Response>();
@@ -511,7 +556,7 @@ describe('un membre que la liste ne connaît pas', () => {
     let members = MEMBERS;
     const reload = deferred<Response>();
     let calls = 0;
-    const api = fakeApi({ 'GET /api/members': () => (++calls === 1 ? json(200, members) : reload.promise) });
+    const api = fakeApi({ 'GET /api/members': () => (++calls === 2 ? reload.promise : json(200, members)) });
     arrive();
     const user = await renderAll();
     const offline = await expandOffline(user);
@@ -527,10 +572,10 @@ describe('un membre que la liste ne connaît pas', () => {
     await act(async () => reload.resolve(json(200, members)));
     expect(namesIn(group(/^En ligne/))).toEqual(['Moi', 'Nina']);
 
-    // Quand elle repart, elle est dans la liste : hors ligne.
+    // Quand elle repart, elle est dans la liste : hors ligne (son départ recharge la liste, pour sa dernière connexion).
     act(() => useOfficeStore.getState().removePlayer('nina'));
     expect(namesIn(offline)).toEqual(['Alice', 'Bob', 'Élise', 'Nina', 'Zoé']);
-    expect(api).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
   });
 
   test('une arrivée d\'un membre connu ne recharge rien', async () => {

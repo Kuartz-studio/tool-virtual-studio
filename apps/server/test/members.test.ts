@@ -40,20 +40,22 @@ describe('GET /api/members', () => {
     expect(res.get('Cache-Control')).toBe('no-store');
   });
 
-  test('id, nom et avatar des membres, et rien d\'autre (ni e-mail ni rôle)', async () => {
+  test('id, nom, avatar et dernière présence des membres, et rien d\'autre (ni e-mail ni rôle)', async () => {
     const t = await createTestApp();
     const lea = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
     const tom = await t.inviteAndAccept('tom@x.fr', { name: 'Tom', role: 'admin' });
-    await t.db.update(user).set({ avatarKey: PREMADE[0] }).where(eq(user.id, tom.userId));
+    const seenAt = new Date('2026-10-23T08:15:00.000Z');
+    await t.db.update(user).set({ avatarKey: PREMADE[0], lastSeenAt: seenAt }).where(eq(user.id, tom.userId));
 
     // Un membre et un admin voient la même liste, dans l'ordre d'arrivée.
     for (const { cookie } of [lea, tom]) {
       const res = await request(t.app).get('/api/members').set('Cookie', cookie);
       expect(res.status).toBe(200);
       expect(res.get('Cache-Control')).toBe('no-store');   // des données privées : pas de copie gardée par le navigateur
+      // Léa n'est jamais venue au bureau : pas de dernière présence. Celle de Tom part en ISO 8601.
       expect(res.body).toEqual([
-        { id: lea.userId, name: 'Léa', avatarKey: null },
-        { id: tom.userId, name: 'Tom', avatarKey: PREMADE[0] },
+        { id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null },
+        { id: tom.userId, name: 'Tom', avatarKey: PREMADE[0], lastSeenAt: seenAt.toISOString() },
       ]);
     }
   });
@@ -66,7 +68,7 @@ describe('GET /api/members', () => {
 
     const res = await request(t.app).get('/api/members').set('Cookie', lea.cookie);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: lea.userId, name: 'Léa', avatarKey: null }]);
+    expect(res.body).toEqual([{ id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null }]);
   });
 
   test('un compte désactivé dont la session a survécu est refusé quand même', async () => {

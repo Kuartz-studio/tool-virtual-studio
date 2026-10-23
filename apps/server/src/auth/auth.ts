@@ -83,6 +83,8 @@ export function createAuth({
         lastY: { type: 'number', required: false, input: false },
         lastDir: { type: 'string', required: false, input: false },
         disabledAt: { type: 'date', required: false, input: false },
+        // La dernière présence au bureau (realtime/positions.ts) : null tant que la personne n'est jamais repartie.
+        lastSeenAt: { type: 'date', required: false, input: false },
       },
     },
     // Avec le faux live (SIM=1) : aussi les autres écritures de l'adresse de la machine (127.0.0.1 pour localhost), sinon [].

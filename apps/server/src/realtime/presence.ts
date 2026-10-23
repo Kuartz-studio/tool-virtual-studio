@@ -65,9 +65,10 @@ export function createPresence(d: PresenceDeps) {
   let periodicSaveRunning = false;
   let halted = false;
 
-  function queueSave(rows: Array<{ id: string; x: number; y: number; dir: Direction }>): Promise<void> {
+  // `seenAt` : l'heure de dernière présence inscrite avec ces positions (l'heure de l'écriture, sans autre précision).
+  function queueSave(rows: Array<{ id: string; x: number; y: number; dir: Direction }>, seenAt?: Date): Promise<void> {
     saves = saves
-      .then(() => savePositions(d.db, rows))
+      .then(() => savePositions(d.db, rows, seenAt))
       .catch((err: unknown) => logServerError(d.logger, { err }, 'Enregistrement des positions impossible'));
     return saves;
   }
@@ -228,23 +229,25 @@ export function createPresence(d: PresenceDeps) {
     // Sans connexion, elle ne parle plus à personne : sa bulle s'éteint chez les autres, sans attendre la fin du délai de grâce.
     if (d.world.setSpeaking(userId, false)) d.io.to(OFFICE_ROOM).emit('speaking:changed', { id: userId, speaking: false });
     cancelGrace(userId);
+    // Sa dernière présence est la coupure, pas la fin du délai de grâce.
+    const leftAt = new Date();
     const timer = setTimeout(() => {
-      depart(userId).catch((err: unknown) => logServerError(d.logger, { err, userId }, 'Départ du bureau impossible'));
+      depart(userId, leftAt).catch((err: unknown) => logServerError(d.logger, { err, userId }, 'Départ du bureau impossible'));
     }, d.graceMs);
     timer.unref();
     graceTimers.set(userId, timer);
   }
 
-  // La fin du délai de grâce : leave, enregistrement de la position, puis player:left à tous. L'annonce suit l'écriture : qui lit
-  // la base après player:left y trouve la position.
-  async function depart(userId: string): Promise<void> {
+  // La fin du délai de grâce : leave, enregistrement de la position (et de l'heure de la coupure, `leftAt`), puis player:left à tous.
+  // L'annonce suit l'écriture : qui lit la base après player:left y trouve la position et l'heure.
+  async function depart(userId: string, leftAt: Date): Promise<void> {
     graceTimers.delete(userId);
     if (socketsByUser.has(userId)) return;   // revenu (connect annule le minuteur : par précaution)
     const player = d.world.leave(userId);
     if (!player) return;
     // Les chaises où elle attendait sont libres (une partie en cours garde son siège jusqu'à la fin de son délai).
     d.games?.onDepart(userId);
-    await queueSave([rowOf(player)]);
+    await queueSave([rowOf(player)], leftAt);
     // Revenu pendant l'écriture : c'est son retour qui a été annoncé (player:joined), pas un départ.
     if (halted || d.world.get(userId)) return;
     d.io.to(OFFICE_ROOM).emit('player:left', { id: userId });

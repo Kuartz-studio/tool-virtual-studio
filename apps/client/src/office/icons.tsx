@@ -11,6 +11,7 @@ import {
   FlaskConical,
   Focus,
   Gamepad2,
+  History,
   Lightbulb,
   LightbulbOff,
   LogOut,
@@ -103,6 +104,11 @@ export function ChevronRightIcon() {
 // Une onde sonore : quelqu'un parle avec toi.
 export function AudioLinesIcon() {
   return <AudioLines />;
+}
+
+// Une horloge qui tourne à rebours : la dernière connexion d'un membre hors ligne.
+export function LastSeenIcon() {
+  return <History />;
 }
 
 // Un chevron vers le haut : les menus du bas s'ouvrent vers le haut.

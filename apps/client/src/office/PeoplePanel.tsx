@@ -5,18 +5,21 @@ import { api } from '../lib/api';
 import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { ActivityMark } from './ActivityMark';
-import { AudioLinesIcon, ChevronRightIcon, PlaceIcon } from './icons';
+import { AudioLinesIcon, ChevronRightIcon, LastSeenIcon, PlaceIcon } from './icons';
+import { LastSeen } from './LastSeen';
 import { sortPeople, type Person } from './people';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
 import { Segmented, type SegmentedOption } from './ui/Segmented';
 import { usePlaces } from './use-here';
 
-// Un membre, tel que GET /api/members le dit (les membres actifs, sans adresse ni rôle).
+// Un membre, tel que GET /api/members le dit (les membres actifs, sans adresse ni rôle). lastSeenAt : sa dernière connexion (ISO 8601),
+// null s'il n'est jamais venu au bureau.
 interface Member {
   id: string;
   name: string;
   avatarKey: string | null;
+  lastSeenAt: string | null;
 }
 
 interface Members {
@@ -64,12 +67,15 @@ function useMembers(): Members {
 // Ceux qu'on ne connaît que par leur identifiant : personne n'est en conversation avec soi tant que l'appelant ne le dit pas.
 const NOBODY: readonly string[] = [];
 
-// Une personne, telle que la liste la montre : son nom et son personnage, et pour celle qui est en ligne son statut et son état d'activité.
+// Une personne, telle que la liste la montre : son nom et son personnage, pour celle qui est en ligne son statut et son état d'activité,
+// pour celle qui ne l'est pas sa dernière connexion.
 interface Row extends Person {
   avatarKey: string | null;
   // null : hors ligne.
   status: Status | null;
   activity: ActivityState | null;
+  // En millisecondes ; null : jamais venue (ou en ligne, où elle ne sert pas).
+  seenAt: number | null;
 }
 
 type View = 'here' | 'all';
@@ -78,12 +84,14 @@ type View = 'here' | 'all';
 // soi, soi compris : `place`, le lieu que la coque suit et donne aussi à la puce du lieu ; celui de chacun des autres est celui de placeAt) et « Tout le bureau » (tous ceux qui sont en ligne, puis les hors ligne, repliés sous
 // leur compte). Chaque ligne : le portrait de 38 px avec la pastille de son statut, le nom (et « toi » pour soi), et dessous ce qu'elle fait : son
 // mode (l'icône et le nom de l'état d'activité), sinon « Parle avec toi » si elle est dans notre conversation (`talkingWith` : ses identifiants), sinon
-// son lieu. Le statut est dit aux lecteurs d'écran, la pastille ne leur dit rien.
+// son lieu, sinon « En ligne ». Hors ligne, dessous : sa dernière connexion (« Il y a 3 h », LastSeen), rafraîchie chaque minute. Le statut
+// est dit aux lecteurs d'écran, la pastille ne leur dit rien.
 //
 // Qui est en ligne et avec quel statut, c'est le magasin (ce que le serveur dit en direct) : les personnes en ligne sont affichées dès
 // l'ouverture, sans attendre la liste des membres (GET /api/members, chargée à l'ouverture), qui apporte les hors ligne. Une personne en
 // ligne que cette liste ne connaît pas (un compte créé depuis son chargement) la fait recharger, une fois par personne : elle serait
-// sinon absente des hors ligne quand elle repart.
+// sinon absente des hors ligne quand elle repart. Une personne qui part la fait recharger aussi : le serveur a enregistré sa dernière
+// connexion avant d'annoncer son départ, et la liste chargée à l'ouverture ne la connaît pas.
 //
 // Le focus va au titre à l'ouverture (le lecteur d'écran l'annonce, et Tab entre dans le panneau) ; Échap ferme.
 export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?: string; place: string | null; onClose(): void; talkingWith?: readonly string[] }) {
@@ -101,6 +109,7 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
 
   // Les personnes en ligne : soi-même et les autres joueurs du bureau.
   const present = useMemo(() => (self ? [self, ...Object.values(players)] : Object.values(players)), [self, players]);
+  const presentIds = useMemo(() => new Set(present.map((p) => p.id)), [present]);
 
   const requested = useRef(new Set<string>());
   useEffect(() => {
@@ -113,21 +122,32 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
     void reload();
   }, [members, present, reload]);
 
+  // Quelqu'un est parti depuis le dernier rendu : la liste rechargée donne sa dernière connexion.
+  const wasPresent = useRef(presentIds);
+  useEffect(() => {
+    const someoneLeft = [...wasPresent.current].some((id) => !presentIds.has(id));
+    wasPresent.current = presentIds;
+    if (someoneLeft) void reload();
+  }, [presentIds, reload]);
+
   const { online, offline } = useMemo(() => {
     const people = new Map<string, Row>();
-    for (const member of members ?? []) people.set(member.id, { ...member, status: null, activity: null });
+    for (const { lastSeenAt, ...member } of members ?? []) {
+      people.set(member.id, { ...member, status: null, activity: null, seenAt: lastSeenAt ? Date.parse(lastSeenAt) : null });
+    }
     // Le nom en ligne est celui que le serveur vient de dire, pas celui de la liste chargée à l'ouverture.
-    for (const p of present) people.set(p.id, { id: p.id, name: p.name, avatarKey: p.avatarKey, status: p.status, activity: p.activity ?? null });
-    const sorted = sortPeople([...people.values()], new Set(present.map((p) => p.id)));
+    for (const p of present) people.set(p.id, { id: p.id, name: p.name, avatarKey: p.avatarKey, status: p.status, activity: p.activity ?? null, seenAt: null });
+    const sorted = sortPeople([...people.values()], presentIds);
     // Soi-même d'abord : c'est la ligne qu'on cherche en premier.
     return { online: [...sorted.online.filter((p) => p.id === self?.id), ...sorted.online.filter((p) => p.id !== self?.id)], offline: sorted.offline };
-  }, [members, present, self?.id]);
+  }, [members, present, presentIds, self?.id]);
 
   // Ceux d'ici : soi, et ceux dont le lieu est le sien. Sans carte (le jeu n'est pas encore là), on n'a pas de lieu : soi seul.
   const here = useMemo(() => online.filter((p) => p.id === self?.id || (place !== null && places.get(p.id) === place)), [online, self?.id, place, places]);
   const talking = useMemo(() => new Set(talkingWith), [talkingWith]);
 
-  // Ce que fait la personne, sous son nom : son mode, sinon la conversation, sinon son lieu (le sien, pour soi : la puce du lieu).
+  // Ce que fait la personne, sous son nom : son mode, sinon la conversation, sinon son lieu (le sien, pour soi : la puce du lieu), sinon
+  // qu'elle est en ligne (le lieu n'est connu qu'avec la carte).
   function doing(person: Row) {
     if (person.activity) {
       return (
@@ -146,7 +166,7 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
       );
     }
     const where = person.id === self?.id ? place : (places.get(person.id) ?? null);
-    if (where === null) return null;
+    if (where === null) return <span>{fr.office.people.seen.online}</span>;
     return (
       <>
         <PlaceIcon />
@@ -160,9 +180,18 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
     { id: 'all', label: fr.office.people.all, count: online.length },
   ];
 
+  // Ce qu'on sait d'une personne hors ligne : depuis quand on ne l'a plus vue. Jamais venue, rien.
+  const lastSeen = (person: Row) =>
+    person.seenAt === null ? null : (
+      <>
+        <LastSeenIcon />
+        <LastSeen at={person.seenAt} />
+      </>
+    );
+
   const row = (person: Row) => {
     const mine = person.id === self?.id;
-    const sub = person.status === null ? null : doing(person);
+    const sub = person.status === null ? lastSeen(person) : doing(person);
     return (
       <li key={person.id} className="person" data-user={person.id} data-status={person.status ?? undefined}>
         <AvatarPortrait avatarKey={person.avatarKey} name={person.name} size={38} status={person.status} />

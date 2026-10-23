@@ -302,14 +302,18 @@ describe('déconnexion et délai de grâce', () => {
 
     const left = nextEvent(b.socket, 'player:left').then((payload) => ({ payload, at: performance.now() }));
     const cutAt = performance.now();
+    const cutClock = Date.now();
     cutNetwork(a.socket, { reconnect: false });
     const { payload, at } = await left;
     expect(payload).toEqual({ id: a.id });
     expect(at - cutAt).toBeGreaterThanOrEqual(TEST_GRACE_MS - 10);   // pas avant la fin du délai de grâce (à 10 ms près)
 
-    // Enregistrée avant l'annonce du départ : elle est en base quand B l'apprend.
-    const [row] = await srv.db.select({ lastX: user.lastX, lastY: user.lastY, lastDir: user.lastDir }).from(user).where(eq(user.id, a.id));
-    expect(row).toEqual({ lastX: 112, lastY: 240, lastDir: 'right' });
+    // Enregistrée avant l'annonce du départ : elle est en base quand B l'apprend, avec l'heure de la coupure, pas celle de la fin du
+    // délai de grâce (au moins TEST_GRACE_MS avant l'annonce, à 10 ms près).
+    const [row] = await srv.db.select({ lastX: user.lastX, lastY: user.lastY, lastDir: user.lastDir, lastSeenAt: user.lastSeenAt }).from(user).where(eq(user.id, a.id));
+    expect(row).toMatchObject({ lastX: 112, lastY: 240, lastDir: 'right' });
+    expect(row!.lastSeenAt!.getTime()).toBeGreaterThanOrEqual(cutClock);
+    expect(row!.lastSeenAt!.getTime()).toBeLessThan(cutClock + (at - cutAt) - (TEST_GRACE_MS - 10));
     expect(srv.realtime.world.get(a.id)).toBeUndefined();
   });
 

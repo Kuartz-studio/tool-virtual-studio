@@ -26,6 +26,7 @@ export const user = pgTable("user", {
   lastY: integer("last_y"),
   lastDir: text("last_dir"),
   disabledAt: timestamp("disabled_at"),
+  lastSeenAt: timestamp("last_seen_at"),
 });
 
 export const session = pgTable(

@@ -145,7 +145,7 @@ test('deuxième onglet de A : sur l\'écran d\'entrée, il ne coupe pas le premi
   expect(await avatarsOf(b.page, a.id)).toBe(1);
 });
 
-test('A ferme son onglet → B le voit passer en « Hors ligne » après le délai de grâce, puis revenir en ligne', async ({ browser }) => {
+test('A ferme son onglet → B le voit passer en « Hors ligne » après le délai de grâce (« À l\'instant »), puis revenir en ligne', async ({ browser }) => {
   test.slow();
   const a = await arrive(browser, 'Alma');
   const b = await arrive(browser, 'Bruno');
@@ -167,10 +167,11 @@ test('A ferme son onglet → B le voit passer en « Hors ligne » après le dél
   await expect(fold).toHaveAttribute('aria-expanded', 'true');
   const rowOfA = offline.locator(`[data-user="${a.id}"]`);
   await expect(rowOfA).toBeVisible({ timeout: GRACE_MS + 10_000 });
-  // On ne connaît plus son statut : ni pastille de couleur, ni statut écrit, que son nom.
+  // On ne connaît plus son statut : ni pastille de couleur, ni statut écrit ; son nom, et sa dernière connexion.
   await expect(rowOfA).not.toHaveAttribute('data-status', /.*/);
   await expect(rowOfA.locator('.portrait-dot')).toHaveCount(0);
-  await expect(rowOfA.locator('.person-text')).toHaveText('Alma');
+  await expect(rowOfA.locator('.person-name')).toHaveText('Alma');
+  await expect(rowOfA.locator('.person-sub time')).toHaveText('À l\'instant');
   await expect(online.locator(`[data-user="${a.id}"]`)).toHaveCount(0);
 
   // Il revient (un nouvel onglet, la session est celle du contexte) : en ligne de nouveau.

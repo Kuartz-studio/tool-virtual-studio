@@ -146,6 +146,22 @@ export const fr = {
       // Sous le nom de quelqu'un de ta conversation (son mode, s'il en a un, passe avant).
       talking: 'Parle avec toi',
       loadFailed: 'Impossible de charger la liste des membres.',
+      // Sous le nom d'un membre hors ligne : depuis quand on ne l'a plus vu au bureau (office/last-seen.ts), précédé, pour les lecteurs
+      // d'écran, de `lastSeen`. « En ligne », sous celui qui l'est, quand ni son mode ni son lieu ne sont connus.
+      lastSeen: 'Dernière connexion :',
+      seen: {
+        online: 'En ligne',
+        now: 'À l\'instant',
+        minutes: 'Il y a {count} min',
+        hours: 'Il y a {count} h',
+        day: 'Il y a 1 jour',
+        days: 'Il y a {count} jours',
+        week: 'Il y a 1 semaine',
+        weeks: 'Il y a {count} semaines',
+        months: 'Il y a {count} mois',
+        year: 'Il y a 1 an',
+        years: 'Il y a {count} ans',
+      },
     },
     // Le lieu où l'on est (la puce en haut à gauche) et ceux qui y sont.
     where: {

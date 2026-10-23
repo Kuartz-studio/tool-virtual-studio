@@ -406,3 +406,16 @@ Ce sont des points connus, notés pour plus tard. Aucun ne bloque un premier usa
 - La LED d'une enceinte luit la nuit même quand la musique de sa pièce est coupée : les lumières viennent du catalogue des objets, non de l'état de la pièce.
 - Une vraie voix (la détection de LiveKit) et « ne plus entendre » sous Sport ne sont éprouvés que par des tests sur le faux média et par ceux du serveur : LiveKit n'est pas dans les tests de bout en bout.
 - Les 30 s entières d'un café ne sont jouées qu'en test unitaire.
+
+## Dernière connexion (octobre 2026)
+
+Le panneau Personnes dit depuis quand un membre hors ligne n'est plus venu au bureau : « À l'instant », « Il y a 26 min », « Il y a 3 h », « Il y a 5 jours », puis en semaines, en mois, en années.
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **Une colonne de plus, `user.last_seen_at`** (migration additive `0009_last_seen.sql`), nulle pour qui n'est jamais revenu depuis | Aucune donnée existante ne disait la dernière présence : `updated_at` bouge aussi quand un admin change un rôle, et la session de Better Auth n'est rafraîchie qu'une fois par jour | Rien n'est rempli après coup : les comptes existants n'ont pas de dernière connexion avant leur prochaine visite |
+| **Elle est écrite avec la position** (`savePositions`) : au départ, avec l'**heure de la coupure** (pas la fin du délai de grâce), à chaque sauvegarde périodique et à l'arrêt du serveur | « Il y a 3 h » doit dire « parti il y a 3 h », jamais « arrivé il y a 3 h » ; pendant une longue session, l'heure avance toutes les 60 s, et un serveur qui tombe sans s'arrêter laisse une heure juste à une minute près | La période de `POSITION_SAVE_INTERVAL_MS` |
+| **Sous le nom d'un membre hors ligne seulement**, avec l'icône d'horloge à rebours et la date entière au survol ; **« En ligne »** sous une personne connectée quand ni son mode ni son lieu ne sont connus ; rien pour qui n'est jamais venu | Le statut et le groupe « En ligne » disent déjà qui est là : une ligne de plus pour chacun alourdirait la liste. Il n'y a pas de fiche de personne ; la liste des membres de l'Admin n'a pas été touchée | Un autre endroit à ajouter : le composant `LastSeen` se pose n'importe où |
+| **Une seule minuterie pour tous les libellés** (`LastSeen.tsx`, `useSyncExternalStore`), qui ne tourne que tant qu'un libellé est affiché : chaque minute, seuls les libellés se re-rendent | Ta demande : rafraîchi chaque minute sans re-rendre toute l'application | — |
+| **Un départ pendant que le panneau est ouvert recharge la liste des membres** (`GET /api/members`) | Le serveur enregistre la dernière connexion avant d'annoncer le départ : la liste rechargée la donne exacte, sans deviner l'heure côté navigateur | Un appel de plus par départ, panneau ouvert |
+| Les unités sont **arrondies vers le bas** (« Il y a 3 h » jusqu'à la quatrième heure pleine), une semaine à partir de 7 jours, un mois à partir de 30, un an à partir de 365 ; une heure du serveur un peu en avance sur le navigateur vaut « À l'instant » | Comme on le dit à l'oral ; `formatLastSeen` (`apps/client/src/office/last-seen.ts`) est une fonction pure, testée | Un seuil à changer dans `formatLastSeen` |

@@ -64,6 +64,13 @@
       "when": 1792653159108,
       "tag": "0008_games",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792745379893,
+      "tag": "0009_last_seen",
+      "breakpoints": true
     }
   ]
 }
