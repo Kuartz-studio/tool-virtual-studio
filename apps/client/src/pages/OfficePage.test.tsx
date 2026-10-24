@@ -395,7 +395,7 @@ test('quitter le bureau : connexion fermée, écouteurs retirés, magasin vidé,
   const [client] = mediaClients;
   await act(() => client!.idle());
   expect(useOfficeStore.getState().mapKey).toBe('dev-office');
-  // Celui de la connexion (qui envoie les pas au serveur), et celui du son (qui règle le volume d'après ma place) : en conversation.
+  // Celui de la connexion (qui envoie les pas au serveur), et celui du son (qui suit ma place, pour régler le volume des autres).
   const listenersOnBus = EventBus.listenerCount('local:move');
   expect(listenersOnBus).toBe(2);
   cleanup();
@@ -426,7 +426,8 @@ test('StrictMode (développement) : la dernière connexion est la seule ouverte,
   expect(first.active).toBe(false);
   expect(first.listenerCount()).toBe(0);
   expect(second.active).toBe(true);
-  expect(EventBus.listenerCount('local:move')).toBe(1);
+  // Celui de la dernière connexion (qui envoie les pas au serveur), et celui du son (qui suit ma place dès l'ouverture) ; aucun de la première.
+  expect(EventBus.listenerCount('local:move')).toBe(2);
 
   act(() => {
     second.serverAccepts();
