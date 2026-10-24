@@ -240,7 +240,7 @@ describe('la barre', () => {
   test('dans l\'ordre : la puce « Moi », micro, caméra, partage d\'écran, musique, le zoom, puis Chat, Personnes et Plus ; le nom est dans la puce ; pas de réactions', () => {
     renderBar();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Missions', 'Chat', 'Personnes', 'Plus']);
     expect(within(button(fr.me.chip)).getByText('Léa').getAttribute('title')).toBe('Léa');
   });
 
@@ -329,7 +329,7 @@ describe('la barre', () => {
     expect(panels.show).toHaveBeenLastCalledWith('character', button(fr.me.chip));
     await user.click(button('Plus'));
     const more = screen.getAllByRole('menuitem').map((line) => line.getAttribute('aria-label') ?? line.textContent);
-    expect(more).toEqual([fr.decor.toggle, fr.zoom.reset]);
+    expect(more).toEqual([fr.decor.toggle, fr.shop.toggle, fr.zoom.reset]);
   });
 
   test('le menu « Moi » est dans la barre, et parle à la socket de la page : Disponible, puis un mode', async () => {

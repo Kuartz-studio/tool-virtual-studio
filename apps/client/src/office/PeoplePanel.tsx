@@ -10,6 +10,7 @@ import { LastSeen } from './LastSeen';
 import { sortPeople, type Person } from './people';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
+import { LevelBadge } from './ui/ProgressBits';
 import { Segmented, type SegmentedOption } from './ui/Segmented';
 import { usePlaces } from './use-here';
 
@@ -20,6 +21,8 @@ interface Member {
   name: string;
   avatarKey: string | null;
   lastSeenAt: string | null;
+  // Son niveau (absent d'un serveur d'avant la progression : 0).
+  level?: number;
 }
 
 interface Members {
@@ -76,6 +79,7 @@ interface Row extends Person {
   activity: ActivityState | null;
   // En millisecondes ; null : jamais venue (ou en ligne, où elle ne sert pas).
   seenAt: number | null;
+  level: number;
 }
 
 type View = 'here' | 'all';
@@ -95,7 +99,21 @@ type View = 'here' | 'all';
 // connexion avant d'annoncer son départ, et la liste chargée à l'ouverture ne la connaît pas.
 //
 // Le focus va au titre à l'ouverture (le lecteur d'écran l'annonce, et Tab entre dans le panneau) ; Échap ferme.
-export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?: string; place: string | null; onClose(): void; talkingWith?: readonly string[] }) {
+// Le niveau de chacun, à côté de son nom (celui du temps réel pour qui est en ligne, celui de la liste pour les autres) ; un clic sur une ligne ouvre ses
+// caractéristiques (`onOpenSheet`), les siennes comprises.
+export function PeoplePanel({
+  id,
+  place,
+  onClose,
+  talkingWith = NOBODY,
+  onOpenSheet,
+}: {
+  id?: string;
+  place: string | null;
+  onClose(): void;
+  talkingWith?: readonly string[];
+  onOpenSheet?(userId: string): void;
+}) {
   const self = useOfficeStore((state) => state.self);
   const players = useOfficeStore((state) => state.players);
   const { members, failed, reload } = useMembers();
@@ -133,11 +151,11 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
 
   const { online, offline } = useMemo(() => {
     const people = new Map<string, Row>();
-    for (const { lastSeenAt, ...member } of members ?? []) {
-      people.set(member.id, { ...member, status: null, activity: null, seenAt: lastSeenAt ? Date.parse(lastSeenAt) : null });
+    for (const { lastSeenAt, level, ...member } of members ?? []) {
+      people.set(member.id, { ...member, status: null, activity: null, seenAt: lastSeenAt ? Date.parse(lastSeenAt) : null, level: level ?? 0 });
     }
-    // Le nom en ligne est celui que le serveur vient de dire, pas celui de la liste chargée à l'ouverture.
-    for (const p of present) people.set(p.id, { id: p.id, name: p.name, avatarKey: p.avatarKey, status: p.status, activity: p.activity ?? null, seenAt: null });
+    // Le nom et le niveau en ligne sont ceux que le serveur vient de dire, pas ceux de la liste chargée à l'ouverture.
+    for (const p of present) people.set(p.id, { id: p.id, name: p.name, avatarKey: p.avatarKey, status: p.status, activity: p.activity ?? null, seenAt: null, level: p.level ?? 0 });
     const sorted = sortPeople([...people.values()], presentIds);
     // Soi-même d'abord : c'est la ligne qu'on cherche en premier.
     return { online: [...sorted.online.filter((p) => p.id === self?.id), ...sorted.online.filter((p) => p.id !== self?.id)], offline: sorted.offline };
@@ -203,10 +221,15 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
               {person.name}
             </span>
             {mine && <span className="person-you">{fr.office.people.you}</span>}
+            <LevelBadge level={person.level} />
           </span>
           {sub && <span className="person-sub">{sub}</span>}
         </span>
         {person.status && <span className="visually-hidden">{fr.status[person.status]}</span>}
+        {onOpenSheet && (
+          // Toute la ligne ouvre ses caractéristiques : un bouton étendu par-dessus (styles.css), que le clavier atteint comme les autres.
+          <button type="button" className="person-open" aria-label={t(fr.sheet.open, { name: person.name })} onClick={() => onOpenSheet(person.id)} />
+        )}
       </li>
     );
   };

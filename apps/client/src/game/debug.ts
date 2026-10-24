@@ -64,6 +64,11 @@ export interface OfficeDebug {
   // Remplace l'état de la partie en cours à cette table par un état fabriqué (événement `debug:game`, que le serveur n'enregistre qu'avec E2E=1), et impose les prochains dés
   // (de 1 à 6) : de quoi jouer la fin d'une partie sans en jouer toute la longueur.
   debugGame(game: string, state: unknown, rolls?: number[]): void;
+  // Donne de l'XP d'un coup à la personne (et des écus), comme une mission (événement `debug:xp`, que le serveur n'enregistre qu'avec E2E=1) : de quoi passer un
+  // niveau ou acheter à la boutique sans accomplir de missions.
+  xp(xp: number, ecus?: number): void;
+  // Combien d'effets de la progression (un « +XP » qui monte, une gerbe d'étoiles) sont en vie à l'écran en ce moment.
+  effects(): number;
 }
 
 // Ce que les tests de bout en bout lisent du son : window.__audio, dans le même build. Le son démarre avant le jeu (dès la page de connexion) :

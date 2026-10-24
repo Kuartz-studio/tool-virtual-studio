@@ -21,3 +21,20 @@ vi.mock('../lib/activity-api', () => ({
   updateActivityState: vi.fn(),
   deleteActivityState: vi.fn(),
 }));
+
+// De même pour sa liste de tâches (GET /api/me/tasks, lue dès que le bureau est prêt) : vide, sans réseau. Les tests du panneau Missions, de la fiche et de la
+// boutique règlent ces fonctions comme ils l'entendent.
+vi.mock('../lib/progress-api', () => ({
+  fetchMyProgress: vi.fn(),
+  listMyTasks: vi.fn(async () => []),
+  createTodo: vi.fn(),
+  updateTodo: vi.fn(),
+  deleteTodo: vi.fn(),
+  completeTask: vi.fn(),
+  declineMission: vi.fn(),
+  markMissionsSeen: vi.fn(async () => undefined),
+  listGivenMissions: vi.fn(async () => []),
+  cancelMission: vi.fn(),
+  fetchStats: vi.fn(),
+  buyItem: vi.fn(),
+}));

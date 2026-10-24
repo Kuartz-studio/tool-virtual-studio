@@ -36,6 +36,8 @@ import { EventBus } from '../EventBus';
 import { DeskLayer } from '../desk-layer';
 import { bindArenaKeys, bindKeyboard, bindUseKey, bindWheelZoom, bindZoomKeys, DirectionInput } from '../input';
 import { Interactions } from '../interactions';
+import { clerkTarget, stillWithClerk } from '../clerks';
+import { ProgressEffects } from '../progress-effects';
 import { sourcesFromItems, sourcesFromProps } from '../light-sources';
 import { LightSwitch } from '../light-switch';
 import { LightingLayer } from '../lighting';
@@ -105,6 +107,8 @@ export class Office extends Scene {
   private readonly speakerImages = new Map<string, Phaser.GameObjects.Sprite[]>();
   // Les anneaux de lumière d'un voyage voulu (un mode qui conduit à la salle de sport, ou ramène au bureau), pour soi comme pour ceux qu'on voit sauter.
   private teleportEffect: TeleportEffect;
+  // La progression au-dessus des avatars : le « +XP » de ses gains, la gerbe d'étoiles d'une montée de niveau (la sienne, celle des autres qu'on voit).
+  private progressEffects: ProgressEffects;
   private lighting: LightingLayer;
   private decorEditor: DecorEditorView;
   // L'éditeur de déco a la caméra : elle ne suit plus l'avatar tant qu'il est ouvert.
@@ -158,6 +162,8 @@ export class Office extends Scene {
       tables: () => (this.officeMap?.tables ?? []).map((table) => ({ game: table.game, ...table.rect, seats: table.seats.map((seat) => ({ x: seat.x, y: seat.y })) })),
       gameTable: (game) => useOfficeStore.getState().games[game as GameId] ?? null,
       debugGame: (game, state, rolls) => emitOnBus(EventBus, 'local:debug-game', { game: game as GameId, state, ...(rolls ? { rolls } : {}) }),
+      xp: (xp, ecus) => emitOnBus(EventBus, 'local:xp', { xp, ...(ecus !== undefined ? { ecus } : {}) }),
+      effects: () => this.progressEffects?.count(clock()) ?? 0,
     };
     exposeDebug(this.debug);
 
@@ -201,6 +207,7 @@ export class Office extends Scene {
     this.decorLayer.collideWith(this.player);
     // La nuit : la couche est là dès le départ, invisible tant que la lumière est allumée. Chacun porte son halo, au milieu de son avatar.
     this.teleportEffect = new TeleportEffect(this);
+    this.progressEffects = new ProgressEffects(this, this.cameras.main.zoom);
     this.lighting = new LightingLayer(this);
     this.lighting.track(this.selfId, () => ({ x: this.player.x, y: this.player.y - this.player.displayHeight / 2 }));
     const showDesks = () => {
@@ -223,6 +230,7 @@ export class Office extends Scene {
     const unbindCoffee = this.bindCoffeeMachines();
     const unbindSpeakers = this.bindSpeakers();
     const unbindTables = this.bindGameTables();
+    const unbindClerks = this.bindClerks();
     const showLights = (instant = false) => {
       const { on } = useOfficeStore.getState().lights;
       for (const lightSwitch of this.switches) lightSwitch.setOn(on);
@@ -303,6 +311,18 @@ export class Office extends Scene {
         if (ms > 0) this.machineExcitedUntil = clock() + MACHINE_EXCITED_MS;
       }),
       listenOnBus(EventBus, 'arena:action', (action) => this.arena?.play(action, this.selfId, clock())),
+      // La progression : son gain monte au-dessus de sa tête ; une montée de niveau (la sienne, ou celle d'un autre qu'on voit) fait jaillir des étoiles.
+      listenOnBus(EventBus, 'progress:gain', (gain) => {
+        const head = this.aboveHead(this.feet());
+        const now = clock();
+        if (gain.levelAfter > gain.levelBefore) this.progressEffects.levelUp(head, t(fr.progress.levelShort, { level: gain.levelAfter }), now);
+        else this.progressEffects.float(head, `+${gain.amount} XP`, now);
+      }),
+      listenOnBus(EventBus, 'net:level', ({ id, level, before }) => {
+        if (id === this.selfId || level <= before) return;
+        const remote = this.remotes.get(id);
+        if (remote) this.progressEffects.levelUp(this.aboveHead(remote.position), t(fr.progress.levelShort, { level }), clock());
+      }),
       listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
       listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
       useOfficeStore.subscribe((state, previous) => {
@@ -342,8 +362,10 @@ export class Office extends Scene {
       unbindCoffee();
       unbindSpeakers();
       unbindTables();
+      unbindClerks();
       this.prompt.destroy();
       this.teleportEffect.destroy();
+      this.progressEffects.destroy();
       this.lighting.destroy();
       this.deskLayer.destroy();
       this.decorEditor.destroy();
@@ -379,6 +401,7 @@ export class Office extends Scene {
     this.player.tick(now);
     this.shakeMachine(now);
     this.teleportEffect.tick(now);
+    this.progressEffects.tick(now);
     this.arena?.tick(now, this.game.loop.delta);
     for (const remote of this.remotes.values()) {
       const drawn = remote.render(now);
@@ -406,6 +429,9 @@ export class Office extends Scene {
     if (this.debug.self) Object.assign(this.debug.self, feet);
     // La cible qu'on peut actionner de près (l'interrupteur, à 3 cases…) et son étiquette : d'après les pieds de cette image.
     this.prompt.show(this.interactions.update(feet));
+    // On s'éloigne du comptoir pendant qu'on parle à une administratrice : la conversation se ferme.
+    const { clerk } = useOfficeStore.getState();
+    if (clerk !== null && !stillWithClerk(this.officeMap.clerks, clerk, feet)) useOfficeStore.getState().openClerk(null);
     // La nuit, d'après les avatars à leur place de cette image.
     this.lighting.update();
   }
@@ -454,6 +480,26 @@ export class Office extends Scene {
   // Le point où poser un anneau pour quelqu'un dont les pieds sont là : à hauteur de son milieu, pas du sol.
   private aroundFeet(feet: { x: number; y: number }): { x: number; y: number } {
     return { x: feet.x, y: feet.y - 14 };
+  }
+
+  // Au-dessus de la tête d'un avatar (et de son étiquette) dont les pieds sont ici : là où montent les effets de la progression.
+  private aboveHead(feet: { x: number; y: number }): { x: number; y: number } {
+    return { x: feet.x, y: feet.y - 74 };
+  }
+
+  // Les administratrices de l'accueil : une cible de la touche E devant chacune (« [E] Parler à Margot »), qui ouvre la conversation ; un clic sur la réceptionniste
+  // fait de même, de près. Rend la fonction qui les retire.
+  private bindClerks(): () => void {
+    const targets = this.officeMap.clerks.map((clerk) => clerkTarget(clerk, (name) => useOfficeStore.getState().openClerk(name)));
+    const unregister = targets.map((target) => this.interactions.register(target));
+    for (const sprite of [...this.propLayer.byKey('receptionist'), ...this.propLayer.byKey('receptionist-2')]) {
+      const middle = sprite.x + sprite.displayWidth / 2;
+      const target = targets.find((candidate) => Math.abs(candidate.pos.x - middle) < sprite.displayWidth / 2);
+      if (target) sprite.setInteractive({ useHandCursor: true }).on('pointerdown', () => this.interactions.useTarget(target));
+    }
+    return () => {
+      for (const off of unregister) off();
+    };
   }
 
   private feet(): { x: number; y: number } {
@@ -845,5 +891,6 @@ export class Office extends Scene {
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);
     this.prompt?.setZoom(zoom);
+    this.progressEffects?.setZoom(zoom);
   }
 }

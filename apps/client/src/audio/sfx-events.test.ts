@@ -63,6 +63,30 @@ function click(html: string): HTMLElement {
   return element;
 }
 
+describe('la progression', () => {
+  const gain = (levelBefore: number, levelAfter: number, source: 'mission' | 'checkin' = 'mission') => ({ amount: 500, source, label: 'x', levelBefore, levelAfter, ecus: 0 });
+
+  test('un gain sonne une gemme ; un niveau gagné, sa fanfare ; le pointage de l\'arrivée, rien (l\'arrivée a son air)', () => {
+    bus.emit('progress:gain', gain(0, 0));
+    bus.emit('progress:gain', gain(0, 1));
+    bus.emit('progress:gain', gain(1, 1, 'checkin'));
+    expect(ids()).toEqual(['xp', 'level-up']);
+  });
+
+  test('une mission reçue : son air ; une mission qu\'on a confiée, accomplie : le succès ; en « Ne pas déranger », ni l\'un ni l\'autre ; un achat : les écus', () => {
+    store.getState().applyInit({ self: { id: 'moi', name: 'Moi', avatarKey: null, x: 0, y: 0, dir: 'down', moving: false, status: 'available', media: { mic: false, cam: false, screen: false } }, players: [], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] });
+    const task = { status: 'done', giver: { id: 'moi', name: 'Moi' } };
+    bus.emit('task:assigned', {});
+    bus.emit('task:changed', task);
+    store.getState().setStatus('moi', 'dnd');
+    bus.emit('task:assigned', {});
+    bus.emit('task:changed', task);
+    bus.emit('shop:bought', { itemId: 'statue' });
+    // L'arrivée au bureau (le premier init) a son air, puis la progression.
+    expect(ids()).toEqual(['welcome', 'mission', 'success', 'coins']);
+  });
+});
+
 describe('les clics de l\'interface', () => {
   test('un bouton fait un clic', () => {
     click('<button type="button">Chat</button>');

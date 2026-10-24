@@ -101,7 +101,7 @@ test('le fichier généré : un tableau par genre, les noms avec un tiret entre 
 
 test('les ambiances et les effets listés sont ceux que le catalogue connaît', () => {
   expect(Object.keys(MUSIC_SOURCES).sort()).toEqual([...MUSIC_SCENES].sort());
-  expect(Object.keys(SFX_SOURCES)).toHaveLength(25);
+  expect(Object.keys(SFX_SOURCES)).toHaveLength(29);
 });
 
 test('les boucles d\'Abstraction sont des .ogg recopiés ; les pirates, les versions « Loop » en .wav, encodées en Vorbis par sox, sans étiquettes', () => {

@@ -1,5 +1,6 @@
 // Les panneaux latéraux du bureau : un seul est ouvert à la fois (`panel: PanelId | null` dans OfficeShell). Ouvrir l'un ferme l'autre.
-export type PanelId = 'chat' | 'people' | 'character' | 'desk' | 'decor' | 'game' | 'admin' | 'sim';
+// `missions` : sa liste et ses caractéristiques ; `shop` : la boutique ; `sheet` : les caractéristiques de quelqu'un d'autre.
+export type PanelId = 'chat' | 'people' | 'character' | 'desk' | 'decor' | 'game' | 'admin' | 'sim' | 'missions' | 'shop' | 'sheet';
 
 // Ce que la coque donne à la barre du bas pour ouvrir et fermer les panneaux.
 export interface PanelControls {
@@ -19,4 +20,6 @@ export interface PanelControls {
   admin: boolean;
   // Le bac à sable (le faux live, `pnpm dev:sim`) : absent d'un build normal.
   sim: boolean;
+  // Ses missions reçues qu'elle n'a pas encore vues (la pastille du bouton Missions). Absent : aucune.
+  newMissions?: number;
 }

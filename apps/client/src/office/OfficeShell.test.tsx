@@ -151,7 +151,7 @@ describe('la mise en page', () => {
   test('la barre du bas : la puce « Moi », micro, caméra, partage d\'écran et musique, le zoom, puis Chat, Personnes et Plus ; le nom et le statut sont dans la puce', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Missions', 'Chat', 'Personnes', 'Plus']);
     expect(within(meChip()).getByText('Léa')).toBeTruthy();
     expect(within(meChip()).getByText(fr.status.available)).toBeTruthy();
   });
@@ -402,6 +402,8 @@ describe('le panneau Personnes', () => {
     act(() => void emitOnBus(EventBus, 'local:move', { x: 700, y: 100, dir: 'up', moving: true }));
     expect(screen.getByRole('group', { name: fr.office.where.label }).textContent).toContain('Salle de réunion');
     await user.click(toggle());
+    // Le panneau s'ouvre sur « Tout le bureau » : on passe sur « Ici ».
+    await user.click(screen.getByRole('tab', { name: /^Ici/ }));
     expect(await screen.findByRole('region', { name: /^Ici \(2\)/ })).toBeTruthy();
     expect(document.querySelector('[data-user="moi"] .person-sub')?.textContent).toBe('Salle de réunion');
     expect(document.querySelector('[data-user="bob"] .person-sub')?.textContent).toBe('Salle de réunion');
@@ -772,7 +774,7 @@ describe('le panneau Admin', () => {
     renderShell({ role: 'admin' });
     await user.click(moreButton());
     const names = screen.getAllByRole('menuitem').map((item) => item.getAttribute('aria-label') ?? item.textContent);
-    expect(names).toEqual([fr.decor.toggle, fr.admin.toggle, fr.zoom.reset]);
+    expect(names).toEqual([fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.zoom.reset]);
   });
 
   test('fermé au départ, sans rien demander au serveur ; la ligne l\'ouvre (le panneau a son id), Fermer le ferme', async () => {
@@ -814,12 +816,14 @@ describe('le panneau Admin', () => {
     expect(document.activeElement).toBe(moreButton());
   });
 
-  test('au clavier : Entrée ouvre le menu, le focus va à la première ligne qu\'on peut choisir (Admin : Décorer attend un bureau), Entrée ouvre le panneau, et Tab y entre', async () => {
+  test('au clavier : Entrée ouvre le menu, le focus va à la première ligne qu\'on peut choisir (la boutique : Décorer attend un bureau), ↓ mène à Admin, Entrée ouvre le panneau, et Tab y entre', async () => {
     const user = userEvent.setup();
     fakeApi(adminLists);
     renderShell({ role: 'admin' });
     moreButton().focus();
     await user.keyboard('{Enter}');
+    expect(document.activeElement).toBe(screen.getByRole('menuitem', { name: fr.shop.toggle }));
+    await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(adminEntry());
     await user.keyboard('{Enter}');
     expect(adminPanel()).toBeTruthy();

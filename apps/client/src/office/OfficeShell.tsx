@@ -4,14 +4,17 @@ import { GamePanel } from '../games/GamePanel';
 import { ArenaCard } from './ArenaCard';
 import { fr } from '../i18n/fr';
 import { listActivityStates } from '../lib/activity-api';
+import { listMyTasks } from '../lib/progress-api';
 import { useMailMode } from '../lib/config';
 import type { MediaClient, MediaSnapshot } from '../media/media-client';
 import { useSpatialAudio } from '../media/spatial-audio';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { SimPanel } from '../sim/SimPanel';
-import { selectChatUnread, useOfficeStore } from '../state/office-store';
+import { selectChatUnread, selectNewMissions, useOfficeStore } from '../state/office-store';
 import { AdminPanel } from './AdminPanel';
+import { SheetPanel } from './CharacterSheet';
+import { ClerkDialog } from './ClerkDialog';
 import { ChatPanel } from './ChatPanel';
 import { CharacterBuilder } from './CharacterBuilder';
 import { CoffeePill } from './CoffeePill';
@@ -20,7 +23,10 @@ import { ControlBar } from './ControlBar';
 import { DeskPanel } from './DeskPanel';
 import type { PanelControls, PanelId } from './panels';
 import { PeoplePanel } from './PeoplePanel';
+import { LevelUpBanner, useProgressToasts } from './progress-announcements';
+import { QuestPanel, type QuestTab } from './QuestPanel';
 import { ReplacedScreen } from './ReplacedScreen';
+import { ShopPanel } from './ShopPanel';
 import { Toasts } from './Toasts';
 import { usePlace } from './use-here';
 import { VideoStrip } from './VideoStrip';
@@ -124,6 +130,12 @@ export function OfficeShell({
 
   // Les messages « Tout le monde » des autres que le panneau, fermé, n'a pas montrés : le badge du bouton.
   const unread = useOfficeStore(selectChatUnread);
+  // Ses missions reçues pas encore vues : la pastille du bouton Missions.
+  const newMissions = useOfficeStore(selectNewMissions);
+  // L'onglet du panneau Missions à l'ouverture, et la personne dont le panneau des caractéristiques montre la fiche.
+  const [questTab, setQuestTab] = useState<QuestTab>('todo');
+  const [sheetOf, setSheetOf] = useState<string | null>(null);
+  const sheetName = useOfficeStore((state) => (sheetOf === null ? '' : (state.players[sheetOf]?.name ?? '')));
 
   // Le panneau Admin envoie tout à l'API (rien au bureau en temps réel) ; du bureau, il ne lit que qui est là, pour relire ses listes quand
   // quelqu'un d'inconnu arrive : sa ligne du menu « Plus » n'attend pas l'`init`. Un membre n'a ni la ligne ni le panneau, et rien ne part vers
@@ -148,6 +160,36 @@ export function OfficeShell({
       current = false;
     };
   }, [ready]);
+
+  // Sa liste de tâches, lue à chaque (re)connexion prête : la pastille du bouton Missions et le panneau en dépendent ; le temps réel la tient ensuite à jour.
+  useEffect(() => {
+    if (!ready) return;
+    let current = true;
+    listMyTasks().then(
+      (tasks) => current && useOfficeStore.getState().setTasks(tasks),
+      () => {
+        // Illisible : le panneau le dira à l'ouverture (la liste reste celle d'avant, ou vide).
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [ready]);
+
+  // Les annonces de la progression (un gain, une mission reçue, le niveau d'un autre) : dans la file des toasts.
+  useProgressToasts();
+
+  // Un panneau demandé d'ailleurs que ses boutons (« Voir » d'un toast, une administratrice, une ligne du panneau Personnes) : la coque l'ouvre, puis l'oublie.
+  const panelRequest = useOfficeStore((state) => state.panelRequest);
+  useEffect(() => {
+    if (panelRequest === null) return;
+    if (panelRequest.panel === 'missions') setQuestTab(panelRequest.tab ?? 'todo');
+    if (panelRequest.panel === 'sheet') setSheetOf(panelRequest.userId ?? null);
+    show(panelRequest.panel, null);
+    useOfficeStore.getState().requestPanel(null);
+    // Seulement quand une demande arrive : `show` change à chaque rendu.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelRequest]);
 
   // Un état d'activité où l'on n'est pas entendu coupe le micro : le serveur ne laisse rien publier (jeton sans micro), et le bouton ne
   // le rallume pas tant que l'état dure.
@@ -187,6 +229,7 @@ export function OfficeShell({
     unread,
     admin: isAdmin,
     sim: __SIM__,
+    newMissions,
   };
 
   return (
@@ -218,7 +261,18 @@ export function OfficeShell({
           </div>
         )}
         <div className="office-side" data-panel={panel ?? undefined}>
-          {panel === 'people' && <PeoplePanel id={idOf('people')} place={place} talkingWith={talkingWith} onClose={close} />}
+          {panel === 'people' && (
+            <PeoplePanel
+              id={idOf('people')}
+              place={place}
+              talkingWith={talkingWith}
+              onClose={close}
+              onOpenSheet={(userId) => (userId === user.id ? useOfficeStore.getState().requestPanel({ panel: 'missions', tab: 'sheet' }) : useOfficeStore.getState().requestPanel({ panel: 'sheet', userId }))}
+            />
+          )}
+          {panel === 'missions' && <QuestPanel id={idOf('missions')} tab={questTab} onClose={close} />}
+          {panel === 'shop' && <ShopPanel id={idOf('shop')} onClose={close} />}
+          {panel === 'sheet' && sheetOf !== null && <SheetPanel id={idOf('sheet')} userId={sheetOf} name={sheetName} onClose={close} />}
           {panel === 'character' && <CharacterBuilder id={idOf('character')} onClose={close} />}
           {panel === 'desk' && <DeskPanel id={idOf('desk')} socket={socket} onClose={close} onDecorate={() => setPanel('decor')} />}
           {panel === 'decor' && <DecorPanel id={idOf('decor')} socket={socket} onClose={close} />}
@@ -232,6 +286,8 @@ export function OfficeShell({
           </Activity>
         </div>
         <Toasts socket={socket} />
+        <ClerkDialog socket={socket} onOpenPanel={(which) => useOfficeStore.getState().requestPanel(which === 'missions' ? { panel: 'missions', tab: 'sheet' } : { panel: 'shop' })} />
+        <LevelUpBanner />
         <ControlBar name={name} email={user.email} socket={socket} client={media.client} snapshot={media.snapshot} panels={panels} micCutBy={micCutBy} onSignOut={onSignOut} signingOut={signingOut} />
       </div>
       {replaced && <ReplacedScreen onUseHere={onUseHere} />}

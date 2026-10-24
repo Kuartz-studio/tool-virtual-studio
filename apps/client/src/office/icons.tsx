@@ -8,15 +8,20 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronUp,
+  ClipboardList,
   Coffee,
+  Coins,
+  Crown,
   DoorClosed,
   DoorOpen,
   Dumbbell,
   Ellipsis,
   Eraser,
+  Flame,
   FlaskConical,
   Focus,
   Gamepad2,
+  Gem,
   Headphones,
   History,
   Image as Picture,
@@ -24,6 +29,7 @@ import {
   Library,
   Lightbulb,
   LightbulbOff,
+  ListChecks,
   ListMusic,
   Lock,
   LogOut,
@@ -41,6 +47,7 @@ import {
   Paperclip,
   Play,
   Plus,
+  ScrollText,
   Search,
   SendHorizontal,
   Settings2,
@@ -50,7 +57,10 @@ import {
   Slash,
   SlidersHorizontal,
   Sofa,
+  Sparkles,
+  Store,
   Trash2,
+  Trophy,
   Undo2,
   UserX,
   Sprout,
@@ -317,6 +327,44 @@ export function RecentIcon() {
 
 // L'icône de chaque catégorie de la banque de déco (les onglets du sélecteur, DecorPicker). Une catégorie qui n'est pas ici (le catalogue
 // en a gagné une) prend des formes.
+// La progression : un parchemin, les missions ; une boutique ; des pièces, les écus ; des étincelles, l'XP ; une coupe, un niveau gagné ; une couronne,
+// l'autorité ; une flamme, la série de pointage ; une liste cochée, les tâches cochées ; un bloc-notes, les missions confiées ; une gemme, l'onglet de la boutique dans la déco.
+export function MissionsIcon() {
+  return <ScrollText />;
+}
+
+export function ShopIcon() {
+  return <Store />;
+}
+
+export function EcusIcon() {
+  return <Coins />;
+}
+
+export function XpIcon() {
+  return <Sparkles />;
+}
+
+export function LevelUpIcon() {
+  return <Trophy />;
+}
+
+export function AuthorityIcon() {
+  return <Crown />;
+}
+
+export function StreakIcon() {
+  return <Flame />;
+}
+
+export function TodosIcon() {
+  return <ListChecks />;
+}
+
+export function GivenIcon() {
+  return <ClipboardList />;
+}
+
 const DECOR_CATEGORY_ICONS: Readonly<Record<string, LucideIcon>> = {
   ecrans: Monitor,
   bureaux: LampDesk,
@@ -328,6 +376,7 @@ const DECOR_CATEGORY_ICONS: Readonly<Record<string, LucideIcon>> = {
   cafe: Coffee,
   detente: Sofa,
   sport: Dumbbell,
+  boutique: Gem,
 };
 
 export function DecorCategoryIcon({ category }: { category: string }) {

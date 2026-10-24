@@ -5794,3 +5794,1334 @@ button.desk-place:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   La progression : la pastille du niveau, la barre de l'XP, les crans d'une mission ; le panneau Missions, la fiche des caractéristiques, la conversation
+   avec les administratrices de l'accueil, la boutique, et l'annonce d'un niveau gagné.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+
+/* Les boutons d'action d'un panneau : l'accent pour le geste principal, le rouge pour celui qu'on ne défait pas. */
+.bar-button.is-primary {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.bar-button.is-primary:hover:not(:disabled):not([aria-disabled='true']) {
+  background: var(--accent-hover);
+}
+
+.bar-button.is-danger {
+  color: var(--on-danger);
+  background: var(--danger);
+  border-color: var(--danger);
+}
+
+.bar-button.is-danger:hover:not(:disabled):not([aria-disabled='true']) {
+  background: color-mix(in srgb, var(--danger) 88%, #000000);
+}
+
+.bar-button svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+
+/* La pastille du niveau : un écusson dont la teinte suit le grade (dix grades, une couleur chacun, puis l'or de la Légende). */
+.level-badge {
+  --grade: #7c8597;
+
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  min-width: 18px;
+  height: 16px;
+  padding: 0 4px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: #ffffff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--grade) 80%, #ffffff), var(--grade));
+  border-radius: 5px;
+  box-shadow: inset 0 -1px 0 rgb(0 0 0 / 22%), 0 0 0 1px color-mix(in srgb, var(--grade) 70%, #000000);
+}
+
+.level-badge.is-large {
+  min-width: 44px;
+  height: 44px;
+  font-size: 1.125rem;
+  border-radius: 12px;
+  box-shadow: inset 0 -3px 0 rgb(0 0 0 / 22%), inset 0 0 0 2px rgb(255 255 255 / 25%), 0 0 0 1px color-mix(in srgb, var(--grade) 70%, #000000);
+}
+
+.level-badge[data-grade='junior'] { --grade: #2fb35b; }
+.level-badge[data-grade='specialiste'] { --grade: #12a4a4; }
+.level-badge[data-grade='senior'] { --grade: #3b82f6; }
+.level-badge[data-grade='pilier'] { --grade: #4f46e5; }
+.level-badge[data-grade='mentor'] { --grade: #8b5cf6; }
+.level-badge[data-grade='stratege'] { --grade: #d946ef; }
+.level-badge[data-grade='architecte'] { --grade: #f97316; }
+.level-badge[data-grade='visionnaire'] { --grade: #e11d48; }
+.level-badge[data-grade='sage'] { --grade: #b45309; }
+.level-badge[data-grade='legende'] {
+  --grade: #f2b700;
+
+  color: #3a2a00;
+  box-shadow: inset 0 -1px 0 rgb(0 0 0 / 18%), 0 0 0 1px #b78400, 0 0 10px rgb(242 183 0 / 55%);
+}
+
+/* La barre de l'XP : faite sur le niveau en cours, de l'accent à l'or. */
+.xp-bar {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  background: var(--surface-sunk);
+  border-radius: var(--radius-pill);
+}
+
+.xp-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: linear-gradient(90deg, var(--accent), #f2b700);
+  border-radius: inherit;
+  transition: width 600ms var(--ease-out);
+}
+
+/* Les dix crans de la difficulté d'une mission : plus chauds à mesure qu'elle grandit. */
+.tier-pips {
+  --pip: #2fb35b;
+
+  display: inline-flex;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+.tier-pips[data-tier='4'],
+.tier-pips[data-tier='5'],
+.tier-pips[data-tier='6'] { --pip: #3b82f6; }
+.tier-pips[data-tier='7'],
+.tier-pips[data-tier='8'] { --pip: #8b5cf6; }
+.tier-pips[data-tier='9'],
+.tier-pips[data-tier='10'] { --pip: #f97316; }
+
+.tier-pip {
+  width: 6px;
+  height: 6px;
+  background: var(--surface-sunk);
+  border-radius: 2px;
+}
+
+.tier-pip.is-on {
+  background: var(--pip);
+}
+
+/* La puce « Moi » : la pastille du niveau sur le coin du portrait, et la barre de l'XP, fine, au bas de la puce. */
+.me-chip {
+  position: relative;
+}
+
+.me-portrait {
+  position: relative;
+  display: inline-flex;
+  flex: none;
+}
+
+.me-portrait .level-badge {
+  position: absolute;
+  left: -4px;
+  bottom: -4px;
+}
+
+.me-chip > .xp-bar {
+  position: absolute;
+  left: 52px;
+  right: 34px;
+  bottom: 5px;
+  height: 3px;
+}
+
+/* Une ligne du panneau Personnes ouvre ses caractéristiques : un bouton transparent posé sur toute la ligne. */
+.person {
+  position: relative;
+}
+
+.person-head .level-badge {
+  align-self: center;
+}
+
+.person-open {
+  position: absolute;
+  inset: 0;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+}
+
+.person-open:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Le panneau Missions : sa progression en tête, puis les onglets. */
+.quest-panel .drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.quest-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.quest-card-text {
+  display: grid;
+  flex: 1;
+  gap: 5px;
+  min-width: 0;
+}
+
+.quest-card-title {
+  font-size: var(--text-m);
+  font-weight: var(--weight-semibold);
+}
+
+.quest-card-next {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.quest-card-side {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+}
+
+.quest-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+  color: var(--text-soft);
+}
+
+.quest-chip svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: #d29a00;
+}
+
+.quest-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.quest-section h3 {
+  margin: 0 0 6px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.quest-hint {
+  margin: 0 0 6px;
+  font-size: var(--text-xs);
+  color: var(--warning-text);
+}
+
+.todo-add {
+  display: flex;
+  gap: 8px;
+}
+
+.todo-add input,
+.todo-edit {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: var(--text-m);
+  color: var(--text);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.todo-add input:focus-visible,
+.todo-edit:focus-visible {
+  background: var(--surface);
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* Une mission reçue : une carte, avec qui la confie, son intitulé, sa difficulté et son XP ; une nouvelle a le bord de l'accent. */
+.mission-list,
+.todo-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mission {
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-m);
+}
+
+.mission[data-new] {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.mission-from {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+.mission-new {
+  padding: 1px 6px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: var(--on-accent);
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+}
+
+.mission-title {
+  margin: 0;
+  font-size: var(--text-m);
+  font-weight: var(--weight-semibold);
+  overflow-wrap: anywhere;
+}
+
+.mission-notes {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.mission-reward {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+.mission-xp {
+  margin-left: auto;
+  font-weight: 700;
+  color: #b07d00;
+}
+
+.office-ui[data-theme='night'] .mission-xp {
+  color: #ffd54a;
+}
+
+.mission-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.mission-actions .bar-button {
+  min-height: 32px;
+  padding: 0 12px;
+}
+
+.mission-confirm {
+  flex: 1 1 100%;
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+/* Une tâche de sa liste : la case, l'intitulé (un clic le modifie), l'XP, la corbeille au survol. */
+.todo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 2px 6px;
+  border-radius: 10px;
+}
+
+.todo:hover {
+  background: var(--surface-soft);
+}
+
+.todo-check {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.todo-title {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  font: inherit;
+  font-size: var(--text-m);
+  color: var(--text);
+  text-align: left;
+  overflow-wrap: anywhere;
+  background: transparent;
+  border: 0;
+  cursor: text;
+}
+
+.todo-xp {
+  flex: none;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.todo-xp[data-capped] {
+  text-decoration: line-through;
+}
+
+.todo-remove {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.todo:hover .todo-remove,
+.todo-remove:focus-visible {
+  opacity: 1;
+}
+
+.todo-remove:hover {
+  color: var(--danger);
+}
+
+.todo-remove svg.lucide {
+  width: 15px;
+  height: 15px;
+}
+
+.todo.is-closed .todo-title {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.todo.is-closed[data-status='done'] .todo-title {
+  text-decoration: line-through;
+}
+
+.todo-done-mark {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  color: var(--ok);
+}
+
+.todo-done-mark svg.lucide {
+  width: 15px;
+  height: 15px;
+}
+
+/* La fiche des caractéristiques : comme celle d'un personnage de jeu. */
+.sheet {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sheet-id {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sheet-name {
+  overflow: hidden;
+  font-size: var(--text-l);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-grade {
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+}
+
+.sheet-since {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sheet-xp {
+  display: grid;
+  gap: 5px;
+}
+
+.sheet-xp-text {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sheet-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.sheet-stat {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  align-items: center;
+  padding: 10px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.sheet-stat-icon {
+  display: inline-grid;
+  grid-row: span 2;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: var(--accent);
+  background: var(--surface);
+  border-radius: 9px;
+}
+
+.sheet-stat-icon svg.lucide {
+  width: 16px;
+  height: 16px;
+}
+
+.sheet-stat-value {
+  font-size: var(--text-m);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.sheet-stat-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.sheet-section h3 {
+  margin: 0 0 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* Les missions accomplies par difficulté : dix colonnes, de la plus facile à la plus longue. */
+.sheet-tiers {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 4px;
+  align-items: end;
+  height: 72px;
+}
+
+.sheet-tier {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  height: 100%;
+  gap: 3px;
+  text-align: center;
+}
+
+.sheet-tier-bar {
+  align-self: end;
+  min-height: 3px;
+  background: linear-gradient(180deg, #f2b700, var(--accent));
+  border-radius: 4px 4px 2px 2px;
+}
+
+.sheet-tier-bar[data-empty] {
+  background: var(--surface-sunk);
+}
+
+.sheet-tier-n {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+}
+
+.sheet-history {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sheet-history li {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: var(--text-s);
+}
+
+.sheet-history-xp {
+  flex: none;
+  min-width: 48px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #b07d00;
+}
+
+.office-ui[data-theme='night'] .sheet-history-xp {
+  color: #ffd54a;
+}
+
+.sheet-history-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-history-source {
+  font-weight: var(--weight-semibold);
+  color: var(--text-soft);
+}
+
+.sheet-history-when {
+  flex: none;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* La conversation avec une administratrice : une boîte de dialogue au bas de l'écran, au-dessus de la barre, comme dans un jeu de rôle. */
+.clerk-dialog {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
+  z-index: 4;
+  display: grid;
+  grid-template-columns: 108px minmax(0, 1fr);
+  gap: 16px;
+  width: min(660px, calc(100% - 2 * var(--bar-gap)));
+  max-height: calc(100% - var(--bar-gap) * 4 - var(--bar-size) - 120px);
+  padding: 16px 44px 16px 16px;
+  color: var(--text);
+  background: var(--surface);
+  border-radius: var(--radius-pop);
+  box-shadow: var(--shadow-pop);
+  transform: translateX(-50%);
+  pointer-events: auto;
+  animation: clerk-in var(--dur-pop) var(--ease-out);
+}
+
+@keyframes clerk-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
+}
+
+.clerk-side {
+  display: grid;
+  align-content: start;
+  justify-items: center;
+  gap: 4px;
+  text-align: center;
+}
+
+.clerk-portrait {
+  display: block;
+  image-rendering: pixelated;
+  background-color: var(--surface-soft);
+  background-repeat: no-repeat;
+  border-radius: var(--radius-m);
+  box-shadow: inset 0 0 0 2px var(--border);
+}
+
+.clerk-name {
+  margin-top: 4px;
+  font-size: var(--text-m);
+  font-weight: var(--weight-semibold);
+}
+
+.clerk-role {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.clerk-main {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
+.clerk-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* La réplique entière, invisible, réserve sa place : la boîte ne grandit pas pendant que la machine à écrire la tape par-dessus. */
+.clerk-speech > [aria-hidden='true'] {
+  grid-area: 1 / 1;
+}
+
+.clerk-speech-full {
+  visibility: hidden;
+}
+
+.clerk-speech {
+  position: relative;
+  display: grid;
+  min-height: 3em;
+  margin: 0;
+  padding: 10px 12px;
+  font-size: var(--text-m);
+  line-height: 1.5;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+  cursor: default;
+}
+
+.clerk-speech::before {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: -6px;
+  border-width: 6px 6px 6px 0;
+  border-style: solid;
+  border-color: transparent var(--surface-soft) transparent transparent;
+}
+
+.clerk-error {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: var(--text-s);
+  color: var(--error-text);
+  background: var(--error-background);
+  border-radius: var(--radius-s);
+}
+
+.clerk-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--text-muted);
+}
+
+/* Les réponses : des lignes à la manière d'un jeu, un chevron devant celle qu'on vise. */
+.clerk-options {
+  display: grid;
+  gap: 2px;
+}
+
+.clerk-options button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: var(--text-m);
+  font-weight: var(--weight-medium);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+}
+
+.clerk-options button::before {
+  content: '▸';
+  color: transparent;
+  transition: color var(--dur-fast) var(--ease-out);
+}
+
+.clerk-options button:hover,
+.clerk-options button:focus-visible {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  outline: none;
+}
+
+.clerk-options button:hover::before,
+.clerk-options button:focus-visible::before {
+  color: var(--accent);
+}
+
+.clerk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.clerk-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+
+.clerk-search svg.lucide {
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.clerk-search input {
+  flex: 1;
+  min-width: 0;
+  height: 38px;
+  font: inherit;
+  font-size: var(--text-m);
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.clerk-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 4px;
+  max-height: 210px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.clerk-people button {
+  --dot-ring: var(--surface);
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px;
+  font: inherit;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.clerk-people button:hover,
+.clerk-people button:focus-visible {
+  --dot-ring: var(--surface-soft);
+
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.clerk-person-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clerk-form {
+  display: grid;
+  gap: 6px;
+}
+
+.clerk-form label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-soft);
+}
+
+.clerk-form input,
+.clerk-form textarea {
+  width: 100%;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: var(--text-m);
+  color: var(--text);
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  resize: vertical;
+}
+
+.clerk-form input:focus-visible,
+.clerk-form textarea:focus-visible {
+  background: var(--surface);
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.clerk-form .clerk-actions {
+  margin-top: 4px;
+}
+
+/* La difficulté : dix cartes, de la plus courte à la plus longue. */
+.clerk-tiers {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.clerk-tier {
+  display: grid;
+  gap: 1px;
+  padding: 8px 6px;
+  font: inherit;
+  color: var(--text);
+  text-align: center;
+  background: var(--surface-soft);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color var(--dur-fast) var(--ease-out), background-color var(--dur-fast) var(--ease-out);
+}
+
+.clerk-tier:hover {
+  background: var(--surface-sunk);
+}
+
+.clerk-tier[aria-checked='true'] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.clerk-tier:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.clerk-tier-n {
+  font-size: var(--text-l);
+  font-weight: 700;
+}
+
+.clerk-tier-label {
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+}
+
+.clerk-tier-hint {
+  font-size: 0.625rem;
+  color: var(--text-muted);
+}
+
+.clerk-tier-xp {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #b07d00;
+}
+
+.office-ui[data-theme='night'] .clerk-tier-xp {
+  color: #ffd54a;
+}
+
+.clerk-given {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.clerk-given li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface-soft);
+  border-radius: 10px;
+}
+
+.clerk-given li[data-status='done'] {
+  box-shadow: inset 3px 0 0 var(--ok);
+}
+
+.clerk-given li[data-status='declined'],
+.clerk-given li[data-status='cancelled'] {
+  opacity: 0.7;
+}
+
+.clerk-given-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.clerk-given-title {
+  overflow: hidden;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clerk-given-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+/* La boutique : la bourse, puis les éléments par rareté (gris, bleu, violet, or). */
+.shop-panel .drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.shop-wallet {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  background: linear-gradient(135deg, rgb(242 183 0 / 18%), transparent 70%), var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.shop-wallet > svg.lucide {
+  width: 28px;
+  height: 28px;
+  color: #d29a00;
+}
+
+.shop-wallet > span {
+  display: grid;
+}
+
+.shop-wallet-label {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.shop-wallet-value {
+  font-size: var(--text-l);
+  font-weight: 700;
+}
+
+.shop-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 14px;
+}
+
+.shop-section {
+  --rarity: #8a91a3;
+}
+
+.shop-section[data-rarity='rare'] { --rarity: #3b82f6; }
+.shop-section[data-rarity='epique'] { --rarity: #8b5cf6; }
+.shop-section[data-rarity='legendaire'] { --rarity: #f2b700; }
+
+.shop-section h3 {
+  margin: 0 0 6px;
+  font-size: var(--text-xs);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--rarity);
+  text-transform: uppercase;
+}
+
+.shop-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shop-card {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-top: 3px solid var(--rarity);
+  border-radius: var(--radius-m);
+}
+
+.shop-section[data-rarity='legendaire'] .shop-card {
+  box-shadow: 0 0 12px rgb(242 183 0 / 25%);
+}
+
+.shop-thumb {
+  display: grid;
+  place-items: center;
+  min-height: 84px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-s);
+}
+
+.shop-name {
+  overflow: hidden;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shop-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.shop-rarity {
+  font-weight: var(--weight-semibold);
+  color: var(--rarity);
+}
+
+.shop-buy {
+  width: 100%;
+  min-height: 32px;
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-buy svg.lucide {
+  color: #d29a00;
+}
+
+.shop-buy.is-primary svg.lucide {
+  color: inherit;
+}
+
+.shop-owned {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--success-text);
+  background: var(--success-background);
+  border-radius: 10px;
+}
+
+.shop-owned svg.lucide {
+  width: 15px;
+  height: 15px;
+}
+
+.shop-error {
+  font-size: var(--text-xs);
+  color: var(--error-text);
+}
+
+/* Dans le sélecteur de la déco : un élément de la boutique pas encore acheté porte un cadenas et son prix ; un clic propose de l'acheter, sous la grille. */
+.decor-tile {
+  position: relative;
+}
+
+.decor-tile-price {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 1px 4px;
+  font-size: 0.625rem;
+  font-weight: 700;
+  color: #3a2a00;
+  background: #ffd54a;
+  border-radius: 6px;
+}
+
+.decor-tile-price svg.lucide {
+  width: 9px;
+  height: 9px;
+}
+
+.decor-offer {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 6px 6px;
+  background: linear-gradient(135deg, rgb(242 183 0 / 16%), transparent 70%), var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.decor-offer .bar-button {
+  flex: none;
+  min-height: 34px;
+  padding: 0 10px;
+}
+
+/* Un niveau gagné : en grand, au milieu de l'écran, une carte qui jaillit dans une gerbe de rayons dorés, puis s'efface d'elle-même. */
+.level-up {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.level-up-card {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 22px 34px 18px;
+  color: var(--text);
+  background: var(--surface);
+  border-radius: var(--radius-pop);
+  box-shadow: var(--shadow-pop), 0 0 0 2px #f2b700, 0 0 40px rgb(242 183 0 / 45%);
+  pointer-events: auto;
+  cursor: pointer;
+  animation: level-up-in 520ms cubic-bezier(0.2, 1.4, 0.4, 1), level-up-out 600ms ease-in 3.9s forwards;
+}
+
+.level-up-burst {
+  position: absolute;
+  inset: -60px;
+  z-index: -1;
+  background: repeating-conic-gradient(from 0deg, rgb(242 183 0 / 32%) 0deg 8deg, transparent 8deg 22deg);
+  border-radius: 50%;
+  mask-image: radial-gradient(circle, #000000 30%, transparent 70%);
+  animation: level-up-spin 6s linear infinite;
+}
+
+.level-up-title {
+  font-size: var(--text-xl);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+}
+
+.level-up-grade {
+  font-size: var(--text-m);
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+}
+
+.level-up-ecus {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-m);
+  font-weight: 700;
+  color: #b07d00;
+}
+
+.office-ui[data-theme='night'] .level-up-ecus {
+  color: #ffd54a;
+}
+
+.level-up-ecus svg.lucide {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes level-up-in {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@keyframes level-up-out {
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes level-up-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Sur un téléphone : la conversation prend toute la largeur, son portrait au-dessus. */
+@media (max-width: 719px) {
+  .clerk-dialog {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px 40px 12px 12px;
+  }
+
+  .clerk-side {
+    grid-template-columns: auto auto;
+    justify-content: start;
+    justify-items: start;
+    align-items: center;
+    column-gap: 10px;
+  }
+
+  .clerk-portrait {
+    grid-row: span 2;
+    transform-origin: left top;
+  }
+
+  .clerk-tiers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .me-chip > .xp-bar {
+    display: none;
+  }
+}

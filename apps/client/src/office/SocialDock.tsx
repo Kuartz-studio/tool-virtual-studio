@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { fr, t } from '../i18n/fr';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
-import { ChatIcon, DecorIcon, FlaskIcon, MoreIcon, ShieldIcon, UsersIcon, ZoomResetIcon } from './icons';
+import { ChatIcon, DecorIcon, FlaskIcon, MissionsIcon, MoreIcon, ShieldIcon, ShopIcon, UsersIcon, ZoomResetIcon } from './icons';
 import type { PanelControls } from './panels';
 import { IconButton } from './ui/IconButton';
 import { Popover } from './ui/Popover';
@@ -24,8 +24,9 @@ interface MoreEntry {
   run(opener: HTMLElement | null): void;
 }
 
-// Le dock de droite : le chat (avec la pastille de ses messages non lus), les personnes (avec le compte de celles en ligne), et le menu
-// « Plus » : la déco du bureau, l'Admin (pour un admin), le Bac à sable (du faux live), et la vue de départ du zoom.
+// Le dock de droite : les missions (avec la pastille de celles reçues et pas encore vues), le chat (avec la pastille de ses messages non lus), les
+// personnes (avec le compte de celles en ligne), et le menu « Plus » : la déco du bureau, la boutique, l'Admin (pour un admin), le Bac à sable (du faux live),
+// et la vue de départ du zoom.
 // Le menu suit le motif « menu button » : il s'ouvre au-dessus du bouton, le focus va à la première ligne ; ↓ ↑ Début Fin passent de l'une à
 // l'autre, Entrée ou Espace choisit, Échap ferme et rend le focus au bouton.
 export function SocialDock({ panels }: { panels: PanelControls }) {
@@ -47,6 +48,7 @@ export function SocialDock({ panels }: { panels: PanelControls }) {
 
   const own: MoreEntry[] = [
     { key: 'decor', label: fr.decor.toggle, icon: <DecorIcon />, disabled: !panels.ready || !hasDesk, panel: true, run: (opener) => panels.show('decor', opener) },
+    { key: 'shop', label: fr.shop.toggle, icon: <ShopIcon />, disabled: !panels.ready, panel: true, run: (opener) => panels.show('shop', opener) },
     ...(panels.admin ? [{ key: 'admin', label: fr.admin.toggle, icon: <ShieldIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('admin', opener) }] : []),
     ...(panels.sim ? [{ key: 'sim', label: fr.sim.toggle, icon: <FlaskIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('sim', opener) }] : []),
     { key: 'zoom', label: fr.zoom.reset, name: fr.zoom.reset, hint: t(fr.zoom.level, { percent }), icon: <ZoomResetIcon />, run: () => resetZoom() },
@@ -103,8 +105,21 @@ export function SocialDock({ panels }: { panels: PanelControls }) {
 
   const chatOpen = panels.open === 'chat';
   const peopleOpen = panels.open === 'people';
+  const missionsOpen = panels.open === 'missions';
+  const fresh = panels.newMissions ?? 0;
+  const missionsLabel = fresh === 0 ? fr.missions.toggle : fresh === 1 ? fr.missions.toggleNewOne : t(fr.missions.toggleNewMany, { count: fresh });
   return (
     <div className="dock dock-social">
+      <IconButton
+        label={missionsLabel}
+        badge={fresh > 0 ? (fresh > BADGE_MAX ? `${BADGE_MAX}+` : fresh) : undefined}
+        aria-expanded={missionsOpen}
+        aria-controls={missionsOpen ? panels.idOf('missions') : undefined}
+        disabled={!panels.ready}
+        onClick={(event) => panels.toggle('missions', event.currentTarget)}
+      >
+        <MissionsIcon />
+      </IconButton>
       <IconButton
         label={chatLabel}
         badge={unread > 0 ? (unread > BADGE_MAX ? `${BADGE_MAX}+` : unread) : undefined}

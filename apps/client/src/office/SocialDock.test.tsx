@@ -67,21 +67,21 @@ describe('le menu « Plus »', () => {
     expect(more().getAttribute('aria-expanded')).toBe('false');
   });
 
-  test('un membre y trouve la déco et le zoom ; un admin y ajoute Admin ; le faux live, le Bac à sable', async () => {
+  test('un membre y trouve la déco, la boutique et le zoom ; un admin y ajoute Admin ; le faux live, le Bac à sable', async () => {
     const user = userEvent.setup();
     const { unmount } = renderDock();
     await user.click(more());
-    expect(entryNames()).toEqual([fr.decor.toggle, fr.zoom.reset]);
+    expect(entryNames()).toEqual([fr.decor.toggle, fr.shop.toggle, fr.zoom.reset]);
     unmount();
 
     const admin = renderDock({ admin: true });
     await user.click(more());
-    expect(entryNames()).toEqual([fr.decor.toggle, fr.admin.toggle, fr.zoom.reset]);
+    expect(entryNames()).toEqual([fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.zoom.reset]);
     admin.unmount();
 
     renderDock({ admin: true, sim: true });
     await user.click(more());
-    expect(entryNames()).toEqual([fr.decor.toggle, fr.admin.toggle, fr.sim.toggle, fr.zoom.reset]);
+    expect(entryNames()).toEqual([fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.sim.toggle, fr.zoom.reset]);
   });
 
   test('un choix de panneau le demande à la coque, depuis le bouton « Plus », et ferme le menu', async () => {
@@ -102,6 +102,8 @@ describe('le menu « Plus »', () => {
     renderDock({ admin: true });
     await user.click(more());
     expect(document.activeElement).toBe(entry(fr.decor.toggle));
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(entry(fr.shop.toggle));
     await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(entry(fr.admin.toggle));
     await user.keyboard('{End}');

@@ -26,6 +26,8 @@ const debug = (): OfficeDebug => ({
   tables: () => [],
   gameTable: () => null,
   debugGame: () => {},
+  xp: () => {},
+  effects: () => 0,
 });
 
 afterEach(() => {

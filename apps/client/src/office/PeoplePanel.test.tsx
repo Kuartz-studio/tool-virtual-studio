@@ -254,16 +254,30 @@ describe('une ligne', () => {
     }
   });
 
-  test('le statut est écrit pour un lecteur d\'écran (la pastille ne dit rien) ; hors ligne, la ligne n\'est que le nom', async () => {
+  test('le statut est écrit pour un lecteur d\'écran (la pastille ne dit rien) ; hors ligne, la ligne n\'est que le nom et le niveau', async () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('zoe', 'Zoé', 'dnd')]);
     await renderAll();
     await offlineSection();
-    expect(row('zoe').querySelector('.visually-hidden')?.textContent).toBe(fr.status.dnd);
+    expect(row('zoe').querySelector(':scope > .visually-hidden')?.textContent).toBe(fr.status.dnd);
     expect(row('zoe').querySelector('.portrait')?.getAttribute('aria-hidden')).toBe('true');
-    // Hors ligne et jamais venue, rien de plus que le nom (le portrait, caché, n'a que ses initiales avant d'être dessiné).
-    expect(row('alice').querySelector('.person-text')?.textContent).toBe('Alice');
+    // Hors ligne et jamais venue, rien de plus que le nom et le niveau (le portrait, caché, n'a que ses initiales avant d'être dessiné).
+    expect(row('alice').querySelector('.person-name')?.textContent).toBe('Alice');
+    expect(row('alice').querySelector('.level-badge')?.textContent).toBe('0Niveau 0');
     expect(row('alice').querySelector('.person-sub')).toBeNull();
+  });
+
+  test('le niveau : celui du temps réel pour qui est en ligne, celui de la liste pour les autres ; un clic sur la ligne ouvre ses caractéristiques', async () => {
+    fakeApi({ 'GET /api/members': () => json(200, MEMBERS.map((m) => (m.id === 'alice' ? { ...m, level: 7 } : m))) });
+    const onOpenSheet = vi.fn();
+    arrive([player('zoe', 'Zoé', 'available', { level: 12 })]);
+    const user = userEvent.setup();
+    render(<PeoplePanel place={null} onClose={() => {}} onOpenSheet={onOpenSheet} />);
+    await offlineSection();
+    expect(row('zoe').querySelector('.level-badge [aria-hidden]')?.textContent).toBe('12');
+    expect(row('alice').querySelector('.level-badge [aria-hidden]')?.textContent).toBe('7');
+    await user.click(screen.getByRole('button', { name: t(fr.sheet.open, { name: 'Zoé' }) }));
+    expect(onOpenSheet).toHaveBeenCalledWith('zoe');
   });
 
   test('on se reconnaît : « toi »', () => {

@@ -318,20 +318,23 @@ test('« Utiliser ici » : le serveur refuse (indisponible), la page réessaie s
   await waitFor(() => expect(router.state.location.pathname).toBe('/connexion'));
 });
 
+// Le menu n'a plus qu'un statut, « Disponible » (les modes ont pris la place des autres) : on part d'un statut gardé par le serveur (Absent) pour y revenir.
+const initAway = (): InitPayload => ({ ...init(), self: { ...player('u-lea', 'Léa'), status: 'away' } });
+
 test('le menu « Moi » envoie status:set par la connexion de la page, et la puce suit la confirmation du serveur', async () => {
   const user = userEvent.setup();
   await openOffice();
   act(() => {
     socket().serverAccepts();
-    socket().receive('init', init());
+    socket().receive('init', initAway());
   });
-  await waitFor(() => expect(within(meChip()).getByText(fr.status.available)).toBeTruthy());
+  await waitFor(() => expect(within(meChip()).getByText(fr.status.away)).toBeTruthy());
   await user.click(meChip());
-  await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
-  expect(socket().sentOf('status:set')).toEqual(['dnd']);
+  await user.click(screen.getByRole('menuitemradio', { name: fr.status.available }));
+  expect(socket().sentOf('status:set')).toEqual(['available']);
   // Le serveur confirme à tout le monde, nous compris.
-  act(() => socket().receive('status:changed', { id: 'u-lea', status: 'dnd' }));
-  expect(within(meChip()).getByText('Ne pas déranger')).toBeTruthy();
+  act(() => socket().receive('status:changed', { id: 'u-lea', status: 'available' }));
+  expect(within(meChip()).getByText(fr.status.available)).toBeTruthy();
 });
 
 test('le statut ne se change pas avant que le serveur ait répondu, ni connexion coupée (la puce, elle, s\'ouvre : on doit pouvoir se déconnecter)', async () => {
@@ -339,7 +342,7 @@ test('le statut ne se change pas avant que le serveur ait répondu, ni connexion
   await openOffice();
   expect((meChip() as HTMLButtonElement).disabled).toBe(false);
   await user.click(meChip());
-  const busy = () => screen.getByRole('menuitemradio', { name: 'Occupé' }) as HTMLButtonElement;
+  const busy = () => screen.getByRole('menuitemradio', { name: fr.status.available }) as HTMLButtonElement;
   expect(busy().disabled).toBe(true);
   act(() => {
     socket().serverAccepts();
@@ -430,12 +433,12 @@ test('StrictMode (développement) : la dernière connexion est la seule ouverte,
 
   act(() => {
     second.serverAccepts();
-    second.receive('init', init());
+    second.receive('init', initAway());
   });
-  await waitFor(() => expect(within(meChip()).getByText(fr.status.available)).toBeTruthy());
+  await waitFor(() => expect(within(meChip()).getByText(fr.status.away)).toBeTruthy());
   await user.click(meChip());
-  await user.click(screen.getByRole('menuitemradio', { name: 'Ne pas déranger' }));
-  expect(second.sentOf('status:set')).toEqual(['dnd']);
+  await user.click(screen.getByRole('menuitemradio', { name: fr.status.available }));
+  expect(second.sentOf('status:set')).toEqual(['available']);
   expect(first.sent).toEqual([]);
 });
 

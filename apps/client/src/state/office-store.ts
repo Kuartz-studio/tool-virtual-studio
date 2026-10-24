@@ -17,14 +17,17 @@ import {
   type LightsState,
   type MediaJoinPayload,
   type MediaState,
+  type MyProgress,
   type OfficeMap,
   type PublicPlayer,
   type RoomMusic,
   type Status,
+  type TaskView,
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { clampZoomPercent, stepZoomPercent, ZOOM_DEFAULT_PERCENT, ZOOM_WHEEL_STEP } from '../game/zoom';
 import { anchorFor, planPlace, removeAt, roomOfDesk, type DecorSnap } from '../office/decor-draft';
+import type { PanelId } from '../office/panels';
 
 // Ce que l'interface (React) sait du bureau : qui y est, avec quel statut, quels médias et quel profil, si la connexion est prête, la
 // dernière consigne audio/vidéo, et les messages du chat. Le serveur le dit à chaque (re)connexion (`init`), puis par événements
@@ -56,6 +59,13 @@ export interface DecorEditor {
 }
 
 export type DecorTool = 'place' | 'erase';
+
+// Ouvrir un panneau depuis ailleurs que ses boutons (voir OfficeState.panelRequest).
+export interface PanelRequest {
+  panel: PanelId;
+  tab?: 'todo' | 'sheet';
+  userId?: string;
+}
 
 export interface PendingReplace {
   id: string;
@@ -150,6 +160,19 @@ export interface OfficeState {
   // Le zoom de la caméra : le pourcentage choisi (zoom.ts), 100 % au début. Le jeu le lit (la caméra y glisse), les boutons de zoom, la
   // molette et le clavier l'écrivent.
   zoomPercent: number;
+  // Sa progression (XP, écus, série de pointage, ce qu'elle possède de la boutique), telle que le serveur la dit (l'`init`, puis `progress:mine`), sans le gain
+  // qui l'y amène (la connexion l'annonce) ; null avant le premier `init`. Son niveau s'en déduit (levelOf) ; celui des autres est dans leur PublicPlayer.
+  progress: MyProgress | null;
+  // Sa liste de tâches (GET /api/me/tasks, lue à chaque connexion prête, puis tenue à jour : une mission reçue, une tâche cochée, une mission retirée) : les
+  // ouvertes, puis celles fermées depuis une semaine. null avant la lecture.
+  tasks: TaskView[] | null;
+  // Les missions qu'elle a confiées (GET /api/me/missions, lues quand on parle à une administratrice, puis tenues à jour par `task:changed`) ; null avant.
+  given: TaskView[] | null;
+  // L'administratrice de l'accueil à qui l'on parle (sa clé : margot, ines, lucie) : la fenêtre de dialogue est ouverte. null : aucune.
+  clerk: string | null;
+  // Un panneau que quelqu'un d'autre que ses boutons demande d'ouvrir (le bouton « Voir » d'un toast, l'administratrice, une ligne du panneau Personnes) : la coque
+  // l'ouvre, puis l'oublie. `tab` : l'onglet du panneau Missions ; `userId` : de qui montrer les caractéristiques. null : rien à ouvrir.
+  panelRequest: PanelRequest | null;
   // La dernière position connue de chaque autre joueur présent (init, arrivée, ticks). Un Map modifié sur place, sans prévenir les
   // abonnés : un `init` et reset() le remplacent, un départ en retire le joueur ; rien n'y reste de ceux qui sont partis.
   positions: Map<string, PlayerPosition>;
@@ -232,6 +255,21 @@ export interface OfficeState {
   // Les mouvements d'un tick : la dernière position de chaque joueur connu (soi-même et les inconnus sont ignorés), sans prévenir
   // personne et sans changer l'état réactif.
   recordMoves(moves: ReadonlyArray<{ id: string } & PlayerPosition>): void;
+  // Sa progression, telle que le serveur la dit (`progress:mine`, une route) : le gain qui l'accompagne n'est pas gardé.
+  setProgress(progress: MyProgress): void;
+  // Le niveau d'un autre (ou de soi), que le serveur annonce à tout le bureau (`progress:level`).
+  setLevel(id: string, level: number): void;
+  setTasks(tasks: TaskView[] | null): void;
+  // Une tâche de sa liste, nouvelle (en tête) ou changée (à sa place) ; ou retirée.
+  upsertTask(task: TaskView): void;
+  removeTask(id: string): void;
+  setGiven(given: TaskView[] | null): void;
+  // Une mission qu'elle a confiée, nouvelle (en tête) ou changée (à sa place).
+  upsertGiven(task: TaskView): void;
+  // Parler à cette administratrice (sa clé), ou finir la conversation (null).
+  openClerk(clerk: string | null): void;
+  // Demander l'ouverture d'un panneau ; la coque l'ouvre, puis l'oublie (null).
+  requestPanel(request: PanelRequest | null): void;
   // Retour à l'état de départ : le bureau quitté (déconnexion, autre compte).
   reset(): void;
 }
@@ -269,6 +307,11 @@ type Data = Pick<
   | 'decorEditor'
   | 'zoomPercent'
   | 'positions'
+  | 'progress'
+  | 'tasks'
+  | 'given'
+  | 'clerk'
+  | 'panelRequest'
 >;
 
 // La lumière que personne n'a touchée : allumée, jamais changée. C'est aussi celle d'un `init` qui n'en dit rien.
@@ -306,6 +349,11 @@ const initialData = (): Data => ({
   decorEditor: null,
   zoomPercent: ZOOM_DEFAULT_PERCENT,
   positions: new Map(),
+  progress: null,
+  tasks: null,
+  given: null,
+  clerk: null,
+  panelRequest: null,
 });
 
 const positionOf = (p: PlayerPosition): PlayerPosition => ({ x: p.x, y: p.y, dir: p.dir, moving: p.moving });
@@ -375,6 +423,25 @@ export function selectChatUnread(state: Pick<OfficeState, 'chatAll' | 'chatReadI
   return unread;
 }
 
+// Ses missions ouvertes qu'elle n'a pas encore vues (la pastille du bouton Missions).
+export function selectNewMissions(state: Pick<OfficeState, 'tasks'>): number {
+  return (state.tasks ?? []).filter((task) => task.kind === 'mission' && task.status === 'open' && !task.seen).length;
+}
+
+// Sa progression sans le gain qui l'accompagne : le magasin ne garde que l'état.
+function withoutGain(progress: MyProgress): MyProgress {
+  if (progress.gain === undefined) return progress;
+  const rest = { ...progress };
+  delete rest.gain;
+  return rest;
+}
+
+// Cette liste, avec la tâche mise à jour à sa place, ou ajoutée en tête si elle n'y était pas.
+function upsert(list: readonly TaskView[] | null, task: TaskView): TaskView[] {
+  const known = list ?? [];
+  return known.some((t) => t.id === task.id) ? known.map((t) => (t.id === task.id ? task : t)) : [task, ...known];
+}
+
 // La place de la personne `userId`, ou undefined si elle n'en a pas.
 export function selectDeskOf(state: Pick<OfficeState, 'desks'>, userId: string | null): DeskInfo | undefined {
   return userId === null ? undefined : state.desks.find((desk) => desk.ownerId === userId);
@@ -426,6 +493,8 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           gameInvites: (p.gameInvites ?? []).map(inviteEntry),
           arena: p.arena ?? EMPTY_ARENA,
           arenaCountdownEndsAt: performance.now() + (p.arena?.countdownMs ?? 0),
+          // Sa progression du moment ; un init qui n'en dit rien (la base n'a pas répondu) garde celle qu'on connaissait.
+          progress: p.progress ? withoutGain(p.progress) : state.progress,
           gameInterrupted: interruptedGame(state.games, gamesOf(p.games), p.self.id) ?? state.gameInterrupted,
         }));
       },
@@ -578,6 +647,16 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           const last = state.chatAll.at(-1)?.id ?? null;
           return last === state.chatReadId ? state : { chatReadId: last };
         }),
+
+      setProgress: (progress) => set({ progress: withoutGain(progress) }),
+      setLevel: (id, level) => updatePlayer(id, (p) => ({ ...p, level })),
+      setTasks: (tasks) => set({ tasks }),
+      upsertTask: (task) => set((state) => ({ tasks: upsert(state.tasks, task) })),
+      removeTask: (id) => set((state) => (state.tasks?.some((t) => t.id === id) ? { tasks: state.tasks.filter((t) => t.id !== id) } : state)),
+      setGiven: (given) => set({ given }),
+      upsertGiven: (task) => set((state) => ({ given: upsert(state.given, task) })),
+      openClerk: (clerk) => set({ clerk }),
+      requestPanel: (panelRequest) => set({ panelRequest }),
 
       reset: () => set(initialData()),
     };

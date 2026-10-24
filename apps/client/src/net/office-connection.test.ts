@@ -668,6 +668,57 @@ describe('connectOffice', () => {
     });
   });
 
+  describe('la progression', () => {
+    const mission = { id: 'm1', kind: 'mission' as const, title: 'Refaire le logo', notes: null, tier: 5 as const, xp: 500, status: 'open' as const, createdAt: '2026-10-24T08:00:00.000Z', doneAt: null, owner: { id: 'moi', name: 'MOI' }, giver: { id: 'a', name: 'A' }, seen: false };
+
+    test('progress:mine : au magasin sans le gain, et le gain au bus (progress:gain) ; un état sans gain ne dit rien au bus', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', init());
+      const gain = { amount: 500, source: 'mission' as const, label: 'Refaire le logo', levelBefore: 0, levelAfter: 0, ecus: 0 };
+      socket.receive('progress:mine', { xp: 520, ecus: 0, streak: 1, owned: [], gain });
+      expect(store.getState().progress).toEqual({ xp: 520, ecus: 0, streak: 1, owned: [] });
+      expect(bus.emittedOf('progress:gain')).toEqual([gain]);
+      socket.receive('progress:mine', { xp: 520, ecus: 0, streak: 1, owned: ['statue'] });
+      expect(store.getState().progress?.owned).toEqual(['statue']);
+      expect(bus.emittedOf('progress:gain')).toHaveLength(1);
+    });
+
+    test('progress:level : le niveau au magasin, et au bus avec celui d\'avant', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', init([player('a', { level: 3 })]));
+      socket.receive('progress:level', { id: 'a', level: 4 });
+      expect(store.getState().players.a?.level).toBe(4);
+      expect(bus.emittedOf('net:level')).toEqual([{ id: 'a', level: 4, before: 3 }]);
+    });
+
+    test('task:assigned : dans sa liste, puis au bus ; task:changed : dans la liste qui la concerne', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', init());
+      socket.receive('task:assigned', mission);
+      expect(store.getState().tasks).toEqual([mission]);
+      expect(bus.emittedOf('task:assigned')).toEqual([mission]);
+      socket.receive('task:changed', { ...mission, status: 'cancelled' });
+      expect(store.getState().tasks?.[0]?.status).toBe('cancelled');
+      // Une mission qu'on a confiée, faite : dans les missions confiées.
+      const mine = { ...mission, id: 'm2', owner: { id: 'a', name: 'A' }, giver: { id: 'moi', name: 'MOI' }, status: 'done' as const };
+      socket.receive('task:changed', mine);
+      expect(store.getState().given).toEqual([mine]);
+    });
+
+    test('local:xp part au serveur (debug:xp) une fois la connexion prête', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      bus.emit('local:xp', { xp: 1000 });
+      expect(socket.sentOf('debug:xp')).toEqual([]);
+      socket.serverAccepts();
+      socket.receive('init', init());
+      bus.emit('local:xp', { xp: 1000, ecus: 50 });
+      expect(socket.sentOf('debug:xp')).toEqual([{ xp: 1000, ecus: 50 }]);
+    });
+  });
+
   test('la fonction rendue retire tous ses écouteurs, de la socket comme du bus : plus rien ne passe', () => {
     const disconnect = connectOffice(socket.asSocket(), store, bus);
     expect(socket.listenerCount()).toBeGreaterThan(0);

@@ -6,7 +6,10 @@ import { ActivityMark } from './ActivityMark';
 import { ChevronUpIcon } from './icons';
 import { MeMenu } from './MeMenu';
 import type { PanelControls } from './panels';
+import { levelOf } from '@bureau/shared';
 import { AvatarPortrait } from './ui/AvatarPortrait';
+import { LevelBadge, XpBar } from './ui/ProgressBits';
+import { gradeLabel } from './progress-format';
 
 interface MeChipProps {
   // Le nom de la personne, tel que le serveur le dit (ou celui de la session avant), et son e-mail.
@@ -31,6 +34,8 @@ export function MeChip({ name, email, socket, panels, onSignOut, signingOut }: M
   const avatarKey = useOfficeStore((state) => state.self?.avatarKey ?? null);
   const status = useOfficeStore((state) => state.self?.status ?? null);
   const activity = useOfficeStore((state) => state.self?.activity ?? null);
+  // Sa progression : la pastille du niveau sur le portrait, la barre de l'XP sous le nom. Avant le premier `init`, rien.
+  const xp = useOfficeStore((state) => state.progress?.xp ?? null);
 
   const [open, setOpen] = useState(false);
   const menuId = useId();
@@ -65,7 +70,10 @@ export function MeChip({ name, email, socket, panels, onSignOut, signingOut }: M
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((wasOpen) => !wasOpen)}
       >
-        <AvatarPortrait avatarKey={avatarKey} name={name} size={36} status={status} />
+        <span className="me-portrait">
+          <AvatarPortrait avatarKey={avatarKey} name={name} size={36} status={status} />
+          {xp !== null && <LevelBadge level={levelOf(xp)} />}
+        </span>
         <span className="me-text" id={detailsId}>
           <span className="me-name" title={name}>
             {name}
@@ -76,7 +84,9 @@ export function MeChip({ name, email, socket, panels, onSignOut, signingOut }: M
               <span>{label}</span>
             </span>
           )}
+          {xp !== null && <span className="visually-hidden">{gradeLabel(levelOf(xp))}</span>}
         </span>
+        {xp !== null && <XpBar xp={xp} />}
         <ChevronUpIcon />
       </button>
       <span className="visually-hidden" aria-live="polite" aria-atomic="true">

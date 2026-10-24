@@ -1,4 +1,4 @@
-import type { ActivityState, ArenaAction, ArenaCommand, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, WorldTick } from '@bureau/shared';
+import type { ActivityState, ArenaAction, ArenaCommand, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, TaskView, WorldTick, XpGain } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -67,6 +67,19 @@ export interface OfficeBusEvents {
   // Qui parle dans la room audio/vidéo, soi-même compris (les identifiants des comptes), à chaque changement ; [] en la quittant. Le
   // jeu dessine l'anneau de parole sur leurs étiquettes (tâche 20).
   'media:speaking': (ids: string[]) => void;
+  // Sa progression vient de gagner de l'XP (une tâche cochée, le pointage, une partie…) : le jeu la montre au-dessus de son avatar, le son la joue, l'interface
+  // l'annonce (et un niveau gagné, en grand). Le magasin a déjà la progression à jour.
+  'progress:gain': (gain: XpGain) => void;
+  // Le niveau de quelqu'un vient de changer, soi compris (`before` : celui qu'on lui connaissait) : le jeu fait briller son avatar s'il monte, l'interface l'annonce.
+  // Le magasin l'a déjà.
+  'net:level': (p: { id: string; level: number; before: number }) => void;
+  // Une mission vient d'arriver dans sa liste ; une mission (confiée ou reçue) vient de changer d'état : l'interface l'annonce, le son la joue. Le magasin l'a déjà.
+  'task:assigned': (task: TaskView) => void;
+  'task:changed': (task: TaskView) => void;
+  // L'interface : un achat à la boutique vient d'aboutir (le bruit des écus).
+  'shop:bought': (p: { itemId: string }) => void;
+  // window.__office.xp (tests de bout en bout seulement) : `debug:xp`, que le serveur n'accepte qu'avec E2E=1.
+  'local:xp': (p: { xp: number; ecus?: number }) => void;
 }
 
 // Un écouteur, typé comme ceux d'eventemitter3 : ce que l'événement porte, il le reçoit (emitOnBus et listenOnBus le typent).
@@ -210,6 +223,30 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setCoffee(p.id, p.ms);
       emitOnBus(bus, 'coffee:changed', p);
     },
+    // La progression : la sienne au magasin (sans le gain), puis le gain au bus, pour le jeu, le son et les annonces.
+    'progress:mine': (p) => {
+      state().setProgress(p);
+      if (p.gain && p.gain.amount > 0) emitOnBus(bus, 'progress:gain', p.gain);
+    },
+    // Le niveau de quelqu'un (soi compris) : au magasin, puis au bus, avec celui d'avant.
+    'progress:level': ({ id, level }) => {
+      const { selfId, self, players } = state();
+      const before = (id === selfId ? self?.level : players[id]?.level) ?? 0;
+      state().setLevel(id, level);
+      emitOnBus(bus, 'net:level', { id, level, before });
+    },
+    // Une mission reçue : dans sa liste, puis au bus. Une mission qui change d'état : dans sa liste si elle lui a été confiée (retirée), dans celles qu'elle a
+    // confiées si c'est elle qui l'a donnée (faite, rendue), puis au bus.
+    'task:assigned': (task) => {
+      state().upsertTask(task);
+      emitOnBus(bus, 'task:assigned', task);
+    },
+    'task:changed': (task) => {
+      const { selfId } = state();
+      if (task.owner.id === selfId) state().upsertTask(task);
+      if (task.giver?.id === selfId) state().upsertGiven(task);
+      emitOnBus(bus, 'task:changed', task);
+    },
     // Le faux live (SIM=1 côté serveur) : qui est dans la room, et leur son. Le serveur n'en envoie jamais autrement.
     'sim:room': (p) => setSimRoom(p),
   };
@@ -237,6 +274,9 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     }),
     listenOnBus(bus, 'local:debug-game', (p) => {
       if (state().ready) socket.emit('debug:game', p);
+    }),
+    listenOnBus(bus, 'local:xp', (p) => {
+      if (state().ready) socket.emit('debug:xp', p);
     }),
     listenOnBus(bus, 'local:lights', ({ on }) => {
       if (state().ready) socket.emit('lights:set', { on });

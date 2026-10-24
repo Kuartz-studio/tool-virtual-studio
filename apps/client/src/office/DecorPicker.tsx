@@ -3,7 +3,9 @@ import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } fro
 import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
 import { loadDecorRecents, rememberDecorItem, searchDecorItems } from './decor-picker';
-import { DecorCategoryIcon, EraserIcon, RecentIcon, SearchIcon } from './icons';
+import { DecorCategoryIcon, EcusIcon, EraserIcon, LockIcon, RecentIcon, SearchIcon } from './icons';
+import { formatNumber } from './progress-format';
+import { purchase } from './ShopPanel';
 import { DecorThumb } from './sprites';
 
 // Le sélecteur d'éléments de l'onglet « Objets » du panneau Décorer, à la manière d'un sélecteur d'émojis : la recherche et la gomme en
@@ -11,6 +13,8 @@ import { DecorThumb } from './sprites';
 // une grille de grandes vignettes, et dessous l'élément survolé (ou celui qu'on tient) : son nom, sa taille en cases, comment il se pose.
 // Un clic sur une vignette prend l'élément en main (un autre clic le lâche) ; on le pose ensuite dans la pièce (DecorEditorView).
 // La recherche porte sur toute la banque, sans tenir compte des accents ; Échap la vide avant de fermer le panneau.
+// Un élément de la boutique qu'on n'a pas acheté porte un cadenas et son prix : un clic ne le prend pas en main, il propose de l'acheter (sous la grille,
+// « Acheter pour 800 écus », éteint s'il manque des écus) ; acheté, il se prend en main comme les autres.
 type Shelf = DecorCategoryId | 'recent';
 
 export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hidden?: boolean }) {
@@ -22,6 +26,13 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
   const [shelf, setShelf] = useState<Shelf>(() => (recents.length > 0 ? 'recent' : DECOR_CATEGORIES[0].id));
   const [search, setSearch] = useState('');
   const [peeked, setPeeked] = useState<string | null>(null);
+  // L'élément de la boutique qu'on propose d'acheter (un clic sur un élément pas encore acheté), et pourquoi l'achat a échoué.
+  const [offer, setOffer] = useState<DecorItem | null>(null);
+  const [offerError, setOfferError] = useState<string | null>(null);
+  const [buying, setBuying] = useState(false);
+  const progress = useOfficeStore((state) => state.progress);
+  const owned = useMemo(() => new Set(progress?.owned ?? []), [progress?.owned]);
+  const locked = (item: DecorItem) => item.price !== undefined && !owned.has(item.id);
   const grid = useRef<HTMLDivElement>(null);
 
   const query = search.trim();
@@ -44,7 +55,27 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
     if (grid.current) grid.current.scrollTop = 0;
   }
 
+  async function buy(item: DecorItem) {
+    setBuying(true);
+    setOfferError(null);
+    const done = await purchase(item);
+    setBuying(false);
+    if (done !== true) {
+      setOfferError(done);
+      return;
+    }
+    setOffer(null);
+    take(item.id);
+  }
+
   function take(id: string) {
+    const item = decorItem(id);
+    if (item && locked(item)) {
+      setOffer(item);
+      setOfferError(null);
+      return;
+    }
+    setOffer(null);
     const held = editor?.held === id ? null : id;
     store().holdDecorItem(held);
     if (held === null) return;
@@ -137,11 +168,40 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
                 onBlur={() => setPeeked(null)}
               >
                 <DecorThumb item={item} box={64} />
+                {locked(item) && (
+                  <span className="decor-tile-price" title={t(fr.shop.locked, { price: formatNumber(item.price!) })}>
+                    <LockIcon />
+                    {formatNumber(item.price!)}
+                  </span>
+                )}
               </button>
             ))}
           </div>
         )}
       </div>
+
+      {offer && (
+        <div className="decor-offer" role="group" aria-label={offer.name}>
+          <span className="decor-peek-thumb">
+            <DecorThumb item={offer} box={36} />
+          </span>
+          <span className="decor-peek-text">
+            <span className="decor-peek-name">{offer.name}</span>
+            <span className="decor-peek-meta">{offerError ?? t(fr.shop.locked, { price: formatNumber(offer.price!) })}</span>
+          </span>
+          <button
+            type="button"
+            className="bar-button is-primary"
+            disabled={buying || (progress?.ecus ?? 0) < offer.price!}
+            title={(progress?.ecus ?? 0) < offer.price! ? t(fr.shop.missing, { count: formatNumber(offer.price! - (progress?.ecus ?? 0)) }) : undefined}
+            data-sfx="none"
+            onClick={() => void buy(offer)}
+          >
+            <EcusIcon />
+            {t(fr.shop.buyHere, { price: formatNumber(offer.price!) })}
+          </button>
+        </div>
+      )}
 
       <div className="decor-peek">
         {shown ? (
