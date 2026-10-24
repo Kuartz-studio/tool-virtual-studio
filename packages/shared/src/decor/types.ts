@@ -1,7 +1,8 @@
 // La banque d'éléments : de quoi décorer un bureau (et meubler la carte). Les images viennent du pack LimeZu, triées par catégorie par
 // apps/client/scripts/assets (`pnpm gen:assets`) ; ce fichier dit seulement ce qu'est un élément, le reste (liste, atlas) est généré.
 
-// Les catégories, dans l'ordre où le panneau les montre : ce qui touche au poste de travail d'abord, le reste ensuite.
+// Les catégories, dans l'ordre où le panneau les montre : ce qui touche au poste de travail d'abord, le reste ensuite, et la collection à part en
+// dernier : `boutique`, les seuls éléments qui ont un prix (DecorItem.price), tirés de parties du pack que les autres catégories n'utilisent pas.
 export const DECOR_CATEGORIES = [
   { id: 'ecrans', label: 'Écrans & informatique' },
   { id: 'bureaux', label: 'Bureaux & tables' },
@@ -13,6 +14,7 @@ export const DECOR_CATEGORIES = [
   { id: 'cafe', label: 'Pause & café' },
   { id: 'detente', label: 'Détente & loisirs' },
   { id: 'sport', label: 'Sport & jeux' },
+  { id: 'boutique', label: 'Boutique' },
 ] as const;
 
 export type DecorCategoryId = (typeof DECOR_CATEGORIES)[number]['id'];
@@ -28,7 +30,8 @@ export const DECOR_KINDS = ['object', 'floor', 'onTop', 'wall'] as const;
 export type DecorKind = (typeof DECOR_KINDS)[number];
 
 // Un élément de la banque. `w` et `h` sont la taille de l'image en cases ; `claim`, le nombre de rangées du bas qu'il occupe au sol.
-// `atlas` et `fx`, `fy` disent où est l'image (en pixels) dans l'atlas de sa catégorie.
+// `atlas` et `fx`, `fy` disent où est l'image (en pixels) dans l'atlas de sa catégorie. `price`, le prix en écus (un entier d'au moins 1) : tous les
+// éléments de la catégorie `boutique` en ont un, aucun autre n'en a (ils sont libres) ; le générateur et les tests le vérifient.
 export interface DecorItem {
   id: string;
   cat: DecorCategoryId;
@@ -40,6 +43,7 @@ export interface DecorItem {
   solid: boolean;
   fx: number;
   fy: number;
+  price?: number;
 }
 
 // Un élément posé dans la pièce d'un bureau : `x` et `y` sont la position du coin haut-gauche de son empreinte, en cases au dixième près (2.5 : au

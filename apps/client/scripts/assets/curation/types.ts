@@ -19,9 +19,12 @@ export interface Entry {
   // L'image retournée de gauche à droite : un fauteuil de profil que la planche ne dessine que dans un sens. L'identifiant prend alors le suffixe « -m »
   // (celui de l'original est inchangé).
   flip?: boolean;
+  // Le prix en écus, un entier d'au moins 1 : seuls les éléments de la catégorie `boutique` en ont un, et tous (buildDecor le vérifie). Il est recopié tel
+  // quel dans la liste générée, pour ces éléments seulement : les lignes des autres ne changent pas.
+  price?: number;
 }
 
-export type EntryOptions = Partial<Pick<Entry, 'kind' | 'claim' | 'solid' | 'crop' | 'flip'>>;
+export type EntryOptions = Partial<Pick<Entry, 'kind' | 'claim' | 'solid' | 'crop' | 'flip' | 'price'>>;
 
 // Les planches sources, par clé (celle des identifiants : `of-4-12` est la case 4, 12 de la planche `of`), relatives au dossier des ressources.
 export const SHEETS: Record<string, string> = {
@@ -41,4 +44,9 @@ export const SHEETS: Record<string, string> = {
   jp: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/20_Japanese_interiors_32x32.png',
   xm: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/15_Christmas_32x32.png',
   bd: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/10_Birthday_party_32x32.png',
+  // Les planches de la collection à part (curation/boutique.ts) : salle de bain, chambre, boutique de vêtements, Halloween.
+  bt: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/3_Bathroom_32x32.png',
+  be: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/4_Bedroom_32x32.png',
+  cs: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/21_Clothing_Store_32x32.png',
+  hw: 'moderninteriors-win/1_Interiors/32x32/Theme_Sorter_32x32/11_Halloween_32x32.png',
 };

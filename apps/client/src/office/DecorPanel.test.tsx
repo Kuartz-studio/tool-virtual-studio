@@ -85,7 +85,7 @@ describe('avec un bureau', () => {
     const categories = within(screen.getByRole('group', { name: fr.decor.categories })).getAllByRole('button');
     expect(categories.map((b) => b.textContent)).toEqual(DECOR_CATEGORIES.map((c) => c.label));
     expect(categories[0]!.textContent).toBe('Écrans & informatique');
-    expect(categories.length).toBeLessThanOrEqual(10);
+    expect(categories.length).toBeLessThanOrEqual(11);
     const grid = () => screen.getByRole('group', { name: /^Éléments :/ });
     expect(within(grid()).getAllByRole('button')).toHaveLength(decorItemsOf('ecrans').length);
     await user.click(screen.getByRole('button', { name: 'Plantes' }));
