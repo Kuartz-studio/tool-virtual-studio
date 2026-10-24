@@ -48,8 +48,8 @@ const COMMUN: Entry[] = [
   be("Guirlande d'étoiles dorées", [10, 77, 2, 2], { kind: 'wall', price: 120 }),
   // Les médailles tiennent dans une case (28 × 32 px) au milieu de leur rectangle de deux : le découpage les en sort.
   ms("Médaille d'argent encadrée", [0, 20, 1, 2], { kind: 'wall', crop: [0, 658, 32, 32], price: 130 }),
-  ms("Médaille d'or encadrée", [2, 20, 1, 2], { kind: 'wall', crop: [64, 658, 32, 32], price: 150 }),
   ms('Trophée de bronze', [7, 23, 1, 2], { kind: 'onTop', price: 140 }),
+  ms("Médaille d'or encadrée", [2, 20, 1, 2], { kind: 'wall', crop: [64, 658, 32, 32], price: 150 }),
   be('Tapis rond orange', [10, 69, 2, 2], { kind: 'floor', price: 150 }),
   be('Tapis rond à pois roses', [13, 74, 2, 2], { kind: 'floor', price: 150 }),
   mu('Cordon de velours doré', [0, 17, 3, 2], { solid: false, price: 160 }),
@@ -59,7 +59,7 @@ const COMMUN: Entry[] = [
   mu('Petite amphore rose', [10, 8, 2, 2], { kind: 'onTop', price: 180 }),
   mu('Vase de porcelaine sur socle', [12, 15, 1, 2], { price: 200 }),
   mu('Vase rose sur socle', [13, 15, 1, 2], { price: 200 }),
-  ge('Tapis cramoisi à chaîne d\'or', [3, 22, 2, 2], { kind: 'floor', price: 200 }),
+  ge("Tapis cramoisi à chaîne d'or", [3, 22, 2, 2], { kind: 'floor', price: 200 }),
   ms("Trophée d'or", [9, 23, 1, 2], { kind: 'onTop', price: 220 }),
   mu('Petite amphore dorée', [8, 8, 2, 2], { kind: 'onTop', price: 220 }),
   mu("Idole d'or au rubis", [10, 55, 1, 1], { kind: 'onTop', price: 250 }),
