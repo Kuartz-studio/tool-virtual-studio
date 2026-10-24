@@ -1,5 +1,5 @@
-import type { MediaJoinPayload } from '@bureau/shared';
-import { describe, expect, test, vi } from 'vitest';
+import { MEDIA_PARK_MS, type MediaJoinPayload } from '@bureau/shared';
+import { describe, expect, onTestFinished, test, vi } from 'vitest';
 import { FakeMediaClient } from './fake-media-client';
 import type { MediaSnapshot } from './media-client';
 
@@ -386,9 +386,8 @@ describe('dans une room', () => {
     expect(client.getSnapshot()).toMatchObject({ room: 'r2', error: null });
   });
 
-  // Un retrait en retard : le serveur l'a demandé en sortant la personne d'un groupe, puis elle y est revenue (même room), et LiveKit
-  // l'applique à sa nouvelle connexion. Le serveur, pour qui elle est dans la room, ne redira rien : sans erreur, elle resterait seule,
-  // sans conversation et sans « Reconnecter ».
+  // Un retrait inexpliqué (le serveur ne retire plus personne d'une room où il le renvoie : c'est une sûreté). Le serveur, pour qui elle est
+  // dans la room, ne redira rien : sans erreur, elle resterait seule, sans conversation et sans « Reconnecter ».
   describe('retiré, et la room toujours voulue 2 s plus tard', () => {
     test('ni media:leave ni autre media:join : connection_failed (« Reconnecter »)', async () => {
       const client = new FakeMediaClient({ mic: true, cam: false });
@@ -604,5 +603,118 @@ describe('le son des autres (startAudio, audioBlocked)', () => {
     client.blockAudio();
     await client.join(payload('r2'));
     expect(client.getSnapshot().audioBlocked).toBe(false);
+  });
+});
+
+describe('parquer une room, et la reprendre', () => {
+  const resumeOf = (room: string, resume = '1'): MediaJoinPayload => ({ ...payload(room), resume });
+
+  test('leave avec park : la room est parquée, pas quittée ; pour l\'interface, c\'est une sortie (plus de room, personne)', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    await client.join(payload('r1'));
+    client.addRemote({ id: 'ana' });
+    await client.leave({ park: true });
+    expect(client.journal).toEqual(['join:r1', 'park:r1']);
+    expect(client.parkedRoom).toBe('r1');
+    expect(client.micKept).toBe(true);
+    expect(client.getSnapshot()).toEqual({ room: null, participants: [], local: { mic: true, cam: true, screen: false }, error: null, audioBlocked: false });
+  });
+
+  test('le join de la room parquée, avec resume : elle reprend, sans nouvelle connexion ; le micro gardé est republié, la caméra rallumée', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: true });
+    await client.join(payload('r1'));
+    await client.leave({ park: true });
+    await client.join(resumeOf('r1'));
+    expect(client.journal).toEqual(['join:r1', 'park:r1', 'resume:r1']);
+    expect(client.deviceLog).toEqual(['mic:on', 'cam:on', 'mic:kept', 'cam:on']);
+    expect(client.getSnapshot()).toMatchObject({ room: 'r1', participants: [me({ mic: true, cam: true })], error: null });
+    expect(client.parkedRoom).toBeNull();
+  });
+
+  test('une reprise qui échoue (pas de confirmation) : connexion avec le jeton, et le micro gardé y sert quand même', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    await client.leave({ park: true });
+    client.failResumes();
+    await client.join(resumeOf('r1'));
+    expect(client.journal).toEqual(['join:r1', 'park:r1', 'resume:r1', 'unpark', 'join:r1']);
+    expect(client.deviceLog).toEqual(['mic:on', 'mic:kept']);
+    expect(client.getSnapshot()).toMatchObject({ room: 'r1', error: null });
+  });
+
+  test('sans resume (le serveur ne l\'a pas reprise), ou une autre room : la parquée est fermée, nouvelle connexion', async () => {
+    const client = new FakeMediaClient({ mic: false, cam: false });
+    await client.join(payload('r1'));
+    await client.leave({ park: true });
+    await client.join(payload('r1'));
+    await client.leave({ park: true });
+    await client.join(resumeOf('r2'));
+    expect(client.journal).toEqual(['join:r1', 'park:r1', 'unpark', 'join:r1', 'park:r1', 'unpark', 'join:r2']);
+  });
+
+  test('la fin du délai (MEDIA_PARK_MS) ferme la room parquée et arrête le micro gardé ; une sortie pour de bon aussi', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    await client.leave({ park: true });
+    await vi.advanceTimersByTimeAsync(MEDIA_PARK_MS - 1);
+    expect(client.parkedRoom).toBe('r1');
+    await vi.advanceTimersByTimeAsync(1);
+    expect(client.parkedRoom).toBeNull();
+    expect(client.micKept).toBe(false);
+    expect(client.journal.at(-1)).toBe('unpark');
+
+    await client.join(payload('r2'));
+    await client.leave({ park: true });
+    await client.leave();
+    expect(client.parkedRoom).toBeNull();
+    expect(client.micKept).toBe(false);
+    await vi.advanceTimersByTimeAsync(MEDIA_PARK_MS);
+    expect(client.journal.filter((entry) => entry === 'unpark')).toHaveLength(2);
+  });
+
+  test('une sortie avec park pendant la connexion : on ne parque qu\'une room connectée, celle-ci est quittée', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    const release = client.holdConnections();
+    const joined = client.join(payload('r1'));
+    await client.leave({ park: true });
+    release();
+    await joined;
+    expect(client.journal).toEqual(['join:r1', 'leave']);
+    expect(client.parkedRoom).toBeNull();
+  });
+
+  test('une sortie pendant la reprise : elle échoue, rien ne reste ouvert ; le join suivant se connecte', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    await client.leave({ park: true });
+    const release = client.holdResumes();
+    const back = client.join(resumeOf('r1'));
+    await flush();
+    expect(client.getSnapshot().room).toBe('r1');
+    await client.leave({ park: true });
+    release();
+    await back;
+    expect(client.getSnapshot()).toMatchObject({ room: null, error: null });
+    expect(client.parkedRoom).toBeNull();
+    expect(client.micKept).toBe(false);
+    await client.join(resumeOf('r1'));
+    expect(client.journal.at(-1)).toBe('join:r1');
+  });
+
+  test('couper le micro pendant le parcage arrête le micro gardé (l\'indicateur du navigateur s\'éteint) ; la room reste parquée', async () => {
+    const client = new FakeMediaClient({ mic: true, cam: false });
+    await client.join(payload('r1'));
+    await client.leave({ park: true });
+    await client.setMic(false);
+    expect(client.deviceLog.at(-1)).toBe('mic:kept-off');
+    expect(client.parkedRoom).toBe('r1');
+    // Repris, micro coupé : rien n'est publié.
+    await client.join(resumeOf('r1'));
+    expect(client.getSnapshot()).toMatchObject({ room: 'r1', participants: [me()] });
+    expect(client.deviceLog).toEqual(['mic:on', 'mic:kept-off']);
   });
 });

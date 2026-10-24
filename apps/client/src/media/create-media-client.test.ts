@@ -187,6 +187,33 @@ describe('LazyTransport', () => {
     expect(load).toHaveBeenCalledTimes(2);
     expect(transport.log).toEqual(['connect:r1']);
   });
+
+  test('parquer, reprendre, fermer la parquée : rien avant le chargement ; ensuite passés au transport, ou, s\'il ne sait pas parquer, une déconnexion et pas de reprise', async () => {
+    const plain = new RecordingTransport();
+    const lazy = new LazyTransport(async () => plain);
+    await lazy.park();
+    expect(await lazy.resume({ ...payload('r1'), resume: '1' }, {}, events)).toBe(false);
+    await lazy.unpark();
+    expect(plain.log).toEqual([]);
+    await lazy.connect(payload('r1'), {}, events);
+    await lazy.park();
+    expect(await lazy.resume({ ...payload('r1'), resume: '1' }, {}, events)).toBe(false);
+    expect(plain.log).toEqual(['connect:r1', 'disconnect']);
+
+    const parking = Object.assign(new RecordingTransport(), {
+      park: vi.fn(async () => {}),
+      resume: vi.fn(async () => true),
+      unpark: vi.fn(async () => {}),
+    });
+    const lazier = new LazyTransport(async () => parking);
+    await lazier.connect(payload('r1'), {}, events);
+    await lazier.park();
+    expect(await lazier.resume({ ...payload('r1'), resume: '1' }, { audioInput: 'micro' }, events)).toBe(true);
+    await lazier.unpark();
+    expect(parking.park).toHaveBeenCalledOnce();
+    expect(parking.resume).toHaveBeenCalledWith({ ...payload('r1'), resume: '1' }, { audioInput: 'micro' }, events);
+    expect(parking.unpark).toHaveBeenCalledOnce();
+  });
 });
 
 describe('createMediaClient', () => {

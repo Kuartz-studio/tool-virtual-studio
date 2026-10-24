@@ -13,25 +13,28 @@ export const AUDIBLE_GAIN = 0.02;
 
 // Le volume de chaque autre personne de la conversation, pour qui est en `self` : plein dans une zone (bureau, salle), baissant avec la
 // distance dans un espace ouvert (gainBetween). Une personne dont on ne connaît pas encore la place est à plein volume : sa position
-// arrive avec le tick qui suit son arrivée.
+// arrive avec le tick qui suit son arrivée. `locked` : les membres de sa conversation verrouillée, à plein volume où qu'ils soient (ils
+// restent ensemble à travers le bureau, comme au téléphone).
 export function volumesFor(
   map: OfficeMap,
   self: { x: number; y: number },
   others: ReadonlyArray<{ id: string }>,
   positionOf: (id: string) => { x: number; y: number } | undefined,
+  locked: ReadonlySet<string> = new Set(),
 ): Record<string, number> {
   const volumes: Record<string, number> = {};
   for (const { id } of others) {
     const at = positionOf(id);
     // Deux décimales : le volume ne change pas pour un pixel de plus.
-    volumes[id] = at === undefined ? 1 : Math.round(gainBetween(map, self, at) * 100) / 100;
+    volumes[id] = at === undefined || locked.has(id) ? 1 : Math.round(gainBetween(map, self, at) * 100) / 100;
   }
   return volumes;
 }
 
 // Le son des autres baisse avec la distance, hors des bureaux et des salles. Tant qu'on est dans une conversation, ce hook règle le volume
 // de chacun (client.setVolumes) dix fois par seconde, d'après ma position (celle que le jeu envoie, `local:move`) et celles des autres
-// (le magasin). Il rend les identifiants de ceux qu'on n'entend plus du tout : leurs vignettes sont masquées.
+// (le magasin). Il rend les identifiants de ceux qu'on n'entend plus du tout : leurs vignettes sont masquées. Dans une conversation
+// verrouillée (le magasin, `conversationLock`), ses membres sont à plein volume, et leurs vignettes restent, où qu'ils aillent.
 // Sans carte (le jeu n'est pas démarré), ou hors conversation, rien ne change, et personne n'est masqué.
 export function useSpatialAudio(client: MediaClient, snapshot: MediaSnapshot): ReadonlySet<string> {
   const [inaudible, setInaudible] = useState<ReadonlySet<string>>(() => new Set());
@@ -54,9 +57,10 @@ export function useSpatialAudio(client: MediaClient, snapshot: MediaSnapshot): R
     });
     let lastSignature = '';
     const update = () => {
-      const { officeMap, positions } = useOfficeStore.getState();
+      const { officeMap, positions, conversationLock } = useOfficeStore.getState();
       if (officeMap === null || self === null) return;
-      const volumes = volumesFor(officeMap, self, others.map((id) => ({ id })), (id) => positions.get(id));
+      const locked = new Set(conversationLock?.members ?? []);
+      const volumes = volumesFor(officeMap, self, others.map((id) => ({ id })), (id) => positions.get(id), locked);
       const heard = deaf ? Object.fromEntries(others.map((id) => [id, 0])) : volumes;
       const signature = JSON.stringify([heard, volumes]);
       if (signature === lastSignature) return;

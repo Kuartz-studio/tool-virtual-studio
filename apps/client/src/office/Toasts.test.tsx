@@ -1,4 +1,4 @@
-import type { LightsState, PublicPlayer } from '@bureau/shared';
+import type { ConversationLockNotice, LightsState, PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -286,5 +286,54 @@ describe('la lumière', () => {
     expect(EventBus.listenerCount('lights:changed')).toBe(1);
     unmount();
     expect(EventBus.listenerCount('lights:changed')).toBe(0);
+  });
+});
+
+// Sa conversation verrouillée : à chaque `conversation:lock` du bus (le magasin est déjà à jour), un toast, un seul à la fois.
+describe('le verrou de la conversation', () => {
+  const player = (id: string, name: string): PublicPlayer => ({
+    id,
+    name,
+    avatarKey: null,
+    x: 80,
+    y: 240,
+    dir: 'down',
+    moving: false,
+    status: 'available',
+    media: { mic: false, cam: false, screen: false },
+  });
+  const arrive = () =>
+    act(() =>
+      useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob Martin')], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] }),
+    );
+  const lock = { id: 'g1', members: ['bob', 'moi'], by: { id: 'bob', name: 'Bob Martin' }, at: 1 };
+  const notice = (p: ConversationLockNotice) => act(() => void emitOnBus(EventBus, 'conversation:lock', p));
+  const icon = () => screen.getByRole('status').querySelector('.toast-icon svg') as SVGElement;
+
+  test('un autre la verrouille : son nom, son portrait, le cadenas ; puis la déverrouille : le cadenas ouvert, à la place du premier toast', () => {
+    arrive();
+    setup();
+    notice({ lock, cause: 'locked', by: { id: 'bob', name: 'Bob Martin' } });
+    expect(screen.getByRole('status').textContent).toContain(t(fr.media.lock.toast.locked, { name: 'Bob Martin' }));
+    expect(screen.getByRole('status').querySelector('.portrait-initials')?.textContent).toBe('BM');
+    expect(icon().classList.contains('lucide-lock')).toBe(true);
+    notice({ lock: null, cause: 'unlocked', by: { id: 'bob', name: 'Bob Martin' } });
+    expect(screen.getAllByText(/conversation/)).toHaveLength(1);
+    expect(screen.getByRole('status').textContent).toContain(t(fr.media.lock.toast.unlocked, { name: 'Bob Martin' }));
+    expect(icon().classList.contains('lucide-lock-open')).toBe(true);
+  });
+
+  test('soi-même : « Tu as verrouillé… », « Tu as quitté… » ; quelqu\'un qui sort ; plus personne avec soi', () => {
+    arrive();
+    setup();
+    notice({ lock: { ...lock, by: { id: 'moi', name: 'Léa' } }, cause: 'locked', by: { id: 'moi', name: 'Léa' } });
+    expect(screen.getByRole('status').textContent).toContain(fr.media.lock.toast.lockedSelf);
+    notice({ lock, cause: 'left', by: { id: 'zoe', name: 'Zoé' } });
+    expect(screen.getByRole('status').textContent).toContain(t(fr.media.lock.toast.left, { name: 'Zoé' }));
+    notice({ lock: null, cause: 'ended', by: { id: 'bob', name: 'Bob Martin' } });
+    expect(screen.getByRole('status').textContent).toContain(fr.media.lock.toast.ended);
+    notice({ lock: null, cause: 'quit', by: { id: 'moi', name: 'Léa' } });
+    expect(screen.getByRole('status').textContent).toContain(fr.media.lock.toast.quit);
+    expect(screen.getByRole('status').querySelector('.portrait-initials')).toBeNull();
   });
 });

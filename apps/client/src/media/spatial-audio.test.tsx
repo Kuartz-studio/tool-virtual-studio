@@ -45,6 +45,11 @@ describe('volumesFor', () => {
     const [volume] = Object.values(volumesFor(map, corridor(4), [{ id: 'a' }], () => ({ x: tile(4) + tile(10) + 7, y: tile(12) })));
     expect(Math.round(volume! * 100) / 100).toBe(volume);
   });
+
+  test('les membres de sa conversation verrouillée : plein volume, même à l\'autre bout du bureau', () => {
+    const where = (id: string) => ({ ami: corridor(60), autre: corridor(60) })[id];
+    expect(volumesFor(map, corridor(4), [{ id: 'ami' }, { id: 'autre' }], where, new Set(['ami']))).toEqual({ ami: 1, autre: 0 });
+  });
 });
 
 describe('useSpatialAudio', () => {
@@ -164,6 +169,22 @@ describe('useSpatialAudio', () => {
       vi.advanceTimersByTime(1000 / SPATIAL_AUDIO_HZ);
     });
     expect(client.volumes).toEqual({ bob: 1 });
+  });
+
+  test('une conversation verrouillée : ses membres à plein volume, leur vignette reste, où qu\'ils aillent ; déverrouillée, la distance reprend', async () => {
+    const { client, hook } = await inRoom({ bob: corridor(40) });
+    expect(client.volumes).toEqual({ bob: 0 });
+    act(() => useOfficeStore.getState().setConversationLock({ id: 'g1', members: ['bob', 'moi'], by: { id: 'moi', name: 'moi' }, at: 0 }));
+    act(() => {
+      vi.advanceTimersByTime(1000 / SPATIAL_AUDIO_HZ);
+    });
+    expect(client.volumes).toEqual({ bob: 1 });
+    expect(hook.result.current.size).toBe(0);
+    act(() => useOfficeStore.getState().setConversationLock(null));
+    act(() => {
+      vi.advanceTimersByTime(1000 / SPATIAL_AUDIO_HZ);
+    });
+    expect(client.volumes).toEqual({ bob: 0 });
   });
 
   test('un seuil d\'inaudible : en dessous de AUDIBLE_GAIN', () => {

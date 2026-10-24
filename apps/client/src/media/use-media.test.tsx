@@ -127,6 +127,23 @@ describe('les consignes du serveur', () => {
     expect(hook.result.current.room).toBeNull();
   });
 
+  test('media:leave avec park : la connexion est parquée ; le media:join de cette room avec resume la reprend, sans se reconnecter', async () => {
+    const { socket, client, hook } = setup();
+    await serverSays(socket, client, 'r1');
+    act(() => socket.receive('media:leave', { park: true }));
+    await settle(client);
+    expect(hook.result.current.room).toBeNull();
+    act(() => socket.receive('media:join', { ...payload('r1'), resume: '1' }));
+    await settle(client);
+    expect(client.journal).toEqual(['join:r1', 'park:r1', 'resume:r1']);
+    expect(hook.result.current.room).toBe('r1');
+    // Un autre onglet prend la place : la sortie est pour de bon, même parquée.
+    act(() => socket.receive('media:leave', { park: true }));
+    act(() => socket.receive('session:replaced'));
+    await settle(client);
+    expect(client.parkedRoom).toBeNull();
+  });
+
   test('media:join pour la room où l\'on est déjà (la socket revenue après une coupure, jeton neuf) : rien ne change', async () => {
     const { socket, client, hook } = setup();
     await serverSays(socket, client, 'r1');

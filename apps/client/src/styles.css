@@ -1313,6 +1313,67 @@ svg.lucide.icon-s {
   font-size: 2rem;
 }
 
+/* Le verrou de la conversation, au-dessus des vignettes : un petit dock, le cadenas et ce qu'il dit (« Verrouiller », ou qui l'a verrouillée,
+   sur l'accent), et « Quitter » quand elle est verrouillée. */
+.conversation-lock {
+  gap: 2px;
+  padding: 4px;
+}
+
+.conversation-lock-toggle,
+.conversation-lock-leave {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  white-space: nowrap;
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-btn);
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out);
+}
+
+.conversation-lock-toggle svg.lucide {
+  width: 18px;
+  height: 18px;
+}
+
+.conversation-lock-leave {
+  color: var(--text-soft);
+}
+
+.conversation-lock-toggle:hover:not(:disabled),
+.conversation-lock-leave:hover:not(:disabled) {
+  background: var(--surface-soft);
+}
+
+.conversation-lock-toggle[aria-pressed='true'] {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.conversation-lock-toggle[aria-pressed='true']:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.conversation-lock-toggle:disabled,
+.conversation-lock-leave:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.conversation-lock-toggle:focus-visible,
+.conversation-lock-leave:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 2px;
+}
+
 /* Ce qui ne marche pas dans la conversation, au-dessus des vignettes. */
 .video-notice {
   display: flex;

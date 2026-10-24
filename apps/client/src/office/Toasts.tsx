@@ -7,7 +7,7 @@ import { sendDeskCommand } from '../net/desk-commands';
 import { listenOnBus } from '../net/office-connection';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
-import { DoorIcon, LightbulbIcon } from './icons';
+import { DoorIcon, LightbulbIcon, LockIcon, LockOpenIcon } from './icons';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 
 // Combien de temps un message passager reste affiché (celui d'une porte, d'un toc toc envoyé).
@@ -140,6 +140,39 @@ function useLightsToasts(): void {
   );
 }
 
+// Sa conversation verrouillée qui change (`conversation:lock` sur le bus : le magasin la dit déjà à jour) : un toast avec le cadenas (fermé, ou
+// ouvert quand le verrou s'en va), et le portrait de qui l'a fait. « Léa a verrouillé la conversation » pour les autres, « Tu as verrouillé la
+// conversation » pour qui a cliqué ; quelqu'un qui en sort ; la conversation qui n'est plus verrouillée faute de monde. Un seul toast pour le
+// verrou : des changements coup sur coup se remplacent.
+function useConversationToasts(): void {
+  useEffect(
+    () =>
+      listenOnBus(EventBus, 'conversation:lock', ({ cause, by }) => {
+        const { selfId, self, players } = useOfficeStore.getState();
+        const texts = fr.media.lock.toast;
+        const mine = by !== null && by.id === selfId;
+        const name = by?.name ?? '';
+        const text =
+          cause === 'locked'
+            ? mine
+              ? texts.lockedSelf
+              : t(texts.locked, { name })
+            : cause === 'unlocked'
+              ? mine
+                ? texts.unlockedSelf
+                : t(texts.unlocked, { name })
+              : cause === 'left'
+                ? t(texts.left, { name })
+                : cause === 'quit'
+                  ? texts.quit
+                  : texts.ended;
+        const author = by !== null && (cause === 'locked' || cause === 'unlocked' || cause === 'left') ? { avatarKey: (mine ? self : players[by.id])?.avatarKey ?? null, name } : {};
+        useToasts.getState().push({ key: 'conversation-lock', icon: cause === 'locked' || cause === 'left' ? <LockIcon /> : <LockOpenIcon />, ...author, text });
+      }),
+    [],
+  );
+}
+
 // Un toast : le portrait de qui l'a fait, l'icône, le texte, et ses réponses. Il s'efface au bout de son temps (un toast qui en remplace un
 // autre, de même clé, repart de zéro).
 function Toast({ item }: { item: ToastItem }) {
@@ -173,6 +206,7 @@ export function Toasts({ socket }: { socket: OfficeSocket | null }) {
   const items = useToasts((state) => state.items);
   useDeskToasts(socket);
   useLightsToasts();
+  useConversationToasts();
   useGameToasts(socket);
   // Quitter le bureau (la déconnexion, une autre page) vide la file : rien ne reparaît à la prochaine arrivée.
   useEffect(() => () => useToasts.getState().clear(), []);

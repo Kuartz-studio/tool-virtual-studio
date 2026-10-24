@@ -9,7 +9,11 @@ import { getSimRoom, subscribeSimConnectionLost, subscribeSimRoom } from './sim-
 //
 // La personne qui joue n'est pas entendue : micro, caméra et partage d'écran s'allument et s'éteignent sans rien demander au
 // navigateur. Il n'y a pas de vidéo. Les personnes de la room qui ont un fichier audio « parlent » (l'anneau de leur étiquette).
+//
+// Parquer et reprendre suivent le vrai transport, sans réseau : parquer fait taire la room en retenant son nom ; une reprise de cette room
+// (un media:join avec `resume`) la rouvre aussitôt, comme une connexion (il n'y a pas de droits à attendre chez un faux LiveKit).
 export class SimTransport implements MediaTransport {
+  private parked: string | null = null;
   private room: string | null = null;
   private self: { id: string; name: string } | null = null;
   private events: TransportEvents | null = null;
@@ -23,6 +27,7 @@ export class SimTransport implements MediaTransport {
   private volumes: Readonly<Record<string, number>> = {};
 
   async connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void> {
+    this.parked = null;
     const token = decodeSimToken(p.token);
     if (!token) throw new Error('Jeton du faux live illisible');
     this.room = p.room;
@@ -49,7 +54,24 @@ export class SimTransport implements MediaTransport {
   }
 
   async disconnect(): Promise<void> {
+    this.parked = null;
     this.leave();
+  }
+
+  async park(): Promise<void> {
+    const room = this.room;
+    this.leave();
+    this.parked = room;
+  }
+
+  async resume(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<boolean> {
+    if (this.parked === null || this.parked !== p.room || p.resume === undefined) return false;
+    await this.connect(p, devices, events);
+    return true;
+  }
+
+  async unpark(): Promise<void> {
+    this.parked = null;
   }
 
   async setSource(source: LocalSource, on: boolean): Promise<void> {

@@ -17,6 +17,7 @@ import { CharacterBuilder } from './CharacterBuilder';
 import { CoffeePill } from './CoffeePill';
 import { DecorPanel } from './DecorPanel';
 import { ControlBar } from './ControlBar';
+import { ConversationLockBar } from './ConversationLock';
 import { DeskPanel } from './DeskPanel';
 import type { PanelControls, PanelId } from './panels';
 import { PeoplePanel } from './PeoplePanel';
@@ -68,7 +69,7 @@ interface OfficeShellProps {
 
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
 // - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), avec dessous la pastille du café quand on en a un (CoffeePill), et en haut au
-//   milieu les vignettes de la conversation (VideoStrip) ;
+//   milieu les vignettes de la conversation (VideoStrip), avec au-dessus le verrou de la conversation (ConversationLockBar) ;
 // - sous elles, les messages passagers (Toasts) : un toc toc à la porte de son bureau, une porte fermée ;
 // - à droite, un seul panneau à la fois (Personnes, Chat, Mon bureau, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
 // - en bas, la barre (ControlBar) : des docks à icônes (la puce « Moi » avec ton statut, le micro, la caméra, la musique et le bureau, le zoom, le
@@ -198,7 +199,13 @@ export function OfficeShell({
         <CoffeePill />
         <ArenaCard socket={socket} />
         <div className="office-top">
-          <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />
+          <VideoStrip
+            snapshot={media.snapshot}
+            client={media.client}
+            hidden={inaudible}
+            onReconnect={onReconnect}
+            controls={<ConversationLockBar socket={socket} />}
+          />
         </div>
         {connecting && (
           <p className="office-connecting" role="status">

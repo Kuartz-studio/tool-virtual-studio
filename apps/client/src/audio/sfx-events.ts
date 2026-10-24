@@ -65,8 +65,8 @@ interface SfxDeps {
 
 // Branche les effets sur ce qui se passe : les clics de l'interface, les arrivées et départs, les messages, les toc toc, la conversation
 // qui commence ou finit, l'arrivée au bureau, la connexion qui tombe, un bureau ou un personnage enregistré, la lumière qu'on allume ou
-// qu'on éteint, le café qu'on se sert, la musique que quelqu'un d'autre règle dans la pièce où l'on est, le voyage d'un mode. Renvoie la
-// fonction qui débranche tout.
+// qu'on éteint, le café qu'on se sert, la musique que quelqu'un d'autre règle dans la pièce où l'on est, le voyage d'un mode, le verrou de sa
+// conversation. Renvoie la fonction qui débranche tout.
 //
 // En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc, la lumière, la musique) ne sonne pas.
 export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKey = () => null }: SfxDeps): () => void {
@@ -121,6 +121,12 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKe
     }),
     listenOnBus(bus, 'net:profile', ({ id }) => {
       if (id === state().selfId) engine.playSfx('success');
+    }),
+    // Sa conversation verrouillée : le bruit d'un verrou qui se ferme (verrouillée) ou qui s'ouvre (déverrouillée, ou plus personne avec soi),
+    // chez tous ses membres, celui qui a cliqué compris (son clic est muet). Qui en sort a déjà la fin de la conversation (media:leave).
+    listenOnBus(bus, 'conversation:lock', ({ cause }) => {
+      if (cause === 'locked') engine.playSfx('lock');
+      else if (cause === 'unlocked' || cause === 'ended') engine.playSfx('unlock');
     }),
     store.subscribe((now, before) => {
       // L'arrivée au bureau, la première fois (le premier `init`) ; la connexion qui tombe, si elle ne revient pas tout de suite.

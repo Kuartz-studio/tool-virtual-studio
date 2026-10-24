@@ -153,8 +153,29 @@ describe('connectOffice', () => {
     expect(store.getState().mediaInstruction).toEqual({ type: 'join', p });
     socket.receive('media:leave');
     expect(store.getState().mediaInstruction).toEqual({ type: 'leave' });
+    // Une sortie qui garde la connexion parquée le dit aussi.
+    socket.receive('media:leave', { park: true });
+    expect(store.getState().mediaInstruction).toEqual({ type: 'leave', park: true });
     // Ce n'est pas pour le jeu.
     expect(bus.emitted.map(([event]) => event)).toEqual(['net:init']);
+  });
+
+  test('conversation:lock : sa conversation verrouillée au magasin, puis au bus (toast et son) ; l\'init dit celle du moment', () => {
+    connectOffice(socket.asSocket(), store, bus);
+    socket.serverAccepts();
+    socket.receive('init', init());
+    expect(store.getState().conversationLock).toBeNull();
+    const lock = { id: 'g1', members: ['bob', 'moi'], by: { id: 'bob', name: 'Bob' }, at: 1 };
+    const notice = { lock, cause: 'locked' as const, by: { id: 'bob', name: 'Bob' } };
+    socket.receive('conversation:lock', notice);
+    expect(store.getState().conversationLock).toEqual(lock);
+    expect(bus.emitted.at(-1)).toEqual(['conversation:lock', notice]);
+    socket.receive('conversation:lock', { lock: null, cause: 'unlocked', by: { id: 'bob', name: 'Bob' } });
+    expect(store.getState().conversationLock).toBeNull();
+    socket.receive('init', { ...init(), conversationLock: lock });
+    expect(store.getState().conversationLock).toEqual(lock);
+    socket.receive('init', init());
+    expect(store.getState().conversationLock).toBeNull();
   });
 
   // Une consigne ne vaut que pour la connexion qui l'a reçue : pendant une coupure, le serveur peut sortir la personne de son groupe

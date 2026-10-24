@@ -192,8 +192,9 @@ export interface ConversationLockNotice {
   by: { id: string; name: string } | null;
 }
 // La réponse du serveur à `conversation:do` : `invalid` (commande refusée), `rate_limited`, `no_group` (verrouiller sans être dans une conversation,
-// à deux au moins), `not_locked` (déverrouiller ou quitter une conversation qui ne l'est pas).
-export type ConversationAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'no_group' | 'not_locked' };
+// à deux au moins), `not_locked` (déverrouiller ou quitter une conversation qui ne l'est pas). `unavailable` ne vient que du client : pas de
+// connexion, ou pas de réponse à temps.
+export type ConversationAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'no_group' | 'not_locked' | 'unavailable' };
 // Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
 // le voient sauter à sa nouvelle place au lieu de glisser jusqu'à elle à travers les murs.
 export interface WorldTick { t: number; moves: Array<{ id: string; tp?: true } & MovePayload> }

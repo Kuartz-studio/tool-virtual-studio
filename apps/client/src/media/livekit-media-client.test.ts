@@ -1,7 +1,7 @@
-import type { MediaJoinPayload } from '@bureau/shared';
+import { MEDIA_PARK_MS, type MediaJoinPayload } from '@bureau/shared';
 import { DisconnectReason, RoomEvent, Track } from 'livekit-client';
-import { afterEach, describe, expect, test, vi } from 'vitest';
-import { LiveKitTransport } from './livekit-media-client';
+import { afterEach, describe, expect, onTestFinished, test, vi } from 'vitest';
+import { LiveKitTransport, RESUME_TIMEOUT_MS } from './livekit-media-client';
 import type { MediaClient, MediaPrefs } from './media-client';
 import { MediaSession } from './media-session';
 
@@ -26,7 +26,27 @@ const lk = vi.hoisted(() => {
       for (const element of detached) this.attached.splice(this.attached.indexOf(element), 1);
       return el ?? detached;
     });
-    constructor(readonly kind: 'audio' | 'video') {}
+    // Une piste locale (le micro, la caméra) : arrêtée, elle ne se republie plus ; coupée (isMuted), unmute la rallume.
+    readonly mediaStreamTrack = { readyState: 'live' as 'live' | 'ended' };
+    isMuted = false;
+    readonly stop = vi.fn(() => {
+      this.mediaStreamTrack.readyState = 'ended';
+    });
+    readonly unmute = vi.fn(async () => {
+      this.isMuted = false;
+    });
+    constructor(
+      readonly kind: 'audio' | 'video',
+      readonly source?: string,
+    ) {}
+  }
+
+  // Une publication : sa source, sa piste vidéo une fois reçue, ou sa piste (locale, ou reçue avec isSubscribed).
+  interface FakePublication {
+    source: string;
+    videoTrack?: FakeTrack;
+    track?: FakeTrack;
+    isSubscribed?: boolean;
   }
 
   class FakeParticipant {
@@ -34,8 +54,13 @@ const lk = vi.hoisted(() => {
     isCameraEnabled = false;
     isScreenShareEnabled = false;
     isSpeaking = false;
+    // Ses attributs : le serveur en pose un sur qui est parqué dans la room, et sur qui il reprend.
+    attributes: Record<string, string> = {};
     // Les publications, par source (Track.Source) : leur piste vidéo, une fois reçue.
-    readonly publications = new Map<string, { source: string; videoTrack?: FakeTrack }>();
+    readonly publications = new Map<string, FakePublication>();
+    get trackPublications(): Map<string, FakePublication> {
+      return this.publications;
+    }
     // Les volumes que la page a demandés à LiveKit pour cette personne : [source, volume].
     readonly volumeCalls: Array<[string, number]> = [];
     readonly setVolume = vi.fn((volume: number, source: string) => {
@@ -56,14 +81,34 @@ const lk = vi.hoisted(() => {
     refuse = new Set<string>();
     // Retient les allumages : une demande d'accès sans réponse, ou une publication que LiveKit garde dans une room fermée (15 s).
     hold: Promise<void> | null = null;
+    // Ses droits dans la room, tels que LiveKit les dit (le serveur les retire en la parquant, les rend en la reprenant).
+    permissions: { canSubscribe: boolean } | undefined = { canSubscribe: true };
     readonly setMicrophoneEnabled = vi.fn((on: boolean) => this.toggle('mic', on, () => (this.isMicrophoneEnabled = on)));
     readonly setCameraEnabled = vi.fn((on: boolean) => this.toggle('cam', on, () => (this.isCameraEnabled = on)));
     readonly setScreenShareEnabled = vi.fn((on: boolean) => this.toggle('screen', on, () => (this.isScreenShareEnabled = on)));
+    // Dépublier une piste locale (`stop` : l'arrêter aussi) ; publier une piste qu'on a gardée.
+    readonly unpublishTrack = vi.fn(async (track: FakeTrack, stop?: boolean) => {
+      log.push(`unpublish:${track.source}:${stop ? 'stop' : 'keep'}`);
+      if (track.source) this.publications.delete(track.source);
+      if (track.source === 'microphone') this.isMicrophoneEnabled = false;
+      if (track.source === 'camera') this.isCameraEnabled = false;
+      if (stop) track.stop();
+    });
+    readonly publishTrack = vi.fn(async (track: FakeTrack) => {
+      log.push(`publish:${track.source}`);
+      this.publications.set(track.source!, { source: track.source!, track });
+      if (track.source === 'microphone') this.isMicrophoneEnabled = true;
+    });
     private async toggle(kind: string, on: boolean, apply: () => void): Promise<undefined> {
       log.push(`${kind}:${on ? 'on' : 'off'}`);
       if (this.hold) await this.hold;
       if (on && this.refuse.has(kind)) throw new DOMException('Permission denied', 'NotAllowedError');
       apply();
+      // Allumés, le micro et la caméra sont publiés : une piste locale, que parquer dépublie.
+      const source = kind === 'mic' ? 'microphone' : kind === 'cam' ? 'camera' : null;
+      if (on && source !== null && !this.publications.has(source)) {
+        this.publications.set(source, { source, track: new FakeTrack(kind === 'mic' ? 'audio' : 'video', source) });
+      }
       return undefined;
     }
   }
@@ -77,6 +122,8 @@ const lk = vi.hoisted(() => {
     readonly remoteParticipants = new Map<string, FakeParticipant>();
     readonly listeners = new Map<string, Set<Listener>>();
     private cancelConnect: ((err: Error) => void) | null = null;
+    // L'état de la connexion, comme ConnectionState : connectée une fois connect fini, déconnectée après disconnect.
+    state: 'disconnected' | 'connected' = 'disconnected';
     readonly connect = vi.fn(async (url: string, token: string) => {
       log.push(`connect:${url}:${token}`);
       const hold = FakeRoom.holdConnect;
@@ -87,12 +134,26 @@ const lk = vi.hoisted(() => {
         });
       }
       if (FakeRoom.failConnect) throw new Error('could not establish signal connection');
+      this.state = 'connected';
     });
     readonly disconnect = vi.fn(async () => {
       log.push('disconnect');
+      this.state = 'disconnected';
       this.cancelConnect?.(new Error('Client initiated disconnect'));
       this.cancelConnect = null;
     });
+    // Le serveur parque la personne (plus aucun droit de recevoir), puis la reprend : LiveKit le lui dit, l'attribut de la reprise d'abord,
+    // ses droits ensuite, dans la même mise à jour.
+    serverParks(): void {
+      this.localParticipant.permissions = { canSubscribe: false };
+      this.emit('participantPermissionsChanged', { canSubscribe: true }, this.localParticipant);
+    }
+    serverResumes(resume: string): void {
+      this.localParticipant.attributes = { ...this.localParticipant.attributes, 'bureau.resume': resume };
+      this.emit('participantAttributesChanged', { 'bureau.resume': resume }, this.localParticipant);
+      this.localParticipant.permissions = { canSubscribe: true };
+      this.emit('participantPermissionsChanged', { canSubscribe: false }, this.localParticipant);
+    }
     readonly switchActiveDevice = vi.fn(async (kind: string, deviceId: string) => {
       log.push(`switch:${kind}:${deviceId}`);
       return true;
@@ -623,5 +684,186 @@ describe('le son des autres', () => {
     await media.leave();
     room.setPlayback(false);
     expect(media.getSnapshot().audioBlocked).toBe(false);
+  });
+});
+
+describe('parquer et reprendre', () => {
+  const resumeOf = (room: string, resume: string): MediaJoinPayload => ({ ...payload(room), resume });
+  const fakeTimers = () => {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+  };
+
+  test('parquer : la Room reste connectée et se tait ; le micro est dépublié sans être arrêté, la caméra arrêtée ; plus rien d\'elle n\'arrive', async () => {
+    const media = client({ mic: true, cam: true });
+    await media.join(payload('r1'));
+    const room = lastRoom();
+    const ana = room.arrive('ana', 'Ana');
+    room.emit(RoomEvent.TrackSubscribed, new lk.FakeTrack('audio'), { source: Track.Source.Microphone }, ana);
+    expect(audioElements()).toHaveLength(1);
+    const mic = room.localParticipant.publications.get(Track.Source.Microphone)!.track!;
+    const cam = room.localParticipant.publications.get(Track.Source.Camera)!.track!;
+
+    await media.leave({ park: true });
+    expect(room.disconnect).not.toHaveBeenCalled();
+    expect(lk.log.slice(-2)).toEqual([`unpublish:${Track.Source.Microphone}:keep`, `unpublish:${Track.Source.Camera}:stop`]);
+    expect(mic.stop).not.toHaveBeenCalled();
+    expect(cam.stop).toHaveBeenCalledOnce();
+    expect(audioElements()).toHaveLength(0);
+    expect(media.getSnapshot()).toMatchObject({ room: null, participants: [], local: { mic: true, cam: true } });
+    // Ses événements ne comptent plus : quelqu'un arrive, quelqu'un parle, rien ne change ; seule sa fin est suivie.
+    room.arrive('bob', 'Bob');
+    room.emit(RoomEvent.TrackSubscribed, new lk.FakeTrack('audio'), { source: Track.Source.Microphone }, ana);
+    expect(media.getSnapshot().participants).toEqual([]);
+    expect(audioElements()).toHaveLength(0);
+    expect(room.listenerCount()).toBe(1);
+  });
+
+  test('reprendre : attend que LiveKit confirme la reprise ; la même Room reprend, le micro gardé est publié tel quel, la caméra rallumée', async () => {
+    const media = client({ mic: true, cam: true });
+    await media.join(payload('r1'));
+    const room = lastRoom();
+    const mic = room.localParticipant.publications.get(Track.Source.Microphone)!.track!;
+    await media.leave({ park: true });
+    room.serverParks();
+    room.localParticipant.attributes = { 'bureau.resume': '4' };   // la reprise d'avant ne compte pas
+
+    const back = media.join(resumeOf('r1', '5'));
+    await flush();
+    expect(media.getSnapshot()).toMatchObject({ room: 'r1', participants: [] });   // en attente de LiveKit
+    room.serverResumes('5');
+    await back;
+    expect(lk.FakeRoom.instances).toHaveLength(1);
+    expect(room.connect).toHaveBeenCalledOnce();
+    expect(lk.log.slice(-2)).toEqual([`publish:${Track.Source.Microphone}`, 'cam:on']);
+    expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenCalledOnce();   // celui du premier join : pas de nouvel accès au micro
+    expect(mic.stop).not.toHaveBeenCalled();
+    expect(media.getSnapshot()).toMatchObject({ room: 'r1', participants: [{ id: 'moi', mic: true, cam: true }], error: null });
+    // Le son des autres revient : une piste reçue joue de nouveau.
+    const ana = room.arrive('ana', 'Ana');
+    room.emit(RoomEvent.TrackSubscribed, new lk.FakeTrack('audio'), { source: Track.Source.Microphone }, ana);
+    expect(audioElements()).toHaveLength(1);
+  });
+
+  test('une piste rendue pendant l\'attente (LiveKit réabonne avant de confirmer) joue dès la reprise', async () => {
+    const media = client();
+    await media.join(payload('r1'));
+    const room = lastRoom();
+    const ana = room.arrive('ana', 'Ana');
+    await media.leave({ park: true });
+    const voice = new lk.FakeTrack('audio');
+    ana.publications.set(Track.Source.Microphone, { source: Track.Source.Microphone, track: voice, isSubscribed: true });
+    room.emit(RoomEvent.TrackSubscribed, voice, ana.publications.get(Track.Source.Microphone), ana);
+    expect(audioElements()).toHaveLength(0);
+    const back = media.join(resumeOf('r1', '1'));
+    room.serverResumes('1');
+    await back;
+    expect(voice.attached).toHaveLength(1);
+    expect(audioElements()).toHaveLength(1);
+  });
+
+  test('une reprise que LiveKit ne confirme pas à temps : la parquée est fermée, une Room neuve se connecte avec le jeton, et y publie le micro gardé', async () => {
+    fakeTimers();
+    const media = client({ mic: true, cam: false });
+    await media.join(payload('r1'));
+    const parked = lastRoom();
+    await media.leave({ park: true });
+    const back = media.join(resumeOf('r1', '5'));
+    await vi.advanceTimersByTimeAsync(RESUME_TIMEOUT_MS);
+    await back;
+    expect(parked.disconnect).toHaveBeenCalledOnce();
+    expect(parked.listenerCount()).toBe(0);
+    expect(lk.FakeRoom.instances).toHaveLength(2);
+    expect(lastRoom().connect).toHaveBeenCalledExactlyOnceWith('wss://livekit.test', 'jeton-r1');
+    expect(lk.log.at(-1)).toBe(`publish:${Track.Source.Microphone}`);
+    expect(media.getSnapshot()).toMatchObject({ room: 'r1', error: null });
+  });
+
+  test('sans `resume`, ou une autre room : pas de reprise ; la parquée est fermée, le micro gardé publié dans la nouvelle', async () => {
+    const media = client({ mic: true, cam: false });
+    await media.join(payload('r1'));
+    const parked = lastRoom();
+    const mic = parked.localParticipant.publications.get(Track.Source.Microphone)!.track!;
+    await media.leave({ park: true });
+    await media.join(payload('r2'));
+    expect(parked.disconnect).toHaveBeenCalledOnce();
+    expect(lastRoom().localParticipant.publishTrack).toHaveBeenCalledExactlyOnceWith(mic);
+    expect(lastRoom().localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+  });
+
+  test('un autre micro choisi entre-temps : la reprise n\'a pas lieu, le micro gardé est arrêté, le nouveau ouvert', async () => {
+    const media = client({ mic: true, cam: false });
+    await media.join(payload('r1'));
+    const parked = lastRoom();
+    const mic = parked.localParticipant.publications.get(Track.Source.Microphone)!.track!;
+    await media.leave({ park: true });
+    await media.setPrefs({ mic: true, cam: false, audioInput: 'micro-usb' });
+    const back = media.join(resumeOf('r1', '2'));
+    parked.serverResumes('2');
+    await back;
+    expect(lk.FakeRoom.instances).toHaveLength(2);
+    expect(mic.stop).toHaveBeenCalledOnce();
+    expect(lastRoom().localParticipant.setMicrophoneEnabled).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  test('la fin du délai (MEDIA_PARK_MS) : la Room parquée fermée, le micro gardé arrêté', async () => {
+    fakeTimers();
+    const media = client({ mic: true, cam: false });
+    await media.join(payload('r1'));
+    const parked = lastRoom();
+    const mic = parked.localParticipant.publications.get(Track.Source.Microphone)!.track!;
+    await media.leave({ park: true });
+    await vi.advanceTimersByTimeAsync(MEDIA_PARK_MS - 1);
+    expect(parked.disconnect).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(parked.disconnect).toHaveBeenCalledOnce();
+    expect(mic.stop).toHaveBeenCalledOnce();
+    expect(parked.listenerCount()).toBe(0);
+  });
+
+  test('couper le micro pendant le parcage : le micro gardé s\'arrête tout de suite (l\'indicateur du navigateur s\'éteint)', async () => {
+    const media = client({ mic: true, cam: false });
+    await media.join(payload('r1'));
+    const mic = lastRoom().localParticipant.publications.get(Track.Source.Microphone)!.track!;
+    await media.leave({ park: true });
+    await media.setMic(false);
+    expect(mic.stop).toHaveBeenCalledOnce();
+    expect(lastRoom().disconnect).not.toHaveBeenCalled();   // la room, elle, reste parquée
+  });
+
+  test('une sortie pour de bon pendant le parcage ferme tout ; LiveKit qui ferme la parquée ne gêne rien', async () => {
+    const media = client({ mic: true, cam: false });
+    await media.join(payload('r1'));
+    const first = lastRoom();
+    const mic = first.localParticipant.publications.get(Track.Source.Microphone)!.track!;
+    await media.leave({ park: true });
+    await media.leave();
+    expect(first.disconnect).toHaveBeenCalledOnce();
+    expect(mic.stop).toHaveBeenCalledOnce();
+
+    await media.join(payload('r2'));
+    const second = lastRoom();
+    await media.leave({ park: true });
+    second.emit(RoomEvent.Disconnected, DisconnectReason.PARTICIPANT_REMOVED);   // le serveur l'a retirée (la fin de son délai à lui)
+    expect(media.getSnapshot()).toMatchObject({ room: null, error: null });
+    const back = media.join(resumeOf('r2', '3'));
+    await back;
+    expect(lk.FakeRoom.instances).toHaveLength(3);   // plus rien à reprendre : une connexion neuve
+  });
+
+  test('ceux que le serveur a parqués dans la room ne sont pas montrés, et reviennent quand il les reprend', async () => {
+    const media = client();
+    await media.join(payload('r1'));
+    const room = lastRoom();
+    const ana = room.arrive('ana', 'Ana');
+    room.arrive('bob', 'Bob');
+    ana.attributes = { 'bureau.parked': '1' };
+    room.emit(RoomEvent.ParticipantAttributesChanged, { 'bureau.parked': '1' }, ana);
+    expect(media.getSnapshot().participants.map((p) => p.id)).toEqual(['moi', 'bob']);
+    ana.attributes = {};
+    room.emit(RoomEvent.ParticipantAttributesChanged, { 'bureau.parked': '' }, ana);
+    expect(media.getSnapshot().participants.map((p) => p.id)).toEqual(['moi', 'ana', 'bob']);
   });
 });

@@ -223,4 +223,27 @@ describe('SimTransport', () => {
     const detach = transport.attach(document.createElement('video'), 'moi', 'camera');
     expect(() => detach()).not.toThrow();
   });
+
+  test('parquer : les sons s\'arrêtent ; la reprise de cette room (avec resume) la rouvre aussitôt ; une autre, ou sans resume, non', async () => {
+    setSimRoom(room([member('moi', null), member('a', '/api/sim/audio/voix.mp3')]));
+    const transport = newTransport();
+    await transport.connect(join(), {}, events());
+    await settle();
+    expect(audios()).toHaveLength(1);
+
+    await transport.park();
+    expect(audios()).toEqual([]);
+    expect(transport.participants()).toEqual([]);
+    expect(await transport.resume(join(), {}, events())).toBe(false);   // sans resume : le serveur ne l'a pas reprise
+    expect(await transport.resume({ ...join('r-g2'), resume: '1' }, {}, events())).toBe(false);
+    expect(await transport.resume({ ...join(), resume: '1' }, {}, events())).toBe(true);
+    await settle();
+    expect(audios()).toHaveLength(1);
+    expect(transport.participants().map((p) => p.id)).toEqual(['moi', 'a']);
+
+    // La fin du délai : plus rien à reprendre.
+    await transport.park();
+    await transport.unpark();
+    expect(await transport.resume({ ...join(), resume: '2' }, {}, events())).toBe(false);
+  });
 });
