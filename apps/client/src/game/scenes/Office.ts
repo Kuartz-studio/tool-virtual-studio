@@ -16,13 +16,14 @@ import {
   type WorldTick,
   type Zone,
 } from '@bureau/shared';
-import { Scale, Scene, Scenes } from 'phaser';
+import { Input, Scale, Scene, Scenes } from 'phaser';
 import { fr, t } from '../../i18n/fr';
 import { chairOf } from '../../games/table-view';
 import { deskTitle } from '../../office/desks';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { selectDeskOf, useOfficeStore } from '../../state/office-store';
 import { AutoWalk, cancelOnMoveKey, planDeskWalk } from '../auto-walk';
+import { AVATAR_HEAD_PX, avatarAt } from '../avatar-hover';
 import { avatarObjectName } from '../avatars';
 import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
@@ -124,6 +125,9 @@ export class Office extends Scene {
   private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
   private readonly bodyFits = (x: number, y: number): boolean => avatarBodyFits(this.officeMap, x, y);
+  // L'avatar que la souris survole (`avatar:hover`), et si elle est sur le jeu (pas sur l'interface, ni hors de la page).
+  private hoveredAvatar: string | null = null;
+  private pointerInGame = false;
 
   constructor(private readonly mapKey: string) {
     super('Office');
@@ -321,6 +325,18 @@ export class Office extends Scene {
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    // La souris bouge sur le jeu, ou en sort (sur un panneau, un dock, hors de la page) : hors du jeu, elle ne survole aucun avatar. Un mouvement, et pas
+    // seulement l'entrée : la souris est peut-être déjà sur le canevas quand la scène démarre.
+    const pointerIn = () => {
+      this.pointerInGame = true;
+    };
+    const pointerOut = () => {
+      this.pointerInGame = false;
+      this.hoverAvatars();
+    };
+    this.input.on(Input.Events.GAME_OVER, pointerIn);
+    this.input.on(Input.Events.POINTER_MOVE, pointerIn);
+    this.input.on(Input.Events.GAME_OUT, pointerOut);
 
     // SHUTDOWN puis DESTROY (le jeu détruit) : la seconde fois, il ne reste rien à retirer.
     const stop = () => {
@@ -337,6 +353,11 @@ export class Office extends Scene {
       unbindDrag();
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
+      this.input.off(Input.Events.GAME_OVER, pointerIn);
+      this.input.off(Input.Events.POINTER_MOVE, pointerIn);
+      this.input.off(Input.Events.GAME_OUT, pointerOut);
+      this.pointerInGame = false;
+      this.hoverAvatars();
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
       unbindCoffee();
@@ -393,6 +414,30 @@ export class Office extends Scene {
     }
     // Les portes s'ouvrent devant qui s'en approche, avec les positions de cette image.
     this.deskLayer.tick();
+    this.hoverAvatars();
+  }
+
+  // Quel avatar la souris survole-t-elle, à cette image (les avatars bougent, la caméra aussi) ? Quand cela change, l'interface le sait (`avatar:hover`),
+  // avec le haut de sa tête en pixels de la page : elle y pose la carte de l'heure qu'il est chez cette personne. Bouton enfoncé (on fait glisser la
+  // carte), ou autres avatars cachés : aucun.
+  private hoverAvatars(): void {
+    const pointer = this.input?.activePointer;
+    let id: string | null = null;
+    if (pointer && this.pointerInGame && !pointer.isDown && this.othersVisible) {
+      const at = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+      id = avatarAt(at, [...this.remotes.values()].map((remote) => ({ id: remote.id, ...remote.position })));
+    }
+    if (id === this.hoveredAvatar) return;
+    this.hoveredAvatar = id;
+    const remote = id === null ? undefined : this.remotes.get(id);
+    if (id === null || !remote) {
+      emitOnBus(EventBus, 'avatar:hover', null);
+      return;
+    }
+    const { worldView, zoom } = this.cameras.main;
+    const canvas = this.game.canvas.getBoundingClientRect();
+    const head = { x: remote.position.x, y: remote.position.y - AVATAR_HEAD_PX };
+    emitOnBus(EventBus, 'avatar:hover', { id, x: canvas.left + (head.x - worldView.x) * zoom, y: canvas.top + (head.y - worldView.y) * zoom });
   }
 
   // Après la physique de l'image (POST_UPDATE, où Arcade, abonné avant nous, vient de déplacer l'avatar) : l'état de l'avatar local

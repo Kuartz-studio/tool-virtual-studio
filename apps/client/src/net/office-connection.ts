@@ -67,6 +67,9 @@ export interface OfficeBusEvents {
   // Qui parle dans la room audio/vidéo, soi-même compris (les identifiants des comptes), à chaque changement ; [] en la quittant. Le
   // jeu dessine l'anneau de parole sur leurs étiquettes (tâche 20).
   'media:speaking': (ids: string[]) => void;
+  // Le jeu : la souris est sur l'avatar de cette personne (un autre que soi), dont le haut de la tête est en (x, y), en pixels de la page ; null : sur
+  // aucun. Dit quand cela change. L'interface y pose la carte de l'heure qu'il est chez elle (AvatarTimeCard).
+  'avatar:hover': (p: { id: string; x: number; y: number } | null) => void;
 }
 
 // Un écouteur, typé comme ceux d'eventemitter3 : ce que l'événement porte, il le reçoit (emitOnBus et listenOnBus le typent).

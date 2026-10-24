@@ -70,31 +70,40 @@ export function placeBeside(
   return { left, top: Math.min(anchor.bottom + GAP, Math.max(EDGE, viewport.height - EDGE - card.height)) };
 }
 
-// La carte posée à côté de son ancre, à la page (position fixe) : mesurée d'abord, cachée le temps de la mesure ; replacée quand la page change de
-// taille ou que la liste défile. Elle ne prend jamais la souris. Une ancre qui disparaît (la personne passe d'une liste à l'autre) l'emporte.
-function FloatingTimeCard({ anchor, id, info, onGone }: { anchor: HTMLElement; id: string; info: LocalTimeInfo; onGone(): void }) {
+// Où poser la carte au-dessus d'un point (le haut de la tête d'un avatar, en pixels de la page) : centrée sur lui, gardée dans la page.
+export function placeAbove(point: { x: number; y: number }, card: { width: number; height: number }, viewport: { width: number; height: number }): { left: number; top: number } {
+  return {
+    left: Math.min(Math.max(point.x - card.width / 2, EDGE), Math.max(EDGE, viewport.width - EDGE - card.width)),
+    top: Math.min(Math.max(point.y - GAP - card.height, EDGE), Math.max(EDGE, viewport.height - EDGE - card.height)),
+  };
+}
+
+type Placer = (card: { width: number; height: number }, viewport: { width: number; height: number }) => { left: number; top: number } | null;
+
+// La carte posée à la page (position fixe), là où `place` la veut : mesurée d'abord, cachée le temps de la mesure ; replacée quand la page change de
+// taille ou que la liste défile. Elle ne prend jamais la souris. `place` qui ne trouve plus où la poser (null : l'ancre a disparu, la personne est
+// passée d'une liste à l'autre) l'emporte.
+export function FloatingTimeCard({ id, info, place, onGone }: { id?: string; info: LocalTimeInfo; place: Placer; onGone(): void }) {
   const element = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({ visibility: 'hidden' });
 
   useLayoutEffect(() => {
-    const place = () => {
-      if (!anchor.isConnected) {
-        onGone();
-        return;
-      }
+    const replace = () => {
       const { clientWidth, clientHeight } = document.documentElement;
       const card = element.current;
-      setStyle(placeBeside(anchor.getBoundingClientRect(), { width: card?.offsetWidth ?? 0, height: card?.offsetHeight ?? 0 }, { width: clientWidth, height: clientHeight }));
+      const at = place({ width: card?.offsetWidth ?? 0, height: card?.offsetHeight ?? 0 }, { width: clientWidth, height: clientHeight });
+      if (at === null) onGone();
+      else setStyle(at);
     };
-    place();
-    window.addEventListener('resize', place);
+    replace();
+    window.addEventListener('resize', replace);
     // `true` : le défilement de la liste (un élément, pas la page) arrive aussi.
-    window.addEventListener('scroll', place, true);
+    window.addEventListener('scroll', replace, true);
     return () => {
-      window.removeEventListener('resize', place);
-      window.removeEventListener('scroll', place, true);
+      window.removeEventListener('resize', replace);
+      window.removeEventListener('scroll', replace, true);
     };
-  }, [anchor, onGone]);
+  }, [place, onGone]);
 
   return (
     <div ref={element} id={id} role="tooltip" className="time-card-float" style={style}>
@@ -151,7 +160,9 @@ export function useLocalTimeHover(lookup: (id: string) => LocalTimeInfo | undefi
     },
   });
 
+  const anchor = target?.anchor ?? null;
+  const place = useCallback<Placer>((card, viewport) => (anchor?.isConnected ? placeBeside(anchor.getBoundingClientRect(), card, viewport) : null), [anchor]);
   const info = target ? lookup(target.id) : undefined;
-  const card = target && info ? <FloatingTimeCard anchor={target.anchor} id={cardId} info={info} onGone={hide} /> : null;
+  const card = target && info ? <FloatingTimeCard id={cardId} info={info} place={place} onGone={hide} /> : null;
   return { bind, card };
 }
