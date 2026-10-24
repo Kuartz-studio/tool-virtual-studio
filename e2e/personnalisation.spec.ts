@@ -144,7 +144,7 @@ test('la déco du bureau : un élément pris en main se pose dans la pièce, et 
 
   await panel.getByRole('button', { name: 'Bureaux & tables' }).click();
   await panel.getByRole('button', { name: 'Bureau bois clair', exact: true }).click();
-  await expect(panel.getByText('En main : Bureau bois clair.')).toBeVisible();
+  await expect(panel.getByText('En main : Bureau bois clair')).toBeVisible();
   await a.page.keyboard.press('Escape');
   await expect(panel.getByText('En main :')).toHaveCount(0);
 
@@ -206,7 +206,7 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
 
   // La gomme efface l'élément visé : on revient au départ, puis on le repose.
   await panel.getByRole('button', { name: 'Gomme' }).click();
-  await expect(panel.getByText('Gomme : clique sur un élément de la pièce pour l\'effacer.')).toBeVisible();
+  await expect(panel.getByText('Gomme : clique sur un élément pour l\'effacer.')).toBeVisible();
   await a.page.mouse.click(target!.x, target!.y);
   await expect(panel.getByText(`${initial} / 80 éléments`)).toBeVisible();
   await panel.getByRole('button', { name: 'Plante en pot', exact: true }).click();
