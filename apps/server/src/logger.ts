@@ -55,13 +55,20 @@ export function withoutQueryParams(err: unknown): unknown {
     return hidden;
   };
 
+  // Chaque champ est posé en propre sur la copie (defineProperty), jamais affecté, et les champs hérités énumérables sont recopiés aussi : chez
+  // une DOMException (le TimeoutError d'une requête à LiveKit qui dépasse son délai, l'AbortError d'une requête annulée), `message`, `name` et
+  // `code` sont des accesseurs de son prototype, sans mutateur, qui lèvent quand on les lit sur un autre objet (ERR_INVALID_THIS). Affecter le
+  // message, ou laisser pino lire ces accesseurs sur la copie, levait dans le sérialiseur du journal une exception que personne n'attrapait :
+  // le processus tombait. Le message et la pile restent non énumérables, comme sur une erreur.
+  const own = (copy: object, key: string, value: unknown, enumerable = true) =>
+    Object.defineProperty(copy, key, { value, writable: true, configurable: true, enumerable });
   const copies = chain.map((e) => {
     const copy = Object.create(Object.getPrototypeOf(e) as object) as Error & Record<string, unknown>;
-    for (const [key, value] of Object.entries(e)) {
-      if (key !== 'params' && key !== 'cause') copy[key] = value;
+    for (const key in e) {
+      if (key !== 'params' && key !== 'cause') own(copy, key, (e as unknown as Record<string, unknown>)[key]);
     }
-    copy.message = hide(e.message);
-    if (e.stack !== undefined) copy.stack = hide(e.stack);
+    own(copy, 'message', hide(e.message), false);
+    if (e.stack !== undefined) own(copy, 'stack', hide(e.stack), false);
     return copy;
   });
   // Chacune a pour cause la copie de la suivante. La dernière garde une cause qui n'est pas une erreur (un texte) ; une erreur au-delà
