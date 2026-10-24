@@ -88,6 +88,11 @@ export class LiveKitTransport implements MediaTransport {
   // Le micro dépublié en parquant une room, et le micro choisi quand il a été ouvert : publié tel quel dans la room suivante (la même, ou
   // une autre avec le même micro), sans redemander l'accès au navigateur.
   private kept: { track: LocalTrack; audioInput: string | undefined } | null = null;
+  // Les allumages (micro, caméra, partage) que LiveKit n'a pas encore finis, par Room. Une publication partie vers le serveur après qu'il a
+  // retiré les droits (on est sorti pendant qu'elle se faisait) reste sans réponse : LiveKit l'attend 10 s, et un nouvel allumage de la même
+  // source se contenterait de l'attendre, sans rien publier. Une Room parquée qui en a une en cours ne se reprend donc pas : MediaSession se
+  // reconnecte, dans une Room neuve.
+  private readonly publishing = new WeakMap<Room, number>();
 
   async connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void> {
     // Une room parquée qu'on ne reprend pas : fermée. Son micro reste, s'il est encore le micro choisi.
@@ -131,29 +136,28 @@ export class LiveKitTransport implements MediaTransport {
     // D'abord : plus rien de cette room n'arrive à MediaSession (pas même le partage d'écran qui s'arrête juste après), ni aux haut-parleurs.
     this.release();
     this.dropParked();
+    const devices = this.roomDevices;
     const onDisconnected = () => {
       // Fermée sans nous (le serveur l'a retirée, la connexion est perdue) : il n'y a plus rien à reprendre. Le micro gardé, lui, reste
       // jusqu'à la fin du délai, ou jusqu'à la room suivante.
       if (this.parked?.room === room) this.parked = null;
     };
+    // Une publication qui finit après le parcage (le micro ou la caméra s'allumaient encore quand on est sorti) : dépubliée à son tour. Sans
+    // cela, LiveKit, qui l'a déjà retirée chez lui (le serveur a retiré les droits), la croirait publiée, et la reprise se contenterait de la
+    // rallumer : personne ne nous entendrait.
+    const onLatePublication = () => void this.unpublishAll(room, devices);
     room.on(RoomEvent.Disconnected, onDisconnected);
-    this.parked = { room, name, devices: this.roomDevices, off: () => room.off(RoomEvent.Disconnected, onDisconnected) };
-    const local = room.localParticipant;
-    for (const publication of [...local.trackPublications.values()]) {
-      const track = publication.track;
-      if (!track) continue;
-      const keep = publication.source === Track.Source.Microphone;
-      try {
-        await local.unpublishTrack(track, !keep);
-      } catch {
-        // La room se ferme peut-être déjà : la piste s'arrête quand même plus bas si on ne la garde pas.
-        if (!keep) track.stop();
-      }
-      if (keep) {
-        this.stopKept();
-        this.kept = { track, audioInput: this.roomDevices.audioInput };
-      }
-    }
+    room.on(RoomEvent.LocalTrackPublished, onLatePublication);
+    this.parked = {
+      room,
+      name,
+      devices,
+      off: () => {
+        room.off(RoomEvent.Disconnected, onDisconnected);
+        room.off(RoomEvent.LocalTrackPublished, onLatePublication);
+      },
+    };
+    await this.unpublishAll(room, devices);
   }
 
   async resume(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<boolean> {
@@ -162,11 +166,15 @@ export class LiveKitTransport implements MediaTransport {
     if (!parked || parked.name !== p.room || resume === undefined || !sameDevices(parked.devices, devices)) return false;
     if (parked.room.state !== ConnectionState.Connected) return false;
     if (!(await resumed(parked.room, resume))) return false;
-    // Fermée, ou remplacée, pendant l'attente (une sortie pour de bon, une autre connexion) : il n'y a plus rien à reprendre.
-    if (this.parked !== parked) return false;
+    // Fermée, ou remplacée, pendant l'attente (une sortie pour de bon, une autre connexion) : il n'y a plus rien à reprendre. Un allumage
+    // d'avant le parcage encore en cours chez LiveKit : on ne la reprend pas (voir `publishing`).
+    if (this.parked !== parked || (this.publishing.get(parked.room) ?? 0) > 0) return false;
     parked.off();
     this.parked = null;
     const room = parked.room;
+    // Ce que LiveKit croit encore publié (une publication qui a fini pendant le parcage, que le serveur avait déjà retirée) : dépublié, pour que
+    // MediaSession republie pour de bon (le micro, gardé, sans redemander l'accès).
+    await this.unpublishAll(room, parked.devices);
     this.room = room;
     this.roomName = parked.name;
     this.roomDevices = { ...parked.devices };
@@ -190,12 +198,13 @@ export class LiveKitTransport implements MediaTransport {
   }
 
   async setSource(source: LocalSource, on: boolean): Promise<void> {
-    const local = this.room?.localParticipant;
-    if (!local) {
+    const room = this.room;
+    if (!room) {
       // Hors room, couper le micro arrête celui que la room parquée gardait : l'indicateur du navigateur s'éteint.
       if (source === 'mic' && !on) this.stopKept();
       return;
     }
+    const local = room.localParticipant;
     // Le micro gardé d'une room parquée, encore ouvert : publié tel quel (rallumé s'il était coupé), sans redemander l'accès au navigateur.
     if (source === 'mic' && on && this.kept) {
       const { track } = this.kept;
@@ -205,14 +214,14 @@ export class LiveKitTransport implements MediaTransport {
           if (track.isMuted) await track.unmute();
           await local.publishTrack(track);
         })();
-        await this.whileInRoom(publish);
+        await this.whileInRoom(this.publishingIn(room, publish));
         return;
       }
       track.stop();
     }
     const work =
       source === 'mic' ? local.setMicrophoneEnabled(on) : source === 'cam' ? local.setCameraEnabled(on) : local.setScreenShareEnabled(on);
-    await this.whileInRoom(work);
+    await this.whileInRoom(on ? this.publishingIn(room, work) : work);
   }
 
   async useDevices(devices: MediaDevices): Promise<void> {
@@ -357,6 +366,36 @@ export class LiveKitTransport implements MediaTransport {
     this.roomName = null;
     this.appliedVolumes.clear();
     this.markReleased();
+  }
+
+  // Compte cet allumage parmi ceux que LiveKit n'a pas finis dans cette Room, jusqu'à ce qu'il finisse (réussi ou non), même si on a quitté
+  // la room entre-temps.
+  private publishingIn<T>(room: Room, work: Promise<T>): Promise<T> {
+    this.publishing.set(room, (this.publishing.get(room) ?? 0) + 1);
+    const settled = () => this.publishing.set(room, (this.publishing.get(room) ?? 1) - 1);
+    work.then(settled, settled);
+    return work;
+  }
+
+  // Dépublie tout ce que la personne publie dans cette room : le micro est gardé (le dernier publié, s'il est encore ouvert ; un autre qu'on
+  // garderait déjà est arrêté), le reste (caméra, partage d'écran) s'arrête.
+  private async unpublishAll(room: Room, devices: MediaDevices): Promise<void> {
+    const local = room.localParticipant;
+    for (const publication of [...local.trackPublications.values()]) {
+      const track = publication.track;
+      if (!track) continue;
+      const keep = publication.source === Track.Source.Microphone && track.mediaStreamTrack.readyState === 'live';
+      try {
+        await local.unpublishTrack(track, !keep);
+      } catch {
+        // La room se ferme peut-être déjà : une piste qu'on ne garde pas s'arrête quand même.
+        if (!keep) track.stop();
+      }
+      if (keep && this.kept?.track !== track) {
+        this.stopKept();
+        this.kept = { track, audioInput: devices.audioInput };
+      }
+    }
   }
 
   // Ferme la room parquée, s'il y en a une, sans attendre LiveKit. Le micro gardé n'en dépend pas : il reste.

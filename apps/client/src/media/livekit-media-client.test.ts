@@ -718,7 +718,37 @@ describe('parquer et reprendre', () => {
     room.emit(RoomEvent.TrackSubscribed, new lk.FakeTrack('audio'), { source: Track.Source.Microphone }, ana);
     expect(media.getSnapshot().participants).toEqual([]);
     expect(audioElements()).toHaveLength(0);
-    expect(room.listenerCount()).toBe(1);
+    expect(room.listenerCount()).toBe(2);   // sa fin, et une publication qui finirait après coup
+  });
+
+  test.each([
+    ['LiveKit le dit (LocalTrackPublished) : dépubliée tout de suite', true],
+    ['sans que LiveKit le dise : dépubliée à la reprise', false],
+  ])('le micro s\'allumait encore en sortant, et sa publication finit dans la room parquée (%s) ; la reprise le republie pour de bon', async (_, announced) => {
+    const media = client({ mic: true, cam: false });
+    const joined = media.join(payload('r1'));
+    const room = lastRoom();
+    let publish!: () => void;
+    room.localParticipant.hold = new Promise((resolve) => (publish = resolve));
+    await flush();
+    expect(lk.log).toEqual(['connect:wss://livekit.test:jeton-r1', 'mic:on']);
+    await media.leave({ park: true });
+    room.localParticipant.hold = null;
+    publish();
+    await joined;
+    await flush();
+    const mic = room.localParticipant.publications.get(Track.Source.Microphone)!;
+    if (announced) {
+      room.emit(RoomEvent.LocalTrackPublished, mic, room.localParticipant);
+      await flush();
+      expect(lk.log.at(-1)).toBe(`unpublish:${Track.Source.Microphone}:keep`);
+    }
+    const back = media.join(resumeOf('r1', '1'));
+    room.serverResumes('1');
+    await back;
+    expect(lk.log.slice(-2)).toEqual([`unpublish:${Track.Source.Microphone}:keep`, `publish:${Track.Source.Microphone}`]);
+    expect(mic.track!.stop).not.toHaveBeenCalled();
+    expect(media.getSnapshot().participants[0]).toMatchObject({ id: 'moi', mic: true });
   });
 
   test('reprendre : attend que LiveKit confirme la reprise ; la même Room reprend, le micro gardé est publié tel quel, la caméra rallumée', async () => {
@@ -762,6 +792,23 @@ describe('parquer et reprendre', () => {
     await back;
     expect(voice.attached).toHaveLength(1);
     expect(audioElements()).toHaveLength(1);
+  });
+
+  test('un allumage que LiveKit n\'a pas encore fini au moment du parcage (sans réponse du serveur, qui a retiré les droits) : pas de reprise, une Room neuve', async () => {
+    const media = client({ mic: true, cam: false });
+    const joined = media.join(payload('r1'));
+    const parked = lastRoom();
+    parked.localParticipant.hold = new Promise(() => {});   // la publication du micro ne finira jamais (LiveKit l'abandonne au bout de 10 s)
+    await flush();
+    await media.leave({ park: true });
+    await joined;
+    const back = media.join(resumeOf('r1', '1'));
+    parked.serverResumes('1');
+    await back;
+    expect(lk.FakeRoom.instances).toHaveLength(2);
+    expect(parked.disconnect).toHaveBeenCalledOnce();
+    expect(lastRoom().localParticipant.setMicrophoneEnabled).toHaveBeenCalledExactlyOnceWith(true);
+    expect(media.getSnapshot()).toMatchObject({ room: 'r1', participants: [{ id: 'moi', mic: true }] });
   });
 
   test('une reprise que LiveKit ne confirme pas à temps : la parquée est fermée, une Room neuve se connecte avec le jeton, et y publie le micro gardé', async () => {
