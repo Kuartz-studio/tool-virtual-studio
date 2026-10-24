@@ -55,6 +55,18 @@ export const GROUP_DEBOUNCE_MS = 500;
 // Entrer dans une zone isolante (bureau, salle de réunion) est un geste voulu : on rejoint le groupe de la zone après ce seul délai,
 // juste de quoi ne pas former un groupe en effleurant son bord. Le délai de GROUP_DEBOUNCE_MS reste celui des espaces ouverts.
 export const ZONE_JOIN_DEBOUNCE_MS = 150;
+// Quitter une conversation et y revenir. Le client qui la quitte garde sa connexion à la room LiveKit, muette (rien reçu ni publié : le serveur
+// lui en retire les droits), pendant MEDIA_PARK_MS : y revenir la reprend en un instant, sans nouvelle connexion. Au-delà, le client la ferme
+// de lui-même ; le serveur l'en retire MEDIA_PARK_REMOVE_MS après son départ, par sûreté (un client qui ne la fermerait pas n'a de toute façon
+// plus aucun droit dans la room).
+export const MEDIA_PARK_MS = 60_000;
+export const MEDIA_PARK_REMOVE_MS = MEDIA_PARK_MS + 5_000;
+// Le calcul des groupes se souvient GROUP_MEMORY_MS de qui a quitté un groupe (ou en était quand il s'est défait) : les mêmes gens qui se
+// retrouvent reprennent son id, donc sa room, où ils sont encore parqués ; et qui revient dans un groupe qu'il vient de quitter le rejoint
+// après REJOIN_DEBOUNCE_MS, au lieu des 500 ms d'un nouveau venu. La mémoire dure autant que la connexion parquée : au-delà, il n'y a plus
+// rien à reprendre.
+export const GROUP_MEMORY_MS = MEDIA_PARK_MS;
+export const REJOIN_DEBOUNCE_MS = 150;
 export const DISCONNECT_GRACE_MS = 10_000;
 export const POSITION_SAVE_INTERVAL_MS = 60_000;
 export const CHAT_MAX_LENGTH = 500;
@@ -69,6 +81,8 @@ export const MEDIA_STATE_RATE = { max: 10, windowMs: 1_000 };   // et ses `media
 // SPEAKING_TTL_MS, le serveur éteint la bulle (un client qui plante ne la laisse pas allumée) ; tant qu'il parle, le client redit « je parle »
 // toutes les SPEAKING_HEARTBEAT_MS : un message perdu sur deux ne la coupe pas.
 export const SPEAKING_RATE = { max: 8, windowMs: 2_000 };
+// Verrouiller une conversation, la déverrouiller, en sortir (`conversation:do`) : au plus ce nombre de commandes par socket et par fenêtre.
+export const CONVERSATION_RATE = { max: 6, windowMs: 2_000 };
 export const SPEAKING_TTL_MS = 6_000;
 export const SPEAKING_HEARTBEAT_MS = 3_000;
 export const INVITATION_TTL_MS = 7 * 24 * 3600 * 1000;

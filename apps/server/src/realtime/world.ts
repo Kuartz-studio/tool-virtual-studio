@@ -4,6 +4,7 @@ import {
   MOVE_JITTER_MS,
   NORMAL_MAX_SPEED_PX_PER_S,
   SPEAKING_TTL_MS,
+  isOutOfConversations,
   isWalkablePoint,
   validateMove,
   type ActivityState,
@@ -303,14 +304,18 @@ export class World {
 
   // Ce que le calcul des groupes lit de chaque joueur, dans l'ordre d'arrivée.
   proximityPlayers(): ProximityPlayer[] {
-    return [...this.entries.values()].map(({ player: p }) => ({
-      id: p.id,
-      x: p.x,
-      y: p.y,
-      moving: p.moving,
-      status: p.status,
-      // Un état d'activité sans entendre ni être entendu : hors de toute conversation.
-      excluded: p.activity != null && !p.activity.hear && !p.activity.heard,
-    }));
+    return [...this.entries.values()].map(({ player }) => proximityOf(player));
   }
+
+  // Cette personne est-elle au bureau, et dans les conversations (ni en Ne pas déranger, ni dans un état d'activité sans entendre ni être
+  // entendu) ? Le coordinateur des rooms ne parque la connexion que de celles-là.
+  canConverse(id: string): boolean {
+    const entry = this.entries.get(id);
+    return entry !== undefined && !isOutOfConversations(proximityOf(entry.player));
+  }
+}
+
+// Ce que le calcul des groupes lit d'un joueur. Un état d'activité sans entendre ni être entendu : hors de toute conversation.
+function proximityOf(p: PublicPlayer): ProximityPlayer {
+  return { id: p.id, x: p.x, y: p.y, moving: p.moving, status: p.status, excluded: p.activity != null && !p.activity.hear && !p.activity.heard };
 }

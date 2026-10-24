@@ -101,7 +101,16 @@ export const musicSetSchema = z
   .object({ place: z.string().min(1).max(64), on: z.boolean().optional(), scene: z.enum(MUSIC_SCENES).nullable().optional() })
   .refine((request) => request.on !== undefined || request.scene !== undefined);
 
+// Les commandes d'une conversation (`conversation:do`), de la personne qui les envoie, qui doit en être : `lock` la verrouille et `unlock` la
+// déverrouille, pour tous ses membres ; `leave` en sort seul, quand elle est verrouillée (sinon, on la quitte en s'éloignant).
+export const conversationCommandSchema = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('lock') }),
+  z.object({ type: z.literal('unlock') }),
+  z.object({ type: z.literal('leave') }),
+]);
+
 export type MovePayload = z.infer<typeof moveSchema>;
+export type ConversationCommand = z.infer<typeof conversationCommandSchema>;
 export type ActivityInput = z.infer<typeof activityInputSchema>;
 export type DeskCommand = z.infer<typeof deskCommandSchema>;
 export type MediaState = z.infer<typeof mediaStateSchema>;
@@ -177,11 +186,42 @@ export interface InitPayload {
   arena?: ArenaState;
   // Sa propre progression (XP, kuartzons, série de pointage, ce qu'elle possède de la boutique). Absente : la base ne l'a pas donnée, la liste la relira.
   progress?: MyProgress;
+  // La conversation verrouillée où est cette personne (qui revient d'une coupure, ou ouvre un autre onglet). Absente : aucune.
+  conversationLock?: ConversationLock;
 }
+// Une conversation verrouillée : ses membres (dans l'ordre lexicographique de leurs identifiants) restent ensemble où qu'ils aillent, s'entendent à
+// plein volume, et personne d'autre n'y entre. `id` : l'id de son groupe (sa room LiveKit ne change pas en la verrouillant) ; `by` : qui l'a
+// verrouillée ; `at` : quand (ms depuis 1970).
+export interface ConversationLock { id: string; members: string[]; by: { id: string; name: string }; at: number }
+// Ce qui change pour une personne (`conversation:lock`) : `lock`, la conversation verrouillée où elle est maintenant (null : aucune), et `cause` :
+// - locked : `by` vient de la verrouiller ; unlocked : `by` vient de la déverrouiller (pour tous) ;
+// - left : `by` en est sorti (« Quitter », un état qui le met hors de toute conversation, ou son départ du bureau), et elle continue sans lui ;
+// - quit : elle-même en est sortie (« Quitter », ou un état qui la met hors de toute conversation) ;
+// - ended : il n'y reste plus qu'elle : la conversation n'est plus verrouillée.
+export interface ConversationLockNotice {
+  lock: ConversationLock | null;
+  cause: 'locked' | 'unlocked' | 'left' | 'quit' | 'ended';
+  by: { id: string; name: string } | null;
+}
+// La réponse du serveur à `conversation:do` : `invalid` (commande refusée), `rate_limited`, `no_group` (verrouiller sans être dans une conversation,
+// à deux au moins), `not_locked` (déverrouiller ou quitter une conversation qui ne l'est pas). `unavailable` ne vient que du client : pas de
+// connexion, ou pas de réponse à temps.
+export type ConversationAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'no_group' | 'not_locked' | 'unavailable' };
 // Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
 // le voient sauter à sa nouvelle place au lieu de glisser jusqu'à elle à travers les murs.
 export interface WorldTick { t: number; moves: Array<{ id: string; tp?: true } & MovePayload> }
-export interface MediaJoinPayload { url: string; room: string; token: string }
+// La consigne de rejoindre une room (`media:join`) : l'adresse du projet LiveKit, le nom de la room, et un jeton pour elle. `resume` : la personne
+// y est parquée (elle l'a quittée il y a moins de MEDIA_PARK_MS) et le serveur lui en rend les droits ; le client reprend sa connexion dès que
+// LiveKit lui dit que c'est fait (son attribut MEDIA_RESUME_ATTRIBUTE vaut alors `resume`), et ne se reconnecte avec le jeton que si la reprise
+// échoue.
+export interface MediaJoinPayload { url: string; room: string; token: string; resume?: string }
+// La consigne de quitter sa room (`media:leave`). `park` : la garder parquée MEDIA_PARK_MS (le serveur lui en retire les droits), pour y revenir en
+// un instant ; sans lui, la quitter pour de bon (Ne pas déranger, un état hors de toute conversation, un retour après une coupure).
+export interface MediaLeavePayload { park?: boolean }
+// Les attributs LiveKit que le serveur pose sur une personne : parquée, MEDIA_PARKED_ATTRIBUTE vaut « 1 » (les autres de la room ne la montrent
+// pas) ; reprise, MEDIA_RESUME_ATTRIBUTE vaut le `resume` de son media:join (et MEDIA_PARKED_ATTRIBUTE disparaît).
+export const MEDIA_PARKED_ATTRIBUTE = 'bureau.parked';
+export const MEDIA_RESUME_ATTRIBUTE = 'bureau.resume';
 // La réponse du serveur à `chat:send` : `invalid` (charge utile refusée), `rate_limited` (trop de messages), `no_group` (« À proximité »
 // sans personne autour), `unavailable` (le serveur n'a pas pu enregistrer le message : la base est en panne ; le message n'est pas parti).
 export type ChatAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'no_group' | 'unavailable' };
@@ -224,7 +264,8 @@ export interface ServerToClientEvents {
   'task:assigned': (p: TaskView) => void;                 // à une personne : on vient de lui confier une mission
   'task:changed': (p: TaskView) => void;                  // à une personne : une mission qu'elle a confiée est faite ou rendue, ou une qu'elle avait reçue est retirée
   'media:join': (p: MediaJoinPayload) => void;
-  'media:leave': () => void;
+  'media:leave': (p?: MediaLeavePayload) => void;
+  'conversation:lock': (p: ConversationLockNotice) => void;   // aux membres d'une conversation : elle est verrouillée, déverrouillée, quelqu'un en sort
   'session:replaced': () => void;
   'sim:room': (p: SimRoomPayload) => void;   // seulement avec SIM=1 (le faux live, sim.ts)
 }
@@ -244,6 +285,7 @@ export interface ClientToServerEvents {
   'game:ladder': (p: { game: GameId }, ack: (r: LadderAck) => void) => void;
   'arena:do': (p: ArenaCommand, ack: (r: ArenaAck) => void) => void;   // une commande de l'octogone (rôle, start, coup, garde) ; `arena:state` dit ce qui a changé   // le classement d'un jeu : les meilleurs, et son rang
   'mission:give': (p: MissionGivePayload, ack: (r: MissionAck) => void) => void;   // confier une mission à quelqu'un, auprès d'une administratrice (à portée de l'une d'elles)
+  'conversation:do': (p: ConversationCommand, ack: (r: ConversationAck) => void) => void;   // verrouiller sa conversation, la déverrouiller, en sortir ; `conversation:lock` dit ce qui a changé
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
   'debug:xp': (p: { xp: number; kuartzons?: number }) => void;   // accepté seulement si E2E=1 : donne de l'XP (et des kuartzons) d'un coup
   'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1

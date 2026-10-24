@@ -42,6 +42,26 @@ const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&
 const tile = (name: string) => screen.getByRole('button', { name: new RegExp(`^${escapeRegExp(name)}`) });
 const stage = () => document.querySelector('.video-stage');
 
+test('ce qui se règle pour la conversation (le verrou) : au-dessus des vignettes, seulement quand on n\'y est pas seul', async () => {
+  const client = new FakeMediaClient({ mic: true, cam: false }, { id: 'moi', name: 'Léa' });
+  clients.push(client);
+  function WithControls() {
+    const snapshot = useSyncExternalStore(
+      (notify) => client.subscribe(() => notify()),
+      () => client.getSnapshot(),
+    );
+    return <VideoStrip snapshot={snapshot} client={client} controls={<p>le verrou</p>} />;
+  }
+  render(<WithControls />);
+  await act(() => client.join(payload('r1')));
+  expect(screen.queryByText('le verrou')).toBeNull();   // seul dans la room
+  act(() => client.addRemote({ id: 'bob', name: 'Bob' }));
+  const strip = document.querySelector('.video-strip')!;
+  expect(strip.firstElementChild?.textContent).toBe('le verrou');
+  act(() => client.removeRemote('bob'));
+  expect(screen.queryByText('le verrou')).toBeNull();
+});
+
 test('VideoStrip : une vignette par participant, la sienne d\'abord ; partage d\'écran affiché en grand', async () => {
   const { client } = await inRoom();
   act(() => {

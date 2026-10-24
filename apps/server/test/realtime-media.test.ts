@@ -1,11 +1,13 @@
 import {
   CLOSE_RANGE_GROUPING,
+  CONVERSATION_RATE,
   DEV_OFFICE,
   EMPTY_GROUPING,
   GROUP_DEBOUNCE_MS,
   GROUPS_TICK_MS,
   buildTiledMap,
   parseOfficeMap,
+  type ConversationAck,
   type MediaJoinPayload,
 } from '@bureau/shared';
 import { TokenVerifier } from 'livekit-server-sdk';
@@ -245,6 +247,110 @@ describe('rooms LiveKit des groupes', () => {
 
     const c = srv.connect(cookieC);
     expect((await nextInit(c)).self).toMatchObject({ ...SPAWN, dir: 'down' });   // busyZones vient des groupes du dernier calcul
+  });
+});
+
+// Un faux LiveKit qui sait parquer : de vrais jetons, et les appels (« park room id », « resume room id », « remove room id ») enregistrés.
+function parkingLiveKit() {
+  const real = createLiveKitBackend(LIVEKIT)!;
+  const calls: string[] = [];
+  const backend: MediaBackend = {
+    url: real.url,
+    mintToken: (i) => real.mintToken(i),
+    removeParticipant: async (room, identity) => {
+      calls.push(`remove ${room} ${identity}`);
+    },
+    park: async (room, identity) => {
+      calls.push(`park ${room} ${identity}`);
+    },
+    resume: async (room, identity) => {
+      calls.push(`resume ${room} ${identity}`);
+    },
+  };
+  return { backend, calls };
+}
+
+describe('quitter puis revenir : la connexion parquée', () => {
+  test('A s\'éloigne puis revient dans la minute : media:leave avec park, puis media:join de la même room, avec resume', async () => {
+    const live = parkingLiveKit();
+    const srv = await startTestServer({ env: { E2E: '1', ...LIVEKIT }, media: live.backend });
+    const { a, b, room } = await grouped(srv);
+
+    const leaves = Promise.all([nextEvent(a.socket, 'media:leave'), nextEvent(b.socket, 'media:leave')]);
+    a.socket.emit('debug:teleport', FAR);
+    expect(await leaves).toEqual([{ park: true }, { park: true }]);
+    await vi.waitFor(() => expect([...live.calls].sort()).toEqual([`park ${room} ${a.id}`, `park ${room} ${b.id}`].sort()));
+
+    const joins = Promise.all([nextEvent(a.socket, 'media:join'), nextEvent(b.socket, 'media:join')]);
+    a.socket.emit('debug:teleport', SIDE_A);
+    const [joinA, joinB] = await joins;
+    expect([joinA.room, joinB.room]).toEqual([room, room]);   // le même groupe (sa mémoire), donc la même room
+    expect(joinA.resume).toEqual(expect.any(String));
+    expect(joinB.resume).toEqual(expect.any(String));
+    await expectToken(joinA, a.id, 'a');   // le jeton de secours, si la reprise échoue
+    await vi.waitFor(() => expect(live.calls.filter((c) => c.startsWith('resume'))).toHaveLength(2));
+    expect(live.calls.filter((c) => c.startsWith('remove'))).toEqual([]);
+  });
+
+  test('passer en Ne pas déranger : media:leave sans park, et le retrait de la room tout de suite', async () => {
+    const live = parkingLiveKit();
+    const srv = await startTestServer({ env: { E2E: '1', ...LIVEKIT }, media: live.backend });
+    const { a, b, room } = await grouped(srv);
+    const leave = nextEvent(a.socket, 'media:leave');
+    const parked = nextEvent(b.socket, 'media:leave');
+    a.socket.emit('status:set', 'dnd');
+    expect(await leave).toBeUndefined();   // sans charge utile : la sortie pour de bon
+    expect(await parked).toEqual({ park: true });   // B, resté seul, garde la sienne parquée
+    await vi.waitFor(() => expect([...live.calls].sort()).toEqual([`park ${room} ${b.id}`, `remove ${room} ${a.id}`].sort()));
+  });
+});
+
+describe('verrouiller une conversation, par la socket', () => {
+  // Une commande `conversation:do`, et sa réponse.
+  const conversationDo = (socket: ClientSocket, payload: unknown) =>
+    new Promise<ConversationAck>((resolve) => (socket as unknown as { emit(e: string, ...a: unknown[]): void }).emit('conversation:do', payload, resolve));
+
+  test('A verrouille : les deux l\'apprennent ; B part loin, sans quitter la room ; un init redit le verrou ; B déverrouille, et ils se séparent', async () => {
+    const { srv } = await startMediaServer({ graceMs: 2_000 });
+    const { a, b, room } = await grouped(srv);
+    const notices = Promise.all([nextEvent(a.socket, 'conversation:lock'), nextEvent(b.socket, 'conversation:lock')]);
+    expect(await conversationDo(a.socket, { type: 'lock' })).toEqual({ ok: true });
+    const members = [a.id, b.id].sort();
+    const lock = { id: room.slice(room.indexOf('-') + 1), members, by: { id: a.id, name: 'a' }, at: expect.any(Number) };
+    expect(await notices).toEqual([
+      { lock, cause: 'locked', by: { id: a.id, name: 'a' } },
+      { lock, cause: 'locked', by: { id: a.id, name: 'a' } },
+    ]);
+
+    const bEvents = record(b.socket);
+    await teleport(srv, b, FAR);
+    await sleep(GROUP_DEBOUNCE_MS + 3 * GROUPS_TICK_MS);
+    expect(bEvents.names().filter(isMedia)).toEqual([]);
+    expect(srv.realtime.coordinator.groupMembersOf(a.id)).toEqual(members);
+
+    // B revient d'une coupure, avant la fin du délai de grâce : toujours verrouillée, et son init le dit.
+    const reinit = nextInit(b.socket);
+    cutNetwork(b.socket);
+    expect((await reinit).conversationLock).toEqual(lock);
+
+    const unlocked = nextEvent(a.socket, 'conversation:lock');
+    const leaves = Promise.all([nextEvent(a.socket, 'media:leave'), nextEvent(b.socket, 'media:leave')]);
+    expect(await conversationDo(b.socket, { type: 'unlock' })).toEqual({ ok: true });
+    expect(await unlocked).toEqual({ lock: null, cause: 'unlocked', by: { id: b.id, name: 'b' } });
+    await leaves;   // loin l'un de l'autre : la conversation se défait, comme un groupe ordinaire
+    expect(srv.realtime.coordinator.groupMembersOf(a.id)).toEqual([]);
+  });
+
+  test('commande invalide, sans conversation, trop de commandes : invalid, no_group, not_locked, rate_limited', async () => {
+    const { srv } = await startMediaServer();
+    const a = await enterRecorded(srv, 'a@x.fr');
+    expect(await conversationDo(a.socket, { type: 'bidule' })).toEqual({ ok: false, error: 'invalid' });
+    expect(await conversationDo(a.socket, { type: 'lock' })).toEqual({ ok: false, error: 'no_group' });
+    expect(await conversationDo(a.socket, { type: 'unlock' })).toEqual({ ok: false, error: 'not_locked' });
+    expect(await conversationDo(a.socket, { type: 'leave' })).toEqual({ ok: false, error: 'not_locked' });
+    const more = await Promise.all(Array.from({ length: CONVERSATION_RATE.max }, () => conversationDo(a.socket, { type: 'lock' })));
+    expect(more.at(-1)).toEqual({ ok: false, error: 'rate_limited' });
+    expect(more.filter((r) => !r.ok && r.error === 'rate_limited')).toHaveLength(4);
   });
 });
 

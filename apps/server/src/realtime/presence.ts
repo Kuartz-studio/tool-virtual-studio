@@ -1,4 +1,4 @@
-import { OFFICE_ROOM, levelOf, type ChatMessage, type Direction, type MyProgress, type OfficeMap, type PublicPlayer } from '@bureau/shared';
+import { OFFICE_ROOM, levelOf, type ChatMessage, type ConversationLock, type Direction, type MyProgress, type OfficeMap, type PublicPlayer } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import type { ChatService } from '../chat/chat-service';
@@ -40,6 +40,8 @@ export interface PresenceDeps {
   arena?: Pick<ArenaController, 'initFor'>;
   /** La progression de chacun : son niveau entre au monde avec lui, et chaque init dit la sienne à la personne. Absente : niveau 0, rien dans l'init. */
   progress?: Pick<ProgressService, 'mine'>;
+  /** Les conversations verrouillées : chaque init dit celle de la personne (qui revient d'une coupure, ou ouvre un autre onglet). */
+  conversations?: { lockOf(userId: string): ConversationLock | null };
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -135,6 +137,7 @@ export function createPresence(d: PresenceDeps) {
     const self = d.world.get(userId)!;
     void socket.join(OFFICE_ROOM);
     const music = d.music.all();
+    const conversationLock = d.conversations?.lockOf(userId) ?? null;
     socket.emit('init', {
       self,
       players: d.world.list().filter((p) => p.id !== userId),
@@ -147,6 +150,7 @@ export function createPresence(d: PresenceDeps) {
       // Seulement les pièces qu'on a réglées : sans réglage, le champ n'y est pas.
       ...(Object.keys(music).length > 0 ? { music } : {}),
       ...(progress ? { progress } : {}),
+      ...(conversationLock ? { conversationLock } : {}),
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
     d.onWelcome?.(socket);

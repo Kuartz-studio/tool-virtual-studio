@@ -45,6 +45,11 @@ describe('volumesFor', () => {
     const [volume] = Object.values(volumesFor(map, corridor(4), [{ id: 'a' }], () => ({ x: tile(4) + tile(10) + 7, y: tile(12) })));
     expect(Math.round(volume! * 100) / 100).toBe(volume);
   });
+
+  test('les membres de sa conversation verrouillée : plein volume, même à l\'autre bout du bureau', () => {
+    const where = (id: string) => ({ ami: corridor(60), autre: corridor(60) })[id];
+    expect(volumesFor(map, corridor(4), [{ id: 'ami' }, { id: 'autre' }], where, new Set(['ami']))).toEqual({ ami: 1, autre: 0 });
+  });
 });
 
 describe('useSpatialAudio', () => {
@@ -103,6 +108,22 @@ describe('useSpatialAudio', () => {
     });
     expect(client.volumes).toEqual({ bob: 0 });
     expect([...hook.result.current]).toEqual(['bob']);
+  });
+
+  test('mes pas comptent même hors conversation : rejoint à l\'arrêt là où j\'ai marché, le volume part de là, pas de mon arrivée', async () => {
+    const client = new FakeMediaClient();
+    act(() => {
+      useOfficeStore.getState().applyInit({ self: player('moi', corridor(4)), players: [player('bob', corridor(40))], mapKey: 'office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] });
+      useOfficeStore.getState().setOfficeMap(map);
+    });
+    const hook = renderHook(({ snapshot }: { snapshot: MediaSnapshot }) => useSpatialAudio(client, snapshot), { initialProps: { snapshot: client.getSnapshot() } });
+    // Hors conversation, je marche jusqu'à Bob, et je m'arrête.
+    act(() => EventBus.emit('local:move', { ...corridor(39), dir: 'right', moving: false }));
+    await act(() => client.join({ url: 'wss://livekit.test', room: 'r1', token: 't' }));
+    act(() => client.addRemote({ id: 'bob', name: 'bob', mic: true }));
+    hook.rerender({ snapshot: client.getSnapshot() });
+    expect(client.volumes).toEqual({ bob: 1 });
+    expect(hook.result.current.size).toBe(0);
   });
 
   test('ses positions (le magasin) suivent aussi : Bob s\'éloigne', async () => {
@@ -164,6 +185,22 @@ describe('useSpatialAudio', () => {
       vi.advanceTimersByTime(1000 / SPATIAL_AUDIO_HZ);
     });
     expect(client.volumes).toEqual({ bob: 1 });
+  });
+
+  test('une conversation verrouillée : ses membres à plein volume, leur vignette reste, où qu\'ils aillent ; déverrouillée, la distance reprend', async () => {
+    const { client, hook } = await inRoom({ bob: corridor(40) });
+    expect(client.volumes).toEqual({ bob: 0 });
+    act(() => useOfficeStore.getState().setConversationLock({ id: 'g1', members: ['bob', 'moi'], by: { id: 'moi', name: 'moi' }, at: 0 }));
+    act(() => {
+      vi.advanceTimersByTime(1000 / SPATIAL_AUDIO_HZ);
+    });
+    expect(client.volumes).toEqual({ bob: 1 });
+    expect(hook.result.current.size).toBe(0);
+    act(() => useOfficeStore.getState().setConversationLock(null));
+    act(() => {
+      vi.advanceTimersByTime(1000 / SPATIAL_AUDIO_HZ);
+    });
+    expect(client.volumes).toEqual({ bob: 0 });
   });
 
   test('un seuil d\'inaudible : en dessous de AUDIBLE_GAIN', () => {

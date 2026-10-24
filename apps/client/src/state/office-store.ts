@@ -4,6 +4,7 @@ import {
   type ActivityState,
   type ArenaState,
   type ChatMessage,
+  type ConversationLock,
   type DecorError,
   type DeskBan,
   type DeskDecor,
@@ -39,8 +40,9 @@ import type { PanelId } from '../office/panels';
 // ticks sont arrivés pendant son chargement, et suit ensuite les ticks lui-même.
 export type PlayerPosition = Pick<PublicPlayer, 'x' | 'y' | 'dir' | 'moving'>;
 
-// Une consigne audio/vidéo du serveur : rejoindre la room de son groupe (media:join), ou la quitter (media:leave).
-export type MediaInstruction = { type: 'join'; p: MediaJoinPayload } | { type: 'leave' };
+// Une consigne audio/vidéo du serveur : rejoindre la room de son groupe (media:join), ou la quitter (media:leave ; `park` : en gardant sa
+// connexion parquée, pour y revenir en un instant).
+export type MediaInstruction = { type: 'join'; p: MediaJoinPayload } | { type: 'leave'; park?: boolean };
 
 // L'éditeur de la déco de son bureau : le brouillon (ce que le jeu montre dans la pièce à la place de ce que le serveur a), l'élément qu'on tient
 // pour le poser au prochain clic, et pourquoi le dernier geste a été refusé. `saved` est ce qu'avait le serveur à l'ouverture : on sait
@@ -93,6 +95,9 @@ export interface OfficeState {
   // est coupée : pendant la coupure, le serveur a pu sortir la personne de son groupe, et il redit la consigne du moment après l'init
   // de la connexion suivante.
   mediaInstruction: MediaInstruction | null;
+  // La conversation verrouillée où l'on est (celle de l'`init`, puis ce que dit `conversation:lock`) ; null : aucune. Ses membres restent ensemble
+  // où qu'ils aillent, à plein volume (spatial-audio.ts), et les vignettes le montrent (VideoStrip).
+  conversationLock: ConversationLock | null;
   // Le chat « Tout le monde » : les 200 derniers messages (CHAT_HISTORY_LIMIT), du plus ancien au plus récent, sans doublon d'`id`.
   // L'historique du dernier `init` (le serveur le redit à chaque arrivée, retour après une coupure ou nouvel onglet : il fait foi), puis
   // les messages reçus depuis, celui qu'on envoie compris (le serveur le renvoie à tout le bureau, émetteur compris).
@@ -254,6 +259,8 @@ export interface OfficeState {
   // La connexion coupée : setReady(false). (L'`init` la rend prête : applyInit.)
   setReady(ready: boolean): void;
   setMediaInstruction(i: MediaInstruction | null): void;
+  // Sa conversation verrouillée, telle que le serveur l'annonce (`conversation:lock`) ; null : plus aucune.
+  setConversationLock(lock: ConversationLock | null): void;
   // Le statut choisi dans le menu ; null l'oublie (un autre onglet a pris la place : c'est lui qui parle pour la personne).
   setChosenStatus(s: Status | null): void;
   // Un message du chat (`chat:message`), dans la liste de son canal. Un `id` déjà là est ignoré (l'état reste le même objet).
@@ -292,6 +299,7 @@ type Data = Pick<
   | 'replaced'
   | 'ready'
   | 'mediaInstruction'
+  | 'conversationLock'
   | 'chatAll'
   | 'chatNearby'
   | 'chatReadId'
@@ -337,6 +345,7 @@ const initialData = (): Data => ({
   replaced: false,
   ready: false,
   mediaInstruction: null,
+  conversationLock: null,
   chatAll: [],
   chatNearby: [],
   chatReadId: null,
@@ -518,6 +527,8 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           deskBans: p.deskBans,
           // Les toc toc d'avant la coupure sont périmés : la personne n'est peut-être plus là pour les entendre.
           deskKnocks: [],
+          // Le verrou de sa conversation, tel qu'il est maintenant (pendant une coupure, il a pu finir, ou la perdre).
+          conversationLock: p.conversationLock ?? null,
           // La lumière du moment : celle que l'on croyait avant une coupure n'a plus cours. Les cafés non plus : ceux d'avant la coupure ont fini, ou
           // été remis, sans que personne nous le dise.
           lights: p.lights ?? LIGHTS_ON,
@@ -669,6 +680,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       setReplaced: (replaced) => set({ replaced }),
       setReady: (ready) => set({ ready }),
       setMediaInstruction: (mediaInstruction) => set({ mediaInstruction }),
+      setConversationLock: (conversationLock) => set({ conversationLock }),
       setChosenStatus: (chosenStatus) => set({ chosenStatus }),
 
       addChatMessage: (message) =>

@@ -282,6 +282,18 @@ describe('ce qui se passe au bureau', () => {
     expect(ids()).toEqual(['success']);
   });
 
+  test('sa conversation verrouillée : un verrou qui se ferme, puis qui s\'ouvre (déverrouillée, ou plus personne avec soi) ; qui en sort, rien de plus', () => {
+    store.getState().applyInit(init(player('moi'), [player('a')]));
+    played.length = 0;
+    const lock = { id: 'g1', members: ['a', 'moi'], by: { id: 'a', name: 'A' }, at: 1 };
+    emitOnBus(bus, 'conversation:lock', { lock, cause: 'locked', by: { id: 'a', name: 'A' } });
+    emitOnBus(bus, 'conversation:lock', { lock: null, cause: 'unlocked', by: { id: 'moi', name: 'MOI' } });
+    emitOnBus(bus, 'conversation:lock', { lock, cause: 'left', by: { id: 'b', name: 'B' } });
+    emitOnBus(bus, 'conversation:lock', { lock: null, cause: 'quit', by: { id: 'moi', name: 'MOI' } });
+    emitOnBus(bus, 'conversation:lock', { lock: null, cause: 'ended', by: { id: 'a', name: 'A' } });
+    expect(ids()).toEqual(['lock', 'unlock', 'unlock']);
+  });
+
   test('la lumière qui change : le bruit d\'un interrupteur, à l\'extinction et à l\'allumage, de qui que ce soit', () => {
     store.getState().applyInit(init(player('moi'), [player('a')]));
     played.length = 0;

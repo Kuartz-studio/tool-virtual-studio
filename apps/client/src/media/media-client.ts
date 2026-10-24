@@ -1,4 +1,4 @@
-import type { MediaJoinPayload, MediaState } from '@bureau/shared';
+import type { MediaJoinPayload, MediaLeavePayload, MediaState } from '@bureau/shared';
 
 // L'audio et la vidéo de proximité : une room LiveKit par groupe de conversation. Le serveur dit quand en rejoindre une et quand la
 // quitter (media:join, media:leave) ; le client média s'y connecte, publie le micro, la caméra et le partage d'écran, et reçoit ceux des
@@ -53,13 +53,16 @@ export type VideoSource = 'camera' | 'screen';
 // rendue se résout quand la sienne est faite, et ne rejette jamais (un échec se lit dans `error`).
 export interface MediaClient {
   // Rejoint la room. Déjà dans une autre : leave() d'abord, dans l'ordre. Déjà dans celle-ci, ou en train de la rejoindre : rien (si
-  // cette tentative-là échoue, ce join réessaie).
+  // cette tentative-là échoue, ce join réessaie). Parquée (quittée avec `park` il y a moins de MEDIA_PARK_MS), et le join porte `resume` :
+  // la connexion parquée reprend, sans se reconnecter ; si elle ne peut pas, le client se connecte avec le jeton, comme d'habitude.
   join(p: MediaJoinPayload): Promise<void>;
-  // Quitte la room : les pistes locales s'arrêtent (le partage d'écran aussi), l'audio des autres se tait. Hors room : rien, sinon
-  // effacer connection_failed (la room qui n'a pas pu être rejointe n'est plus attendue).
+  // Quitte la room : l'audio des autres se tait, rien n'y est plus publié (le partage d'écran et la caméra s'arrêtent). Avec `park`, la
+  // connexion reste ouverte, muette, MEDIA_PARK_MS (le micro gardé, sans être publié), pour y revenir en un instant ; sans lui, elle se ferme et
+  // les pistes locales s'arrêtent (une room parquée aussi). Hors room : rien, sinon effacer connection_failed (la room qui n'a pas pu être
+  // rejointe n'est plus attendue).
   // join (d'une autre room) et leave quittent la room en cours dès l'appel, sans attendre ce qu'elle fait encore : une connexion qui
   // se fait est annulée, et un micro ou une caméra qui s'allument n'y sont jamais publiés.
-  leave(): Promise<void>;
+  leave(p?: MediaLeavePayload): Promise<void>;
   // Micro et caméra : dans une room, allumés ou éteints tout de suite (rallumer redemande l'accès s'il avait été refusé) ; hors room,
   // retenus pour la prochaine.
   setMic(on: boolean): Promise<void>;
@@ -116,12 +119,15 @@ export interface TransportEvents {
 // La room elle-même, sans logique : le client média (MediaSession) décide quand se connecter, quoi allumer, et que faire d'un échec.
 export interface MediaTransport {
   // Se connecte à la room, avec ces périphériques pour les pistes à venir ; rejette si la connexion échoue (et ne laisse rien derrière).
+  // Une room parquée est fermée d'abord ; son micro gardé reste, et sera publié dans celle-ci s'il a les mêmes périphériques.
   connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void>;
-  // Quitte la room : pistes locales arrêtées, audio des autres retiré, plus aucun événement. Peut venir pendant connect (qui est alors
-  // annulée) ou pendant setSource et useDevices (qui finissent alors tout de suite, sans attendre LiveKit ni le navigateur).
+  // Quitte la room : pistes locales arrêtées, audio des autres retiré, plus aucun événement ; la room parquée et le micro gardé aussi. Peut
+  // venir pendant connect (qui est alors annulée), pendant resume (qui échoue alors), ou pendant setSource et useDevices (qui finissent
+  // alors tout de suite, sans attendre LiveKit ni le navigateur).
   disconnect(): Promise<void>;
   // Allume ou éteint une source locale ; rejette si le périphérique ne peut pas s'allumer (refusé, absent, inutilisable, choix de
   // l'écran annulé) ou si la piste ne peut pas être publiée. L'erreur est rendue telle quelle (celle de getUserMedia pour un refus).
+  // Allumer le micro publie le micro gardé, s'il y en a un (sans redemander l'accès) ; hors room, éteindre le micro arrête le micro gardé.
   setSource(source: LocalSource, on: boolean): Promise<void>;
   // Passe à ces périphériques (ceux qui sont choisis), dans la room.
   useDevices(devices: MediaDevices): Promise<void>;
@@ -132,7 +138,18 @@ export interface MediaTransport {
   warmUp?(): void;
   // Règle le volume des autres (MediaClient.setVolumes) : il s'applique à ceux qui sont là, et à ceux qui arrivent ensuite.
   setVolumes?(volumes: Readonly<Record<string, number>>): void;
-  // Les participants de la room, soi-même d'abord ; [] hors connexion.
+  // Les participants de la room, soi-même d'abord ; [] hors connexion. Ceux que le serveur a parqués dans la room (ils l'ont quittée) n'y
+  // sont pas.
   participants(): MediaParticipant[];
   attach(el: HTMLVideoElement, participantId: string, source: VideoSource): () => void;
+  // Parquer : quitte la room en cours sans s'en déconnecter. Elle reste ouverte, muette : plus de son des autres, plus rien de publié (le
+  // micro est gardé, dépublié, pour la reprise ; la caméra et le partage d'écran s'arrêtent), plus aucun de ses événements. Facultatif : sans
+  // lui, le client média se déconnecte.
+  park?(): Promise<void>;
+  // Reprend la room parquée pour ce join : la même room, avec `resume`, et les mêmes périphériques. Résolue à vrai une fois la room de nouveau
+  // en cours (avec ces événements), dès que LiveKit confirme que le serveur a rendu les droits ; à faux sinon (plus de room parquée, une autre,
+  // pas de confirmation à temps, une déconnexion pendant l'attente) : le client média se connecte alors avec le jeton, ce qui ferme la parquée.
+  resume?(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<boolean>;
+  // Ferme la room parquée et arrête le micro gardé (la fin du délai, une sortie pour de bon). Facultatif.
+  unpark?(): Promise<void>;
 }

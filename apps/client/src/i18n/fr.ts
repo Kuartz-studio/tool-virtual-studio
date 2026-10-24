@@ -1135,6 +1135,37 @@ export const fr = {
       fullscreen: 'Plein écran',
       exitFullscreen: 'Quitter le plein écran',
     },
+    // Verrouiller la conversation : ses membres restent ensemble où qu'ils aillent, et personne d'autre n'y entre.
+    lock: {
+      // Le groupe du verrou, au-dessus des vignettes, pour les lecteurs d'écran.
+      label: 'Verrou de la conversation',
+      lock: 'Verrouiller',
+      lockLabel: 'Verrouiller la conversation',
+      lockHint: 'Rester ensemble, même en s\'éloignant : personne d\'autre n\'y entre.',
+      unlockLabel: 'Déverrouiller la conversation',
+      lockedBy: 'Verrouillée par {name}',
+      lockedBySelf: 'Verrouillée par toi',
+      leave: 'Quitter',
+      leaveLabel: 'Quitter la conversation verrouillée',
+      // Les messages passagers : ce qui vient de changer.
+      toast: {
+        locked: '{name} a verrouillé la conversation',
+        lockedSelf: 'Tu as verrouillé la conversation',
+        unlocked: '{name} a déverrouillé la conversation',
+        unlockedSelf: 'Tu as déverrouillé la conversation',
+        left: '{name} a quitté la conversation verrouillée',
+        quit: 'Tu as quitté la conversation verrouillée',
+        ended: 'Tu es seul : la conversation n\'est plus verrouillée',
+      },
+      // Une commande refusée.
+      errors: {
+        invalid: 'Ce n\'est pas possible.',
+        rate_limited: 'Doucement : réessaie dans un instant.',
+        no_group: 'Il faut être en conversation, à deux au moins, pour la verrouiller.',
+        not_locked: 'Cette conversation n\'est plus verrouillée.',
+        unavailable: 'Le serveur ne répond pas. Réessaie dans un instant.',
+      },
+    },
     connectionFailed: 'La connexion audio et vidéo a échoué.',
     reconnect: 'Reconnecter',
     audioBlocked: 'Le navigateur a bloqué le son de la conversation.',

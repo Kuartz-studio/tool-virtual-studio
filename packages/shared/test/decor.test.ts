@@ -126,7 +126,7 @@ describe('les murs de la boutique', () => {
     expect(new Set(ids).size).toBe(ids.length);
     for (const id of ids) {
       expect(id).toMatch(/^mur-[a-z0-9-]+$/);
-      expect(WALL_THEMES.some((wall) => wall.id === id)).toBe(false);
+      expect(WALL_THEMES.map((wall): string => wall.id)).not.toContain(id);
       expect(isDecorId(id)).toBe(false);
     }
   });

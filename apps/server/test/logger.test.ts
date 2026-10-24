@@ -127,3 +127,15 @@ test('une erreur ordinaire est journalisée comme avant', () => {
   logger.error({ err: Object.assign(new Error('LiveKit injoignable'), { code: 'ECONNREFUSED' }) }, 'Retrait impossible');
   expect(JSON.parse(lines[0]!).err).toMatchObject({ type: 'Error', message: 'LiveKit injoignable', code: 'ECONNREFUSED' });
 });
+
+// Le délai d'une requête à l'API de LiveKit (AbortSignal.timeout) rejette avec une DOMException, dont le message est un accesseur sans mutateur :
+// la copie sans paramètres levait dans le sérialiseur, depuis le `.catch` d'un retrait de participant, et faisait tomber le serveur (vu en local,
+// un retrait qui croise le départ de la personne attend 3 s la réponse de LiveKit).
+test('une DOMException (délai d\'une requête dépassé) est journalisée, sans lever', () => {
+  const { logger, lines } = productionLogs();
+  const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+  expect(() => logger.warn({ err: timeout }, 'Retrait d\'un participant LiveKit impossible')).not.toThrow();
+  expect(() => logger.warn({ err: new Error('enveloppe', { cause: timeout }) }, 'enveloppée')).not.toThrow();
+  expect(JSON.parse(lines[0]!).err).toMatchObject({ message: 'The operation was aborted due to timeout' });
+  expect(lines[1]).toContain('The operation was aborted due to timeout');
+});

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type Ref } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { mediaDebug } from '../game/debug';
 import { fr, t } from '../i18n/fr';
 import type { MediaClient, MediaParticipant, MediaSnapshot, VideoSource } from '../media/media-client';
@@ -13,6 +13,9 @@ interface VideoStripProps {
   hidden?: ReadonlySet<string>;
   // « Reconnecter », après un échec de la connexion audio et vidéo : relance la connexion au bureau, et le serveur redit la consigne.
   onReconnect?: () => void;
+  // Ce qui se règle pour toute la conversation (le verrou, ConversationLockBar), au-dessus des vignettes : seulement dans une room où l'on
+  // n'est pas seul.
+  controls?: ReactNode;
 }
 
 // Une vignette : la caméra (ou les initiales) d'un participant, ou son partage d'écran.
@@ -29,9 +32,10 @@ interface TileSpec {
 // Le partage d'écran d'un autre, agrandi, a un bouton « Plein écran » : l'écran seul occupe alors tout l'écran de la personne, jusqu'à
 // Échap ou au bouton « Quitter le plein écran ».
 // Hors conversation, rien. Au-dessus des vignettes, ce qui ne marche pas : la connexion audio et vidéo (« Reconnecter »), le son
-// bloqué par le navigateur (« Activer le son »), le micro ou la caméra refusés.
-export function VideoStrip({ snapshot, client, hidden, onReconnect }: VideoStripProps) {
+// bloqué par le navigateur (« Activer le son »), le micro ou la caméra refusés ; puis ce qui se règle pour toute la conversation (`controls`).
+export function VideoStrip({ snapshot, client, hidden, onReconnect, controls }: VideoStripProps) {
   const { error, audioBlocked, room } = snapshot;
+  const withOthers = room !== null && snapshot.participants.some((p) => !p.isLocal);
   const participants = hidden && hidden.size > 0 ? snapshot.participants.filter((p) => p.isLocal || !hidden.has(p.id)) : snapshot.participants;
   // La vignette que la personne a agrandie, et le partage d'écran (agrandi de lui-même) qu'elle a réduit.
   const [chosen, setChosen] = useState<string | null>(null);
@@ -145,6 +149,7 @@ export function VideoStrip({ snapshot, client, hidden, onReconnect }: VideoStrip
   return (
     <div className="video-strip">
       {notices}
+      {withOthers && controls}
       {small.length > 0 && (
         <ul className="video-tiles" aria-label={fr.media.tiles.label}>
           {small.map((tile) => (

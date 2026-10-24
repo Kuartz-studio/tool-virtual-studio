@@ -2,8 +2,10 @@ import {
   CLOSE_JOIN_DISTANCE_PX,
   CLOSE_LEAVE_DISTANCE_PX,
   GROUP_DEBOUNCE_MS,
+  GROUP_MEMORY_MS,
   JOIN_DISTANCE_PX,
   LEAVE_DISTANCE_PX,
+  REJOIN_DEBOUNCE_MS,
   ZONE_JOIN_DEBOUNCE_MS,
 } from '../constants';
 import type { OfficeMap } from '../map/parse-map';
@@ -25,12 +27,23 @@ export interface Group {
 // - groups : les groupes, par id ;
 // - pending : les changements qui attendent leur délai (GROUP_DEBOUNCE_MS). target est le groupe voulu, null pour quitter le
 //   sien ; since, l'heure (en ms) depuis laquelle ce changement est voulu sans interruption. Jamais vers le groupe où l'on est ;
-// - nextId : le numéro du prochain id créé (g1, g2…) ; un numéro ne sert qu'une fois.
+// - nextId : le numéro du prochain id créé (g1, g2…) ; un numéro n'est créé qu'une fois (seule la mémoire en reprend un, pour les mêmes gens) ;
+// - recent : la mémoire des groupes (RecentGroup), par id ; absente quand elle est vide. Deux personnes au moins qui étaient d'un groupe défait
+//   depuis moins de GROUP_MEMORY_MS, et qui forment une grappe sans id, reprennent le sien : sa room LiveKit, où elles sont encore parquées. Et
+//   qui revient dans un groupe qu'il a quitté depuis moins de GROUP_MEMORY_MS le rejoint après REJOIN_DEBOUNCE_MS.
 export interface GroupingState {
   assignment: Record<string, string | null>;
   groups: Record<string, Group>;
   pending: Record<string, { target: string | null; since: number }>;
   nextId: number;
+  recent?: Record<string, RecentGroup>;
+}
+
+// La mémoire d'un groupe : sa zone (celle qu'il avait au dernier départ), et ceux qui l'ont quitté depuis moins de GROUP_MEMORY_MS, avec l'heure
+// (en ms) de leur départ. Un groupe qui se défait y laisse ses derniers membres ; celui qui reste et ceux qui partent y ont le même statut.
+export interface RecentGroup {
+  zoneId: string | null;
+  members: Record<string, number>;
 }
 
 // L'état de départ. Figé : computeGroups ne modifie jamais l'état reçu, et personne d'autre ne doit modifier celui-ci.
@@ -68,7 +81,8 @@ export const CLOSE_RANGE_GROUPING: GroupConfig = { joinPx: CLOSE_JOIN_DISTANCE_P
 // - dans une zone isolante, tous les éligibles (ni en Ne pas déranger, ni hors conversation par leur état d'activité) forment un groupe, à partir de deux ;
 // - dans les espaces ouverts, on se relie à moins de config.joinPx (et à l'arrêt, si config.requireStill), on reste relié jusqu'à
 //   config.leavePx, de proche en proche ;
-// - un changement ne s'applique qu'après 500 ms (150 ms pour rejoindre le groupe d'une zone), sauf ces cas, immédiats :
+// - un changement ne s'applique qu'après 500 ms (150 ms pour rejoindre le groupe d'une zone, ou un groupe qu'on a quitté depuis moins de
+//   GROUP_MEMORY_MS), sauf ces cas, immédiats :
 //   · passer en Ne pas déranger (ou hors conversation) fait sortir de son groupe ;
 //   · se trouver hors de la zone de son groupe quand c'est un groupe de zone fait sortir du groupe : qu'on vienne de quitter la zone,
 //     ou que, resté dehors, on voie son groupe d'espace ouvert devenir celui de la zone (sa plus grande partie y est entrée et la
@@ -76,7 +90,9 @@ export const CLOSE_RANGE_GROUPING: GroupConfig = { joinPx: CLOSE_JOIN_DISTANCE_P
 //   · un groupe réduit à un membre, vers qui personne n'est en route, est dissous ;
 // - personne hors d'une zone n'est jamais dans le groupe de cette zone ;
 // - quand des groupes fusionnent ou se séparent, chaque id va à la grappe qui compte le plus de ses membres (à égalité, à celle qui
-//   reste dans la zone du groupe, puis à la plus grande) : la plus grande partie garde sa room, les autres en changent.
+//   reste dans la zone du groupe, puis à la plus grande) : la plus grande partie garde sa room, les autres en changent ;
+// - une grappe sans id où se retrouvent au moins deux membres d'un groupe défait depuis moins de GROUP_MEMORY_MS reprend son id (la mémoire,
+//   `recent`) : ils retrouvent leur room, où leur connexion est encore parquée.
 export function computeGroups(
   players: ProximityPlayer[],
   map: OfficeMap,
@@ -91,9 +107,15 @@ export function computeGroups(
     .sort((a, b) => compare(a.id, b.id))
     .map((p) => ({ p, zone: zoneAt(map, p.x, p.y)?.id ?? null }));
   const current = (id: string): string | null => own(prev.assignment, id) ?? null;
+  // La mémoire des groupes, sans les départs de plus de GROUP_MEMORY_MS ; et si ce joueur a quitté ce groupe depuis moins longtemps.
+  const memory = forget(prev.recent, now);
+  const wasIn = (groupId: string, playerId: string): boolean => {
+    const remembered = own(memory, groupId);
+    return remembered !== undefined && Object.hasOwn(remembered.members, playerId);
+  };
 
   // 1. Les éligibles : tous, sauf les personnes en Ne pas déranger.
-  const eligible = present.filter(({ p }) => !isOut(p));
+  const eligible = present.filter(({ p }) => !isOutOfConversations(p));
 
   // 2. Les grappes. Une par zone qui compte au moins 2 éligibles.
   const clusters: Cluster[] = [];
@@ -147,11 +169,14 @@ export function computeGroups(
   //       zone) ; voix = ses membres qui sont dans ce groupe.
   //    b. Pour les grappes restées sans id : leurs cibles en attente, parmi les ids qui ne sont pas encore des groupes (un groupe qui
   //       se forme garde son id pendant l'attente) ; voix = ses membres qui attendent cet id.
+  //    c. Pour les grappes restées sans id : les groupes défaits de la mémoire (ni groupe, ni déjà pris), permis si l'id ne sort pas de sa
+  //       zone ; voix = ses membres qui en étaient (depuis moins de GROUP_MEMORY_MS), à partir de deux. Les mêmes gens qui se retrouvent
+  //       reprennent ainsi la room où leur connexion est parquée, au lieu d'en ouvrir une neuve.
   //    Dans chaque passe, les paires par voix décroissantes, puis d'abord celles qui gardent la zone du groupe (cluster.zoneId ===
   //    prevZone(id) : la même zone, ou un espace ouvert pour un groupe d'espace ouvert ; une cible en attente n'étant pas encore un
-  //    groupe, prevZone vaut null pour elle), puis taille de grappe décroissante, puis plus petit id de membre, puis id (ordre
-  //    lexicographique) ; une paire n'est retenue que si ni sa grappe ni son id ne le sont déjà.
-  //    c. Les grappes restantes reçoivent un nouvel id, `g${nextId++}`, de la plus grande à la plus petite (à égalité : celle du
+  //    groupe, prevZone vaut null pour elle ; pour un groupe de la mémoire, c'est sa zone), puis taille de grappe décroissante, puis plus
+  //    petit id de membre, puis id (ordre lexicographique) ; une paire n'est retenue que si ni sa grappe ni son id ne le sont déjà.
+  //    d. Les grappes restantes reçoivent un nouvel id, `g${nextId++}`, de la plus grande à la plus petite (à égalité : celle du
   //       plus petit id de membre).
   //    claimed : les ids pris par une grappe, avec sa zone.
   clusters.sort((a, b) => b.members.length - a.members.length || compare(a.members[0]!, b.members[0]!));
@@ -159,10 +184,10 @@ export function computeGroups(
   const claimed = new Map<string, string | null>();
   const idOf = new Map<Cluster, string>();
   const prevZone = (id: string): string | null => own(prev.groups, id)?.zoneId ?? null;
-  const claimByVotes = (votesOf: (cluster: Cluster) => Map<string, number>) => {
+  const claimByVotes = (votesOf: (cluster: Cluster) => Map<string, number>, zoneOf: (id: string) => string | null = prevZone) => {
     const pairs = clusters
       .flatMap((cluster, rank) =>
-        idOf.has(cluster) ? [] : [...votesOf(cluster)].map(([id, votes]) => ({ cluster, rank, id, votes, keepsZone: cluster.zoneId === prevZone(id) })),
+        idOf.has(cluster) ? [] : [...votesOf(cluster)].map(([id, votes]) => ({ cluster, rank, id, votes, keepsZone: cluster.zoneId === zoneOf(id) })),
       )
       .sort((a, b) => b.votes - a.votes || Number(b.keepsZone) - Number(a.keepsZone) || a.rank - b.rank || compare(a.id, b.id));
     for (const { cluster, id } of pairs) {
@@ -173,6 +198,17 @@ export function computeGroups(
   };
   claimByVotes((cluster) => votes(cluster.members.map(current), (g) => prevZone(g) === null || prevZone(g) === cluster.zoneId));
   claimByVotes((cluster) => votes(cluster.members.map((m) => own(prev.pending, m)?.target ?? null), (g) => own(prev.groups, g) === undefined));
+  const rememberedZone = (id: string): string | null => own(memory, id)?.zoneId ?? null;
+  claimByVotes((cluster) => {
+    const counts = new Map<string, number>();
+    for (const [id, remembered] of Object.entries(memory)) {
+      if (own(prev.groups, id) !== undefined) continue;   // un groupe qui existe ne se prend que par ses membres (a)
+      if (remembered.zoneId !== null && remembered.zoneId !== cluster.zoneId) continue;
+      const count = cluster.members.filter((m) => Object.hasOwn(remembered.members, m)).length;
+      if (count >= 2) counts.set(id, count);
+    }
+    return counts;
+  }, rememberedZone);
   for (const cluster of clusters) {
     if (idOf.has(cluster)) continue;
     const id = `g${nextId++}`;
@@ -189,15 +225,21 @@ export function computeGroups(
   //    déranger, et se trouver hors de la zone de son groupe quand c'est un groupe de zone, quelle que soit la grappe voulue ; s'il en
   //    veut une, il l'attend à partir de maintenant. Tout autre changement attend que la même cible soit voulue depuis
   //    GROUP_DEBOUNCE_MS.
-  //    Le délai dépend de la cible : rejoindre le groupe d'une zone (un geste voulu) n'attend que ZONE_JOIN_DEBOUNCE_MS.
-  const delayFor = (target: string | null): number => (target !== null && claimed.get(target) != null ? ZONE_JOIN_DEBOUNCE_MS : GROUP_DEBOUNCE_MS);
+  //    Le délai dépend de la cible : rejoindre le groupe d'une zone (un geste voulu) n'attend que ZONE_JOIN_DEBOUNCE_MS, et revenir dans un
+  //    groupe qu'on a quitté depuis moins de GROUP_MEMORY_MS (la mémoire) REJOIN_DEBOUNCE_MS : on y retrouve sa connexion parquée, et l'aller-
+  //    retour à la limite ne coûte rien. Quitter un groupe attend toujours GROUP_DEBOUNCE_MS (l'hystérésis des distances fait le reste).
+  const delayFor = (target: string | null, playerId: string): number => {
+    if (target === null) return GROUP_DEBOUNCE_MS;
+    if (claimed.get(target) != null) return ZONE_JOIN_DEBOUNCE_MS;
+    return wasIn(target, playerId) ? REJOIN_DEBOUNCE_MS : GROUP_DEBOUNCE_MS;
+  };
   const assignment = new Map<string, string | null>();
   const pending = new Map<string, { target: string | null; since: number }>();
   for (const { p, zone } of present) {
     const actual = current(p.id);
     const target = wanted.get(p.id) ?? null;
     const actualZone = actual === null ? null : zoneOfGroup(actual);
-    const immediate = isOut(p) || (actualZone !== null && zone !== actualZone);
+    const immediate = isOutOfConversations(p) || (actualZone !== null && zone !== actualZone);
     const waiting = own(prev.pending, p.id);
     const sameTarget = waiting !== undefined && waiting.target === target;
     if (target === actual) {
@@ -205,7 +247,7 @@ export function computeGroups(
     } else if (immediate) {
       assignment.set(p.id, null);
       if (target !== null) pending.set(p.id, { target, since: now });
-    } else if (sameTarget && now - waiting.since >= delayFor(target)) {
+    } else if (sameTarget && now - waiting.since >= delayFor(target, p.id)) {
       assignment.set(p.id, target);
     } else {
       assignment.set(p.id, actual);
@@ -233,7 +275,52 @@ export function computeGroups(
     groups[id] = { id, members: list, zoneId: zoneOfGroup(id) };
   }
 
-  return { assignment: Object.fromEntries(assignment), groups, pending: Object.fromEntries(pending), nextId };
+  // 6. La mémoire : chaque membre d'un groupe de prev qui n'y est plus (parti vers un autre, vers aucun, du bureau, ou le groupe s'est défait)
+  //    y est inscrit à l'heure de ce calcul, avec la zone du groupe à cet appel. Qui y revient l'efface de la mémoire de ce groupe.
+  const departures = new Map<string, { zoneId: string | null; members: Map<string, number> }>(
+    Object.entries(memory).map(([id, remembered]) => [id, { zoneId: remembered.zoneId, members: new Map(Object.entries(remembered.members)) }]),
+  );
+  for (const before of Object.values(prev.groups)) {
+    for (const m of before.members) {
+      if (assignment.get(m) === before.id) continue;
+      const entry = departures.get(before.id) ?? { zoneId: null, members: new Map<string, number>() };
+      entry.zoneId = own(groups, before.id)?.zoneId ?? zoneOfGroup(before.id);
+      entry.members.set(m, now);
+      departures.set(before.id, entry);
+    }
+  }
+  for (const [id, group] of Object.entries(groups)) {
+    const entry = departures.get(id);
+    if (!entry) continue;
+    for (const m of group.members) entry.members.delete(m);
+    if (entry.members.size === 0) departures.delete(id);
+  }
+  const recent = sortedRecord([...departures].map(([id, { zoneId, members }]) => [id, { zoneId, members: sortedRecord([...members]) }]));
+
+  return {
+    assignment: Object.fromEntries(assignment),
+    groups,
+    pending: Object.fromEntries(pending),
+    nextId,
+    ...(Object.keys(recent).length > 0 ? { recent } : {}),
+  };
+}
+
+// La mémoire sans les départs de plus de GROUP_MEMORY_MS (ni les groupes qui n'en ont plus), triée par id : le résultat ne dépend pas de
+// l'ordre où elle a été écrite.
+function forget(recent: Record<string, RecentGroup> | undefined, now: number): Record<string, RecentGroup> {
+  if (recent === undefined) return {};
+  const kept: Array<[string, RecentGroup]> = [];
+  for (const [id, remembered] of Object.entries(recent)) {
+    const members = Object.entries(remembered.members).filter(([, at]) => now - at < GROUP_MEMORY_MS);
+    if (members.length > 0) kept.push([id, { zoneId: remembered.zoneId, members: sortedRecord(members) }]);
+  }
+  return sortedRecord(kept);
+}
+
+// Un objet aux clés dans l'ordre lexicographique.
+function sortedRecord<T>(entries: Array<[string, T]>): Record<string, T> {
+  return Object.fromEntries(entries.sort(([a], [b]) => compare(a, b)));
 }
 
 // Les zones où un groupe compte au moins 2 membres.
@@ -245,8 +332,9 @@ export function busyZoneIds(s: GroupingState): Set<string> {
   return busy;
 }
 
-// Hors de toute conversation : en Ne pas déranger, ou dans un état d'activité sans entendre ni être entendu.
-function isOut(p: ProximityPlayer): boolean {
+// Hors de toute conversation : en Ne pas déranger, ou dans un état d'activité sans entendre ni être entendu. Une conversation verrouillée
+// (conversation-locks.ts) perd aussi ces membres-là.
+export function isOutOfConversations(p: ProximityPlayer): boolean {
   return p.status === 'dnd' || p.excluded === true;
 }
 

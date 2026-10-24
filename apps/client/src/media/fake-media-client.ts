@@ -49,6 +49,13 @@ class FakeLiveKit implements MediaTransport {
   // Le volume demandé de chaque personne (setVolumes), et le nombre d'appels.
   volumes: Readonly<Record<string, number>> = {};
   volumeCalls = 0;
+  // La room parquée (park) et ses périphériques, et le micro gardé : publié tel quel au prochain allumage (`mic:kept`). Une reprise qui
+  // échoue (failResume : LiveKit ne la confirme pas), ou qui attend (resumeHold).
+  parkedRoom: string | null = null;
+  private parkedDevices: MediaDevices = {};
+  keptMic = false;
+  failResume = false;
+  resumeHold: Promise<void> | null = null;
   private room: string | null = null;
   private events: TransportEvents | null = null;
   private published = { mic: false, cam: false, screen: false };
@@ -59,7 +66,43 @@ class FakeLiveKit implements MediaTransport {
 
   constructor(private readonly self: { id: string; name: string }) {}
 
+  // Comme LiveKitTransport : la room en cours, mise de côté sans s'en déconnecter ; le micro publié est gardé.
+  async park(): Promise<void> {
+    if (this.room === null) return;
+    this.journal.push(`park:${this.room}`);
+    this.parkedRoom = this.room;
+    this.parkedDevices = { ...this.devices };
+    if (this.published.mic) this.keptMic = true;
+    this.close();
+  }
+
+  // Reprend la room parquée si c'est elle, avec `resume` et les mêmes périphériques, et que LiveKit la confirme (ni failResume, ni départ
+  // pendant resumeHold).
+  async resume(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<boolean> {
+    this.journal.push(`resume:${p.room}`);
+    const connection = this.open();
+    if (this.resumeHold) await Promise.race([this.resumeHold, this.left]);
+    const same = devices.audioInput === this.parkedDevices.audioInput && devices.videoInput === this.parkedDevices.videoInput && devices.audioOutput === this.parkedDevices.audioOutput;
+    if (this.connection !== connection || this.parkedRoom !== p.room || p.resume === undefined || this.failResume || !same) return false;
+    this.parkedRoom = null;
+    this.room = p.room;
+    this.devices = { ...devices };
+    this.events = events;
+    return true;
+  }
+
+  async unpark(): Promise<void> {
+    if (this.parkedRoom !== null) this.journal.push('unpark');
+    this.parkedRoom = null;
+    this.keptMic = false;
+  }
+
   async connect(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<void> {
+    // Une room parquée qu'on ne reprend pas est fermée ; son micro reste.
+    if (this.parkedRoom !== null) {
+      this.journal.push('unpark');
+      this.parkedRoom = null;
+    }
     this.journal.push(`join:${p.room}`);
     const connection = this.open();
     if (this.connectHold) await Promise.race([this.connectHold, this.left]);
@@ -75,11 +118,24 @@ class FakeLiveKit implements MediaTransport {
   }
 
   async disconnect(): Promise<void> {
+    await this.unpark();
     this.journal.push('leave');
     this.close();
   }
 
   async setSource(source: LocalSource, on: boolean): Promise<void> {
+    // Hors room : couper le micro arrête le micro gardé. Dans une room, l'allumer publie le micro gardé, sans redemander l'accès.
+    if (this.room === null && source === 'mic' && !on && this.keptMic) {
+      this.deviceLog.push('mic:kept-off');
+      this.keptMic = false;
+      return;
+    }
+    if (this.room !== null && source === 'mic' && on && this.keptMic) {
+      this.keptMic = false;
+      this.deviceLog.push('mic:kept');
+      this.published.mic = true;
+      return;
+    }
     this.deviceLog.push(`${source}:${on ? 'on' : 'off'}`);
     const connection = this.connection;
     const hold = this.deviceHold;
@@ -176,11 +232,14 @@ class FakeLiveKit implements MediaTransport {
 }
 
 // Le faux client média, pour les tests : la vraie logique (MediaSession), sur un faux LiveKit. Sans réseau ni périphérique.
-// - journal : ce qui arrive à la connexion, `join:<room>` à chaque connexion tentée, `leave` à chaque départ ;
-// - deviceLog : ce qui est demandé aux périphériques, `mic:on`, `cam:off`, `screen:on`, `devices:{…}` ;
+// - journal : ce qui arrive à la connexion, `join:<room>` à chaque connexion tentée, `leave` à chaque départ, `park:<room>` à chaque room
+//   parquée, `resume:<room>` à chaque reprise tentée, `unpark` quand une room parquée est fermée ;
+// - deviceLog : ce qui est demandé aux périphériques, `mic:on`, `cam:off`, `screen:on`, `devices:{…}` ; `mic:kept` quand le micro gardé d'une
+//   room parquée est publié tel quel, `mic:kept-off` quand il est arrêté hors room ;
 // - les commandes des tests jouent LiveKit et le navigateur : refuser un périphérique (ou le faire échouer autrement), faire
 //   attendre un périphérique, faire échouer ou attendre la connexion, faire entrer, changer, parler ou partir des gens, arrêter le
-//   partage d'écran depuis le navigateur, perdre la connexion ou en être retiré, bloquer le son des autres.
+//   partage d'écran depuis le navigateur, perdre la connexion ou en être retiré, bloquer le son des autres, faire échouer ou attendre une
+//   reprise.
 // Comme LiveKit, une connexion quittée pendant qu'elle se fait est annulée (et échoue). Comme LiveKitTransport, un appel aux
 // périphériques qui attend encore quand la room part finit tout de suite.
 // L'identité de la personne (soi-même, dans participants) est `moi`, « Moi », sauf autre choix.
@@ -300,6 +359,30 @@ export class FakeMediaClient extends MediaSession {
   // Les startAudio reçus dans une room.
   get audioStarts(): number {
     return this.livekit.audioStarts;
+  }
+
+  // La room que le faux LiveKit garde parquée, ou null ; et s'il garde le micro d'une room quittée.
+  get parkedRoom(): string | null {
+    return this.livekit.parkedRoom;
+  }
+
+  get micKept(): boolean {
+    return this.livekit.keptMic;
+  }
+
+  // Les reprises échouent (LiveKit ne les confirme pas à temps), jusqu'à failResumes(false).
+  failResumes(fail = true): void {
+    this.livekit.failResume = fail;
+  }
+
+  // Les reprises attendent la confirmation de LiveKit ; la fonction rendue la donne.
+  holdResumes(): () => void {
+    let release!: () => void;
+    this.livekit.resumeHold = new Promise<void>((resolve) => (release = resolve));
+    return () => {
+      this.livekit.resumeHold = null;
+      release();
+    };
   }
 
   // Les derniers volumes demandés (setVolumes), et le nombre d'appels.

@@ -1,4 +1,4 @@
-import type { MediaJoinPayload, MediaState } from '@bureau/shared';
+import type { MediaJoinPayload, MediaLeavePayload, MediaState } from '@bureau/shared';
 import { useCallback, useEffect, useSyncExternalStore } from 'react';
 import { mediaDebug } from '../game/debug';
 import { EventBus } from '../game/EventBus';
@@ -9,8 +9,9 @@ import { useOfficeStore } from '../state/office-store';
 import type { MediaClient, MediaSnapshot } from './media-client';
 
 // Relie le client média à la connexion au bureau, et rend son état (à jour à chaque changement) :
-// - les consignes du serveur : media:join → client.join, media:leave → client.leave. Et session:replaced (un autre onglet a pris la
-//   place) → client.leave : le serveur ne dira plus rien à cet onglet, qui garderait sinon micro et caméra ouverts ;
+// - les consignes du serveur : media:join → client.join, media:leave → client.leave (avec `park` : la connexion parquée). Et
+//   session:replaced (un autre onglet a pris la place) → client.leave pour de bon : le serveur ne dira plus rien à cet onglet, qui garderait
+//   sinon micro et caméra ouverts ;
 // - au montage, la dernière consigne reçue avant lui, s'il y en a une : la page ouvre la connexion à « Entrer », et monte ce hook
 //   dans le même rendu, mais par sûreté (une consigne qui arriverait avant ses écouteurs) : le serveur ne redit pas une consigne. La
 //   connexion la retient (mediaInstruction, au magasin), il la rejoue ;
@@ -33,17 +34,18 @@ export function useMedia(client: MediaClient, socket: OfficeSocket | null): Medi
   useEffect(() => {
     if (!socket) return;
     const join = (p: MediaJoinPayload) => void client.join(p);
-    const leave = () => void client.leave();
+    const leave = (p?: MediaLeavePayload | null) => void client.leave(p?.park ? { park: true } : {});
+    const replaced = () => void client.leave();
     const missed = useOfficeStore.getState().mediaInstruction;
     if (missed?.type === 'join') join(missed.p);
-    else if (missed?.type === 'leave') leave();
+    else if (missed?.type === 'leave') leave(missed);
     socket.on('media:join', join);
     socket.on('media:leave', leave);
-    socket.on('session:replaced', leave);
+    socket.on('session:replaced', replaced);
     return () => {
       socket.off('media:join', join);
       socket.off('media:leave', leave);
-      socket.off('session:replaced', leave);
+      socket.off('session:replaced', replaced);
     };
   }, [client, socket]);
 

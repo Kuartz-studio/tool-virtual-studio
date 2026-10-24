@@ -1,4 +1,4 @@
-import type { ActivityState, ArenaAction, ArenaCommand, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, TaskView, WorldTick, XpGain } from '@bureau/shared';
+import type { ActivityState, ArenaAction, ArenaCommand, ConversationLockNotice, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, TaskView, WorldTick, XpGain } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -33,6 +33,9 @@ export interface OfficeBusEvents {
   // L'invitée a répondu à l'une de nos invitations à une table (elle accepte, refuse, ne dit rien, ou a quitté le bureau), ou n'a pas répondu à temps : un message
   // passager (la file de toasts). Le magasin n'en garde rien.
   'game:notice': (p: GameNotice) => void;
+  // Ce qui change dans sa conversation verrouillée (verrouillée, déverrouillée, quelqu'un en sort), d'après le serveur (`conversation:lock`) : le
+  // magasin la dit déjà à jour quand l'événement part. Les messages passagers et le son en font un toast et un bruit de verrou.
+  'conversation:lock': (p: ConversationLockNotice) => void;
   'arena:action': (p: ArenaAction) => void;
   'local:arena': (p: ArenaCommand) => void;
   'local:move': (p: MovePayload) => void;
@@ -199,7 +202,12 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       state().setChosenActivity(null);
     },
     'media:join': (p) => state().setMediaInstruction({ type: 'join', p }),
-    'media:leave': () => state().setMediaInstruction({ type: 'leave' }),
+    'media:leave': (p) => state().setMediaInstruction(p?.park ? { type: 'leave', park: true } : { type: 'leave' }),
+    // Sa conversation verrouillée : le magasin d'abord (les vignettes et le volume y lisent le verrou), puis le bus, pour le toast et le son.
+    'conversation:lock': (notice) => {
+      state().setConversationLock(notice.lock);
+      emitOnBus(bus, 'conversation:lock', notice);
+    },
     'chat:message': (m) => state().addChatMessage(m),
     // Les bureaux : une place qui change, les portes fermées pour soi, ceux qu'on a exclus, quelqu'un qui toque à sa porte.
     'desk:changed': (desk) => state().setDesk(desk),

@@ -59,6 +59,23 @@ export class LazyTransport implements MediaTransport {
     await this.loaded?.disconnect();
   }
 
+  // Parquer, reprendre, fermer la room parquée : seulement une fois chargé (avant, il n'y a jamais eu de room). Un transport qui ne sait pas
+  // parquer se déconnecte, et ne reprend rien.
+  async park(): Promise<void> {
+    const loaded = this.loaded;
+    if (!loaded) return;
+    if (loaded.park) await loaded.park();
+    else await loaded.disconnect();
+  }
+
+  async resume(p: MediaJoinPayload, devices: MediaDevices, events: TransportEvents): Promise<boolean> {
+    return (await this.loaded?.resume?.(p, devices, events)) ?? false;
+  }
+
+  async unpark(): Promise<void> {
+    await this.loaded?.unpark?.();
+  }
+
   async setSource(source: LocalSource, on: boolean): Promise<void> {
     await this.loaded?.setSource(source, on);
   }

@@ -1,4 +1,4 @@
-import type { MediaJoinPayload } from '@bureau/shared';
+import { MEDIA_PARK_MS, type MediaJoinPayload, type MediaLeavePayload } from '@bureau/shared';
 import type {
   LocalSource,
   MediaClient,
@@ -14,8 +14,13 @@ import type {
 type DeviceSource = 'mic' | 'cam';
 
 // Retiré d'une room (removed) : le temps laissé à la consigne du serveur qui l'explique (media:leave, ou un autre media:join). Passé ce
-// délai, la room toujours voulue, c'est un retrait en retard (voir roomEnded) : connection_failed, pour que « Reconnecter » apparaisse.
+// délai, la room toujours voulue, c'est un retrait inexpliqué (voir roomEnded) : connection_failed, pour que « Reconnecter » apparaisse. Le
+// serveur ne retire plus personne d'une room où il le renvoie (il attend la fin d'un retrait avant le media:join suivant, et ne fait plus que
+// parquer ceux qui sortent d'un groupe) : ce n'est plus qu'une sûreté.
 const REMOVED_RECHECK_MS = 2000;
+
+// Comment finit une session : rien de plus (LiveKit l'a déjà finie), en se déconnectant, ou en parquant la room (MediaTransport.park).
+type SessionEnd = 'none' | 'disconnect' | 'park';
 
 // Ce qu'a donné l'allumage d'un micro ou d'une caméra :
 // - on : allumé ;
@@ -49,7 +54,12 @@ const DEVICE_REFUSALS = new Set([
 // - micro et caméra : l'état voulu change tout de suite (l'interface le montre) ; dans une room, le transport suit, en lisant l'état
 //   voulu au moment de s'y mettre (couper le micro pendant la connexion : il ne s'allume pas). Refusé, absent ou inutilisable, il
 //   passe à « éteint » avec permission_denied, et on reste dans la room ;
-// - rien n'est demandé aux périphériques hors room.
+// - rien n'est demandé aux périphériques hors room ;
+// - parquer : une consigne de sortie avec `park` (on quitte un groupe sans quitter les conversations) garde la connexion à la room, muette,
+//   MEDIA_PARK_MS (MediaTransport.park), au lieu de la fermer. Pour l'interface, c'est une sortie comme une autre (plus de room, plus de
+//   participants). Un media:join de cette room avec `resume` la reprend (MediaTransport.resume) : le son revient, le micro gardé est republié,
+//   sans nouvelle connexion ; une reprise qui échoue se reconnecte avec le jeton. Un join d'une autre room, une sortie pour de bon, ou la fin du
+//   délai la ferment.
 export class MediaSession implements MediaClient {
   private snapshot: MediaSnapshot;
   private readonly listeners = new Set<(s: MediaSnapshot) => void>();
@@ -62,8 +72,11 @@ export class MediaSession implements MediaClient {
   private session = 0;
   // Connecté à snapshot.room : la connexion est faite, et la session n'est pas finie.
   private connected = false;
-  // Le départ demandé au transport, tant qu'il n'est pas fini : la connexion suivante l'attend.
+  // Le départ demandé au transport (déconnexion ou parcage), tant qu'il n'est pas fini : la connexion suivante l'attend.
   private leaving: Promise<void> | null = null;
+  // La room que le transport garde parquée, et la fin de son délai : null quand il n'y en a pas (ou qu'une connexion l'a remplacée).
+  private parked: string | null = null;
+  private parkTimer: ReturnType<typeof setTimeout> | undefined;
   // La file des opérations : la promesse de la dernière, et combien ne sont pas finies.
   private tail: Promise<void> = Promise.resolve();
   private pending = 0;
@@ -114,11 +127,12 @@ export class MediaSession implements MediaClient {
     return this.enqueue(() => this.doJoin(p));
   }
 
-  leave(): Promise<void> {
+  leave(p: MediaLeavePayload = {}): Promise<void> {
+    const park = p.park === true;
     this.instructions += 1;
     this.wanted = null;
-    this.dropUnwantedRoom();
-    return this.enqueue(() => this.doLeave());
+    this.dropUnwantedRoom(park);
+    return this.enqueue(() => this.doLeave(park));
   }
 
   setMic(on: boolean): Promise<void> {
@@ -196,13 +210,29 @@ export class MediaSession implements MediaClient {
     // Un abonné, prévenu juste au-dessus, a pu quitter cette room ou en demander une autre dans l'appel même : son départ a déjà eu
     // lieu (dropUnwantedRoom, quand rien n'était encore connecté), et une connexion lancée maintenant ne serait plus jamais quittée.
     if (this.session !== session) return;
-    try {
-      await this.transport.connect(p, this.chosenDevices, this.events);
-    } catch {
-      // Annulée par une consigne plus récente, ou déjà terminée par LiveKit (roomEnded) : rien de plus à faire.
+    // La room parquée, si c'est celle-ci et que le serveur nous la rend (`resume`) : on la reprend. Sinon (ou si la reprise échoue), la
+    // connexion avec le jeton, qui ferme la room parquée.
+    const parked = this.parked;
+    this.stopParking();
+    let resumed = false;
+    if (parked === p.room && p.resume !== undefined && this.transport.resume) {
+      try {
+        resumed = await this.transport.resume(p, this.chosenDevices, this.events);
+      } catch {
+        resumed = false;
+      }
+      // Rendue caduque pendant l'attente : dropUnwantedRoom a déconnecté le transport, ce qui a fait échouer la reprise.
       if (this.session !== session) return;
-      this.endSession({ error: 'connection_failed' }, false);
-      return;
+    }
+    if (!resumed) {
+      try {
+        await this.transport.connect(p, this.chosenDevices, this.events);
+      } catch {
+        // Annulée par une consigne plus récente, ou déjà terminée par LiveKit (roomEnded) : rien de plus à faire.
+        if (this.session !== session) return;
+        this.endSession({ error: 'connection_failed' }, 'none');
+        return;
+      }
     }
     // Rendue caduque pendant la connexion : dropUnwantedRoom l'a déjà quittée.
     if (this.session !== session) return;
@@ -222,17 +252,29 @@ export class MediaSession implements MediaClient {
     this.refreshParticipants();
   }
 
-  private async doLeave(): Promise<void> {
+  private async doLeave(park: boolean): Promise<void> {
     // La room a été quittée dès la consigne (dropUnwantedRoom). Une connexion qui avait échoué n'est plus attendue : son erreur
     // s'efface. leave() se résout une fois le départ fini.
     if (this.snapshot.error === 'connection_failed') this.update({ error: null });
     if (this.leaving) await this.leaving;
+    // Une sortie pour de bon ferme aussi la room parquée qui resterait d'une sortie d'avant (et arrête son micro gardé).
+    if (!park && this.parked !== null) await this.unpark();
   }
 
   // Après setMic, setCam ou setPrefs : dans une room, le micro ou la caméra suivent l'état voulu. Rallumer après un refus redemande
-  // l'accès ; accepté, l'erreur s'efface.
+  // l'accès ; accepté, l'erreur s'efface. Hors room, couper le micro arrête celui que la room parquée garde : l'indicateur du navigateur
+  // s'éteint tout de suite.
   private async applyDevice(kind: DeviceSource): Promise<void> {
-    if (!this.connected) return;
+    if (!this.connected) {
+      if (this.parked !== null && !this.snapshot.local[kind]) {
+        try {
+          await this.transport.setSource(kind, false);
+        } catch {
+          // rien à faire de plus
+        }
+      }
+      return;
+    }
     const session = this.session;
     if (this.snapshot.local[kind]) {
       const result = await this.turnOn(kind, session);
@@ -281,21 +323,23 @@ export class MediaSession implements MediaClient {
 
   // Une consigne plus récente rend caduque la room en cours (connectée, ou qui se connecte encore) : on la quitte tout de suite, sans
   // attendre ce qu'elle fait. LiveKit annule la connexion en cours ; un micro ou une caméra qui s'allumaient s'arrêtent là (le
-  // transport finit l'appel dès la room quittée), sans rien publier ; et la file n'attend plus rien d'elle.
-  private dropUnwantedRoom(): void {
+  // transport finit l'appel dès la room quittée), sans rien publier ; et la file n'attend plus rien d'elle. Une sortie avec `park` parque la
+  // room si elle est connectée et que le transport le sait ; sinon (une connexion qui se fait encore, un join d'une autre room), on s'en
+  // déconnecte.
+  private dropUnwantedRoom(park = false): void {
     if (this.snapshot.room === null || this.snapshot.room === this.wanted) return;
-    this.endSession({}, true);
+    this.endSession({}, park && this.connected && this.transport.park ? 'park' : 'disconnect');
   }
 
   // La room terminée par LiveKit, connectée ou encore en train de se connecter. Perdue, c'est connection_failed. Retirés exprès, ce
   // n'est pas une erreur : un changement de groupe dont le media:leave (ou le media:join d'une autre room) n'est pas encore arrivé, ou
   // un autre onglet (session:replaced, puis leave). Mais si REMOVED_RECHECK_MS plus tard aucune consigne n'est venue et que la room est
-  // toujours voulue, c'est un retrait en retard : demandé pour un groupe qu'on a quitté puis retrouvé, LiveKit l'a appliqué à la
-  // connexion d'après. Le serveur, pour qui l'on est dans la room, ne dira plus rien : connection_failed, et « Reconnecter ».
+  // toujours voulue, le retrait reste inexpliqué. Le serveur, pour qui l'on est dans la room, ne dira plus rien : connection_failed, et
+  // « Reconnecter ».
   private roomEnded(reason: 'removed' | 'lost'): void {
     const room = this.snapshot.room;
     if (room === null) return;
-    this.endSession(reason === 'lost' ? { error: 'connection_failed' } : {}, false);
+    this.endSession(reason === 'lost' ? { error: 'connection_failed' } : {}, 'none');
     if (reason === 'lost') return;
     const instructions = this.instructions;
     setTimeout(() => {
@@ -304,13 +348,24 @@ export class MediaSession implements MediaClient {
   }
 
   // Finit la session : plus de room, ni de participants, ni de partage d'écran, ni de son bloqué (la room suivante dira le sien).
-  // `disconnect` : quitter aussi la room chez le transport (pas quand LiveKit l'a déjà fait).
-  private endSession(patch: Partial<MediaSnapshot>, disconnect: boolean): void {
+  // `end` : se déconnecter aussi chez le transport (la room parquée avec), ou parquer la room, ou rien (LiveKit l'a déjà finie). Un parcage
+  // qui échoue se rattrape en se déconnectant.
+  private endSession(patch: Partial<MediaSnapshot>, end: SessionEnd): void {
+    const room = this.snapshot.room;
     this.session += 1;
     this.connected = false;
-    if (disconnect) {
-      const leaving: Promise<void> = this.transport
-        .disconnect()
+    if (end !== 'none') {
+      if (end === 'park' && room !== null) this.startParking(room);
+      else this.stopParking();
+      const transport = this.transport;
+      const done =
+        end === 'park'
+          ? transport.park!().catch(() => {
+              this.stopParking();
+              return transport.disconnect();
+            })
+          : transport.disconnect();
+      const leaving: Promise<void> = done
         .catch(() => {
           // la room est abandonnée de toute façon
         })
@@ -320,6 +375,34 @@ export class MediaSession implements MediaClient {
       this.leaving = leaving;
     }
     this.update({ room: null, participants: [], local: { ...this.snapshot.local, screen: false }, audioBlocked: false, ...patch });
+  }
+
+  // La room que le transport garde parquée, et la fin de son délai : MEDIA_PARK_MS plus tard, sans reprise ni autre connexion, elle est fermée
+  // (et le micro gardé s'arrête).
+  private startParking(room: string): void {
+    this.stopParking();
+    this.parked = room;
+    this.parkTimer = setTimeout(() => {
+      if (this.parked !== room) return;
+      void this.enqueue(() => (this.parked === room ? this.unpark() : Promise.resolve()));
+    }, MEDIA_PARK_MS);
+  }
+
+  // Plus de room parquée à suivre (elle reprend, une connexion la remplace, ou elle est fermée) : le délai est oublié.
+  private stopParking(): void {
+    clearTimeout(this.parkTimer);
+    this.parkTimer = undefined;
+    this.parked = null;
+  }
+
+  // Ferme la room parquée, et arrête le micro qu'elle gardait.
+  private async unpark(): Promise<void> {
+    this.stopParking();
+    try {
+      await this.transport.unpark?.();
+    } catch {
+      // abandonnée de toute façon
+    }
   }
 
   private refreshParticipants(): void {

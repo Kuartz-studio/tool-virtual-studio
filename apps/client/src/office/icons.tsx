@@ -33,6 +33,7 @@ import {
   ListMusic,
   LocateFixed,
   Lock,
+  LockOpen,
   LogOut,
   MapPin,
   Maximize,
@@ -294,9 +295,14 @@ export function ChevronLeftIcon() {
   return <ChevronLeft />;
 }
 
-// Un cadenas : ce qu'on ne peut pas changer ici (la musique du bureau d'un autre), la porte fermée d'un bureau.
+// Un cadenas : ce qu'on ne peut pas changer ici (la musique du bureau d'un autre), la porte fermée d'un bureau, une conversation verrouillée.
 export function LockIcon() {
   return <Lock />;
+}
+
+// Un cadenas ouvert : une conversation qu'on peut verrouiller, ou qu'on vient de déverrouiller.
+export function LockOpenIcon() {
+  return <LockOpen />;
 }
 
 // Le bureau (DeskPanel) : le cadenas de la porte fermée, le crayon du nom, la coche d'un enregistrement, les flèches du déménagement, exclure

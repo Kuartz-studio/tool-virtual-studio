@@ -2,7 +2,7 @@ import { expect, test, type Browser, type BrowserContext, type Page, type TestIn
 import { chooseStatus, createInvitation, enterOffice, expectInOffice, messagesWith, officeBar, openChat, say, selfAt, uniqueEmail, waitForOffice, WALK_TIMEOUT } from './helpers';
 
 // L'audio et la vidéo de proximité, de bout en bout, avec un vrai serveur LiveKit. En local : `livekit-server --dev`, puis
-//   E2E_LIVEKIT_URL=ws://localhost:7880 E2E_LIVEKIT_API_KEY=devkey E2E_LIVEKIT_API_SECRET=secret pnpm e2e e2e/media.spec.ts
+//   E2E_LIVEKIT_URL=ws://localhost:7880 E2E_LIVEKIT_API_KEY=devkey E2E_LIVEKIT_API_SECRET=secret pnpm e2e e2e/media.spec.ts --workers=1
 // (ou les adresse et clés du projet LiveKit Cloud). Le serveur des tests les reçoit en LIVEKIT_* (playwright.config.ts). Sans
 // E2E_LIVEKIT_URL, il n'a ni audio ni vidéo : ces tests sont ignorés. À lancer seul : avec LiveKit, les gens des autres fichiers, qui
 // arrivent tous au point d'apparition, y formeraient une grande conversation (des vignettes en trop, et la machine surchargée).
@@ -25,12 +25,14 @@ interface Person {
 const people: Person[] = [];
 const extraBrowsers: Browser[] = [];
 
-// En partant, chacun passe en « Ne pas déranger » : le serveur garde sa place pendant le délai de grâce (10 s), mais hors de tout
-// groupe, et sa room LiveKit est quittée proprement. Le test suivant ne tombe ni dans son groupe, ni sur sa vignette.
+// En partant, chacun prend le mode « Manger » (un des modes semés à la création du compte : ni entendre, ni être entendu, donc hors de toute
+// conversation, comme l'ancien « Ne pas déranger », que le menu ne propose plus) : le serveur garde sa place pendant le délai de grâce (10 s),
+// mais hors de tout groupe, et sa room LiveKit est quittée pour de bon. Le test suivant ne tombe ni dans son groupe, ni sur sa vignette.
+const OUT_OF_CONVERSATIONS = 'Manger';
 test.afterEach(async () => {
   for (const person of people.splice(0)) {
     try {
-      await chooseStatus(person.page, 'Ne pas déranger');
+      await chooseStatus(person.page, OUT_OF_CONVERSATIONS);
       await expect.poll(() => roomOf(person.page), { timeout: 5000 }).toBeNull();
     } catch {
       // la page n'est plus là (test en échec) : on ferme quand même
@@ -115,11 +117,11 @@ test('rapprochés et arrêtés → 2 vignettes et une vidéo distante qui joue e
     );
     await capture(page, testInfo, 'ecran-d-entree');
   });
-  await teleport(a.page, at(14, 7));
+  await teleport(a.page, at(22, 13));   // à plus de 15 cases du point d'apparition, où B arrive : ils ne se parlent pas avant
   const b = await newPerson(browser, 'Benoit');
 
   const start = Date.now();
-  await teleport(b.page, at(15, 7));
+  await teleport(b.page, at(21, 13));
   await expectConversation(a, b, 3000);
   expect(Date.now() - start).toBeLessThan(3000);
   // Chacun dans la même room, et la sienne d'abord.
@@ -129,16 +131,18 @@ test('rapprochés et arrêtés → 2 vignettes et une vidéo distante qui joue e
   await capture(a.page, testInfo, 'deux-personnes-en-conversation');
 });
 
+// On reste dans une conversation d'espace ouvert jusqu'à 15 cases (OPEN_SPACE_GROUPING) : sur la petite carte (24 cases de large), A et B se
+// parlent à un bout, et B part à l'autre.
 test('B s\'éloigne → plus de vignettes en moins de 2 s', async ({ browser }) => {
   test.slow();
   const a = await newPerson(browser, 'Arnaud');
-  await teleport(a.page, at(14, 7));
+  await teleport(a.page, at(1, 13));
   const b = await newPerson(browser, 'Berangere');
-  await teleport(b.page, at(15, 7));
+  await teleport(b.page, at(2, 13));
   await expectConversation(a, b, WALK_TIMEOUT);
 
   const start = Date.now();
-  await teleport(b.page, at(20, 13));
+  await teleport(b.page, at(22, 7));
   await Promise.all([expect(cameraTiles(a.page)).toHaveCount(0, { timeout: 2000 }), expect(cameraTiles(b.page)).toHaveCount(0, { timeout: 2000 })]);
   expect(Date.now() - start).toBeLessThan(2000);
   expect(await roomOf(a.page)).toBeNull();
@@ -202,9 +206,9 @@ test('micro et caméra refusés : on entre, on bouge, on reçoit', async ({ brow
   await capture(c.page, testInfo, 'refus-en-conversation');
 });
 
-// La personne qui passe en « Ne pas déranger » sort de son groupe : le serveur lui dit de quitter la room (media:leave), et l'autre,
-// resté seul, la quitte aussi.
-test('passer en « Ne pas déranger » retire les vignettes des deux', async ({ browser }) => {
+// La personne qui prend un mode où elle n'entend ni n'est entendue sort de son groupe : le serveur lui dit de quitter la room (media:leave),
+// et l'autre, resté seul, la quitte aussi.
+test('prendre un mode hors de toute conversation (« Manger ») retire les vignettes des deux', async ({ browser }) => {
   test.slow();
   const a = await newPerson(browser, 'Anais');
   await teleport(a.page, at(14, 13));
@@ -212,11 +216,94 @@ test('passer en « Ne pas déranger » retire les vignettes des deux', async ({ 
   await teleport(b.page, at(15, 13));
   await expectConversation(a, b, WALK_TIMEOUT);
 
-  await chooseStatus(a.page, 'Ne pas déranger');
+  await chooseStatus(a.page, OUT_OF_CONVERSATIONS);
   await expect(cameraTiles(a.page)).toHaveCount(0, { timeout: 5000 });
   await expect(cameraTiles(b.page)).toHaveCount(0, { timeout: 5000 });
   expect(await roomOf(a.page)).toBeNull();
   expect(await roomOf(b.page)).toBeNull();
+});
+
+// Compte les connexions WebRTC qu'ouvre la page (RTCPeerConnection) : une conversation reprise n'en ouvre pas de nouvelle.
+async function countPeerConnections(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const Native = window.RTCPeerConnection;
+    let created = 0;
+    window.RTCPeerConnection = class extends Native {
+      constructor(...args: ConstructorParameters<typeof RTCPeerConnection>) {
+        super(...args);
+        created += 1;
+      }
+    };
+    Object.defineProperty(window, '__peerConnections', { get: () => created });
+  });
+}
+const peerConnections = (page: Page) => page.evaluate(() => (window as unknown as { __peerConnections: number }).__peerConnections);
+
+// Quitter une conversation garde sa connexion parquée une minute (MEDIA_PARK_MS) : revenir la reprend, dans la même room (le serveur rend au
+// groupe reformé son id), sans ouvrir de nouvelle connexion.
+test('s\'éloigner puis revenir dans la minute : la même room, reprise sans nouvelle connexion, en moins de 2 s', async ({ browser }, testInfo) => {
+  test.slow();
+  const contexts = [await browser.newContext(), await browser.newContext()];
+  for (const context of contexts) await countPeerConnections(context);
+  const a = await arrive(contexts[0]!, 'Aymeric');
+  await teleport(a.page, at(1, 13));
+  const b = await arrive(contexts[1]!, 'Bertille');
+  await teleport(b.page, at(2, 13));
+  await expectConversation(a, b, WALK_TIMEOUT);
+  const room = await roomOf(a.page);
+  const connections = [await peerConnections(a.page), await peerConnections(b.page)];
+
+  await teleport(b.page, at(22, 7));
+  await expect.poll(() => roomOf(a.page), { timeout: 5000 }).toBeNull();
+  await expect.poll(() => roomOf(b.page), { timeout: 5000 }).toBeNull();
+  await expect(cameraTiles(a.page)).toHaveCount(0);
+
+  const start = Date.now();
+  await teleport(b.page, at(2, 13));
+  await expectConversation(a, b, 3000);
+  const elapsed = Date.now() - start;
+  testInfo.annotations.push({ type: 'retour', description: `${elapsed} ms` });
+  expect(elapsed).toBeLessThan(2000);
+  expect(await roomOf(a.page)).toBe(room);
+  expect(await roomOf(b.page)).toBe(room);
+  expect([await peerConnections(a.page), await peerConnections(b.page)]).toEqual(connections);
+});
+
+// Verrouiller la conversation : ses membres restent ensemble où qu'ils aillent, et personne d'autre n'y entre ; « Quitter » en sort seul.
+test('verrouiller : B part à l\'autre bout sans quitter la conversation, C collé à A n\'y entre pas ; B la quitte, et C rejoint enfin A', async ({ browser }) => {
+  test.slow();
+  const a = await newPerson(browser, 'Alix');
+  await teleport(a.page, at(1, 13));
+  const b = await newPerson(browser, 'Blaise');
+  await teleport(b.page, at(2, 13));
+  await expectConversation(a, b, WALK_TIMEOUT);
+  const room = await roomOf(a.page);
+  const lockOf = (page: Page) => page.getByRole('group', { name: 'Verrou de la conversation' });
+
+  await lockOf(a.page).getByRole('button', { name: 'Verrouiller', exact: true }).click();
+  await expect(lockOf(a.page).getByRole('button', { name: 'Verrouillée par toi' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(lockOf(b.page).getByRole('button', { name: 'Verrouillée par Alix' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(b.page.getByText('Alix a verrouillé la conversation')).toBeVisible();
+
+  // B part à l'autre bout de la carte : la même room, et sa vignette reste chez A (plein volume).
+  await teleport(b.page, at(22, 7));
+  await b.page.waitForTimeout(1500);
+  expect(await roomOf(a.page)).toBe(room);
+  expect(await roomOf(b.page)).toBe(room);
+  await expect(remoteCameraTiles(a.page)).toHaveCount(1);
+
+  // C arrive et se colle à A : il n'entre pas dans leur conversation.
+  const c = await newPerson(browser, 'Cyprien');
+  await teleport(c.page, at(1, 12));
+  await c.page.waitForTimeout(1500);
+  expect(await roomOf(c.page)).toBeNull();
+  await expect(cameraTiles(a.page)).toHaveCount(2);
+
+  // B la quitte : il en sort ; A, seul, n'est plus verrouillé, et C, à côté de lui, le rejoint dans la même room.
+  await lockOf(b.page).getByRole('button', { name: 'Quitter', exact: true }).click();
+  await expect.poll(() => roomOf(b.page), { timeout: 5000 }).toBeNull();
+  await expect.poll(() => roomOf(c.page), { timeout: 5000 }).toBe(room);
+  await expect(lockOf(a.page).getByRole('button', { name: 'Verrouiller', exact: true })).toHaveAttribute('aria-pressed', 'false');
 });
 
 // Le chat « À proximité » (spec §9) demande une conversation, donc une room : sans elle, l'onglet est inactif. Le reste du chat, « Tout le
@@ -224,9 +311,9 @@ test('passer en « Ne pas déranger » retire les vignettes des deux', async ({ 
 test('chat À proximité : A et B en conversation s\'écrivent, C n\'en voit rien ; hors conversation, l\'onglet est inactif', async ({ browser }) => {
   test.slow();
   const a = await newPerson(browser, 'Alexandre');
-  await teleport(a.page, at(14, 7));
+  await teleport(a.page, at(1, 13));
   const c = await newPerson(browser, 'Clemence');
-  await teleport(c.page, at(20, 13));
+  await teleport(c.page, at(22, 7));
   const nearbyTab = (page: Page) => page.getByRole('tab', { name: 'À proximité' });
   const everyoneTab = (page: Page) => page.getByRole('tab', { name: 'Tout le monde' });
 
@@ -238,7 +325,7 @@ test('chat À proximité : A et B en conversation s\'écrivent, C n\'en voit rie
 
   // B arrive à côté de A : leur conversation ouvre l'onglet chez eux deux, et pas chez C.
   const b = await newPerson(browser, 'Baudouin');
-  await teleport(b.page, at(15, 7));
+  await teleport(b.page, at(2, 13));
   await expectConversation(a, b, WALK_TIMEOUT);
   const panelOfB = await openChat(b.page);
   await expect(nearbyTab(a.page)).toBeEnabled();
@@ -272,10 +359,11 @@ test('chat À proximité : A et B en conversation s\'écrivent, C n\'en voit rie
   const panelOfBAgain = await openChat(b.page);
   await expect(messagesWith(panelOfBAgain, text)).toHaveCount(0);
 
-  // B s'éloigne : la conversation finit. L'onglet de A, resté sur À proximité, garde ce qui s'est dit, mais on n'y écrit plus.
+  // B s'éloigne (seul dans la salle de réunion) : la conversation finit. L'onglet de A, resté sur À proximité, garde ce qui s'est dit, mais on n'y
+  // écrit plus.
   await nearbyTab(a.page).click();
   await expect(messagesWith(panelOfA, text)).toHaveCount(1);
-  await teleport(b.page, at(3, 13));
+  await teleport(b.page, at(11, 2));
   await expect.poll(() => roomOf(a.page), { timeout: 5000 }).toBeNull();
   await expect(nearbyTab(a.page)).toHaveAttribute('aria-selected', 'true');
   await expect(messagesWith(panelOfA, text)).toHaveCount(1);

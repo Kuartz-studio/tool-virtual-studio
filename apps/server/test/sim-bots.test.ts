@@ -347,14 +347,15 @@ describe('le son : ce que chaque personne réelle entend', () => {
     const apart = regroup();
     expect(apart.assignment['moi']).toBeNull();
     expect(user.received).toHaveLength(1);
-    // Elle revient : un nouveau groupe, une nouvelle room, donc un nouveau message.
+    // Elle revient dans la minute : le calcul leur rend l'id de leur groupe (sa mémoire), donc la même room, et le même message, redit quand même :
+    // la socket, sortie du groupe, l'avait oublié.
     bots.moveTo(bot.id, 80 + 32, 240);
     advance(3000);
     regroup();
     clock.t += 600;
     regroup();
     expect(user.received).toHaveLength(2);
-    expect(user.received[1]!.room).not.toBe(user.received[0]!.room);
+    expect(user.received[1]).toEqual(user.received[0]);
     expect(world.get(bot.id)).toMatchObject({ moving: false });
     bots.stop();
   });
