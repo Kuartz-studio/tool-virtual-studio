@@ -247,6 +247,16 @@ describe('la boutique', () => {
     expect(await service.ownedAmong('ana', ['statue-or', 'tapis-rare'])).toEqual(new Set(['statue-or']));
   });
 
+  test('par défaut, la boutique est la vraie : ses murs se vendent aussi (unowned les compte)', async () => {
+    const { db, clock } = await setup();
+    const service = new ProgressService(db, { clock: () => clock.t });
+    await grant(db, 'ana', 0, 400);
+    expect(await service.unowned('ana', ['mur-velours', 'creme'])).toEqual(['mur-velours']);
+    expect(await service.buy('ana', 'mur-velours')).toMatchObject({ ok: true, progress: { kuartzons: 50, owned: ['mur-velours'] } });
+    expect(await service.unowned('ana', ['mur-velours', 'creme'])).toEqual([]);
+    expect(await service.buy('ana', 'creme')).toEqual({ ok: false, error: 'unknown_item' });
+  });
+
   test('deux achats en même temps ne dépensent pas deux fois les mêmes kuartzons', async () => {
     const { db, service } = await setup();
     await grant(db, 'ana', 0, 900);

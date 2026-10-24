@@ -3,6 +3,7 @@
 // la liste (id, nom, numéro de tuile) est écrite dans packages/shared/src/decor/generated-themes.ts.
 import { join } from 'node:path';
 import { Img, readImage, type Rgba } from './image';
+import { SHOP_WALL_PICKS, drawShopWall, isPackWall, type ShopWallTiles } from './shop-walls';
 
 const ROOM_BUILDER = 'moderninteriors-win/1_Interiors/32x32/Room_Bulder_subfiles_32x32';
 
@@ -85,7 +86,16 @@ export interface TilesetBuild {
   floors: Array<{ id: string; label: string; gid: number }>;
   walls: Array<{ id: string; label: string; top: number; bottom: number; stem: number }>;
   pool: Record<PoolName, number>;
+  // Les murs de la boutique (shop-walls.ts), avec leur prix en kuartzons.
+  shopWalls: Array<{ id: string; label: string; price: number; top: number; bottom: number; stem: number }>;
   tileCount: number;
+}
+
+// Les trois tuiles d'un mur du Room Builder : la face (deux cases) et le pan vertical.
+function packWallTiles(sheet: Img, column: number, row: number): ShopWallTiles {
+  const x0 = WALL_COLUMN_X[column]!;
+  const y0 = row * 64;
+  return { top: sheet.crop(x0 + 32, y0, TILE, TILE), bottom: sheet.crop(x0 + 32, y0 + 32, TILE, TILE), stem: sheet.crop(x0 + 160, y0 + 32, TILE, TILE) };
 }
 
 const COPING: Rgba = { r: 214, g: 222, b: 228, a: 255 };
@@ -142,15 +152,8 @@ export function buildTileset(source: string): TilesetBuild {
   }));
 
   const walls = WALL_PICKS.map(({ id, label, column, row }) => {
-    const x0 = WALL_COLUMN_X[column]!;
-    const y0 = row * 64;
-    return {
-      id,
-      label,
-      top: add(wallsSheet.crop(x0 + 32, y0, TILE, TILE)),
-      bottom: add(wallsSheet.crop(x0 + 32, y0 + 32, TILE, TILE)),
-      stem: add(wallsSheet.crop(x0 + 160, y0 + 32, TILE, TILE)),
-    };
+    const tiles = packWallTiles(wallsSheet, column, row);
+    return { id, label, top: add(tiles.top), bottom: add(tiles.bottom), stem: add(tiles.stem) };
   });
 
   const water = tiles[floors.find((f) => f.id === 'turquoise')!.gid - 1]!;
@@ -167,10 +170,16 @@ export function buildTileset(source: string): TilesetBuild {
   };
   const pool = Object.fromEntries(POOL_NAMES.map((name) => [name, add(poolTile(water, sides[name]))])) as Record<PoolName, number>;
 
+  // Les murs de la boutique, après tout le reste : les tuiles déjà posées sur la carte gardent leur numéro.
+  const shopWalls = SHOP_WALL_PICKS.map((wall) => {
+    const tiles = isPackWall(wall) ? packWallTiles(wallsSheet, wall.column, wall.row) : drawShopWall(wall);
+    return { id: wall.id, label: wall.label, price: wall.price, top: add(tiles.top), bottom: add(tiles.bottom), stem: add(tiles.stem) };
+  });
+
   const rows = Math.ceil(tiles.length / TILESET_COLUMNS);
   const image = new Img(TILESET_COLUMNS * TILE, rows * TILE);
   tiles.forEach((tile, index) => image.paste(tile, (index % TILESET_COLUMNS) * TILE, Math.floor(index / TILESET_COLUMNS) * TILE, false));
-  return { image, floors, walls, pool, tileCount: tiles.length };
+  return { image, floors, walls, pool, shopWalls, tileCount: tiles.length };
 }
 
 export function renderThemesSource(build: TilesetBuild): string {
@@ -179,6 +188,9 @@ export function renderThemesSource(build: TilesetBuild): string {
     .map((w) => `  { id: ${JSON.stringify(w.id)}, label: ${JSON.stringify(w.label)}, top: ${w.top}, bottom: ${w.bottom}, stem: ${w.stem} },`)
     .join('\n');
   const pool = POOL_NAMES.map((name) => `${name}: ${build.pool[name]}`).join(', ');
+  const shopWalls = build.shopWalls
+    .map((w) => `  { id: ${JSON.stringify(w.id)}, label: ${JSON.stringify(w.label)}, top: ${w.top}, bottom: ${w.bottom}, stem: ${w.stem}, price: ${w.price} },`)
+    .join('\n');
   return `// Généré par \`pnpm --filter @bureau/client gen:assets\` (apps/client/scripts/assets/tileset.ts) : ne pas modifier à la main.
 
 // Le jeu de tuiles de la carte : public/assets/tiles/office.png (${TILESET_COLUMNS} colonnes de cases de ${TILE} px), cité par la carte.
@@ -196,5 +208,11 @@ ${walls}
 
 // Les tuiles de la piscine : le fond d'eau, les bords et les coins.
 export const POOL_TILES = { ${pool} } as const;
+
+// Les murs de la boutique (apps/client/scripts/assets/shop-walls.ts) : comme les autres, avec leur prix en kuartzons. Il faut les avoir achetés pour les
+// poser dans sa pièce.
+export const SHOP_WALL_THEMES = [
+${shopWalls}
+] as const;
 `;
 }

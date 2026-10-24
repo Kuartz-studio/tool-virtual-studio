@@ -1,7 +1,7 @@
 // Généré par `pnpm --filter @bureau/client gen:assets` (apps/client/scripts/assets/tileset.ts) : ne pas modifier à la main.
 
 // Le jeu de tuiles de la carte : public/assets/tiles/office.png (16 colonnes de cases de 32 px), cité par la carte.
-export const TILESET = { name: 'office', image: '../tiles/office.png', columns: 16, tileCount: 91 } as const;
+export const TILESET = { name: 'office', image: '../tiles/office.png', columns: 16, tileCount: 127 } as const;
 
 // Les sols qu'on peut choisir pour une pièce (et ceux de la carte) : le numéro de leur tuile dans le jeu de tuiles.
 export const FLOOR_THEMES = [
@@ -55,3 +55,20 @@ export const WALL_THEMES = [
 
 // Les tuiles de la piscine : le fond d'eau, les bords et les coins.
 export const POOL_TILES = { fill: 83, n: 84, s: 85, w: 86, e: 87, nw: 88, ne: 89, sw: 90, se: 91 } as const;
+
+// Les murs de la boutique (apps/client/scripts/assets/shop-walls.ts) : comme les autres, avec leur prix en kuartzons. Il faut les avoir achetés pour les
+// poser dans sa pièce.
+export const SHOP_WALL_THEMES = [
+  { id: "mur-velours", label: "Velours rouge", top: 92, bottom: 93, stem: 94, price: 350 },
+  { id: "mur-lambris", label: "Lambris vert", top: 95, bottom: 96, stem: 97, price: 450 },
+  { id: "mur-seventies", label: "Rayures seventies", top: 98, bottom: 99, stem: 100, price: 500 },
+  { id: "mur-losanges", label: "Losanges menthe", top: 101, bottom: 102, stem: 103, price: 600 },
+  { id: "mur-citrouilles", label: "Citrouilles", top: 104, bottom: 105, stem: 106, price: 666 },
+  { id: "mur-bibliotheque", label: "Bibliothèque", top: 107, bottom: 108, stem: 109, price: 900 },
+  { id: "mur-jungle", label: "Jungle", top: 110, bottom: 111, stem: 112, price: 1800 },
+  { id: "mur-neon", label: "Néon", top: 113, bottom: 114, stem: 115, price: 2400 },
+  { id: "mur-marbre-or", label: "Marbre noir et or", top: 116, bottom: 117, stem: 118, price: 2800 },
+  { id: "mur-art-deco", label: "Art déco", top: 119, bottom: 120, stem: 121, price: 3000 },
+  { id: "mur-galaxie", label: "Galaxie", top: 122, bottom: 123, stem: 124, price: 3200 },
+  { id: "mur-kuartz", label: "Kuartz", top: 125, bottom: 126, stem: 127, price: 7500 },
+] as const;

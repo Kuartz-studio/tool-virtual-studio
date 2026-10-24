@@ -1,4 +1,4 @@
-import { CHECKIN_XP, DECOR_ITEMS, kuartzonsBetween, missionXp, type MissionAck, type MissionGivePayload } from '@bureau/shared';
+import { CHECKIN_XP, DECOR_ITEMS, SHOP_WALL_THEMES, kuartzonsBetween, missionXp, type MissionAck, type MissionGivePayload } from '@bureau/shared';
 import request from 'supertest';
 import { describe, expect, test } from 'vitest';
 import { enter, nextEvent, record, sleep, startTestServer, type TestServer } from './helpers/realtime';
@@ -129,6 +129,19 @@ describe.skipIf(!forSale)('la déco et la boutique', () => {
     ana.socket.emit('debug:xp', { xp: 0, kuartzons: forSale!.price! });
     await nextEvent(ana.socket, 'progress:mine');
     expect((await request(srv.app).post('/api/shop/buy').set('Cookie', ana.cookie).send({ itemId: forSale!.id })).status).toBe(200);
+    expect(await save()).toEqual({ ok: true });
+  });
+
+  test('un mur de la boutique : refusé tant qu\'on ne l\'a pas acheté ; acheté, il habille la pièce', async () => {
+    const srv = await office();
+    const ana = await person(srv, 'ana@x.fr');
+    const wall = SHOP_WALL_THEMES[0];
+    const desk = ana.init.desks.find((d) => d.ownerId === ana.id)!;
+    const save = () => new Promise((resolve) => ana.socket.emit('desk:do', { type: 'decor', floor: desk.floor, wall: wall.id, items: [] }, resolve));
+    expect(await save()).toEqual({ ok: false, error: 'bad_decor', reason: 'not_owned' });
+    ana.socket.emit('debug:xp', { xp: 0, kuartzons: wall.price });
+    await nextEvent(ana.socket, 'progress:mine');
+    expect((await request(srv.app).post('/api/shop/buy').set('Cookie', ana.cookie).send({ itemId: wall.id })).status).toBe(200);
     expect(await save()).toEqual({ ok: true });
   });
 });

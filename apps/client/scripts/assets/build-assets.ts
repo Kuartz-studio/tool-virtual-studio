@@ -41,7 +41,7 @@ export function generateAssets(source: string, log: (line: string) => void = () 
   const tileset = buildTileset(source);
   writeImage(join(ASSETS_DIR, 'tiles/office.png'), tileset.image);
   writeText(join(SHARED_SRC, 'decor/generated-themes.ts'), renderThemesSource(tileset));
-  log(`tuiles : ${tileset.tileCount} (dont ${tileset.floors.length} sols et ${tileset.walls.length} murs à choisir)`);
+  log(`tuiles : ${tileset.tileCount} (dont ${tileset.floors.length} sols et ${tileset.walls.length} murs à choisir, et ${tileset.shopWalls.length} murs de la boutique)`);
 
   const animated = buildAnimated(source);
   for (const { path, image } of animated.files) writeImage(join(ASSETS_DIR, 'props', path), image);

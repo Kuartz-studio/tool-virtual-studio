@@ -10,6 +10,9 @@ import {
   DESK_ROOMS,
   FLOOR_THEMES,
   MAX_DECOR_ITEMS,
+  POOL_TILES,
+  SHOP_WALL_THEMES,
+  TILESET,
   WALL_THEMES,
   blockedCells,
   checkDecor,
@@ -27,7 +30,10 @@ import {
   isFloorTheme,
   isWallTheme,
   overlappingItems,
+  shopPriceOf,
   snapToDecorStep,
+  wallPrice,
+  wallTheme,
   type DeskDecor,
   type DeskRoomSpec,
   type PlacedItem,
@@ -111,6 +117,43 @@ describe('la banque d\'éléments', () => {
     expect(CHARACTER_PARTS.outfits.length).toBeGreaterThan(10);
     expect(CHARACTER_PARTS.hair.length).toBeGreaterThan(10);
     expect(CHARACTER_PARTS.accessories.length).toBeGreaterThan(5);
+  });
+});
+
+describe('les murs de la boutique', () => {
+  test('des identifiants « mur-… », uniques, qui ne se confondent ni avec un mur libre ni avec un élément de décor', () => {
+    const ids = SHOP_WALL_THEMES.map((wall) => wall.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const id of ids) {
+      expect(id).toMatch(/^mur-[a-z0-9-]+$/);
+      expect(WALL_THEMES.some((wall) => wall.id === id)).toBe(false);
+      expect(isDecorId(id)).toBe(false);
+    }
+  });
+
+  test('chacun a un prix entier, Rare au moins (300 kuartzons), et c\'est celui de la boutique ; un mur libre n\'en a pas', () => {
+    for (const wall of SHOP_WALL_THEMES) {
+      expect(Number.isInteger(wall.price) && wall.price >= 300, wall.label).toBe(true);
+      expect(wallPrice(wall.id)).toBe(wall.price);
+      expect(shopPriceOf(wall.id)).toBe(wall.price);
+      expect(isWallTheme(wall.id)).toBe(true);
+      expect(wallTheme(wall.id)).toEqual(wall);
+    }
+    expect(wallPrice('creme')).toBeUndefined();
+    expect(shopPriceOf('creme')).toBeUndefined();
+  });
+
+  test('leurs tuiles viennent après toutes les autres (celles de la carte gardent leur numéro), dans le jeu de tuiles', () => {
+    for (const wall of SHOP_WALL_THEMES) {
+      for (const gid of [wall.top, wall.bottom, wall.stem]) {
+        expect(gid).toBeGreaterThan(POOL_TILES.se);
+        expect(gid).toBeLessThanOrEqual(TILESET.tileCount);
+      }
+    }
+  });
+
+  test('un mur de la boutique est un thème que checkDecor accepte (l\'achat, seul le serveur le vérifie)', () => {
+    expect(checkDecor(decor([], { wall: SHOP_WALL_THEMES[0].id }), DESK_ROOMS.standard)).toEqual({ ok: true });
   });
 });
 

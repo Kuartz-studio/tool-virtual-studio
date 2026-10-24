@@ -8,12 +8,12 @@ import {
   TODO_XP,
   checkInXp,
   dayIn,
-  decorItem,
   gainOf,
   levelOf,
   missionXp,
   nextStreak,
   previousWorkday,
+  shopPriceOf,
   timezoneOrDefault,
   type CharacterStats,
   type MissionGivePayload,
@@ -45,7 +45,8 @@ export interface ProgressServiceOptions {
   /** Le fuseau de chaque personne : ses plafonds du jour et sa série de pointage s'y comptent. Par défaut, celui de son compte (`user.timezone`, Paris tant
    * qu'elle n'en a pas choisi d'autre). */
   timeZoneOf?: (userId: string) => Promise<string>;
-  /** Le prix d'un élément de la boutique, en kuartzons (undefined : il n'y est pas). Par défaut, celui de la banque d'éléments (DecorItem.price). */
+  /** Le prix d'un élément de la boutique, en kuartzons (undefined : il n'y est pas). Par défaut, celui de la boutique (shopPriceOf : un élément de décor de
+   * la collection à part, ou un mur). */
   priceOf?: (itemId: string) => number | undefined;
 }
 
@@ -114,7 +115,7 @@ export class ProgressService {
         const [row] = await db.select({ timezone: user.timezone }).from(user).where(eq(user.id, userId));
         return timezoneOrDefault(row?.timezone);
       });
-    this.priceOf = options.priceOf ?? ((itemId) => decorItem(itemId)?.price);
+    this.priceOf = options.priceOf ?? shopPriceOf;
   }
 
   // Sa progression : XP, kuartzons, série de pointage (celle qui court encore : une série qu'un jour ouvré manqué a cassée vaut 0) et ce qu'elle possède.

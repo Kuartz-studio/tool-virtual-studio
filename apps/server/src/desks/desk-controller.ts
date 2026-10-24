@@ -30,7 +30,7 @@ export interface DeskControllerDeps {
   teleport: Teleport;
   /** L'horloge du temps réel (ms). */
   now: () => number;
-  /** Parmi ces éléments de décor, ceux de la boutique que la personne n'a pas achetés : elle ne peut pas les poser. Absent : tout est libre. */
+  /** Parmi ces éléments de décor et ce mur, ceux de la boutique que la personne n'a pas achetés : elle ne peut pas les poser. Absent : tout est libre. */
   unowned?: (userId: string, itemIds: string[]) => Promise<string[]>;
   logger: Logger;
 }
@@ -132,9 +132,9 @@ export function createDeskController(d: DeskControllerDeps) {
       case 'goto':
         return goto(userId);
       case 'decor':
-        // Un élément de la boutique qu'on n'a pas acheté ne se pose pas (`not_owned`) ; le service revérifie tout le reste (checkDecor) : un refus répond `bad_decor`
-        // avec sa raison, et rien n'est diffusé.
-        if (d.unowned && (await d.unowned(userId, command.items.map((item) => item.id))).length > 0) return { ok: false, error: 'bad_decor', reason: 'not_owned' };
+        // Un élément ou un mur de la boutique qu'on n'a pas acheté ne se pose pas (`not_owned`) ; le service revérifie tout le reste (checkDecor) : un refus répond
+        // `bad_decor` avec sa raison, et rien n'est diffusé.
+        if (d.unowned && (await d.unowned(userId, [...command.items.map((item) => item.id), command.wall])).length > 0) return { ok: false, error: 'bad_decor', reason: 'not_owned' };
         return applied(await d.desks.setDecor(userId, { floor: command.floor, wall: command.wall, items: command.items }));
     }
   }
