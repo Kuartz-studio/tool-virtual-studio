@@ -32,6 +32,9 @@ export interface DeskControllerDeps {
   now: () => number;
   /** Parmi ces éléments de décor et ce mur, ceux de la boutique que la personne n'a pas achetés : elle ne peut pas les poser. Absent : tout est libre. */
   unowned?: (userId: string, itemIds: string[]) => Promise<string[]>;
+  /** Acheter d'un coup ces éléments de la boutique (ceux qu'une déco pose sans qu'elle les ait) : tout, ou rien (`too_poor` : le total dépasse ses kuartzons).
+   * Absent : on n'achète pas en enregistrant, il faut passer par la boutique. */
+  buyAll?: (userId: string, itemIds: string[]) => Promise<{ ok: true } | { ok: false; error: 'unknown_item' | 'too_poor' }>;
   logger: Logger;
 }
 
@@ -132,11 +135,26 @@ export function createDeskController(d: DeskControllerDeps) {
       case 'goto':
         return goto(userId);
       case 'decor':
-        // Un élément ou un mur de la boutique qu'on n'a pas acheté ne se pose pas (`not_owned`) ; le service revérifie tout le reste (checkDecor) : un refus répond
-        // `bad_decor` avec sa raison, et rien n'est diffusé.
-        if (d.unowned && (await d.unowned(userId, [...command.items.map((item) => item.id), command.wall])).length > 0) return { ok: false, error: 'bad_decor', reason: 'not_owned' };
-        return applied(await d.desks.setDecor(userId, { floor: command.floor, wall: command.wall, items: command.items }));
+        return decor(userId, command);
     }
+  }
+
+  // Enregistrer la déco de son bureau. Un élément ou un mur de la boutique qu'on n'a pas acheté ne se pose pas (`not_owned`), sauf à l'acheter en enregistrant :
+  // tout ce qui manque doit être dans `buy`, et s'achète d'un coup (`too_poor` s'il manque des kuartzons : rien n'est acheté ni enregistré). La déco est validée
+  // avant tout achat : on ne paie jamais pour une déco refusée. Le service revérifie tout (checkDecor) : un refus répond `bad_decor` avec sa raison, et rien n'est
+  // diffusé. (Si l'enregistrement lui-même échoue après l'achat, la base ne répondant plus, ce qui est acheté le reste : on réenregistre sans repayer.)
+  async function decor(userId: string, command: Extract<DeskCommand, { type: 'decor' }>): Promise<DeskAck> {
+    const next = { floor: command.floor, wall: command.wall, items: command.items };
+    const missing = d.unowned ? await d.unowned(userId, [...command.items.map((item) => item.id), command.wall]) : [];
+    if (missing.length > 0) {
+      const buying = new Set(command.buy ?? []);
+      if (!d.buyAll || missing.some((id) => !buying.has(id))) return { ok: false, error: 'bad_decor', reason: 'not_owned' };
+      const refused = d.desks.decorRefusal(userId, next);
+      if (refused) return refused;
+      const bought = await d.buyAll(userId, missing);
+      if (!bought.ok) return bought.error === 'too_poor' ? { ok: false, error: 'too_poor' } : { ok: false, error: 'bad_decor', reason: 'not_owned' };
+    }
+    return applied(await d.desks.setDecor(userId, next));
   }
 
   function kick(ownerId: string, targetId: string): DeskAck {

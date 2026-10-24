@@ -21,6 +21,7 @@ import type { GameObjects, Tilemaps } from 'phaser';
 import { decorTextureKey } from './decor-textures';
 import { layoutDecor, placedFromObjects, type Drawn } from './decor-layout';
 import { snapToPixels } from './pixel-snap';
+import { TileAnimator } from './tile-animator';
 import { WallClocks } from './wall-clocks';
 
 // Ce que le jeu dessine des éléments posés : les meubles de la carte (calque `objets`), et dans chaque bureau le sol, les murs et les éléments
@@ -28,7 +29,8 @@ import { WallClocks } from './wall-clocks';
 // l'éditeur (DecorEditor) peut lui substituer un brouillon (`preview`). Les meubles solides d'un bureau sont des obstacles pour l'avatar local,
 // comme ceux de la carte (le serveur, lui, ne connaît que les cases de la carte : un meuble de bureau n'arrête que celui qui le voit).
 // Les horloges murales donnent l'heure en direct (WallClocks) : celle du fuseau de l'occupant du bureau (DeskInfo.ownerTimezone), celle de Paris pour
-// une place libre et pour les horloges de la carte ; la scène les fait avancer à chaque image (tickClocks).
+// une place libre et pour les horloges de la carte ; la scène les fait avancer à chaque image (tickClocks). Les sols et les murs des bureaux bougent
+// (TileAnimator : un reflet qui passe, des étincelles, le néon qui pulse), ceux des espaces communs non ; la scène les fait avancer aussi (tickTiles).
 
 interface Room {
   key: string;
@@ -65,6 +67,7 @@ export class DecorLayer {
   private readonly staticSprites: GameObjects.Image[];
   private readonly staticClocks: string[] = [];
   private readonly clocks: WallClocks;
+  private readonly tiles = new TileAnimator();
   private player: Phaser.GameObjects.GameObject | null = null;
   private desks: readonly DeskInfo[] = [];
 
@@ -124,6 +127,16 @@ export class DecorLayer {
     this.clocks.tick(now);
   }
 
+  // Les sols et les murs des bureaux qui bougent montrent l'image de cet instant (Date.now()), à chaque image.
+  tickTiles(now: number): void {
+    this.tiles.tick(now);
+  }
+
+  // Combien de cases des bureaux bougent (pour les tests de bout en bout).
+  animatedTiles(): number {
+    return this.tiles.size;
+  }
+
   // La pièce de ce bureau (taille et porte), pour que l'éditeur sache où l'on peut poser.
   specOf(key: string): DeskRoomSpec | undefined {
     return this.rooms.get(key)?.spec;
@@ -148,6 +161,7 @@ export class DecorLayer {
     this.rooms.clear();
     this.previews.clear();
     this.clocks.destroy();
+    this.tiles.destroy();
   }
 
   private decorOf(room: Room): DeskDecor {
@@ -177,16 +191,26 @@ export class DecorLayer {
     this.addColliders(room);
   }
 
-  // Le sol de la pièce et les murs qui l'entourent, au thème choisi : on remplace les tuiles de la carte.
+  // Le sol de la pièce et les murs qui l'entourent, au thème choisi : on remplace les tuiles de la carte, et celles qui ont une animation se mettent à bouger.
   private repaint(room: Room, decor: DeskDecor): void {
     const floor = floorTheme(decor.floor);
     const wall = wallTheme(decor.wall);
     const [roomX, roomY] = [Math.round(room.zone.x / TILE_SIZE), Math.round(room.zone.y / TILE_SIZE)];
-    if (floor && this.layers.sol) {
-      for (let y = roomY; y < roomY + room.spec.height; y++) for (let x = roomX; x < roomX + room.spec.width; x++) this.layers.sol.putTileAt(floor.gid, x, y);
+    const sol = this.layers.sol;
+    if (floor && sol) {
+      for (let y = roomY; y < roomY + room.spec.height; y++) {
+        for (let x = roomX; x < roomX + room.spec.width; x++) {
+          sol.putTileAt(floor.gid, x, y);
+          this.tiles.place(sol, x, y, floor.gid);
+        }
+      }
     }
-    if (wall && this.layers.murs && room.slot) {
-      for (const cell of room.slot.walls) this.layers.murs.putTileAt(wall[cell.part], cell.x, cell.y);
+    const murs = this.layers.murs;
+    if (wall && murs && room.slot) {
+      for (const cell of room.slot.walls) {
+        murs.putTileAt(wall[cell.part], cell.x, cell.y);
+        this.tiles.place(murs, cell.x, cell.y, wall[cell.part]);
+      }
     }
   }
 

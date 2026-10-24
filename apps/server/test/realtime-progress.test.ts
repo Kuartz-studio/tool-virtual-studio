@@ -144,4 +144,47 @@ describe.skipIf(!forSale)('la déco et la boutique', () => {
     expect((await request(srv.app).post('/api/shop/buy').set('Cookie', ana.cookie).send({ itemId: wall.id })).status).toBe(200);
     expect(await save()).toEqual({ ok: true });
   });
+
+  // Enregistrer en achetant : la déco nomme dans `buy` ce qu'elle pose de la boutique sans qu'on l'ait.
+  const shopDecor = (ana: Person, buy?: string[]) => {
+    const desk = ana.init.desks.find((d) => d.ownerId === ana.id)!;
+    return { type: 'decor' as const, floor: desk.floor, wall: SHOP_WALL_THEMES[0].id, items: [{ id: forSale!.id, x: 1, y: 0 }], ...(buy ? { buy } : {}) };
+  };
+  const total = () => SHOP_WALL_THEMES[0].price + forSale!.price!;
+  const doDesk = (p: Person, command: unknown) => new Promise((resolve) => p.socket.emit('desk:do', command as never, resolve));
+
+  test('enregistrer en achetant ce qui manque : tout s\'achète d\'un coup, la bourse baisse du total, et la déco est enregistrée', async () => {
+    const srv = await office();
+    const ana = await person(srv, 'ana@x.fr');
+    ana.socket.emit('debug:xp', { xp: 0, kuartzons: total() + 7 });
+    await nextEvent(ana.socket, 'progress:mine');
+    const mine = nextEvent(ana.socket, 'progress:mine');
+    const changed = nextEvent(ana.socket, 'desk:changed');
+    expect(await doDesk(ana, shopDecor(ana, [SHOP_WALL_THEMES[0].id, forSale!.id]))).toEqual({ ok: true });
+    expect(await mine).toMatchObject({ kuartzons: 7, owned: expect.arrayContaining([SHOP_WALL_THEMES[0].id, forSale!.id]) });
+    expect(await changed).toMatchObject({ wall: SHOP_WALL_THEMES[0].id, items: [{ id: forSale!.id, x: 1, y: 0 }] });
+  });
+
+  test('pas assez de kuartzons pour le total : `too_poor`, rien n\'est acheté ni enregistré', async () => {
+    const srv = await office();
+    const ana = await person(srv, 'ana@x.fr');
+    ana.socket.emit('debug:xp', { xp: 0, kuartzons: total() - 1 });
+    await nextEvent(ana.socket, 'progress:mine');
+    expect(await doDesk(ana, shopDecor(ana, [SHOP_WALL_THEMES[0].id, forSale!.id]))).toEqual({ ok: false, error: 'too_poor' });
+    const me = await request(srv.app).get('/api/me/progress').set('Cookie', ana.cookie);
+    expect(me.body).toMatchObject({ kuartzons: total() - 1, owned: [] });
+  });
+
+  test('`buy` qui ne nomme pas tout ce qui manque, ou une déco refusée : rien n\'est débité', async () => {
+    const srv = await office();
+    const ana = await person(srv, 'ana@x.fr');
+    ana.socket.emit('debug:xp', { xp: 0, kuartzons: total() });
+    await nextEvent(ana.socket, 'progress:mine');
+    expect(await doDesk(ana, shopDecor(ana, [forSale!.id]))).toEqual({ ok: false, error: 'bad_decor', reason: 'not_owned' });
+    // Un élément posé hors de la pièce : la déco serait refusée, l'achat n'a pas lieu.
+    const outside = { ...shopDecor(ana, [SHOP_WALL_THEMES[0].id, forSale!.id]), items: [{ id: forSale!.id, x: 90, y: 0 }] };
+    expect(await doDesk(ana, outside)).toMatchObject({ ok: false, error: 'bad_decor' });
+    const me = await request(srv.app).get('/api/me/progress').set('Cookie', ana.cookie);
+    expect(me.body).toMatchObject({ kuartzons: total(), owned: [] });
+  });
 });

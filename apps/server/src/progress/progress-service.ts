@@ -58,6 +58,8 @@ export interface Completed {
 
 export type GiveResult = { ok: true; task: TaskView } | { ok: false; error: 'unknown_member' | 'self' | 'limit' };
 export type BuyResult = { ok: true; progress: MyProgress } | { ok: false; error: 'unknown_item' | 'owned' | 'too_poor' };
+// Un achat de plusieurs éléments d'un coup (buyMany) : ce qu'on a déjà ne se rachète pas, donc jamais `owned`.
+export type BuyManyResult = { ok: true; progress: MyProgress } | { ok: false; error: 'unknown_item' | 'too_poor' };
 
 // L'issue d'une partie classée pour un joueur, et le nom du jeu tel qu'on l'écrit dans le journal.
 export type GameOutcome = 'win' | 'draw' | 'loss';
@@ -342,6 +344,29 @@ export class ProgressService {
         if (row.kuartzons < price) return 'too_poor' as const;
         await tx.insert(shopPurchase).values({ userId, itemId, price, boughtAt: new Date(this.clock()) });
         await tx.update(progress).set({ kuartzons: sql`${progress.kuartzons} - ${price}`, updatedAt: new Date(this.clock()) }).where(eq(progress.userId, userId));
+        return null;
+      });
+      return refused === null ? { ok: true, progress: await this.mine(userId) } : { ok: false, error: refused };
+    });
+  }
+
+  // Acheter d'un coup plusieurs éléments de la boutique (ce qu'une déco pose sans qu'elle les ait, au moment de l'enregistrer) : tout, ou rien. Ce qu'elle a déjà
+  // (acheté entre-temps, dans un autre onglet) ne se paie pas deux fois ; `unknown_item` : l'un n'est pas à vendre ; `too_poor` : le total dépasse ses kuartzons.
+  buyMany(userId: string, itemIds: readonly string[]): Promise<BuyManyResult> {
+    const ids = [...new Set(itemIds)];
+    if (ids.some((id) => this.priceOf(id) === undefined)) return Promise.resolve({ ok: false, error: 'unknown_item' });
+    return this.serial(userId, async () => {
+      const refused = await this.db.transaction(async (tx) => {
+        const row = await lockProgress(tx, userId);
+        const had = ids.length === 0 ? [] : await tx.select({ itemId: shopPurchase.itemId }).from(shopPurchase).where(and(eq(shopPurchase.userId, userId), inArray(shopPurchase.itemId, ids)));
+        const owned = new Set(had.map((o) => o.itemId));
+        const buying = ids.filter((id) => !owned.has(id));
+        const total = buying.reduce((sum, id) => sum + this.priceOf(id)!, 0);
+        if (row.kuartzons < total) return 'too_poor' as const;
+        if (buying.length === 0) return null;
+        const now = new Date(this.clock());
+        await tx.insert(shopPurchase).values(buying.map((itemId) => ({ userId, itemId, price: this.priceOf(itemId)!, boughtAt: now })));
+        await tx.update(progress).set({ kuartzons: sql`${progress.kuartzons} - ${total}`, updatedAt: now }).where(eq(progress.userId, userId));
         return null;
       });
       return refused === null ? { ok: true, progress: await this.mine(userId) } : { ok: false, error: refused };

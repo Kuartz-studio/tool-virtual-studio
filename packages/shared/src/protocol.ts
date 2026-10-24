@@ -35,7 +35,9 @@ export const displayNameSchema = z.string().trim().min(1).max(DISPLAY_NAME_MAX_L
 // - knock : toquer à la porte d'un bureau fermé (le propriétaire est prévenu) ; admit : laisser entrer quelqu'un qui a toqué ;
 // - goto : aller à son bureau ;
 // - decor : régler la pièce de son bureau (sol, murs et éléments posés, d'un seul bloc : checkDecor, côté serveur, le valide en entier ; les
-//   positions sont en cases au dixième près, et checkDecor refuse celles qui ne tombent pas sur un dixième).
+//   positions sont en cases au dixième près, et checkDecor refuse celles qui ne tombent pas sur un dixième). `buy` : les éléments et le mur de la
+//   boutique que la personne accepte d'acheter en enregistrant (ceux que la déco pose sans qu'elle les ait, que l'interface lui a montrés avec leur
+//   total) ; le serveur n'achète que ce qui manque vraiment, tout d'un coup, et seulement pour une déco qu'il accepte.
 const deskKeySchema = z.string().min(1).max(64);
 const userIdSchema = z.string().min(1).max(128);
 export const deskCommandSchema = z.discriminatedUnion('type', [
@@ -53,6 +55,7 @@ export const deskCommandSchema = z.discriminatedUnion('type', [
     floor: z.string().min(1).max(40),
     wall: z.string().min(1).max(40),
     items: z.array(z.object({ id: z.string().min(1).max(40), x: z.number().min(-100).max(100), y: z.number().min(-100).max(100) })).max(MAX_DECOR_ITEMS),
+    buy: z.array(z.string().min(1).max(40)).max(MAX_DECOR_ITEMS + 1).optional(),
   }),
 ]);
 
@@ -228,10 +231,11 @@ export type ChatAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limit
 // La réponse du serveur à `desk:do` : `invalid` (commande refusée), `rate_limited`, `unknown_desk` (aucune place de cette clé),
 // `taken` (déjà occupée par quelqu'un d'autre), `no_desk` (la commande suppose un bureau, et la personne n'en a pas), `not_inside`
 // (exclure quelqu'un qui n'est pas dans son bureau), `not_locked` (toquer à une porte ouverte), `unavailable` (la base n'a pas pris le
-// changement : rien n'a changé), `self` (exclure ou admettre soi-même), `bad_decor` (la déco est refusée : `reason` dit pourquoi, checkDecor).
+// changement : rien n'a changé), `self` (exclure ou admettre soi-même), `bad_decor` (la déco est refusée : `reason` dit pourquoi, checkDecor),
+// `too_poor` (enregistrer une déco en achetant ce qui manque : le total dépasse ses kuartzons ; rien n'est acheté ni enregistré).
 export type DeskAck =
   | { ok: true }
-  | { ok: false; error: 'invalid' | 'rate_limited' | 'unknown_desk' | 'taken' | 'no_desk' | 'not_inside' | 'not_locked' | 'unavailable' | 'self'; reason?: undefined }
+  | { ok: false; error: 'invalid' | 'rate_limited' | 'unknown_desk' | 'taken' | 'no_desk' | 'not_inside' | 'not_locked' | 'unavailable' | 'self' | 'too_poor'; reason?: undefined }
   | { ok: false; error: 'bad_decor'; reason: DecorError };
 
 export interface ServerToClientEvents {

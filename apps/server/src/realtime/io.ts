@@ -265,6 +265,12 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     teleport,
     now,
     unowned: (userId, itemIds) => progress.unowned(userId, itemIds),
+    // Ce qu'on achète en enregistrant sa déco : sa bourse a changé, elle l'apprend comme après un achat à la boutique.
+    buyAll: async (userId, itemIds) => {
+      const bought = await progress.buyMany(userId, itemIds);
+      if (bought.ok) d.events.emit('progress:changed', { userId, progress: bought.progress });
+      return bought;
+    },
     logger,
   });
 

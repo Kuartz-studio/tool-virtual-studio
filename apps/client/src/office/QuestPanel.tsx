@@ -1,50 +1,27 @@
-import { MAX_LEVEL, TODO_DAILY_XP, TODO_XP, levelOf, levelProgress, type TaskView } from '@bureau/shared';
+import { TODO_DAILY_XP, TODO_XP, type TaskView } from '@bureau/shared';
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { ApiError } from '../lib/api';
 import { completeTask, createTodo, declineMission, deleteTodo, fetchMyProgress, markMissionsSeen, updateTodo } from '../lib/progress-api';
 import { Alert } from '../pages/AuthLayout';
 import { selectNewMissions, useOfficeStore } from '../state/office-store';
-import { CharacterSheet } from './CharacterSheet';
-import { CheckIcon, ChevronRightIcon, KuartzonIcon, StreakIcon, TrashIcon } from './icons';
-import { formatNumber, gradeLabel, kuartzonsText, shareText, tierLabel } from './progress-format';
+import { CharacterHero, CharacterSheet } from './CharacterSheet';
+import { CheckIcon, ChevronRightIcon, TrashIcon } from './icons';
+import { formatNumber, shareText, tierLabel } from './progress-format';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
-import { LevelBadge, TierPips, XpBar } from './ui/ProgressBits';
+import { TierPips } from './ui/ProgressBits';
 import { Segmented, type SegmentedOption } from './ui/Segmented';
 
 export type QuestTab = 'todo' | 'sheet';
 
-// Sa progression, en tête du panneau : la pastille du niveau, le grade, la barre de l'XP et ce qu'il reste avant le niveau suivant, puis ses kuartzons et sa série.
-function ProgressCard() {
-  const progress = useOfficeStore((state) => state.progress);
-  const xp = progress?.xp ?? 0;
-  const level = levelOf(xp);
-  const { into, size } = levelProgress(xp);
-  return (
-    <div className="quest-card">
-      <LevelBadge level={level} size="large" />
-      <div className="quest-card-text">
-        <span className="quest-card-title">
-          {t(fr.progress.level, { level })} · {gradeLabel(level)}
-        </span>
-        <XpBar xp={xp} />
-        <span className="quest-card-next">{level >= MAX_LEVEL ? fr.progress.maxed : t(fr.progress.toNext, { left: formatNumber(size - into), next: level + 1 })}</span>
-      </div>
-      <div className="quest-card-side">
-        <span className="quest-chip" title={fr.shop.wallet}>
-          <KuartzonIcon />
-          {kuartzonsText(progress?.kuartzons ?? 0)}
-        </span>
-        {(progress?.streak ?? 0) > 0 && (
-          <span className="quest-chip" title={fr.sheet.streak}>
-            <StreakIcon />
-            {progress!.streak === 1 ? fr.sheet.streakDay : t(fr.sheet.streakDays, { count: progress!.streak })}
-          </span>
-        )}
-      </div>
-    </div>
-  );
+// Sa fiche en tête du panneau, au-dessus des onglets : son portrait, son nom, son grade, son niveau et l'expérience du niveau en cours (CharacterHero), tenus
+// par le magasin. L'onglet Caractéristiques montre le reste, sans le redire.
+function SelfHero() {
+  const name = useOfficeStore((state) => state.self?.name ?? '');
+  const avatarKey = useOfficeStore((state) => state.self?.avatarKey ?? null);
+  const xp = useOfficeStore((state) => state.progress?.xp ?? 0);
+  return <CharacterHero name={name} avatarKey={avatarKey} xp={xp} />;
 }
 
 // Une mission reçue : qui la confie, son intitulé et ses précisions, sa difficulté (les crans, son nom, son XP et ce qu'elle représente), et deux gestes :
@@ -250,11 +227,11 @@ export function QuestPanel({ id, tab: initialTab = 'todo', ask = 0, onClose }: {
 
   return (
     <Drawer title={fr.missions.title} onClose={onClose} id={id} className="quest-panel">
-      <ProgressCard />
+      <SelfHero />
       <Segmented label={fr.missions.tabsLabel} value={tab} panelId={`${uid}-panel`} tabId={(which) => `${uid}-tab-${which}`} options={options} onSelect={(which) => setTab(which)} />
       <div id={`${uid}-panel`} role="tabpanel" aria-labelledby={`${uid}-tab-${tab}`} className="quest-body">
         {tab === 'sheet' ? (
-          selfId && <CharacterSheet userId={selfId} />
+          selfId && <CharacterSheet userId={selfId} hero={false} />
         ) : (
           <>
             <form className="todo-add" onSubmit={add}>

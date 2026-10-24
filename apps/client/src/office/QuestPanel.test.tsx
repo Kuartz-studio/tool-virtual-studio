@@ -38,13 +38,18 @@ beforeEach(() => {
 });
 
 describe('le panneau Missions', () => {
-  test('en tête, sa progression : le niveau, le grade, ce qu\'il reste avant le suivant, ses kuartzons et sa série', () => {
+  test('en tête, sa fiche : son nom, son grade, la pastille de son niveau, et l\'expérience du niveau en cours en dix cases', () => {
     render(<QuestPanel onClose={() => {}} />);
-    const card = document.querySelector('.quest-card') as HTMLElement;
-    expect(card.textContent).toContain('Niveau 12 · Stagiaire');
-    expect(card.textContent).toContain('Encore 660 XP avant le niveau 13');
-    expect(card.textContent?.replace(/[\u202f\u00a0]/g, ' ')).toContain('1 450 kuartzons');
-    expect(card.textContent).toContain('3 jours');
+    const hero = document.querySelector('.sheet-hero') as HTMLElement;
+    expect(hero.dataset.grade).toBe('stagiaire');
+    expect(within(hero).getByText('Bob')).toBeTruthy();
+    expect(within(hero).getByText('Stagiaire')).toBeTruthy();
+    expect(within(hero).getByText(t(fr.progress.level, { level: 12 }))).toBeTruthy();
+    expect(hero.textContent).toContain('Encore 660 XP avant le niveau 13');
+    // 340 XP sur 1 000 dans le niveau : trois cases pleines, la quatrième aux deux cinquièmes.
+    const bar = within(hero).getByRole('progressbar', { name: fr.sheet.xpBar });
+    expect(bar.getAttribute('aria-valuetext')?.replace(/\u00a0/g, ' ')).toBe('340 / 1 000 XP');
+    expect([...bar.querySelectorAll<HTMLElement>('.sheet-seg-fill')].map((fill) => fill.style.width)).toEqual(['100%', '100%', '100%', '40%', '0%', '0%', '0%', '0%', '0%', '0%']);
   });
 
   test('les missions reçues d\'abord, avec qui les confie et leur difficulté, puis sa liste ; les nouvelles deviennent vues', async () => {
@@ -150,9 +155,56 @@ describe('le panneau Missions', () => {
     const user = userEvent.setup();
     render(<QuestPanel onClose={() => {}} />);
     await user.click(screen.getByRole('tab', { name: fr.missions.sheet }));
-    expect(await screen.findByText('Membre depuis le 19 octobre 2026')).toBeTruthy();
+    expect(await screen.findByText(fr.sheet.memberSince)).toBeTruthy();
+    expect(screen.getByText('19 oct. 2026')).toBeTruthy();
     expect(screen.getByText(fr.sheet.authority)).toBeTruthy();
     expect(screen.getByText('2 sur 5')).toBeTruthy();
     expect(screen.getByText('Refaire le logo')).toBeTruthy();
+  });
+
+  test('l\'onglet « Caractéristiques » ne redit pas le niveau : l\'essentiel et l\'activité en lignes, chaque valeur en face de son nom', async () => {
+    vi.mocked(progressApi.fetchStats).mockResolvedValueOnce({
+      id: 'bob',
+      name: 'Bob',
+      avatarKey: null,
+      memberSince: '2026-10-19T08:00:00.000Z',
+      timezone: 'Europe/Paris',
+      xp: 12_340,
+      missionsDone: 3,
+      missionsByTier: [0, 0, 0, 0, 2, 0, 0, 0, 0, 1],
+      missionsGiven: 1,
+      todosDone: 4,
+      streak: 3,
+      gamesPlayed: 5,
+      gamesWon: 2,
+      kuartzons: 1450,
+      history: [],
+    });
+    const user = userEvent.setup();
+    render(<QuestPanel onClose={() => {}} />);
+    await user.click(screen.getByRole('tab', { name: fr.missions.sheet }));
+    await screen.findByText(fr.sheet.totalXp);
+
+    // Le niveau n'est dit qu'une fois : l'en-tête du panneau, au-dessus des onglets ; la fiche de l'onglet n'en a pas d'autre.
+    expect(document.querySelectorAll('.sheet-hero')).toHaveLength(1);
+    expect(document.querySelectorAll('.level-badge')).toHaveLength(1);
+    expect(screen.getAllByRole('progressbar')).toHaveLength(1);
+    expect(screen.getByRole('tabpanel').querySelector('.sheet-hero')).toBeNull();
+
+    // Chaque ligne : son nom, et sa valeur en face. L'essentiel (surligné), puis l'activité.
+    const valueOf = (label: string) => screen.getByText(label).closest('.sheet-row')?.querySelector('dd')?.textContent?.replace(/\u00a0/g, ' ');
+    const labels = (selector: string) => [...document.querySelectorAll(`${selector} .sheet-row-label`)].map((label) => label.textContent);
+    expect(labels('.sheet-stats.is-key')).toEqual([fr.sheet.totalXp, fr.sheet.authority, fr.sheet.kuartzons]);
+    expect(labels('.sheet-stats:not(.is-key)')).toEqual([fr.sheet.missionsDone, fr.sheet.missionsGiven, fr.sheet.todosDone, fr.sheet.streak, fr.sheet.games, fr.sheet.memberSince]);
+    expect(valueOf(fr.sheet.totalXp)).toBe('12 340 XP');
+    expect(valueOf(fr.sheet.authority)).toBe('12');
+    expect(valueOf(fr.sheet.kuartzons)).toBe('1 450');
+    expect(valueOf(fr.sheet.missionsGiven)).toBe('1');
+    expect(valueOf(fr.sheet.streak)).toBe('3 jours');
+    expect(valueOf(fr.sheet.games)).toBe('2 sur 5');
+    expect(valueOf(fr.sheet.memberSince)).toBe('19 oct. 2026');
+
+    // Les missions par difficulté : une colonne par difficulté, à sa teinte (data-tier).
+    expect([...document.querySelectorAll<HTMLElement>('.sheet-tier')].map((tier) => tier.dataset.tier)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8', '9', '10']);
   });
 });

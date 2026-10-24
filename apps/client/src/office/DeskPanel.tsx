@@ -221,12 +221,12 @@ function DeskHero({ desk, idle, run }: { desk: DeskInfo; idle: boolean; run: Run
       <div className="desk-scene" aria-hidden="true">
         <div className="desk-scene-row">
           {SCENE_COLUMNS.map((column) => (
-            <WallSwatch key={column} top={wall.top} bottom={wall.bottom} />
+            <WallSwatch key={column} top={wall.top} bottom={wall.bottom} column={column} />
           ))}
         </div>
         <div className="desk-scene-row">
           {SCENE_COLUMNS.map((column) => (
-            <FloorSwatch key={column} gid={floor.gid} />
+            <FloorSwatch key={column} gid={floor.gid} column={column} />
           ))}
         </div>
       </div>

@@ -1,18 +1,22 @@
-import { FLOOR_THEMES, MAX_DECOR_ITEMS, SHOP_WALL_THEMES, WALL_THEMES, decorItem, defaultDeskDecor } from '@bureau/shared';
+import { FLOOR_THEMES, MAX_DECOR_ITEMS, SHOP_WALL_THEMES, WALL_THEMES, decorItem, defaultDeskDecor, type DeskDecor } from '@bureau/shared';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
 import { sendDeskCommand } from '../net/desk-commands';
+import { emitOnBus } from '../net/office-connection';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
-import { BuyOffer } from './BuyOffer';
+import { cartTotal, unpaidIn, withoutLine, withoutUnpaid, type CartLine } from './decor-cart';
+import { DecorCheckout } from './DecorCheckout';
 import { roomOfDesk, sameDecor } from './decor-draft';
 import { DecorPicker } from './DecorPicker';
-import { CloseIcon, InfoIcon, LockIcon } from './icons';
+import { CloseIcon, InfoIcon, KuartzonIcon, LockIcon } from './icons';
 import { deskErrorText } from './desks';
 import { ReplaceDialog } from './ReplaceDialog';
 import { formatNumber } from './progress-format';
 import { FloorSwatch, WallSwatch } from './sprites';
+import { useToasts } from './Toasts';
 import { IconButton } from './ui/IconButton';
 
 // Le panneau Décorer mon bureau : la banque d'éléments (le sélecteur, DecorPicker), et les murs et le sol. Il pilote le
@@ -21,6 +25,9 @@ import { IconButton } from './ui/IconButton';
 // Ouvrir le panneau ouvre l'éditeur sur son bureau ; le fermer le ferme. La gomme efface d'un clic l'élément qu'on vise ; poser sur un autre
 // élément le remplace, après la confirmation de ReplaceDialog. Échap lâche l'élément tenu (ou quitte la gomme), puis ferme ; la croix
 // de l'en-tête ferme aussi (sans enregistrer : le brouillon part avec l'éditeur).
+// La boutique s'essaie : ses éléments et ses murs se posent comme les autres, même pas encore achetés (le brouillon n'est montré qu'ici). Le pied du panneau
+// dit ce qui est à l'essai et combien il coûte ; « Enregistrer » ouvre alors la caisse (DecorCheckout) : acheter et enregistrer d'un coup, ou enregistrer
+// sans ces articles.
 type Tab = 'items' | 'themes';
 
 export function DecorPanel({ id, socket, onClose }: { id?: string; socket: OfficeSocket | null; onClose(): void }) {
@@ -46,11 +53,16 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
   }, []);
 
   const [tab, setTab] = useState<Tab>('items');
-  // Les murs de la boutique : ceux qu'on a achetés se choisissent comme les autres ; un clic sur un autre propose de l'acheter (son identifiant).
+  // Ce qu'on possède de la boutique, et sa bourse : ce que le brouillon essaie sans l'avoir acheté (`cart`) s'achète en enregistrant.
   const ownedList = useOfficeStore((state) => state.progress?.owned);
   const owned = useMemo(() => new Set(ownedList ?? []), [ownedList]);
-  const [wallOffer, setWallOffer] = useState<string | null>(null);
-  const offered = SHOP_WALL_THEMES.find((theme) => theme.id === wallOffer);
+  const kuartzons = useOfficeStore((state) => state.progress?.kuartzons ?? 0);
+  const cart = useMemo(() => (editor ? unpaidIn(editor.draft, owned) : []), [editor, owned]);
+  const [checkout, setCheckout] = useState(false);
+  // La caisse se ferme d'elle-même quand il n'y a plus rien à acheter : tout retiré, ou acheté entre-temps.
+  useEffect(() => {
+    if (cart.length === 0) setCheckout(false);
+  }, [cart.length]);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,20 +72,42 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
   const dirty = editor !== null && !sameDecor(editor.draft, editor.saved);
   const held = editor?.held ? decorItem(editor.held) : undefined;
 
-  async function save() {
-    if (!editor) return;
+  // Enregistrer cette déco, en achetant ces articles du même coup (le serveur achète tout ou rien, et seulement une déco qu'il accepte).
+  async function send(draft: DeskDecor, buying: readonly CartLine[] = []) {
     setBusy(true);
     setError(null);
     setNotice(null);
-    const { floor, wall, items: placed } = editor.draft;
-    const ack = await sendDeskCommand(socket, { type: 'decor', floor, wall, items: placed });
+    const { floor, wall, items: placed } = draft;
+    const ack = await sendDeskCommand(socket, { type: 'decor', floor, wall, items: placed, ...(buying.length > 0 ? { buy: buying.map((line) => line.id) } : {}) });
     setBusy(false);
-    if (ack.ok) {
-      store().markDecorSaved();
-      setNotice(fr.decor.saved);
-    } else {
+    if (!ack.ok) {
       setError(deskErrorText(ack));
+      return;
     }
+    store().markDecorSaved();
+    setCheckout(false);
+    if (buying.length > 0) {
+      emitOnBus(EventBus, 'shop:bought', { itemId: buying[0]!.id });
+      useToasts.getState().push({ icon: <KuartzonIcon />, text: t(fr.decor.checkout.done, { names: buying.map((line) => line.name).join(', ') }) });
+    }
+    setNotice(buying.length > 0 ? fr.decor.checkout.saved : fr.decor.saved);
+  }
+
+  // « Enregistrer » : tout de suite si rien n'est à l'essai, sinon la caisse.
+  function save() {
+    if (!editor) return;
+    setError(null);
+    if (cart.length > 0) setCheckout(true);
+    else void send(editor.draft);
+  }
+
+  // Renoncer aux achats : la déco sans ce qui n'est pas acheté (le mur enregistré revient), enregistrée si elle change encore quelque chose.
+  function saveWithout() {
+    if (!editor) return;
+    const next = withoutUnpaid(editor.draft, owned, editor.saved.wall);
+    store().setDecorDraft(next);
+    if (sameDecor(next, editor.saved)) setCheckout(false);
+    else void send(next);
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLElement>) {
@@ -163,11 +197,7 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
                         aria-pressed={editor?.draft.wall === theme.id}
                         title={label}
                         aria-label={label}
-                        onClick={() => {
-                          if (locked) return setWallOffer(theme.id);
-                          setWallOffer(null);
-                          store().patchDecorTheme({ wall: theme.id });
-                        }}
+                        onClick={() => store().patchDecorTheme({ wall: theme.id })}
                       >
                         <WallSwatch top={theme.top} bottom={theme.bottom} />
                         {locked && (
@@ -180,19 +210,6 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
                     );
                   })}
                 </div>
-                {offered && (
-                  <BuyOffer
-                    key={offered.id}
-                    id={offered.id}
-                    name={offered.label}
-                    price={offered.price}
-                    thumb={<WallSwatch top={offered.top} bottom={offered.bottom} />}
-                    onBought={() => {
-                      setWallOffer(null);
-                      store().patchDecorTheme({ wall: offered.id });
-                    }}
-                  />
-                )}
               </>
             )}
           </div>
@@ -222,7 +239,13 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
               </p>
             )}
             {held && refused && <p className="decor-refused">{refused}</p>}
-            {error && <Alert>{error}</Alert>}
+            {error && !checkout && <Alert>{error}</Alert>}
+            {cart.length > 0 && (
+              <p className="decor-cart" role="status">
+                <KuartzonIcon />
+                <span>{t(cart.length === 1 ? fr.decor.cart.one : fr.decor.cart.many, { count: cart.length, total: formatNumber(cartTotal(cart)) })}</span>
+              </p>
+            )}
             <div className="decor-meta">
               <IconButton className="decor-help" small label={fr.decor.helpLabel} hint={fr.decor.help}>
                 <InfoIcon />
@@ -244,12 +267,27 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
               <button type="button" className="bar-button" onClick={() => editor && store().setDecorDraft({ ...editor.draft, items: [] })}>
                 {fr.decor.clear}
               </button>
-              <button type="button" className="bar-button is-primary" disabled={busy || !ready || !dirty} onClick={() => void save()}>
+              <button type="button" className="bar-button is-primary" disabled={busy || !ready || !dirty} onClick={save}>
                 {busy ? fr.decor.saving : fr.decor.save}
               </button>
             </div>
             <p className="desk-hint credits">{fr.decor.credits}</p>
           </footer>
+          {checkout && editor && cart.length > 0 && (
+            <DecorCheckout
+              lines={cart}
+              kuartzons={kuartzons}
+              busy={busy}
+              error={error}
+              onBuy={() => void send(editor.draft, cart)}
+              onWithout={saveWithout}
+              onRemove={(id) => store().setDecorDraft(withoutLine(editor.draft, id, editor.saved.wall))}
+              onCancel={() => {
+                setCheckout(false);
+                setError(null);
+              }}
+            />
+          )}
           {editor?.replace && (
             <ReplaceDialog
               replacing={editor.replace.replacing.map((index) => editor.draft.items[index]?.id).filter((id): id is string => id !== undefined)}

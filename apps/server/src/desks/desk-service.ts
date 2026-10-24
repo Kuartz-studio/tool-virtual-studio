@@ -71,7 +71,7 @@ interface DeskState {
 
 // Ce que fait un changement : les places à rediffuser à tout le bureau, et si les accès de quelqu'un ont pu changer (les portes
 // fermées pour chacun sont alors à relire). Un échec est celui de la réponse à la commande (DeskAck) : `bad_decor` y porte sa raison.
-type DeskFailure = Extract<DeskAck, { ok: false }>;
+export type DeskFailure = Extract<DeskAck, { ok: false }>;
 export type DeskError = DeskFailure['error'];
 export type DeskResult = { ok: true; changed: DeskInfo[]; access: boolean } | DeskFailure;
 
@@ -246,15 +246,23 @@ export class DeskService {
     });
   }
 
+  // Ce que setDecor répondrait à cette déco, sans rien enregistrer : null si elle passerait, sinon le refus (pas de bureau, déco refusée). Pour
+  // ne rien faire payer à qui achète en enregistrant une déco qui ne passerait pas.
+  decorRefusal(userId: string, decor: DeskDecor): DeskFailure | null {
+    const state = this.stateOf(userId);
+    if (!state) return fail('no_desk');
+    const checked = checkDecor(decor, this.roomOf(state.key));
+    return checked.ok ? null : { ok: false, error: 'bad_decor', reason: checked.error };
+  }
+
   // Régler la pièce de son bureau, d'un seul bloc (sol, murs, éléments). Le serveur ne fait confiance à rien : checkDecor revérifie tout, et
   // une déco refusée ne change rien. Le décor est enregistré au nom de la personne, pas de la place.
   setDecor(userId: string, decor: DeskDecor): Promise<DeskResult> {
     return this.serial('desks', async () => {
       await this.ready;
-      const state = this.stateOf(userId);
-      if (!state) return fail('no_desk');
-      const checked = checkDecor(decor, this.roomOf(state.key));
-      if (!checked.ok) return { ok: false, error: 'bad_decor', reason: checked.error };
+      const refused = this.decorRefusal(userId, decor);
+      if (refused) return refused;
+      const state = this.stateOf(userId)!;
       // Une copie à nous, réduite à { id, x, y } : ni les champs en trop, ni la liste de l'appelant ne se retrouvent en mémoire ou en base.
       const next: DeskDecor = { floor: decor.floor, wall: decor.wall, items: copyItems(decor.items) };
       try {

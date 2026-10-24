@@ -2,7 +2,6 @@ import { DECOR_CATEGORIES, decorItem, decorItemsOf, type DecorCategoryId, type D
 import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
-import { BuyOffer } from './BuyOffer';
 import { loadDecorRecents, rememberDecorItem, searchDecorItems } from './decor-picker';
 import { DecorCategoryIcon, EraserIcon, LockIcon, RecentIcon, SearchIcon } from './icons';
 import { formatNumber } from './progress-format';
@@ -13,8 +12,8 @@ import { DecorThumb } from './sprites';
 // une grille de grandes vignettes, et dessous l'élément survolé (ou celui qu'on tient) : son nom, sa taille en cases, comment il se pose.
 // Un clic sur une vignette prend l'élément en main (un autre clic le lâche) ; on le pose ensuite dans la pièce (DecorEditorView).
 // La recherche porte sur toute la banque, sans tenir compte des accents ; Échap la vide avant de fermer le panneau.
-// Un élément de la boutique qu'on n'a pas acheté porte un cadenas et son prix : un clic ne le prend pas en main, il propose de l'acheter (sous la grille,
-// « Acheter pour 800 kuartzons », éteint s'il manque des kuartzons) ; acheté, il se prend en main comme les autres.
+// Un élément de la boutique qu'on n'a pas acheté porte un cadenas et son prix (sur sa vignette, et à côté de son nom sous la grille) : il se prend en main et se
+// pose comme les autres, à l'essai ; c'est l'enregistrement qui demande de l'acheter (DecorPanel).
 type Shelf = DecorCategoryId | 'recent';
 
 export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hidden?: boolean }) {
@@ -26,8 +25,6 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
   const [shelf, setShelf] = useState<Shelf>(() => (recents.length > 0 ? 'recent' : DECOR_CATEGORIES[0].id));
   const [search, setSearch] = useState('');
   const [peeked, setPeeked] = useState<string | null>(null);
-  // L'élément de la boutique qu'on propose d'acheter (un clic sur un élément pas encore acheté).
-  const [offer, setOffer] = useState<DecorItem | null>(null);
   const progress = useOfficeStore((state) => state.progress);
   const owned = useMemo(() => new Set(progress?.owned ?? []), [progress?.owned]);
   const locked = (item: DecorItem) => item.price !== undefined && !owned.has(item.id);
@@ -53,18 +50,8 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
     if (grid.current) grid.current.scrollTop = 0;
   }
 
-  function take(id: string) {
-    const item = decorItem(id);
-    if (item && locked(item)) {
-      setOffer(item);
-      return;
-    }
-    hold(id);
-  }
-
-  // Prendre un élément en main (ou le lâcher, si on le tenait) ; un élément qu'on vient d'acheter passe par ici, sans attendre que le magasin le sache.
+  // Prendre un élément en main (ou le lâcher, si on le tenait).
   function hold(id: string) {
-    setOffer(null);
     const held = editor?.held === id ? null : id;
     store().holdDecorItem(held);
     if (held === null) return;
@@ -151,7 +138,7 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
                 className="decor-tile"
                 aria-pressed={editor?.held === item.id}
                 aria-label={item.name}
-                onClick={() => take(item.id)}
+                onClick={() => hold(item.id)}
                 onPointerEnter={() => setPeeked(item.id)}
                 onFocus={() => setPeeked(item.id)}
                 onBlur={() => setPeeked(null)}
@@ -169,8 +156,6 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
         )}
       </div>
 
-      {offer && <BuyOffer key={offer.id} id={offer.id} name={offer.name} price={offer.price!} thumb={<DecorThumb item={offer} box={36} />} onBought={() => hold(offer.id)} />}
-
       <div className="decor-peek">
         {shown ? (
           <>
@@ -179,8 +164,14 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
             </span>
             <span className="decor-peek-text">
               <span className="decor-peek-name">
-                {shown.name}
+                <span className="decor-peek-label">{shown.name}</span>
                 {shown.id === editor?.held && <span className="decor-peek-tag">{fr.decor.heldTag}</span>}
+                {locked(shown) && (
+                  <span className="decor-peek-tag decor-peek-price" title={t(fr.shop.locked, { price: formatNumber(shown.price!) })}>
+                    <LockIcon />
+                    {formatNumber(shown.price!)}
+                  </span>
+                )}
               </span>
               <span className="decor-peek-meta">
                 {shown.w * shown.h === 1 ? fr.decor.sizeOne : t(fr.decor.size, { w: shown.w, h: shown.h })} · {fr.decor.kinds[shown.kind]}

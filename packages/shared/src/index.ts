@@ -26,6 +26,7 @@ export * from './character/generated';
 export * from './decor/clocks';
 export * from './decor/catalog';
 export * from './decor/themes';
+export * from './decor/tile-animations';
 export * from './decor/shop';
 export * from './decor/placement';
 export * from './map/builder';

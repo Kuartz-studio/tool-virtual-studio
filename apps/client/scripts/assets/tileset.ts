@@ -1,9 +1,14 @@
 // Le jeu de tuiles de la carte (public/assets/tiles/office.png) : les sols et les murs choisis dans le Room Builder de LimeZu, et les tuiles
 // de la piscine, dessinées ici (le pack n'a pas d'eau). Les sols et les murs sont aussi les thèmes qu'une personne choisit pour son bureau :
-// la liste (id, nom, numéro de tuile) est écrite dans packages/shared/src/decor/generated-themes.ts.
+// la liste (id, nom, numéro de tuile) est écrite dans packages/shared/src/decor/generated-themes.ts. Après eux, les images d'animation des sols et des murs
+// qui bougent (tile-motion.ts, theme-motions.ts) : une image identique à une autre de la même tuile n'est pas ajoutée deux fois.
 import { join } from 'node:path';
+import type { TilePhase } from '@bureau/shared';
 import { Img, readImage, type Rgba } from './image';
-import { SHOP_WALL_PICKS, drawShopWall, isPackWall, type ShopWallTiles } from './shop-walls';
+import { sameImage } from './pixel-art';
+import { SHOP_WALL_PICKS, drawShopWall, drawnWallMotion, isPackWall, type ShopWallTiles } from './shop-walls';
+import { FLOOR_MOTIONS, WALL_MOTIONS } from './theme-motions';
+import { renderMotion, type Motion } from './tile-motion';
 
 const ROOM_BUILDER = 'moderninteriors-win/1_Interiors/32x32/Room_Bulder_subfiles_32x32';
 
@@ -88,7 +93,17 @@ export interface TilesetBuild {
   pool: Record<PoolName, number>;
   // Les murs de la boutique (shop-walls.ts), avec leur prix en kuartzons.
   shopWalls: Array<{ id: string; label: string; price: number; top: number; bottom: number; stem: number }>;
+  // Les tuiles qui bougent : pour une tuile de base, ses images (la base d'abord), leur durée, leur décalage (decor/tile-animations.ts).
+  animations: TileAnimationRow[];
   tileCount: number;
+}
+
+export interface TileAnimationRow {
+  gid: number;
+  frames: number[];
+  durations: number[];
+  phase: TilePhase;
+  step: number;
 }
 
 // Les trois tuiles d'un mur du Room Builder : la face (deux cases) et le pan vertical.
@@ -176,10 +191,49 @@ export function buildTileset(source: string): TilesetBuild {
     return { id: wall.id, label: wall.label, price: wall.price, top: add(tiles.top), bottom: add(tiles.bottom), stem: add(tiles.stem) };
   });
 
+  // Les images d'animation, après toutes les tuiles de base : les sols, les murs libres, puis ceux de la boutique (leur face, puis leur pan).
+  const animations: TileAnimationRow[] = [];
+  const animate = (gids: readonly number[], motion: Motion | undefined) => {
+    if (motion) animations.push(...animationRows(gids, motion, tiles, add));
+  };
+  for (const floor of floors) animate([floor.gid], FLOOR_MOTIONS[floor.id]);
+  for (const wall of walls) animate([wall.top, wall.bottom], WALL_MOTIONS[wall.id]);
+  SHOP_WALL_PICKS.forEach((pick, index) => {
+    const wall = shopWalls[index]!;
+    const motion = isPackWall(pick) ? { face: WALL_MOTIONS[pick.id] } : drawnWallMotion(pick);
+    animate([wall.top, wall.bottom], motion.face);
+    animate([wall.stem], motion.stem);
+  });
+
   const rows = Math.ceil(tiles.length / TILESET_COLUMNS);
   const image = new Img(TILESET_COLUMNS * TILE, rows * TILE);
   tiles.forEach((tile, index) => image.paste(tile, (index % TILESET_COLUMNS) * TILE, Math.floor(index / TILESET_COLUMNS) * TILE, false));
-  return { image, floors, walls, pool, shopWalls, tileCount: tiles.length };
+  return { image, floors, walls, pool, shopWalls, animations, tileCount: tiles.length };
+}
+
+// Les lignes d'animation de ces tuiles de base (une seule, ou le haut et le bas d'une face, qui bougent ensemble) : chaque image rendue devient une tuile,
+// sauf si la même tuile a déjà la même image (la base, ou une image d'avant) ; deux images de suite identiques n'en font qu'une, de la somme de leurs durées.
+// Une tuile que le mouvement ne change jamais (le haut d'un mur dont seul le bas bouge) n'a pas de ligne.
+function animationRows(gids: readonly number[], motion: Motion, tiles: readonly Img[], add: (tile: Img) => number): TileAnimationRow[] {
+  const rendered = renderMotion(gids.map((gid) => tiles[gid - 1]!), motion);
+  return gids.flatMap((gid, part): TileAnimationRow[] => {
+    const known: Array<{ image: Img; gid: number }> = [{ image: tiles[gid - 1]!, gid }];
+    const frames: number[] = [];
+    const durations: number[] = [];
+    rendered.images[part]!.forEach((image, index) => {
+      let frame = known.find((k) => sameImage(k.image, image))?.gid;
+      if (frame === undefined) {
+        frame = add(image);
+        known.push({ image, gid: frame });
+      }
+      if (frames.length > 0 && frames[frames.length - 1] === frame) durations[durations.length - 1] = durations[durations.length - 1]! + rendered.durations[index]!;
+      else {
+        frames.push(frame);
+        durations.push(rendered.durations[index]!);
+      }
+    });
+    return frames.length > 1 ? [{ gid, frames, durations, phase: rendered.phase, step: rendered.step }] : [];
+  });
 }
 
 export function renderThemesSource(build: TilesetBuild): string {
@@ -190,6 +244,9 @@ export function renderThemesSource(build: TilesetBuild): string {
   const pool = POOL_NAMES.map((name) => `${name}: ${build.pool[name]}`).join(', ');
   const shopWalls = build.shopWalls
     .map((w) => `  { id: ${JSON.stringify(w.id)}, label: ${JSON.stringify(w.label)}, top: ${w.top}, bottom: ${w.bottom}, stem: ${w.stem}, price: ${w.price} },`)
+    .join('\n');
+  const animations = build.animations
+    .map((a) => `  { gid: ${a.gid}, frames: [${a.frames.join(', ')}], durations: [${a.durations.join(', ')}], phase: ${JSON.stringify(a.phase)}, step: ${a.step} },`)
     .join('\n');
   return `// Généré par \`pnpm --filter @bureau/client gen:assets\` (apps/client/scripts/assets/tileset.ts) : ne pas modifier à la main.
 
@@ -214,5 +271,11 @@ export const POOL_TILES = { ${pool} } as const;
 export const SHOP_WALL_THEMES = [
 ${shopWalls}
 ] as const;
+
+// Les tuiles qui bougent (apps/client/scripts/assets/tile-motion.ts) : pour une tuile de base, ses images (la base d'abord), la durée de chacune (ms), et
+// comment le mouvement se décale d'une case à l'autre (decor/tile-animations.ts).
+export const TILE_ANIMATIONS: ReadonlyArray<{ gid: number; frames: readonly number[]; durations: readonly number[]; phase: 'x' | 'y' | 'xy' | 'scatter' | 'sync'; step: number }> = [
+${animations}
+];
 `;
 }

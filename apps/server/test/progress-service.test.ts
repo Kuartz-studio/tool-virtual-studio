@@ -257,6 +257,20 @@ describe('la boutique', () => {
     expect(await service.buy('ana', 'creme')).toEqual({ ok: false, error: 'unknown_item' });
   });
 
+  test('acheter plusieurs éléments d\'un coup : tout ou rien ; ce qu\'on a déjà ne se repaie pas', async () => {
+    const { db, service } = await setup();
+    await grant(db, 'ana', 0, 1099);
+    expect(await service.buyMany('ana', ['statue-or', 'tapis-rare'])).toEqual({ ok: false, error: 'too_poor' });
+    expect(await service.mine('ana')).toMatchObject({ kuartzons: 1099, owned: [] });
+    expect(await service.buyMany('ana', ['statue-or', 'chaise-libre'])).toEqual({ ok: false, error: 'unknown_item' });
+    await grant(db, 'ana', 0, 1100);
+    expect(await service.buy('ana', 'tapis-rare')).toMatchObject({ ok: true, progress: { kuartzons: 800 } });
+    // Le tapis est déjà à elle : seule la statue se paie (800), et une seule fois.
+    expect(await service.buyMany('ana', ['statue-or', 'tapis-rare', 'statue-or'])).toMatchObject({ ok: true, progress: { kuartzons: 0 } });
+    expect((await service.mine('ana')).owned.sort()).toEqual(['statue-or', 'tapis-rare']);
+    expect(await service.buyMany('ana', ['statue-or'])).toMatchObject({ ok: true, progress: { kuartzons: 0 } });
+  });
+
   test('deux achats en même temps ne dépensent pas deux fois les mêmes kuartzons', async () => {
     const { db, service } = await setup();
     await grant(db, 'ana', 0, 900);

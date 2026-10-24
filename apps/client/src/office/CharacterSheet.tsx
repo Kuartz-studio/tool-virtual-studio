@@ -1,39 +1,109 @@
-import { authorityOf, levelOf, levelProgress, MAX_LEVEL, MISSION_TIERS, type CharacterStats } from '@bureau/shared';
+import { MAX_LEVEL, MISSION_TIERS, authorityOf, gradeOf, levelOf, levelProgress, type CharacterStats } from '@bureau/shared';
 import { useEffect, useState, type ReactNode } from 'react';
 import { fr, t } from '../i18n/fr';
 import { fetchStats } from '../lib/progress-api';
 import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
-import { AuthorityIcon, GamepadIcon, GivenIcon, KuartzonIcon, MissionsIcon, StreakIcon, TodosIcon, XpIcon } from './icons';
+import { AuthorityIcon, GamepadIcon, GivenIcon, KuartzonIcon, MemberSinceIcon, MissionsIcon, StreakIcon, TodosIcon, XpIcon } from './icons';
 import { LastSeen } from './LastSeen';
 import { LocalTimeCard } from './LocalTime';
 import { formatNumber, gradeLabel, tierLabel } from './progress-format';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
-import { LevelBadge, XpBar } from './ui/ProgressBits';
+import { LevelBadge } from './ui/ProgressBits';
 
-const memberSince = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' });
+// La date d'arrivée, courte : « 24 oct. 2026 ».
+const memberSince = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
 
-// Une case de la fiche : une icône, une valeur en grand, son nom dessous, et (facultatif) une phrase en infobulle.
-function Stat({ icon, value, label, hint }: { icon: ReactNode; value: ReactNode; label: string; hint?: string }) {
+// La barre de l'expérience a dix cases de cent XP.
+const SEGMENTS = 10;
+
+// L'expérience du niveau en cours, en cases comme sur la fiche d'un personnage de jeu de rôle : son nom et sa valeur, puis dix cases égales, pleines jusqu'à
+// la valeur (la dernière en partie).
+function XpSegments({ xp }: { xp: number }) {
+  const { into, size } = levelProgress(xp);
+  const step = size / SEGMENTS;
   return (
-    <div className="sheet-stat" title={hint}>
-      <span className="sheet-stat-icon" aria-hidden="true">
-        {icon}
+    <div className="sheet-bar">
+      <span className="sheet-bar-label" aria-hidden="true">
+        {fr.sheet.xpBar}
       </span>
-      <span className="sheet-stat-value">{value}</span>
-      <span className="sheet-stat-label">{label}</span>
+      <span
+        className="sheet-bar-track"
+        role="progressbar"
+        aria-label={fr.sheet.xpBar}
+        aria-valuemin={0}
+        aria-valuemax={size}
+        aria-valuenow={into}
+        aria-valuetext={t(fr.progress.xpBar, { into: formatNumber(into), size: formatNumber(size) })}
+      >
+        {Array.from({ length: SEGMENTS }, (_, index) => {
+          const fill = Math.min(1, Math.max(0, (into - index * step) / step));
+          return (
+            <span key={index} className="sheet-seg">
+              <span className="sheet-seg-fill" style={{ width: `${Math.round(fill * 1000) / 10}%` }} />
+            </span>
+          );
+        })}
+      </span>
+      <span className="sheet-bar-value" aria-hidden="true">
+        {t(fr.sheet.barValue, { value: formatNumber(into), max: formatNumber(size) })}
+      </span>
     </div>
   );
 }
 
-// Les caractéristiques d'une personne (GET /api/people/:id/stats), à la manière d'une fiche de personnage : son portrait, son niveau, son grade et la barre
-// de son XP, puis une grille (niveau, autorité, kuartzons pour soi, missions accomplies et confiées, tâches cochées, série de pointage, parties gagnées), ses missions
-// par difficulté, l'heure qu'il est chez elle (son fuseau horaire), et, pour soi, son journal (les derniers gains d'XP).
+// L'en-tête d'une fiche : le portrait, le nom, le grade et la pastille du niveau, puis l'expérience du niveau en cours et ce qu'il reste avant le suivant. La
+// carte prend, très légèrement, la teinte du grade (celle de la pastille). Le panneau Missions le pose au-dessus de ses onglets, avec sa propre progression ;
+// la fiche de quelqu'un d'autre l'a en tête. Le niveau n'est dit qu'ici.
+export function CharacterHero({ name, avatarKey, xp }: { name: string; avatarKey: string | null; xp: number }) {
+  const level = levelOf(xp);
+  const { into, size } = levelProgress(xp);
+  return (
+    <div className="sheet-hero" data-grade={gradeOf(level)}>
+      <div className="sheet-hero-id">
+        <AvatarPortrait avatarKey={avatarKey} name={name} size={52} />
+        <span className="sheet-hero-text">
+          <span className="sheet-hero-name">{name}</span>
+          <span className="sheet-hero-grade">{gradeLabel(level)}</span>
+        </span>
+        <LevelBadge level={level} size="large" />
+      </div>
+      <div className="sheet-hero-xp">
+        <XpSegments xp={xp} />
+        <p className="sheet-hero-next">{level >= MAX_LEVEL ? fr.progress.maxed : t(fr.progress.toNext, { left: formatNumber(size - into), next: level + 1 })}</p>
+      </div>
+    </div>
+  );
+}
+
+// La teinte d'une ligne : chaque donnée a la sienne, comme chaque caractéristique d'un personnage (styles.css, .sheet-row[data-hue]).
+type Hue = 'gold' | 'violet' | 'pink' | 'blue' | 'teal' | 'green' | 'orange' | 'rose' | 'slate';
+
+// Une ligne de la fiche : une pastille à la teinte de la donnée, son nom à gauche, sa valeur alignée à droite, et (facultatif) une phrase en infobulle.
+function Row({ hue, icon, label, value, hint }: { hue: Hue; icon: ReactNode; label: string; value: ReactNode; hint?: string }) {
+  return (
+    <div className="sheet-row" data-hue={hue} title={hint}>
+      <dt>
+        <span className="sheet-row-icon" aria-hidden="true">
+          {icon}
+        </span>
+        <span className="sheet-row-label">{label}</span>
+      </dt>
+      <dd>{value}</dd>
+    </div>
+  );
+}
+
+// Les caractéristiques d'une personne (GET /api/people/:id/stats), à la manière d'une fiche de personnage de jeu de rôle : l'en-tête (CharacterHero : portrait,
+// grade, niveau, expérience), puis ses données en lignes, le nom à gauche et la valeur à droite : l'essentiel d'abord, surligné (expérience totale, autorité,
+// kuartzons pour soi), puis son activité (missions accomplies et confiées, tâches cochées, série de pointage, parties gagnées, date d'arrivée) ; l'heure qu'il est
+// chez elle (son fuseau horaire), ses missions par difficulté, et, pour soi, son journal (les derniers gains d'XP). `hero` : faux quand le panneau montre déjà
+// l'en-tête (le panneau Missions, au-dessus de ses onglets).
 //
 // La fiche est relue quand sa progression change (pour soi : le magasin la tient ; pour un autre : son niveau annoncé), sans clignoter : la précédente reste
 // affichée pendant la lecture.
-export function CharacterSheet({ userId }: { userId: string }) {
+export function CharacterSheet({ userId, hero = true }: { userId: string; hero?: boolean }) {
   const selfId = useOfficeStore((state) => state.selfId);
   const mine = userId === selfId;
   // Ce qui fait relire la fiche : pour soi, son XP, ses kuartzons ou les missions qu'elle a confiées ; pour un autre, le niveau qu'on lui connaît.
@@ -61,40 +131,26 @@ export function CharacterSheet({ userId }: { userId: string }) {
   if (stats === null) return failed ? <Alert>{fr.sheet.loadFailed}</Alert> : <p className="people-loading">{fr.common.loading}</p>;
 
   const level = levelOf(stats.xp);
-  const { level: shown, into, size } = levelProgress(stats.xp);
   const maxTier = Math.max(1, ...stats.missionsByTier);
 
   return (
     <div className="sheet" data-user={stats.id}>
-      <div className="sheet-head">
-        <AvatarPortrait avatarKey={stats.avatarKey} name={stats.name} size={64} />
-        <div className="sheet-id">
-          <span className="sheet-name">{stats.name}</span>
-          <span className="sheet-grade">{gradeLabel(level)}</span>
-          <span className="sheet-since">{t(fr.sheet.memberSince, { date: memberSince.format(new Date(stats.memberSince)) })}</span>
-        </div>
-        <LevelBadge level={level} size="large" />
-      </div>
+      {hero && <CharacterHero name={stats.name} avatarKey={stats.avatarKey} xp={stats.xp} />}
 
-      <div className="sheet-xp">
-        <XpBar xp={stats.xp} />
-        <span className="sheet-xp-text">
-          {shown >= MAX_LEVEL ? fr.progress.maxed : t(fr.progress.toNext, { left: formatNumber(size - into), next: shown + 1 })}
-          {' · '}
-          {t(fr.progress.total, { xp: formatNumber(stats.xp) })}
-        </span>
-      </div>
+      <dl className="sheet-stats is-key" aria-label={fr.sheet.essentials}>
+        <Row hue="gold" icon={<XpIcon />} label={fr.sheet.totalXp} value={t(fr.progress.xp, { xp: formatNumber(stats.xp) })} />
+        <Row hue="violet" icon={<AuthorityIcon />} label={fr.sheet.authority} value={formatNumber(authorityOf(level))} hint={fr.sheet.authorityHint} />
+        {stats.kuartzons !== undefined && <Row hue="pink" icon={<KuartzonIcon />} label={fr.sheet.kuartzons} value={formatNumber(stats.kuartzons)} />}
+      </dl>
 
-      <div className="sheet-grid">
-        <Stat icon={<XpIcon />} value={`${level} / ${MAX_LEVEL}`} label={fr.sheet.level} />
-        <Stat icon={<AuthorityIcon />} value={formatNumber(authorityOf(level))} label={fr.sheet.authority} hint={fr.sheet.authorityHint} />
-        {stats.kuartzons !== undefined && <Stat icon={<KuartzonIcon />} value={formatNumber(stats.kuartzons)} label={fr.sheet.kuartzons} />}
-        <Stat icon={<MissionsIcon />} value={formatNumber(stats.missionsDone)} label={fr.sheet.missionsDone} />
-        <Stat icon={<GivenIcon />} value={formatNumber(stats.missionsGiven)} label={fr.sheet.missionsGiven} />
-        <Stat icon={<TodosIcon />} value={formatNumber(stats.todosDone)} label={fr.sheet.todosDone} />
-        <Stat icon={<StreakIcon />} value={stats.streak === 1 ? fr.sheet.streakDay : t(fr.sheet.streakDays, { count: stats.streak })} label={fr.sheet.streak} />
-        <Stat icon={<GamepadIcon />} value={t(fr.sheet.gamesValue, { won: stats.gamesWon, played: stats.gamesPlayed })} label={fr.sheet.games} />
-      </div>
+      <dl className="sheet-stats" aria-label={fr.sheet.activity}>
+        <Row hue="blue" icon={<MissionsIcon />} label={fr.sheet.missionsDone} value={formatNumber(stats.missionsDone)} />
+        <Row hue="teal" icon={<GivenIcon />} label={fr.sheet.missionsGiven} value={formatNumber(stats.missionsGiven)} />
+        <Row hue="green" icon={<TodosIcon />} label={fr.sheet.todosDone} value={formatNumber(stats.todosDone)} />
+        <Row hue="orange" icon={<StreakIcon />} label={fr.sheet.streak} value={stats.streak === 1 ? fr.sheet.streakDay : t(fr.sheet.streakDays, { count: stats.streak })} />
+        <Row hue="rose" icon={<GamepadIcon />} label={fr.sheet.games} value={t(fr.sheet.gamesValue, { won: stats.gamesWon, played: stats.gamesPlayed })} />
+        <Row hue="slate" icon={<MemberSinceIcon />} label={fr.sheet.memberSince} value={memberSince.format(new Date(stats.memberSince))} />
+      </dl>
 
       <div className="sheet-time">
         <LocalTimeCard timezone={stats.timezone} name={stats.name} self={mine} />
@@ -102,20 +158,24 @@ export function CharacterSheet({ userId }: { userId: string }) {
 
       <section className="sheet-section" aria-label={fr.sheet.byTier}>
         <h3>{fr.sheet.byTier}</h3>
-        <div className="sheet-tiers">
-          {MISSION_TIERS.map((tier) => {
-            const count = stats.missionsByTier[tier - 1] ?? 0;
-            return (
-              <span key={tier} className="sheet-tier" title={`${tierLabel(tier)} · ${t(fr.sheet.byTierBar, { tier, count })}`}>
-                <span className="sheet-tier-bar" style={{ height: `${Math.round((count / maxTier) * 100)}%` }} data-empty={count === 0 || undefined} />
-                <span className="sheet-tier-n" aria-hidden="true">
-                  {tier}
+        {stats.missionsDone === 0 ? (
+          <p className="people-empty">{fr.sheet.byTierEmpty}</p>
+        ) : (
+          <div className="sheet-tiers">
+            {MISSION_TIERS.map((tier) => {
+              const count = stats.missionsByTier[tier - 1] ?? 0;
+              return (
+                <span key={tier} className="sheet-tier" data-tier={tier} title={`${tierLabel(tier)} · ${t(fr.sheet.byTierBar, { tier, count })}`}>
+                  <span className="sheet-tier-bar" style={{ height: `${Math.round((count / maxTier) * 100)}%` }} data-empty={count === 0 || undefined} />
+                  <span className="sheet-tier-n" aria-hidden="true">
+                    {tier}
+                  </span>
+                  <span className="visually-hidden">{t(fr.sheet.byTierBar, { tier, count })}</span>
                 </span>
-                <span className="visually-hidden">{t(fr.sheet.byTierBar, { tier, count })}</span>
-              </span>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {stats.history && (

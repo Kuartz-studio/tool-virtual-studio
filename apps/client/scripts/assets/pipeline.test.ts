@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { CHARACTER_PARTS, DECOR_CATEGORIES, DECOR_ITEMS, FLOOR_THEMES, POOL_TILES, TILESET, WALL_THEMES, type DecorItem } from '@bureau/shared';
+import { CHARACTER_PARTS, DECOR_CATEGORIES, DECOR_ITEMS, FLOOR_THEMES, POOL_TILES, TILE_ANIMATIONS, TILESET, WALL_THEMES, type DecorItem } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { Img, readImage } from './image';
 import { ATLAS_MARGIN, packImages } from './pack';
@@ -114,6 +114,20 @@ describe('les assets rangés dans l\'appli', () => {
       expect(gid).toBeLessThanOrEqual(TILESET.tileCount);
       const index = gid - 1;
       expect(tiles.crop((index % TILESET.columns) * 32, Math.floor(index / TILESET.columns) * 32, 32, 32).isEmpty(), `tuile ${gid}`).toBe(false);
+    }
+  });
+
+  test('les images des sols et des murs qui bougent sont dans le jeu de tuiles, aucune n\'est vide, et chacune diffère de sa base', () => {
+    const tiles = readImage(join(ASSETS_DIR, 'tiles/office.png'));
+    const crop = (gid: number) => tiles.crop(((gid - 1) % TILESET.columns) * 32, Math.floor((gid - 1) / TILESET.columns) * 32, 32, 32);
+    expect(TILE_ANIMATIONS.length).toBeGreaterThan(0);
+    for (const animation of TILE_ANIMATIONS) {
+      const base = crop(animation.gid);
+      for (const frame of animation.frames.filter((gid) => gid !== animation.gid)) {
+        expect(frame, `tuile ${animation.gid}`).toBeGreaterThan(animation.gid);
+        expect(crop(frame).isEmpty(), `image ${frame}`).toBe(false);
+        expect(Buffer.from(crop(frame).data).equals(Buffer.from(base.data)), `image ${frame}`).toBe(false);
+      }
     }
   });
 

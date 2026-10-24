@@ -256,12 +256,12 @@
       "columns": 16,
       "firstgid": 1,
       "image": "../tiles/office.png",
-      "imageheight": 256,
+      "imageheight": 1440,
       "imagewidth": 512,
       "margin": 0,
       "name": "office",
       "spacing": 0,
-      "tilecount": 127,
+      "tilecount": 716,
       "tileheight": 32,
       "tilewidth": 32
     }

@@ -30,6 +30,10 @@
   --dnd: #e5484d;
   --danger: #e5484d;
   --danger-soft: #fdecec;
+
+  /* L'expérience : l'or des barres d'XP, et celui, plus foncé, des gains écrits (« +500 »), lisible sur le blanc. */
+  --xp: #f2b200;
+  --xp-ink: #9c6b00;
   --on-danger: #ffffff;
 
   --error-text: #9b1c1c;
@@ -104,6 +108,9 @@
   --accent-soft: rgb(255 197 107 / 14%);
   --accent-ink: #ffc56b;
   --on-accent: #15171c;
+
+  --xp: #ffc56b;
+  --xp-ink: #ffd54a;
 
   --danger-soft: rgb(229 72 77 / 16%);
   --error-text: #ff9a9d;
@@ -3186,6 +3193,20 @@ svg.lucide.icon-s {
   flex-direction: column;
 }
 
+/* Les sols et les murs qui bougent (sprites.tsx : une animation par tuile, en sauts d'image) : au survol d'une pastille ou d'une carte de la boutique, sur la
+   pastille choisie, et dans l'aperçu de son bureau ; jamais pour qui demande moins de mouvement. */
+.swatch:is(:hover, :focus-visible, [aria-pressed='true']) .swatch-tile[data-animated],
+.shop-card:is(:hover, :focus-within) .swatch-tile[data-animated],
+.desk-scene .swatch-tile[data-animated] {
+  animation: var(--tile-animation) var(--tile-cycle) step-end var(--tile-delay) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .swatch-tile[data-animated] {
+    animation: none !important;
+  }
+}
+
 .decor-panel {
   flex: 1;
   min-height: 0;
@@ -5958,15 +5979,16 @@ button.desk-place:disabled {
   box-shadow: inset 0 -3px 0 rgb(0 0 0 / 22%), inset 0 0 0 2px rgb(255 255 255 / 25%), 0 0 0 1px color-mix(in srgb, var(--grade) 70%, #000000);
 }
 
-.level-badge[data-grade='junior'] { --grade: #2fb35b; }
-.level-badge[data-grade='specialiste'] { --grade: #12a4a4; }
-.level-badge[data-grade='senior'] { --grade: #3b82f6; }
-.level-badge[data-grade='pilier'] { --grade: #4f46e5; }
-.level-badge[data-grade='mentor'] { --grade: #8b5cf6; }
-.level-badge[data-grade='stratege'] { --grade: #d946ef; }
-.level-badge[data-grade='architecte'] { --grade: #f97316; }
-.level-badge[data-grade='visionnaire'] { --grade: #e11d48; }
-.level-badge[data-grade='sage'] { --grade: #b45309; }
+/* Les teintes des grades, que prend aussi l'en-tête de la fiche (.sheet-hero). */
+:is(.level-badge, .sheet-hero)[data-grade='junior'] { --grade: #2fb35b; }
+:is(.level-badge, .sheet-hero)[data-grade='specialiste'] { --grade: #12a4a4; }
+:is(.level-badge, .sheet-hero)[data-grade='senior'] { --grade: #3b82f6; }
+:is(.level-badge, .sheet-hero)[data-grade='pilier'] { --grade: #4f46e5; }
+:is(.level-badge, .sheet-hero)[data-grade='mentor'] { --grade: #8b5cf6; }
+:is(.level-badge, .sheet-hero)[data-grade='stratege'] { --grade: #d946ef; }
+:is(.level-badge, .sheet-hero)[data-grade='architecte'] { --grade: #f97316; }
+:is(.level-badge, .sheet-hero)[data-grade='visionnaire'] { --grade: #e11d48; }
+:is(.level-badge, .sheet-hero)[data-grade='sage'] { --grade: #b45309; }
 .level-badge[data-grade='legende'] {
   --grade: #f2b700;
 
@@ -5974,7 +5996,7 @@ button.desk-place:disabled {
   box-shadow: inset 0 -1px 0 rgb(0 0 0 / 18%), 0 0 0 1px #b78400, 0 0 10px rgb(242 183 0 / 55%);
 }
 
-/* La barre de l'XP : faite sur le niveau en cours, de l'accent à l'or. */
+/* La barre de l'XP : faite sur le niveau en cours, à l'or de l'expérience (--xp), de jour comme de nuit. */
 .xp-bar {
   position: relative;
   height: 6px;
@@ -5986,7 +6008,7 @@ button.desk-place:disabled {
 .xp-bar-fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: linear-gradient(90deg, var(--accent), #f2b700);
+  background: var(--xp);
   border-radius: inherit;
   transition: width 600ms var(--ease-out);
 }
@@ -6067,59 +6089,11 @@ button.desk-place:disabled {
   outline-offset: -2px;
 }
 
-/* Le panneau Missions : sa progression en tête, puis les onglets. */
+/* Le panneau Missions : l'en-tête de sa fiche (.sheet-hero), puis les onglets. */
 .quest-panel .drawer-body {
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-
-.quest-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  background: var(--surface-soft);
-  border-radius: var(--radius-m);
-}
-
-.quest-card-text {
-  display: grid;
-  flex: 1;
-  gap: 5px;
-  min-width: 0;
-}
-
-.quest-card-title {
-  font-size: var(--text-m);
-  font-weight: var(--weight-semibold);
-}
-
-.quest-card-next {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
-.quest-card-side {
-  display: grid;
-  gap: 4px;
-  justify-items: end;
-}
-
-.quest-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-xs);
-  font-weight: var(--weight-semibold);
-  white-space: nowrap;
-  color: var(--text-soft);
-}
-
-.quest-chip svg.lucide {
-  width: 14px;
-  height: 14px;
-  color: #d29a00;
 }
 
 .quest-body {
@@ -6130,11 +6104,9 @@ button.desk-place:disabled {
 
 .quest-section h3 {
   margin: 0 0 6px;
-  font-size: var(--text-xs);
+  font-size: var(--text-s);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
-  text-transform: uppercase;
+  color: var(--text-soft);
 }
 
 .quest-hint {
@@ -6370,53 +6342,218 @@ button.desk-place:disabled {
   gap: 14px;
 }
 
-.sheet-head {
+/* L'en-tête d'une fiche (le haut du panneau Missions, la fiche de quelqu'un d'autre) : le portrait, le nom, le grade et la pastille du niveau, puis
+   l'expérience. La carte prend, à peine, la teinte du grade de la pastille ; le nom du grade aussi, assez foncé le jour (assez clair la nuit) pour se lire. */
+.sheet-hero {
+  --grade: #7c8597;
+
+  display: grid;
+  gap: 14px;
+  padding: 14px 14px 12px;
+  background: color-mix(in srgb, var(--grade) 7%, var(--surface));
+  border-radius: var(--radius-l);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--grade) 22%, transparent);
+}
+
+.office-ui[data-theme='night'] .sheet-hero {
+  background: color-mix(in srgb, var(--grade) 10%, var(--surface-soft));
+}
+
+.sheet-hero[data-grade='legende'] {
+  --grade: #f2b700;
+}
+
+.sheet-hero-id {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.sheet-id {
+.sheet-hero-text {
   display: grid;
   flex: 1;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
-.sheet-name {
+.sheet-hero-name {
   overflow: hidden;
   font-size: var(--text-l);
   font-weight: var(--weight-semibold);
+  line-height: 1.3;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sheet-grade {
+.sheet-hero-grade {
   font-size: var(--text-s);
   font-weight: var(--weight-semibold);
-  color: var(--accent-ink);
+  color: color-mix(in srgb, var(--grade) 62%, #000000);
 }
 
-.sheet-since {
+.office-ui[data-theme='night'] .sheet-hero-grade {
+  color: color-mix(in srgb, var(--grade) 65%, #ffffff);
+}
+
+.sheet-hero-xp {
+  display: grid;
+  gap: 6px;
+}
+
+.sheet-hero-next {
+  margin: 0;
   font-size: var(--text-xs);
   color: var(--text-muted);
 }
 
-.sheet-xp {
+/* La barre de l'expérience, en cases comme sur la fiche d'un personnage de jeu de rôle : le nom et la valeur, puis dix cases d'or sur toute la largeur, chacune
+   avec son ombre du bas, comme un bloc de jeu en pixels. Le creux des cases vides suit le fond (le texte, très atténué). */
+.sheet-bar {
   display: grid;
-  gap: 5px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'label value' 'track track';
+  align-items: baseline;
+  gap: 6px 10px;
 }
 
-.sheet-xp-text {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
+.sheet-bar-label {
+  grid-area: label;
+  font-size: var(--text-s);
+  color: var(--text-soft);
 }
 
-.sheet-grid {
+.sheet-bar-track {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  grid-area: track;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 3px;
 }
+
+.sheet-seg {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  border-radius: 3px;
+}
+
+.sheet-seg-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: var(--xp);
+  box-shadow: inset 0 -2px 0 rgb(0 0 0 / 12%);
+  transition: width 600ms var(--ease-out);
+}
+
+.sheet-bar-value {
+  grid-area: value;
+  font-size: var(--text-s);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* Les données, en lignes comme les caractéristiques d'un personnage : une pastille à la teinte de la donnée, son nom, sa valeur alignée à droite. L'essentiel
+   est surligné (chaque ligne sur son fond, rassemblées dans un cadre) ; l'activité suit, ses lignes séparées d'un filet. */
+.sheet-stats {
+  display: grid;
+  margin: 0;
+}
+
+.sheet-stats.is-key {
+  gap: 3px;
+  padding: 4px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.sheet-row {
+  --stat: var(--accent);
+
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+  padding: 0 8px;
+}
+
+.sheet-stats.is-key .sheet-row {
+  min-height: 42px;
+  padding: 0 10px 0 8px;
+  background: var(--surface);
+  border-radius: var(--radius-s);
+}
+
+.sheet-stats:not(.is-key) .sheet-row + .sheet-row {
+  border-top: 1px solid var(--border);
+}
+
+.sheet-row dt {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+
+.sheet-row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sheet-row-icon {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  color: var(--stat);
+  background: color-mix(in srgb, var(--stat) 14%, transparent);
+  border-radius: var(--radius-pill);
+}
+
+.sheet-row-icon svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+
+.sheet-row dd {
+  flex: none;
+  margin: 0;
+  font-size: var(--text-m);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.sheet-stats.is-key dd {
+  font-size: var(--text-l);
+}
+
+.sheet-row[data-hue='gold'] { --stat: #c98f00; }
+.sheet-row[data-hue='violet'] { --stat: #7c4dff; }
+.sheet-row[data-hue='pink'] { --stat: #c026d3; }
+.sheet-row[data-hue='blue'] { --stat: #2f6fe4; }
+.sheet-row[data-hue='teal'] { --stat: #0f949a; }
+.sheet-row[data-hue='green'] { --stat: #23974f; }
+.sheet-row[data-hue='orange'] { --stat: #e8670c; }
+.sheet-row[data-hue='rose'] { --stat: #dc1f4a; }
+.sheet-row[data-hue='slate'] { --stat: #5f6b80; }
+
+/* La nuit, des teintes plus claires sur le fond sombre. */
+.office-ui[data-theme='night'] .sheet-row[data-hue='gold'] { --stat: #fbbf24; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='violet'] { --stat: #a78bfa; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='pink'] { --stat: #e879f9; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='blue'] { --stat: #60a5fa; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='teal'] { --stat: #2dd4bf; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='green'] { --stat: #4ade80; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='orange'] { --stat: #fb923c; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='rose'] { --stat: #fb7185; }
+.office-ui[data-theme='night'] .sheet-row[data-hue='slate'] { --stat: #a3adbf; }
 
 /* L'heure chez elle : la carte du survol, posée à plat dans la fiche, de toute sa largeur. */
 .sheet-time .time-card {
@@ -6426,51 +6563,11 @@ button.desk-place:disabled {
   box-shadow: none;
 }
 
-.sheet-stat {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto;
-  column-gap: 8px;
-  align-items: center;
-  padding: 10px;
-  background: var(--surface-soft);
-  border-radius: var(--radius-m);
-}
-
-.sheet-stat-icon {
-  display: inline-grid;
-  grid-row: span 2;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  color: var(--accent);
-  background: var(--surface);
-  border-radius: 9px;
-}
-
-.sheet-stat-icon svg.lucide {
-  width: 16px;
-  height: 16px;
-}
-
-.sheet-stat-value {
-  font-size: var(--text-m);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.sheet-stat-label {
-  font-size: var(--text-xs);
-  color: var(--text-muted);
-}
-
 .sheet-section h3 {
   margin: 0 0 8px;
-  font-size: var(--text-xs);
+  font-size: var(--text-s);
   font-weight: var(--weight-semibold);
-  letter-spacing: 0.02em;
-  color: var(--text-muted);
-  text-transform: uppercase;
+  color: var(--text-soft);
 }
 
 /* Les missions accomplies par difficulté : dix colonnes, de la plus facile à la plus longue. */
@@ -6482,7 +6579,10 @@ button.desk-place:disabled {
   height: 72px;
 }
 
+/* Chaque colonne à la teinte de sa difficulté, comme les crans d'une mission (.tier-pips) : vert, bleu, violet, orange. */
 .sheet-tier {
+  --tier: #2fb35b;
+
   display: grid;
   grid-template-rows: 1fr auto;
   height: 100%;
@@ -6490,15 +6590,19 @@ button.desk-place:disabled {
   text-align: center;
 }
 
+.sheet-tier:is([data-tier='4'], [data-tier='5'], [data-tier='6']) { --tier: #3b82f6; }
+.sheet-tier:is([data-tier='7'], [data-tier='8']) { --tier: #8b5cf6; }
+.sheet-tier:is([data-tier='9'], [data-tier='10']) { --tier: #f97316; }
+
 .sheet-tier-bar {
   align-self: end;
   min-height: 3px;
-  background: linear-gradient(180deg, #f2b700, var(--accent));
+  background: var(--tier);
   border-radius: 4px 4px 2px 2px;
 }
 
 .sheet-tier-bar[data-empty] {
-  background: var(--surface-sunk);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .sheet-tier-n {
@@ -6506,9 +6610,9 @@ button.desk-place:disabled {
   color: var(--text-muted);
 }
 
+/* Le journal : une ligne par gain, séparées d'un filet comme celles de l'activité. */
 .sheet-history {
   display: grid;
-  gap: 4px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -6518,19 +6622,20 @@ button.desk-place:disabled {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  padding: 7px 0;
   font-size: var(--text-s);
+}
+
+.sheet-history li + li {
+  border-top: 1px solid var(--border);
 }
 
 .sheet-history-xp {
   flex: none;
-  min-width: 48px;
+  min-width: 4.5rem;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: #b07d00;
-}
-
-.office-ui[data-theme='night'] .sheet-history-xp {
-  color: #ffd54a;
+  color: var(--xp-ink);
 }
 
 .sheet-history-text {
@@ -7082,7 +7187,8 @@ button.desk-place:disabled {
   color: var(--error-text);
 }
 
-/* Dans le sélecteur de la déco : un élément de la boutique pas encore acheté porte un cadenas et son prix ; un clic propose de l'acheter, sous la grille. */
+/* Dans le sélecteur de la déco : un élément de la boutique pas encore acheté porte un cadenas et son prix, sur sa vignette et à côté de son nom sous la grille ;
+   il se pose quand même, à l'essai. */
 .decor-tile {
   position: relative;
 }
@@ -7107,8 +7213,27 @@ button.desk-place:disabled {
   height: 9px;
 }
 
-/* Les murs de la boutique : leur aperçu dans une carte (deux cases de large), en petit dans l'offre d'achat ; sous « Murs et sol », un mur pas encore acheté
-   porte le même cadenas et son prix. */
+.decor-peek-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.decor-peek-price {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: #3a2a00;
+  background: #ffd54a;
+}
+
+.decor-peek-price svg.lucide {
+  width: 9px;
+  height: 9px;
+}
+
+/* Les murs de la boutique : leur aperçu dans une carte (deux cases de large), en petit dans la caisse ; sous « Murs et sol », un mur pas encore acheté porte le
+   même cadenas et son prix. */
 .wall-preview {
   display: inline-flex;
 }
@@ -7121,20 +7246,169 @@ button.desk-place:disabled {
   position: relative;
 }
 
-.decor-offer {
-  flex: none;
+/* Au pied du panneau Décorer : ce que le brouillon essaie de la boutique, et son prix, sur un fond doré. */
+.decor-cart {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 6px 6px 6px;
-  background: linear-gradient(135deg, rgb(242 183 0 / 16%), transparent 70%), var(--surface-soft);
+  gap: 8px;
+  margin: 0;
+  padding: 7px 10px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  background: linear-gradient(135deg, rgb(242 183 0 / 22%), rgb(242 183 0 / 8%));
   border-radius: var(--radius-m);
 }
 
-.decor-offer .bar-button {
+.decor-cart span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.decor-cart svg.lucide,
+.decor-checkout-price svg.lucide,
+.decor-checkout-sum svg.lucide {
   flex: none;
-  min-height: 34px;
-  padding: 0 10px;
+  width: 14px;
+  height: 14px;
+  color: #d29a00;
+}
+
+/* La caisse (DecorCheckout) : la boîte des confirmations ; ses articles en liste (l'imagette, le nom et la taille, le prix, une croix pour le retirer), qui défile
+   s'ils sont nombreux ; le compte (total, bourse, ce qu'il en resterait ou ce qui manque) ; puis les trois boutons l'un sous l'autre, sur toute la largeur : rien
+   ne s'y serre, même dans une fenêtre étroite. */
+.decor-checkout {
+  width: min(380px, 100%);
+  padding: 22px;
+}
+
+.decor-checkout p {
+  margin: 0 0 14px;
+}
+
+.decor-checkout-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(232px, 36vh);
+  margin: 0 0 12px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.decor-checkout-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+}
+
+.decor-checkout-thumb {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: var(--radius-s);
+  box-shadow: var(--edge);
+}
+
+/* Deux cases de la face du mur (64 × 64) : à moitié, elles tiennent dans l'imagette. */
+.decor-checkout-thumb .wall-preview {
+  zoom: 0.5;
+}
+
+.decor-checkout-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.decor-checkout-name {
+  overflow: hidden;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.decor-checkout-meta {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+}
+
+.decor-checkout-price {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-s);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.decor-checkout-sum {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-m);
+}
+
+.decor-checkout-sum div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.decor-checkout-sum dt {
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+
+.decor-checkout-sum dd {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.decor-checkout-sum div:first-child dd {
+  font-size: var(--text-m);
+}
+
+.decor-checkout-sum [data-missing] :is(dt, dd) {
+  font-weight: 700;
+  color: var(--error-text);
+}
+
+.decor-checkout .decor-refused {
+  margin: -6px 0 12px;
+}
+
+.decor-checkout-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.decor-checkout-actions .bar-button {
+  width: 100%;
+  min-height: 40px;
 }
 
 /* Un niveau gagné : en grand, au milieu de l'écran, une carte qui jaillit dans une gerbe de rayons dorés, puis s'efface d'elle-même. */

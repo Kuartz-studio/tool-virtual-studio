@@ -4,6 +4,7 @@ import {
   Armchair,
   AudioLines,
   BookOpen,
+  CalendarDays,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -388,6 +389,11 @@ export function TodosIcon() {
 
 export function GivenIcon() {
   return <ClipboardList />;
+}
+
+// Un calendrier : depuis quand quelqu'un est membre du bureau (sa fiche).
+export function MemberSinceIcon() {
+  return <CalendarDays />;
 }
 
 const DECOR_CATEGORY_ICONS: Readonly<Record<string, LucideIcon>> = {

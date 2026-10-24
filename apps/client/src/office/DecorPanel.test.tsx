@@ -1,9 +1,8 @@
 import { DECOR_CATEGORIES, DEFAULT_DESK_DECOR, SHOP_WALL_THEMES, decorItem, decorItemsOf, type DeskAck, type DeskInfo, type MyProgress, type PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 import { fr, t } from '../i18n/fr';
-import * as progressApi from '../lib/progress-api';
 import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
 import { DecorPanel } from './DecorPanel';
@@ -329,55 +328,124 @@ describe('avec un bureau', () => {
   });
 });
 
-describe('les murs de la boutique', () => {
+describe('la boutique à l\'essai', () => {
   const wall = SHOP_WALL_THEMES[0];
+  const [statue, painting] = decorItemsOf('boutique');
   const progress = (over: Partial<MyProgress> = {}): MyProgress => ({ xp: 0, kuartzons: 0, streak: 0, todoXpLeft: 100, owned: [], ...over });
+  const lockedWall = () => screen.getByRole('button', { name: t(fr.decor.lockedWall, { name: wall.label, price: formatNumber(wall.price) }) });
+  // Le brouillon essaie le mur de la boutique et deux éléments de la boutique, sans rien d'acheté (le serveur valide les positions : ici, on ne l'imite pas).
+  const tryOn = () =>
+    act(() => {
+      const store = useOfficeStore.getState();
+      store.setDecorDraft({ ...store.decorEditor!.draft, wall: wall.id, items: [{ id: statue!.id, x: 1, y: 2 }, { id: painting!.id, x: 4, y: 0 }, { id: statue!.id, x: 5, y: 3 }] });
+    });
+  const checkout = () => screen.getByRole('alertdialog', { name: fr.decor.checkout.title });
 
-  test('sous « Murs et sol » : un mur pas encore acheté porte son prix ; un clic propose de l\'acheter, et l\'achat le met au brouillon', async () => {
+  test('un mur pas encore acheté porte son prix, et se choisit quand même : il habille la pièce, à l\'essai', async () => {
     const user = userEvent.setup();
     setup();
-    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 1000 })));
-    vi.mocked(progressApi.buyItem).mockResolvedValueOnce(progress({ kuartzons: 1000 - wall.price, owned: [wall.id] }));
     await user.click(screen.getByRole('tab', { name: fr.decor.tabs.themes }));
-    await user.click(screen.getByRole('button', { name: t(fr.decor.lockedWall, { name: wall.label, price: formatNumber(wall.price) }) }));
-    expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(DEFAULT_DESK_DECOR.wall);
-    await user.click(screen.getByRole('button', { name: t(fr.shop.buyHere, { price: formatNumber(wall.price) }) }));
-    expect(progressApi.buyItem).toHaveBeenCalledWith(wall.id);
+    await user.click(lockedWall());
     expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(wall.id);
-    expect(screen.getByRole('button', { name: wall.label }).getAttribute('aria-pressed')).toBe('true');
+    expect(lockedWall().getAttribute('aria-pressed')).toBe('true');
+    expect(screen.getByText(t(fr.decor.cart.one, { total: formatNumber(wall.price) }))).toBeTruthy();
   });
 
-  test('pas assez de kuartzons : le bouton d\'achat est éteint et dit combien il en manque', async () => {
+  test('un objet de la boutique, dans le sélecteur : un clic le prend en main comme les autres ; son prix est à côté de son nom', async () => {
     const user = userEvent.setup();
     setup();
-    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 100 })));
-    await user.click(screen.getByRole('tab', { name: fr.decor.tabs.themes }));
-    await user.click(screen.getByRole('button', { name: t(fr.decor.lockedWall, { name: wall.label, price: formatNumber(wall.price) }) }));
-    const buy = screen.getByRole('button', { name: t(fr.shop.buyHere, { price: formatNumber(wall.price) }) }) as HTMLButtonElement;
-    expect(buy.disabled).toBe(true);
-    expect(buy.title).toBe(t(fr.shop.missing, { count: formatNumber(wall.price - 100) }));
-  });
-
-  test('un objet de la boutique, dans le sélecteur : un clic propose de l\'acheter ; acheté, il est pris en main', async () => {
-    const user = userEvent.setup();
-    const item = decorItemsOf('boutique')[0]!;
-    setup();
-    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 20_000 })));
-    vi.mocked(progressApi.buyItem).mockResolvedValueOnce(progress({ kuartzons: 20_000 - item.price!, owned: [item.id] }));
     await user.click(screen.getByRole('button', { name: 'Boutique' }));
-    await user.click(within(screen.getByRole('group', { name: /^Éléments :/ })).getByRole('button', { name: item.name }));
-    expect(useOfficeStore.getState().decorEditor!.held).toBeNull();
-    await user.click(screen.getByRole('button', { name: t(fr.shop.buyHere, { price: formatNumber(item.price!) }) }));
-    expect(progressApi.buyItem).toHaveBeenCalledWith(item.id);
-    expect(useOfficeStore.getState().decorEditor!.held).toBe(item.id);
+    await user.click(within(screen.getByRole('group', { name: /^Éléments :/ })).getByRole('button', { name: statue!.name }));
+    expect(useOfficeStore.getState().decorEditor!.held).toBe(statue!.id);
+    const tag = document.querySelector('.decor-peek .decor-peek-price')!;
+    expect(tag.getAttribute('title')).toBe(t(fr.shop.locked, { price: formatNumber(statue!.price!) }));
+    expect(tag.textContent).toBe(formatNumber(statue!.price!));
   });
 
-  test('un mur acheté se choisit comme les autres', async () => {
+  test('Enregistrer avec des articles à l\'essai ouvre la caisse : chacun une fois, le total, la bourse et ce qu\'il en resterait ; rien n\'est envoyé', async () => {
+    const user = userEvent.setup();
+    const { socket } = setup();
+    const total = wall.price + statue!.price! + painting!.price!;
+    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: total + 50 })));
+    tryOn();
+    expect(screen.getByText(t(fr.decor.cart.many, { count: 3, total: formatNumber(total) }))).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: fr.decor.save }));
+    const lines = within(checkout()).getByRole('list', { name: fr.decor.checkout.lines });
+    expect(within(lines).getAllByRole('listitem').map((li) => li.querySelector('.decor-checkout-name')!.textContent)).toEqual([wall.label, statue!.name, painting!.name]);
+    expect(within(checkout()).getByText(fr.decor.checkout.total).nextElementSibling!.textContent).toBe(formatNumber(total));
+    expect(within(checkout()).getByText(fr.decor.checkout.after).nextElementSibling!.textContent).toBe(formatNumber(50));
+    expect(document.activeElement).toBe(within(checkout()).getByRole('button', { name: fr.decor.checkout.cancel }));
+    expect(socket.sentOf('desk:do')).toEqual([]);
+  });
+
+  test('« Acheter et enregistrer » : la déco part avec ce qu\'il faut acheter ; acceptée, elle est enregistrée et la caisse se ferme', async () => {
+    const user = userEvent.setup();
+    const { socket } = setup();
+    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 100_000 })));
+    tryOn();
+    await user.click(screen.getByRole('button', { name: fr.decor.save }));
+    await user.click(within(checkout()).getByRole('button', { name: fr.decor.checkout.buy }));
+    const draft = useOfficeStore.getState().decorEditor!.draft;
+    expect(socket.sentOf('desk:do')).toEqual([{ type: 'decor', floor: draft.floor, wall: wall.id, items: draft.items, buy: [wall.id, statue!.id, painting!.id] }]);
+    await ack(socket);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByText(fr.decor.checkout.saved)).toBeTruthy();
+    expect(useOfficeStore.getState().decorEditor!.saved.wall).toBe(wall.id);
+  });
+
+  test('pas assez de kuartzons : « Acheter et enregistrer » est éteint, la caisse dit combien il manque ; « Enregistrer sans ces articles » enregistre le reste', async () => {
+    const user = userEvent.setup();
+    const { socket } = setup();
+    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 100 })));
+    tryOn();
+    await user.click(screen.getByRole('button', { name: fr.decor.save }));
+    expect((within(checkout()).getByRole('button', { name: fr.decor.checkout.buy }) as HTMLButtonElement).disabled).toBe(true);
+    const total = wall.price + statue!.price! + painting!.price!;
+    expect(within(checkout()).getByText(fr.decor.checkout.missing).nextElementSibling!.textContent).toBe(formatNumber(total - 100));
+    // Le brouillon garde aussi un changement libre : c'est lui qui s'enregistre.
+    act(() => useOfficeStore.getState().patchDecorTheme({ floor: 'noyer' }));
+    await user.click(within(checkout()).getByRole('button', { name: fr.decor.checkout.without }));
+    expect(socket.sentOf('desk:do')).toEqual([{ type: 'decor', floor: 'noyer', wall: DEFAULT_DESK_DECOR.wall, items: [] }]);
+    await ack(socket);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(useOfficeStore.getState().decorEditor!.saved).toEqual({ floor: 'noyer', wall: DEFAULT_DESK_DECOR.wall, items: [] });
+  });
+
+  test('la croix d\'une ligne retire l\'article de la pièce ; plus rien à acheter, la caisse se ferme', async () => {
+    const user = userEvent.setup();
+    setup();
+    tryOn();
+    await user.click(screen.getByRole('button', { name: fr.decor.save }));
+    await user.click(within(checkout()).getByRole('button', { name: t(fr.decor.checkout.remove, { name: statue!.name }) }));
+    expect(useOfficeStore.getState().decorEditor!.draft.items).toEqual([{ id: painting!.id, x: 4, y: 0 }]);
+    await user.click(within(checkout()).getByRole('button', { name: t(fr.decor.checkout.remove, { name: wall.label }) }));
+    expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(DEFAULT_DESK_DECOR.wall);
+    await user.click(within(checkout()).getByRole('button', { name: t(fr.decor.checkout.remove, { name: painting!.name }) }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  test('le serveur refuse l\'achat (il manque des kuartzons) : la caisse le dit et reste ouverte ; Échap la ferme et garde l\'essai', async () => {
+    const user = userEvent.setup();
+    const { socket } = setup();
+    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 100_000 })));
+    tryOn();
+    await user.click(screen.getByRole('button', { name: fr.decor.save }));
+    await user.click(within(checkout()).getByRole('button', { name: fr.decor.checkout.buy }));
+    await ack(socket, { ok: false, error: 'too_poor' });
+    expect(within(checkout()).getByRole('alert').textContent).toBe(fr.desk.errors.too_poor);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(wall.id);
+    expect(screen.getByRole('heading', { name: fr.decor.title })).toBeTruthy();
+  });
+
+  test('un mur acheté se choisit comme les autres, et rien n\'est à l\'essai', async () => {
     const user = userEvent.setup();
     setup();
     act(() => useOfficeStore.getState().setProgress(progress({ owned: [wall.id] })));
     await user.click(screen.getByRole('tab', { name: fr.decor.tabs.themes }));
     await user.click(screen.getByRole('button', { name: wall.label }));
     expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(wall.id);
+    expect(screen.queryByText(t(fr.decor.cart.one, { total: formatNumber(wall.price) }))).toBeNull();
   });
 });

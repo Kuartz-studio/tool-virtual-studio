@@ -329,6 +329,7 @@ export const fr = {
       not_inside: 'Cette personne n\'est plus dans ton bureau.',
       not_locked: 'Cette porte est ouverte.',
       bad_decor: 'Cette déco n\'est pas valable.',
+      too_poor: 'Il te manque des kuartzons pour ces achats.',
       rate_limited: 'Trop d\'actions à la suite. Patiente un instant.',
       generic: 'Cette action a échoué. Réessaie.',
     },
@@ -698,8 +699,14 @@ export const fr = {
     title: 'Caractéristiques',
     titleOf: 'Caractéristiques de {name}',
     open: 'Voir les caractéristiques de {name}',
-    memberSince: 'Membre depuis le {date}',
-    level: 'Niveau',
+    // La barre en cases de l'en-tête : l'expérience du niveau en cours.
+    xpBar: 'Expérience',
+    barValue: '{value} / {max}',
+    // Les lignes : l'essentiel, surligné, puis l'activité.
+    essentials: 'L\'essentiel',
+    activity: 'Activité',
+    totalXp: 'Expérience totale',
+    memberSince: 'Membre depuis',
     authority: 'Autorité',
     authorityHint: 'Elle grandit à chaque niveau, et de plus en plus vite. Elle ne donne encore aucun pouvoir : à suivre…',
     kuartzons: 'Kuartzons',
@@ -713,6 +720,7 @@ export const fr = {
     gamesValue: '{won} sur {played}',
     byTier: 'Missions accomplies, par difficulté',
     byTierBar: 'Difficulté {tier} : {count}',
+    byTierEmpty: 'Aucune mission accomplie pour l\'instant.',
     history: 'Journal',
     historyEmpty: 'Rien pour l\'instant.',
     sources: { mission: 'Mission', todo: 'Tâche', checkin: 'Pointage', game: 'Jeu' },
@@ -775,7 +783,7 @@ export const fr = {
   shop: {
     toggle: 'Boutique',
     title: 'Boutique',
-    intro: 'Des pièces rares et des murs pour ta pièce. Achetés une fois, ils sont à toi : tu les poses depuis « Décorer mon bureau ».',
+    intro: 'Des pièces rares et des murs pour ta pièce. Essaie-les dans « Décorer mon bureau » ; achetés une fois, ils sont à toi.',
     wallet: 'Ta bourse',
     shelves: 'Rayons',
     shelf: { decor: 'Objets', walls: 'Murs' },
@@ -799,7 +807,6 @@ export const fr = {
     errors: { owned: 'Tu l\'as déjà.', too_poor: 'Pas assez de kuartzons.', unknown_item: 'Cet élément n\'est plus en vente.', failed: 'L\'achat n\'a pas pu se faire. Réessaie dans un instant.' },
     // Dans le sélecteur de la déco : un élément de la boutique qu'on n'a pas encore.
     locked: 'À la boutique : {price} kuartzons',
-    buyHere: 'Acheter pour {price} kuartzons',
   },
   sound: {
     // Le bouton du dock (une note de musique) et sa fenêtre, le juke-box : le même nom, qui est aussi l'infobulle.
@@ -905,9 +912,32 @@ export const fr = {
     drop: 'Lâcher',
     floorTitle: 'Sol',
     wallTitle: 'Murs',
-    // Les murs de la boutique, sous les autres : un mur pas encore acheté porte un cadenas et son prix, un clic propose de l'acheter.
+    // Les murs de la boutique, sous les autres : un mur pas encore acheté porte un cadenas et son prix, et se choisit quand même, à l'essai.
     shopWallsTitle: 'Murs de la boutique',
     lockedWall: '{name} : à la boutique, {price} kuartzons',
+    // Au pied du panneau : ce que le brouillon essaie de la boutique sans l'avoir acheté.
+    cart: {
+      one: '1 article de la boutique à l\'essai · {total} kuartzons',
+      many: '{count} articles de la boutique à l\'essai · {total} kuartzons',
+    },
+    // La caisse : « Enregistrer » avec des articles à l'essai.
+    checkout: {
+      title: 'Acheter pour enregistrer',
+      bodyOne: 'Ta déco essaie un article de la boutique : achète-le pour l\'enregistrer, ou enregistre sans lui.',
+      bodyMany: 'Ta déco essaie des articles de la boutique : achète-les pour l\'enregistrer, ou enregistre sans eux.',
+      lines: 'Articles à acheter',
+      remove: 'Retirer « {name} »',
+      total: 'Total',
+      wallet: 'Ta bourse',
+      after: 'Après l\'achat',
+      missing: 'Il te manque',
+      buy: 'Acheter et enregistrer',
+      buying: 'Achat…',
+      without: 'Enregistrer sans ces articles',
+      cancel: 'Annuler',
+      done: 'Acheté et posé : {names}.',
+      saved: 'Achats faits, déco enregistrée.',
+    },
     count: '{count} / {max} éléments',
     unsaved: 'Modifications non enregistrées.',
     save: 'Enregistrer',
@@ -928,7 +958,7 @@ export const fr = {
       overlap: 'Il y a déjà quelque chose ici.',
       blocks_door: 'Ça bloquerait ta porte.',
       unreachable: 'Un coin de la pièce deviendrait inaccessible.',
-      not_owned: 'Cet élément s\'achète à la boutique : achète-le avant de le poser.',
+      not_owned: 'Cet élément s\'achète à la boutique : achète-le pour enregistrer ta déco.',
     },
     credits: 'Illustrations : LimeZu (limezu.itch.io)',
   },
