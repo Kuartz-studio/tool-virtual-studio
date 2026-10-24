@@ -80,6 +80,7 @@ describe('join, leave, get, list', () => {
       media: { mic: false, cam: false, screen: false },
       activity: null,
       level: 0,
+      timezone: 'Europe/Paris',
     });
   });
 
@@ -91,6 +92,12 @@ describe('join, leave, get, list', () => {
     expect(world.setLevel('a', 13)).toBe(true);
     expect(world.get('a')?.level).toBe(13);
     expect(world.setLevel('inconnu', 3)).toBe(false);
+  });
+
+  test('join : le fuseau horaire donné, sinon celui de Paris', () => {
+    const { join } = setup();
+    expect(join('a', { timezone: 'Asia/Tokyo' }).timezone).toBe('Asia/Tokyo');
+    expect(join('b').timezone).toBe('Europe/Paris');
   });
 
   test('join accepte un joueur sans avatar choisi (avatarKey: null)', () => {
@@ -509,13 +516,13 @@ describe('statut, médias, profil', () => {
     expect(world.get('a')?.media.mic).toBe(true);
   });
 
-  test('setProfile change le nom et l\'avatar', () => {
+  test('setProfile change le nom, l\'avatar et le fuseau horaire (sans fuseau, il garde le sien)', () => {
     const { world, join } = setup();
     join('a');
-    world.setProfile('a', { name: 'Alice', avatarKey: 'p.02' });
-    expect(world.get('a')).toMatchObject({ name: 'Alice', avatarKey: 'p.02' });
+    world.setProfile('a', { name: 'Alice', avatarKey: 'p.02', timezone: 'America/Montreal' });
+    expect(world.get('a')).toMatchObject({ name: 'Alice', avatarKey: 'p.02', timezone: 'America/Montreal' });
     world.setProfile('a', { name: 'Alice B.', avatarKey: null });
-    expect(world.get('a')).toMatchObject({ name: 'Alice B.', avatarKey: null });
+    expect(world.get('a')).toMatchObject({ name: 'Alice B.', avatarKey: null, timezone: 'America/Montreal' });
   });
 
   test('un identifiant inconnu est ignoré sans erreur, et ne crée pas de souvenir', () => {

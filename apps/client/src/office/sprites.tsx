@@ -1,4 +1,4 @@
-import { CHARACTER_PARTS, TILE_SIZE, TILESET, decorAtlasUrl, type DecorItem } from '@bureau/shared';
+import { CHARACTER_PARTS, TILE_SIZE, TILESET, decorAtlasOf, decorAtlasUrl, type DecorItem } from '@bureau/shared';
 import type { CSSProperties } from 'react';
 
 // Les images du pack dans l'interface : on ne charge jamais une image par élément, on montre un morceau de l'atlas (background-position), à
@@ -21,7 +21,7 @@ export function DecorThumb({ item, box = 56 }: { item: DecorItem; box?: number }
   const style: CSSProperties = {
     width: w,
     height: h,
-    backgroundImage: `url(${decorAtlasUrl(item.cat)})`,
+    backgroundImage: `url(${decorAtlasUrl(decorAtlasOf(item))})`,
     backgroundPosition: `-${item.fx}px -${item.fy}px`,
     transform: `scale(${fit(w, h, box)})`,
   };

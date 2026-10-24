@@ -155,7 +155,7 @@ export function createPresence(d: PresenceDeps) {
   // Une vraie arrivée : à la position enregistrée (ou à l'apparition, chooseSpawn), avec le statut retenu. Pendant les lectures,
   // la socket peut être remplacée par un autre onglet, coupée par un retrait, ou fermée : elle n'entre alors pas.
   async function arrive(socket: TypedSocket): Promise<void> {
-    const { userId, name, avatarKey } = socket.data;
+    const { userId, name, avatarKey, timezone } = socket.data;
     try {
       await saves;   // un départ de cette personne est peut-être en cours d'écriture
       const [saved, disabled, chatHistory, , , progress] = await Promise.all([
@@ -176,11 +176,11 @@ export function createPresence(d: PresenceDeps) {
       const arrival = !d.world.get(userId);
       if (arrival) {
         // Un bureau d'abord, s'il lui en faut un : son avatar peut apparaître dedans, et les autres le voient dans l'init.
-        await d.desks.assign(userId, name);
+        await d.desks.assign(userId, name, timezone);
         if (halted || !socket.connected) return;
         const spot = chooseSpawn(d.map, saved, d.busyZones(), (x, y) => d.desks.canStandAt(userId, x, y));
         const dir = saved && spot.x === saved.x && spot.y === saved.y ? saved.dir : DEFAULT_DIR;
-        d.world.join({ id: userId, name, avatarKey, x: spot.x, y: spot.y, dir, status: d.world.rememberedStatus(userId), level: levelOf(progress?.xp ?? 0) });
+        d.world.join({ id: userId, name, avatarKey, x: spot.x, y: spot.y, dir, status: d.world.rememberedStatus(userId), level: levelOf(progress?.xp ?? 0), timezone });
       }
       welcome(socket, arrival, chatHistory, progress);
     } catch (err) {

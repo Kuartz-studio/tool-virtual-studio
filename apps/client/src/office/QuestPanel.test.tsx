@@ -115,6 +115,7 @@ describe('le panneau Missions', () => {
       name: 'Bob',
       avatarKey: null,
       memberSince: '2026-10-19T08:00:00.000Z',
+      timezone: 'Europe/Paris',
       xp: 12_340,
       missionsDone: 3,
       missionsByTier: [0, 0, 0, 0, 2, 0, 0, 0, 0, 1],

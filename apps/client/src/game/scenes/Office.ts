@@ -23,6 +23,7 @@ import { deskTitle } from '../../office/desks';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { selectDeskOf, useOfficeStore } from '../../state/office-store';
 import { AutoWalk, cancelOnMoveKey, planDeskWalk } from '../auto-walk';
+import { AVATAR_HEAD_PX, avatarAt } from '../avatar-hover';
 import { avatarObjectName } from '../avatars';
 import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
@@ -128,6 +129,9 @@ export class Office extends Scene {
   private readonly simDrag = __SIM__ ? new SimDrag(this) : undefined;
   // La zone de collision d'un avatar tient-elle là ? Pour borner l'extrapolation des autres avatars (SnapshotBuffer).
   private readonly bodyFits = (x: number, y: number): boolean => avatarBodyFits(this.officeMap, x, y);
+  // L'avatar que la souris survole (`avatar:hover`), et si elle est sur le jeu (pas sur l'interface, ni hors de la page).
+  private hoveredAvatar: string | null = null;
+  private pointerInGame = false;
 
   constructor(private readonly mapKey: string) {
     super('Office');
@@ -341,6 +345,20 @@ export class Office extends Scene {
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
+    // La souris bouge sur le canevas, ou le quitte (pour un panneau, un dock posés dessus, ou hors de la page) : hors de lui, elle ne survole aucun
+    // avatar. Les événements du canevas lui-même, et non ceux de Phaser, qui suit aussi la souris au-dessus de l'interface : un avatar caché sous le
+    // panneau Personnes aurait sa carte. Un mouvement, et pas seulement l'entrée : la souris est peut-être déjà sur le canevas quand la scène démarre.
+    // Au doigt, pas de survol.
+    const canvas = this.game.canvas;
+    const pointerIn = (event: PointerEvent) => {
+      this.pointerInGame = event.pointerType !== 'touch';
+    };
+    const pointerOut = () => {
+      this.pointerInGame = false;
+      this.hoverAvatars();
+    };
+    canvas.addEventListener('pointermove', pointerIn);
+    canvas.addEventListener('pointerleave', pointerOut);
 
     // SHUTDOWN puis DESTROY (le jeu détruit) : la seconde fois, il ne reste rien à retirer.
     const stop = () => {
@@ -357,6 +375,10 @@ export class Office extends Scene {
       unbindDrag();
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
+      canvas.removeEventListener('pointermove', pointerIn);
+      canvas.removeEventListener('pointerleave', pointerOut);
+      this.pointerInGame = false;
+      this.hoverAvatars();
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
       for (const lightSwitch of this.switches.splice(0)) lightSwitch.destroy();
       unbindCoffee();
@@ -399,6 +421,8 @@ export class Office extends Scene {
     else if (autoDirection !== null) this.player.step(autoDirection);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     this.player.tick(now);
+    // Les horloges murales : l'heure du navigateur (Date.now), et non celle du jeu, qui ne dit pas l'heure qu'il est.
+    this.decorLayer.tickClocks(Date.now());
     this.shakeMachine(now);
     this.teleportEffect.tick(now);
     this.progressEffects.tick(now);
@@ -414,6 +438,30 @@ export class Office extends Scene {
     }
     // Les portes s'ouvrent devant qui s'en approche, avec les positions de cette image.
     this.deskLayer.tick();
+    this.hoverAvatars();
+  }
+
+  // Quel avatar la souris survole-t-elle, à cette image (les avatars bougent, la caméra aussi) ? Quand cela change, l'interface le sait (`avatar:hover`),
+  // avec le haut de sa tête en pixels de la page : elle y pose la carte de l'heure qu'il est chez cette personne. Bouton enfoncé (on fait glisser la
+  // carte), ou autres avatars cachés : aucun.
+  private hoverAvatars(): void {
+    let id: string | null = null;
+    // La souris n'est lue que sur le jeu : hors de lui (et à l'arrêt de la scène), il n'y a rien à lire.
+    if (this.pointerInGame && this.othersVisible) {
+      const pointer = this.input.activePointer;
+      if (!pointer.isDown) id = avatarAt(this.cameras.main.getWorldPoint(pointer.x, pointer.y), [...this.remotes.values()].map((remote) => ({ id: remote.id, ...remote.position })));
+    }
+    if (id === this.hoveredAvatar) return;
+    this.hoveredAvatar = id;
+    const remote = id === null ? undefined : this.remotes.get(id);
+    if (id === null || !remote) {
+      emitOnBus(EventBus, 'avatar:hover', null);
+      return;
+    }
+    const { worldView, zoom } = this.cameras.main;
+    const canvas = this.game.canvas.getBoundingClientRect();
+    const head = { x: remote.position.x, y: remote.position.y - AVATAR_HEAD_PX };
+    emitOnBus(EventBus, 'avatar:hover', { id, x: canvas.left + (head.x - worldView.x) * zoom, y: canvas.top + (head.y - worldView.y) * zoom });
   }
 
   // Après la physique de l'image (POST_UPDATE, où Arcade, abonné avant nous, vient de déplacer l'avatar) : l'état de l'avatar local

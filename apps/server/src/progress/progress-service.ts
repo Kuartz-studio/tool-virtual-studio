@@ -14,6 +14,7 @@ import {
   missionXp,
   nextStreak,
   previousWorkday,
+  timezoneOrDefault,
   type CharacterStats,
   type MissionGivePayload,
   type MissionTier,
@@ -31,8 +32,6 @@ import type { Db } from '../db/client';
 import { gameRating, progress, shopPurchase, task, user, xpEvent } from '../db/schema';
 import { oneAtATimePerKey } from '../one-at-a-time';
 
-// Le fuseau de tout le monde, tant que la personne n'en a pas d'autre.
-const DEFAULT_TIME_ZONE = 'Europe/Paris';
 // Les tâches fermées (faites, rendues, retirées) restent dans les listes une semaine : de quoi voir ce qu'on vient de faire, sans traîner tout l'historique.
 const CLOSED_KEPT_MS = 7 * 24 * 3600_000;
 // Au plus tant de tâches fermées dans une liste, et tant de lignes dans le journal d'XP des caractéristiques.
@@ -42,7 +41,8 @@ const HISTORY_LISTED = 30;
 export interface ProgressServiceOptions {
   /** L'heure du mur, en ms depuis 1970 : Date.now par défaut (les tests en passent une réglée à leur main). */
   clock?: () => number;
-  /** Le fuseau de chaque personne : ses plafonds du jour et sa série de pointage s'y comptent. Europe/Paris par défaut. */
+  /** Le fuseau de chaque personne : ses plafonds du jour et sa série de pointage s'y comptent. Par défaut, celui de son compte (`user.timezone`, Paris tant
+   * qu'elle n'en a pas choisi d'autre). */
   timeZoneOf?: (userId: string) => Promise<string>;
   /** Le prix d'un élément de la boutique, en écus (undefined : il n'y est pas). Par défaut, celui de la banque d'éléments (DecorItem.price). */
   priceOf?: (itemId: string) => number | undefined;
@@ -107,7 +107,12 @@ export class ProgressService {
     options: ProgressServiceOptions = {},
   ) {
     this.clock = options.clock ?? Date.now;
-    this.timeZoneOf = options.timeZoneOf ?? (async () => DEFAULT_TIME_ZONE);
+    this.timeZoneOf =
+      options.timeZoneOf ??
+      (async (userId) => {
+        const [row] = await db.select({ timezone: user.timezone }).from(user).where(eq(user.id, userId));
+        return timezoneOrDefault(row?.timezone);
+      });
     this.priceOf = options.priceOf ?? ((itemId) => decorItem(itemId)?.price);
   }
 
@@ -338,7 +343,7 @@ export class ProgressService {
   // membre.
   async stats(userId: string, viewerId: string): Promise<CharacterStats | null> {
     const [who] = await this.db
-      .select({ id: user.id, name: user.name, avatarKey: user.avatarKey, createdAt: user.createdAt })
+      .select({ id: user.id, name: user.name, avatarKey: user.avatarKey, createdAt: user.createdAt, timezone: user.timezone })
       .from(user)
       .where(and(eq(user.id, userId), isNull(user.disabledAt)));
     if (!who) return null;
@@ -361,6 +366,7 @@ export class ProgressService {
       name: who.name,
       avatarKey: who.avatarKey,
       memberSince: who.createdAt.toISOString(),
+      timezone: timezoneOrDefault(who.timezone),
       xp: row?.xp ?? 0,
       missionsDone: missionsByTier.reduce((a, b) => a + b, 0),
       missionsByTier,

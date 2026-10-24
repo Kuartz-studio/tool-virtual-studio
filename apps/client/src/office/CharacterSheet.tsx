@@ -6,6 +6,7 @@ import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { AuthorityIcon, EcusIcon, GamepadIcon, GivenIcon, MissionsIcon, StreakIcon, TodosIcon, XpIcon } from './icons';
 import { LastSeen } from './LastSeen';
+import { LocalTimeCard } from './LocalTime';
 import { formatNumber, gradeLabel, tierLabel } from './progress-format';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
@@ -28,7 +29,7 @@ function Stat({ icon, value, label, hint }: { icon: ReactNode; value: ReactNode;
 
 // Les caractéristiques d'une personne (GET /api/people/:id/stats), à la manière d'une fiche de personnage : son portrait, son niveau, son grade et la barre
 // de son XP, puis une grille (niveau, autorité, écus pour soi, missions accomplies et confiées, tâches cochées, série de pointage, parties gagnées), ses missions
-// par difficulté, et, pour soi, son journal (les derniers gains d'XP).
+// par difficulté, l'heure qu'il est chez elle (son fuseau horaire), et, pour soi, son journal (les derniers gains d'XP).
 //
 // La fiche est relue quand sa progression change (pour soi : le magasin la tient ; pour un autre : son niveau annoncé), sans clignoter : la précédente reste
 // affichée pendant la lecture.
@@ -91,6 +92,10 @@ export function CharacterSheet({ userId }: { userId: string }) {
         <Stat icon={<TodosIcon />} value={formatNumber(stats.todosDone)} label={fr.sheet.todosDone} />
         <Stat icon={<StreakIcon />} value={stats.streak === 1 ? fr.sheet.streakDay : t(fr.sheet.streakDays, { count: stats.streak })} label={fr.sheet.streak} />
         <Stat icon={<GamepadIcon />} value={t(fr.sheet.gamesValue, { won: stats.gamesWon, played: stats.gamesPlayed })} label={fr.sheet.games} />
+      </div>
+
+      <div className="sheet-time">
+        <LocalTimeCard timezone={stats.timezone} name={stats.name} self={mine} />
       </div>
 
       <section className="sheet-section" aria-label={fr.sheet.byTier}>

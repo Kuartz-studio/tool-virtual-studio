@@ -14,9 +14,9 @@ describe('createServerEvents', () => {
     expect(calls).toEqual(['premier u1', 'second u1']);
     expect(profile).not.toHaveBeenCalled();
 
-    events.emit('profile:changed', { id: 'u1', name: 'Léa', avatarKey: null });
+    events.emit('profile:changed', { id: 'u1', name: 'Léa', avatarKey: null, timezone: 'Europe/Paris' });
     expect(profile).toHaveBeenCalledTimes(1);
-    expect(profile).toHaveBeenCalledWith({ id: 'u1', name: 'Léa', avatarKey: null });
+    expect(profile).toHaveBeenCalledWith({ id: 'u1', name: 'Léa', avatarKey: null, timezone: 'Europe/Paris' });
     expect(calls).toHaveLength(2);
   });
 
@@ -60,7 +60,7 @@ describe('createServerEvents', () => {
       throw failure;
     });
 
-    events.emit('profile:changed', { id: 'u1', name: 'Léa', avatarKey: null });
+    events.emit('profile:changed', { id: 'u1', name: 'Léa', avatarKey: null, timezone: 'Europe/Paris' });
     await vi.waitFor(() => expect(onError).toHaveBeenCalledWith(failure));
   });
 

@@ -29,6 +29,8 @@ const TVS = ['tv-10-3', 'tv-10-1'];
 // Les panneaux de sortie : vert vif et citron, la flèche à droite et (l'image retournée) à gauche.
 const EXIT_SIGNS = ['mu-14-111', 'mu-14-111-m', 'mu-15-111', 'mu-15-111-m'];
 const FIREPLACE = 'lr-4-24';
+// Les horloges murales qui luisent : l'horloge LED (ses chiffres rouges) et l'horloge de gare (son cadran rétroéclairé).
+const GLOWING_CLOCKS = ['horloge-led', 'horloge-gare'];
 
 // La lumière que donne cet élément, posé n'importe où.
 const sourceOf = (id: string) => sourcesFromItems([placed(id, 0, 0)])[0]!;
@@ -79,13 +81,24 @@ describe('LIGHT_PROFILES', () => {
 });
 
 describe('LIGHT_EMITTERS', () => {
-  test('les lampes, la cheminée, les écrans, les télévisions et les panneaux de sortie éclairent, et rien d\'autre', () => {
+  test('les lampes, la cheminée, les écrans, les télévisions, les panneaux de sortie et deux horloges éclairent, et rien d\'autre', () => {
     for (const id of LAMPS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('lamp');
     expect(LIGHT_EMITTERS[FIREPLACE]?.kind).toBe('fire');
     for (const id of SCREENS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('screen');
     for (const id of TVS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('tv');
     for (const id of EXIT_SIGNS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('exit');
-    expect(Object.keys(LIGHT_EMITTERS)).toHaveLength(LAMPS.length + 1 + SCREENS.length + TVS.length + EXIT_SIGNS.length);
+    for (const id of GLOWING_CLOCKS) expect(LIGHT_EMITTERS[id]?.kind, id).toBe('glow');
+    expect(Object.keys(LIGHT_EMITTERS)).toHaveLength(LAMPS.length + 1 + SCREENS.length + TVS.length + EXIT_SIGNS.length + GLOWING_CLOCKS.length);
+  });
+
+  test('la nuit, l\'horloge LED luit du rouge de ses chiffres et l\'horloge de gare à peine : moins qu\'une lampe, sans vaciller ; la ronde et la pendule n\'éclairent pas', () => {
+    const led = sourceOf('horloge-led');
+    expect((led.color >> 16) & 255).toBeGreaterThan(led.color & 255);
+    for (const id of GLOWING_CLOCKS) {
+      expect(sourceOf(id).strength, id).toBeLessThan(sourceOf('of-11-15').strength);
+      expect(sourceOf(id).flicker, id).toBeUndefined();
+    }
+    expect(sourcesFromItems([placed('horloge-ronde', 0, 0), placed('horloge-balancier', 0, 0)])).toEqual([]);
   });
 
   test('un panneau de sortie donne un petit halo vert, plus fort qu\'une LED et plus faible qu\'une lampe, qui scintille', () => {

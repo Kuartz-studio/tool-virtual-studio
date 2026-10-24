@@ -112,9 +112,12 @@ export type MusicSetPayload = z.infer<typeof musicSetSchema>;
 export interface ActivityState extends ActivityInput { id: string }
 // `activity` : l'état d'activité qu'elle a choisi (absent ou null : un statut ordinaire, `status`). Il passe avant `status` pour le point
 // de couleur et le texte. `speaking` : elle parle en ce moment (absent : non), pour la bulle au-dessus de son avatar. `boost` : ce qu'il lui reste
-// de café, en ms (absent : pas de café), pour ceux qui arrivent pendant qu'elle en a un.
-// `level` : son niveau (absent : 0).
-export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean; boost?: number; level?: number }
+// de café, en ms (absent : pas de café), pour ceux qui arrivent pendant qu'elle en a un. `level` : son niveau (absent : 0). `timezone` : son fuseau
+// horaire (un nom IANA, timezone.ts), que le serveur donne toujours ; absent (un joueur fabriqué par un test), c'est l'heure de Paris (timezoneOrDefault).
+export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean; boost?: number; level?: number; timezone?: string }
+// Le profil d'une personne tel que PATCH /api/me le rend et que `profile:changed` le diffuse : tout ce qu'elle règle d'elle-même, ensemble (le client
+// remplace le tout).
+export interface PublicProfile { id: string; name: string; avatarKey: AvatarKey | null; timezone: string }
 // Entrée du calcul des groupes. `excluded` : hors de toute conversation (un état d'activité sans entendre ni être entendu), comme en Ne pas déranger.
 export interface ProximityPlayer { id: string; x: number; y: number; moving: boolean; status: Status; excluded?: boolean }
 export interface ChatMessage { id: string; channel: ChatChannel; userId: string; name: string; text: string; sentAt: string }
@@ -135,6 +138,9 @@ export interface DeskInfo {
   // Sa déco enregistrée ne tient plus dans la pièce (la carte a changé : plus petite, porte de l'autre côté) : `items` est alors le poste par défaut, et la déco reste en base, que
   // l'enregistrement d'une nouvelle remplacerait. Absent sinon.
   decorUnfit?: true;
+  // Le fuseau horaire de son occupant (un nom IANA) : les horloges murales de la pièce donnent son heure, qu'il soit là ou non. Une place occupée le dit
+  // toujours ; une place libre ne l'a pas, et ses horloges sont à l'heure de Paris.
+  ownerTimezone?: string;
 }
 // Quelqu'un que le propriétaire a exclu de son bureau.
 export interface DeskBan { id: string; name: string }
@@ -198,7 +204,7 @@ export interface ServerToClientEvents {
   'activity:changed': (p: { id: string; activity: ActivityState | null }) => void;
   'media:changed': (p: { id: string; media: MediaState }) => void;
   'speaking:changed': (p: { id: string; speaking: boolean }) => void;   // à tout le bureau : quelqu'un se met à parler, ou se tait (la bulle au-dessus de lui)
-  'profile:changed': (p: { id: string; name: string; avatarKey: AvatarKey | null }) => void;
+  'profile:changed': (p: PublicProfile) => void;          // à tout le bureau : quelqu'un a changé son nom, son personnage ou son fuseau horaire (le profil entier)
   'chat:message': (p: ChatMessage) => void;
   'desk:changed': (p: DeskInfo) => void;                  // à tout le bureau : une place a changé de main, de nom ou de verrou
   'desk:access': (p: { closed: string[] }) => void;       // à une personne : les places dont la porte lui est fermée

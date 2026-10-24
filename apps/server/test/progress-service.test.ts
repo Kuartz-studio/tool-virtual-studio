@@ -174,6 +174,18 @@ describe('le pointage', () => {
     expect(await service.checkIn('ana')).not.toBeNull();
     expect(await service.checkIn('bob')).toBeNull();
   });
+
+  test('par défaut, le fuseau est celui du compte (user.timezone, réglé dans le menu « Moi »)', async () => {
+    const { db, clock } = await setup();
+    await db.update(user).set({ timezone: 'America/Montreal' }).where(eq(user.id, 'bob'));
+    const service = new ProgressService(db, { clock: () => clock.t });
+    clock.t = Date.parse('2026-10-22T21:00:00Z');   // jeudi 23 h à Paris, 17 h à Montréal
+    await service.checkIn('ana');
+    await service.checkIn('bob');
+    clock.t = Date.parse('2026-10-22T23:30:00Z');   // vendredi 1 h 30 à Paris, jeudi 19 h 30 à Montréal
+    expect(await service.checkIn('ana')).not.toBeNull();
+    expect(await service.checkIn('bob')).toBeNull();
+  });
 });
 
 describe('les parties de jeu', () => {
@@ -230,7 +242,7 @@ describe('les caractéristiques', () => {
     await service.checkIn('bob');
 
     const seenByAna = await service.stats('bob', 'ana');
-    expect(seenByAna).toMatchObject({ id: 'bob', name: 'Bob', xp: 6000 + TODO_XP + CHECKIN_XP, missionsDone: 3, missionsGiven: 1, todosDone: 1, streak: 1, gamesPlayed: 0, gamesWon: 0 });
+    expect(seenByAna).toMatchObject({ id: 'bob', name: 'Bob', timezone: 'Europe/Paris', xp: 6000 + TODO_XP + CHECKIN_XP, missionsDone: 3, missionsGiven: 1, todosDone: 1, streak: 1, gamesPlayed: 0, gamesWon: 0 });
     expect(seenByAna!.missionsByTier).toEqual([0, 0, 0, 0, 2, 0, 0, 0, 0, 1]);
     expect(seenByAna).not.toHaveProperty('ecus');
     expect(seenByAna).not.toHaveProperty('history');

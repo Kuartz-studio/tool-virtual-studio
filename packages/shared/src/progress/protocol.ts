@@ -98,6 +98,8 @@ export interface CharacterStats {
   name: string;
   avatarKey: string | null;
   memberSince: string;
+  // Son fuseau horaire (un nom IANA) : l'heure qu'il est chez elle, sur sa fiche.
+  timezone: string;
   xp: number;
   missionsDone: number;
   // Les missions faites, par difficulté : missionsByTier[0] pour la difficulté 1… [9] pour la 10.

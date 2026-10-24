@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p scripts",
     "gen:assets": "tsx scripts/assets/build-assets.ts",
     "gen:boutique": "tsx scripts/assets/boutique-sheet.ts",
+    "gen:clocks": "tsx scripts/clocks/build-clocks.ts",
     "gen:audio": "tsx scripts/audio/build-audio.ts",
     "gen:map": "tsx scripts/assets/build-map.ts"
   },

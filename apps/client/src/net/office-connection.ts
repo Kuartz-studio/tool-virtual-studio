@@ -80,6 +80,9 @@ export interface OfficeBusEvents {
   'shop:bought': (p: { itemId: string }) => void;
   // window.__office.xp (tests de bout en bout seulement) : `debug:xp`, que le serveur n'accepte qu'avec E2E=1.
   'local:xp': (p: { xp: number; ecus?: number }) => void;
+  // Le jeu : la souris est sur l'avatar de cette personne (un autre que soi), dont le haut de la tête est en (x, y), en pixels de la page ; null : sur
+  // aucun. Dit quand cela change. L'interface y pose la carte de l'heure qu'il est chez elle (AvatarTimeCard).
+  'avatar:hover': (p: { id: string; x: number; y: number } | null) => void;
 }
 
 // Un écouteur, typé comme ceux d'eventemitter3 : ce que l'événement porte, il le reçoit (emitOnBus et listenOnBus le typent).

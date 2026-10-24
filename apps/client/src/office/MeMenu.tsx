@@ -1,13 +1,17 @@
-import type { ActivityState, Status } from '@bureau/shared';
+import { timezoneOrDefault, type ActivityState, type Status } from '@bureau/shared';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
-import { fr } from '../i18n/fr';
+import { fr, t } from '../i18n/fr';
+import { useMinute } from '../lib/use-clock';
+import { formatClock, wallTime } from '../lib/zoned-time';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
-import { LogOutIcon, PencilIcon, ShirtIcon } from './icons';
+import { GlobeIcon, LogOutIcon, PencilIcon, ShirtIcon } from './icons';
 import { ModeEditor } from './ModeEditor';
 import { ModeList } from './ModeList';
 import { NameEditor } from './NameEditor';
 import type { PanelControls, PanelId } from './panels';
+import { TimezoneEditor } from './TimezoneEditor';
+import { zonePlace } from './timezones';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Popover } from './ui/Popover';
 
@@ -38,6 +42,8 @@ export interface MeMenuProps {
 //   Sport, Concentration, que ton compte a reçus, et ceux que tu as créés), et « Nouveau mode ». Une seule ligne est cochée ; ce que le serveur confirme
 //   (`status:changed`, `activity:changed`) est ce que la puce et le menu affichent. Le crayon d'un mode, et « Nouveau mode », ouvrent son éditeur (ModeEditor)
 //   dans le menu même, à la place de la liste : le menu devient alors une petite fenêtre (dialog), et la liste revient quand l'éditeur se ferme ;
+// - « Fuseau horaire » : la ville de ton fuseau et l'heure qu'il est chez toi, à la minute ; la ligne ouvre son choix (TimezoneEditor) dans le menu même,
+//   à la place de la liste, comme « Changer de nom » ;
 // - Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu. Le bureau et le son sont dans le dock du
 //   milieu (MediaDock) : ce menu ne parle que de toi.
 //
@@ -60,6 +66,7 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
   const myStates = useOfficeStore((state) => state.myStates);
   const map = useOfficeStore((state) => state.officeMap);
   const ready = useOfficeStore((state) => state.ready);
+  const timezone = timezoneOrDefault(useOfficeStore((state) => state.self?.timezone));
   const enabled = socket !== null && ready && current !== null;
 
   const list = useRef<HTMLDivElement>(null);
@@ -68,8 +75,9 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
   const [editing, setEditing] = useState<ActivityState | null | undefined>(undefined);
   // La ligne qui reprend le focus quand la liste revient : le mode (son identifiant), ou « Nouveau mode » (null).
   const refocus = useRef<string | null | undefined>(undefined);
-  // Le nom en cours de changement, à la place de la liste.
+  // Le nom en cours de changement, à la place de la liste ; de même pour le fuseau horaire.
   const [renaming, setRenaming] = useState(false);
+  const [zoning, setZoning] = useState(false);
 
   // Les lignes qu'on peut choisir, dans l'ordre de la page : celles qui ne sont pas inactives.
   const lines = () => Array.from(list.current?.querySelectorAll<HTMLButtonElement>(ITEMS) ?? []).filter((line) => !line.disabled);
@@ -80,6 +88,7 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
     if (!open) {
       setEditing(undefined);
       setRenaming(false);
+      setZoning(false);
       return;
     }
     const all = lines();
@@ -192,6 +201,23 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
     );
   }
 
+  if (zoning) {
+    return (
+      <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top-start" label={fr.me.timezoneTitle} role="dialog" id={id}>
+        <div className="me-menu">
+          <TimezoneEditor
+            current={timezone}
+            onClose={() => {
+              setZoning(false);
+              // La liste revient : le focus retourne à « Fuseau horaire ».
+              requestAnimationFrame(() => list.current?.querySelector<HTMLButtonElement>('.me-timezone')?.focus());
+            }}
+          />
+        </div>
+      </Popover>
+    );
+  }
+
   if (editing !== undefined) {
     return (
       <Popover open={open} onClose={onClose} anchorRef={anchorRef} placement="top-start" label={editing === null ? fr.modes.titleCreate : fr.modes.titleEdit} role="dialog" id={id}>
@@ -243,11 +269,29 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
         </div>
 
         <div className="menu-rule" role="separator" />
+        <TimezoneLine timezone={timezone} disabled={!enabled} onOpen={() => setZoning(true)} />
         <button type="button" role="menuitem" tabIndex={-1} className="menu-item" disabled={signingOut} onClick={signOut}>
           <LogOutIcon />
           <span>{signingOut ? fr.office.signingOut : fr.office.signOut}</span>
         </button>
       </div>
     </Popover>
+  );
+}
+
+// La ligne « Fuseau horaire » du menu : la ville de son fuseau et l'heure qu'il est chez soi, à la minute près (seule cette ligne se re-rend chaque
+// minute).
+function TimezoneLine({ timezone, disabled, onOpen }: { timezone: string; disabled: boolean; onOpen(): void }) {
+  const now = useMinute();
+  const place = zonePlace(timezone).city;
+  const time = formatClock(wallTime(timezone, now));
+  return (
+    <button type="button" role="menuitem" tabIndex={-1} className="menu-item me-timezone" aria-label={t(fr.me.timezoneLine, { place, time })} disabled={disabled} onClick={onOpen}>
+      <GlobeIcon />
+      <span>{fr.me.timezone}</span>
+      <span className="menu-hint">
+        {place} · <time>{time}</time>
+      </span>
+    </button>
   );
 }

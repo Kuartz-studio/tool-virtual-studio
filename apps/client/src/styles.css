@@ -6314,6 +6314,14 @@ button.desk-place:disabled {
   gap: 8px;
 }
 
+/* L'heure chez elle : la carte du survol, posée à plat dans la fiche, de toute sa largeur. */
+.sheet-time .time-card {
+  width: auto;
+  background: var(--surface-soft);
+  border-radius: var(--radius-m);
+  box-shadow: none;
+}
+
 .sheet-stat {
   display: grid;
   grid-template-columns: auto 1fr;
@@ -7123,5 +7131,306 @@ button.desk-place:disabled {
 
   .me-chip > .xp-bar {
     display: none;
+  }
+}
+
+/* ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+   Chantier : fuseaux horaires. La ligne « Fuseau horaire » du menu « Moi » et son choix (TimezoneEditor : une recherche, le fuseau de l'appareil,
+   la liste d'ouest en est), puis la carte de l'heure locale d'une personne (LocalTimeCard), posée au survol d'une ligne du panneau Personnes.
+   ─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── */
+.me-timezone .menu-hint {
+  font-variant-numeric: tabular-nums;
+}
+
+.tz-editor {
+  gap: 10px;
+}
+
+.tz-current,
+.tz-empty,
+.tz-status {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+
+.tz-empty {
+  padding: 8px 2px;
+}
+
+/* Le fuseau de cet appareil, proposé en tête : une ligne de l'accent, qui l'enregistre d'un clic. */
+.tz-device {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  color: var(--accent-ink);
+  text-align: left;
+  background: var(--accent-soft);
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.tz-device svg.lucide {
+  flex: none;
+  width: 18px;
+  height: 18px;
+}
+
+.tz-device-text {
+  display: grid;
+  min-width: 0;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  line-height: 1.3;
+}
+
+.tz-device-text small {
+  overflow: hidden;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tz-device:hover:not(:disabled),
+.tz-device:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+.tz-device:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+/* La liste des fuseaux : elle défile seule, la recherche reste en haut. Une ligne : la ville et son pays, le décalage, l'heure, la coche. */
+.tz-list {
+  display: grid;
+  gap: 1px;
+  max-height: min(280px, 40dvh);
+  margin: 0 -4px;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+
+.tz-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto 3.1em 16px;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  min-height: 40px;
+  padding: 5px 8px 5px 10px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) var(--ease-out);
+}
+
+.tz-option:hover:not(:disabled),
+.tz-option:focus-visible {
+  background: var(--surface-soft);
+  outline: none;
+}
+
+.tz-option:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.tz-option:disabled {
+  cursor: wait;
+}
+
+.tz-option[aria-current='true'] {
+  background: var(--accent-soft);
+}
+
+.tz-option-place {
+  display: grid;
+  min-width: 0;
+  line-height: 1.3;
+}
+
+.tz-option-city,
+.tz-option-region {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tz-option-city {
+  font-size: var(--text-m);
+  font-weight: var(--weight-medium);
+}
+
+.tz-option[aria-current='true'] .tz-option-city {
+  font-weight: var(--weight-semibold);
+  color: var(--accent-ink);
+}
+
+.tz-option-region {
+  font-size: var(--text-xs);
+  color: var(--text-soft);
+}
+
+.tz-option-offset {
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.tz-option-time {
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.tz-option-check svg.lucide {
+  display: block;
+  width: 16px;
+  height: 16px;
+  color: var(--accent);
+}
+
+/* Une ligne du panneau Personnes prend le focus (sa carte d'heure locale s'ouvre) : l'anneau de l'accent, comme les autres contrôles. */
+.person:focus-visible {
+  --dot-ring: var(--surface-soft);
+
+  background: var(--surface-soft);
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+/* La carte de l'heure locale : posée à la page à côté de ce qu'elle décrit (LocalTime.tsx la place), elle ne prend jamais la souris. Les deux
+   couleurs du moment de la journée sont à elle : un soleil chaud le jour, une lune froide la nuit. */
+.time-card-float {
+  position: fixed;
+  z-index: 6;
+  pointer-events: none;
+  animation: time-card-in var(--dur-pop) var(--ease-out);
+}
+
+@keyframes time-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+}
+
+.time-card {
+  --time-warm: #e0901a;
+  --time-cool: #6f78e6;
+
+  display: grid;
+  gap: 2px;
+  width: 216px;
+  padding: 11px 14px 12px;
+  color: var(--text);
+  background: var(--surface);
+  border-radius: var(--radius-l);
+  box-shadow: var(--shadow-pop);
+}
+
+.office-ui[data-theme='night'] .time-card {
+  --time-warm: #ffc56b;
+  --time-cool: #a9b0ff;
+}
+
+.time-card-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+}
+
+.time-card-who {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-card-part {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+  align-items: center;
+  font-weight: var(--weight-medium);
+  color: var(--text-soft);
+}
+
+.time-card-part svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--time-warm);
+}
+
+.time-card[data-part='night'] .time-card-part svg.lucide {
+  color: var(--time-cool);
+}
+
+.time-card-time {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin: 2px 0 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-semibold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.time-card-day {
+  padding: 1px 6px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 6px;
+}
+
+.time-card-place {
+  margin: 0;
+  overflow: hidden;
+  font-size: var(--text-s);
+  font-weight: var(--weight-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.time-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  margin: 0;
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
+.time-card-meta span + span::before {
+  margin-right: 6px;
+  content: '·';
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .time-card-float {
+    animation: none;
   }
 }

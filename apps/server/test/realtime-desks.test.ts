@@ -1,4 +1,5 @@
 import { DESK_KNOCK_COOLDOWN_MS, DESK_RATE, type DeskAck, type DeskCommand, type MovePayload } from '@bureau/shared';
+import request from 'supertest';
 import { describe, expect, test } from 'vitest';
 import { CUSTOM_DECOR, DEFAULT_SETUP, OTHER_DECOR, REFUSED_DECORS, defaultSetupOf } from './helpers/decor';
 import { enter, nextEvent, record, sleep, startTestServer, type ClientSocket, type TestServer } from './helpers/realtime';
@@ -48,13 +49,13 @@ describe('les places', () => {
     expect(a.init.mapKey).toBe('office');
     expect(a.init.desks.map((d) => d.key)).toEqual(['A1', 'A2', 'A3', 'A4', 'A5', 'A6']);
     // Personne n'a décoré sa pièce : toutes montrent le poste de travail par défaut.
-    expect(a.init.desks[0]).toEqual({ key: 'A1', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP });
+    expect(a.init.desks[0]).toEqual({ key: 'A1', ownerId: a.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP });
     expect(a.init.desks.every((d) => d.floor === DEFAULT_SETUP.floor && d.items.length === defaultSetupOf(d.key).items.length)).toBe(true);
     expect(a.init.closedDesks).toEqual([]);
 
     const changed = nextEvent(a.socket, 'desk:changed');
     const b = await person(srv, 'b@x.fr');
-    expect(await changed).toEqual({ key: 'A2', ownerId: b.id, ownerName: 'b', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP });
+    expect(await changed).toEqual({ key: 'A2', ownerId: b.id, ownerName: 'b', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP });
     expect(b.init.desks.filter((d) => d.ownerId !== null).map((d) => d.key)).toEqual(['A1', 'A2']);
   });
 
@@ -78,7 +79,7 @@ describe('les places', () => {
     await sleep(60);
     expect(seenByB.payloadsOf('desk:changed')).toEqual([
       { key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
-      { key: 'A6', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...defaultSetupOf('A6') },
+      { key: 'A6', ownerId: a.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...defaultSetupOf('A6') },
     ]);
     expect(await run(b.socket, { type: 'claim', key: 'A6' })).toEqual({ ok: false, error: 'taken' });
     expect(await run(b.socket, { type: 'claim', key: 'nulle-part' })).toEqual({ ok: false, error: 'unknown_desk' });
@@ -259,8 +260,21 @@ describe('la vie des bureaux', () => {
     const a = await person(srv, 'a@x.fr');
     const b = await person(srv, 'b@x.fr');
     const seen = nextEvent(b.socket, 'desk:changed');
-    srv.events.emit('profile:changed', { id: a.id, name: 'Anaïs', avatarKey: null });
-    expect(await seen).toMatchObject({ key: 'A1', ownerName: 'Anaïs' });
+    srv.events.emit('profile:changed', { id: a.id, name: 'Anaïs', avatarKey: null, timezone: 'Europe/Paris' });
+    expect(await seen).toMatchObject({ key: 'A1', ownerName: 'Anaïs', ownerTimezone: 'Europe/Paris' });
+  });
+
+  test('un fuseau horaire changé (PATCH /api/me) passe au bureau : ses horloges donnent la nouvelle heure, chez tout le monde', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    expect(b.init.desks.find((desk) => desk.key === 'A1')).toMatchObject({ ownerId: a.id, ownerTimezone: 'Europe/Paris' });
+    const seen = nextEvent(b.socket, 'desk:changed');
+    const res = await request(srv.app).patch('/api/me').set('Cookie', a.cookie).send({ timezone: 'Asia/Tokyo' });
+    expect(res.status).toBe(200);
+    expect(await seen).toMatchObject({ key: 'A1', ownerId: a.id, ownerTimezone: 'Asia/Tokyo' });
+    // Une place libre n'a pas de fuseau : ses horloges sont à l'heure de Paris.
+    expect(b.init.desks.find((desk) => desk.ownerId === null)).not.toHaveProperty('ownerTimezone');
   });
 
   test('un redémarrage du serveur garde les bureaux, leur nom, leur verrou et leur décor', async () => {
@@ -274,7 +288,7 @@ describe('la vie des bureaux', () => {
     const user = await findUserByEmail(srv.db, 'a@x.fr');
     expect(user).toBeTruthy();
     await sleep(300);
-    expect(srv.realtime.desks.get('A5')).toEqual({ key: 'A5', ownerId: a.id, ownerName: 'a', name: 'Chez A', locked: true, closedByState: false, ...CUSTOM_DECOR });
+    expect(srv.realtime.desks.get('A5')).toEqual({ key: 'A5', ownerId: a.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: 'Chez A', locked: true, closedByState: false, ...CUSTOM_DECOR });
     expect(srv.realtime.desks.get('A1')?.ownerId).toBeNull();
   });
 });
@@ -322,7 +336,7 @@ describe('le décor d\'un bureau', () => {
     const seenByB = nextEvent(b.socket, 'desk:changed');
 
     expect(await run(a.socket, { type: 'decor', ...CUSTOM_DECOR })).toEqual({ ok: true });
-    const expected = { key: 'A1', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...CUSTOM_DECOR };
+    const expected = { key: 'A1', ownerId: a.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...CUSTOM_DECOR };
     expect(await seenByA).toEqual(expected);
     expect(await seenByB).toEqual(expected);
     expect(srv.realtime.desks.get('A1')).toEqual(expected);
@@ -374,7 +388,7 @@ describe('le décor d\'un bureau', () => {
     await sleep(60);
     expect(seen.payloadsOf('desk:changed').slice(-2)).toEqual([
       { key: 'A1', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
-      { key: 'A6', ownerId: a.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...CUSTOM_DECOR },
+      { key: 'A6', ownerId: a.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...CUSTOM_DECOR },
     ]);
   });
 

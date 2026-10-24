@@ -2,6 +2,7 @@ import type { Role } from '@bureau/shared';
 import { Activity, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { GamePanel } from '../games/GamePanel';
 import { ArenaCard } from './ArenaCard';
+import { AvatarTimeCard } from './AvatarTimeCard';
 import { fr } from '../i18n/fr';
 import { listActivityStates } from '../lib/activity-api';
 import { listMyTasks } from '../lib/progress-api';
@@ -239,6 +240,7 @@ export function OfficeShell({
       <div ref={layer} className="office-ui" data-theme={lightsOn ? 'day' : 'night'} data-lights={lightsOn ? 'on' : 'off'} inert={replaced}>
         <WhereChip place={place} />
         <CoffeePill />
+        <AvatarTimeCard />
         <ArenaCard socket={socket} />
         <div className="office-top">
           <VideoStrip snapshot={media.snapshot} client={media.client} hidden={inaudible} onReconnect={onReconnect} />

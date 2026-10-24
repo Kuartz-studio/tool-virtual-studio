@@ -93,15 +93,15 @@ describe('connectOffice', () => {
     const B = player('b');
     socket.receive('player:joined', B);
     socket.receive('status:changed', { id: 'b', status: 'dnd' });
-    socket.receive('profile:changed', { id: 'b', name: 'Bea', avatarKey: 'dev-blue' });
+    socket.receive('profile:changed', { id: 'b', name: 'Bea', avatarKey: 'dev-blue', timezone: 'Asia/Tokyo' });
     socket.receive('media:changed', { id: 'b', media: { mic: true, cam: false, screen: false } });
-    expect(store.getState().players.b).toMatchObject({ status: 'dnd', name: 'Bea', avatarKey: 'dev-blue', media: { mic: true } });
+    expect(store.getState().players.b).toMatchObject({ status: 'dnd', name: 'Bea', avatarKey: 'dev-blue', timezone: 'Asia/Tokyo', media: { mic: true } });
     socket.receive('player:left', { id: 'a' });
     expect(Object.keys(store.getState().players)).toEqual(['b']);
 
     expect(bus.emittedOf('net:joined')).toEqual([B]);
     expect(bus.emittedOf('net:status')).toEqual([{ id: 'b', status: 'dnd' }]);
-    expect(bus.emittedOf('net:profile')).toEqual([{ id: 'b', name: 'Bea', avatarKey: 'dev-blue' }]);
+    expect(bus.emittedOf('net:profile')).toEqual([{ id: 'b', name: 'Bea', avatarKey: 'dev-blue', timezone: 'Asia/Tokyo' }]);
     expect(bus.emittedOf('net:left')).toEqual([{ id: 'a' }]);
   });
 

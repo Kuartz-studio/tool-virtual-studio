@@ -144,6 +144,7 @@ describe('connexion', () => {
       media: { mic: false, cam: false, screen: false },
       activity: null,
       level: 0,
+      timezone: 'Europe/Paris',   // le fuseau du compte : l'heure de Paris tant qu'il n'en a pas choisi d'autre
     });
     // Sa progression : rien encore.
     expect(aInit.progress).toEqual({ xp: 0, ecus: 0, streak: 0, owned: [] });
@@ -153,7 +154,7 @@ describe('connexion', () => {
     // Les trois bureaux de la carte de développement (clés : les numéros de leurs zones) : le premier est à A, qui n'a pas à y accéder. Aucun
     // n'a été décoré : tous montrent le poste de travail par défaut.
     expect(aInit.desks).toEqual([
-      { key: '2', ownerId: aInit.self.id, ownerName: 'a', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
+      { key: '2', ownerId: aInit.self.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
       { key: '3', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
       { key: '4', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
     ]);
@@ -174,7 +175,7 @@ describe('connexion', () => {
     expect(bEvents.names()).toEqual(['init']);
     // A apprend aussi que B a pris la place suivante : avant son arrivée (le bureau d'abord).
     expect(aEvents.received).toEqual([
-      { event: 'desk:changed', args: [{ key: '3', ownerId: bInit.self.id, ownerName: 'b', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP }] },
+      { event: 'desk:changed', args: [{ key: '3', ownerId: bInit.self.id, ownerName: 'b', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP }] },
       { event: 'player:joined', args: [bInit.self] },
     ]);
     expect(srv.realtime.socketsOf(aInit.self.id)).toEqual([a.id]);

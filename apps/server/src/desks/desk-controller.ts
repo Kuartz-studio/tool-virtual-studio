@@ -114,7 +114,7 @@ export function createDeskController(d: DeskControllerDeps) {
 
     switch (command.type) {
       case 'claim':
-        return applied(await d.desks.claim(userId, me.name, command.key), userId);
+        return applied(await d.desks.claim(userId, me.name, command.key, me.timezone), userId);
       case 'release':
         return applied(await d.desks.release(userId), userId);
       case 'rename':
@@ -182,11 +182,12 @@ export function createDeskController(d: DeskControllerDeps) {
   return {
     run,
 
-    // Une place pour qui arrive pour la première fois (ou n'en a plus) ; les autres l'apprennent. Ne rejette jamais.
-    async assign(userId: string, name: string): Promise<void> {
+    // Une place pour qui arrive pour la première fois (ou n'en a plus) ; les autres l'apprennent. Ne rejette jamais. `timezone` : le sien, pour
+    // les horloges de la pièce.
+    async assign(userId: string, name: string, timezone?: string): Promise<void> {
       try {
         await d.desks.ready;
-        applied(await d.desks.autoAssign(userId, name));
+        applied(await d.desks.autoAssign(userId, name, timezone));
       } catch (err) {
         logServerError(d.logger, { err, userId }, 'Attribution d\'un bureau impossible');
       }
@@ -202,9 +203,9 @@ export function createDeskController(d: DeskControllerDeps) {
       }
     },
 
-    // Son nom affiché change : celui de son bureau aussi.
-    renameOwner(userId: string, name: string): void {
-      applied(d.desks.renameOwner(userId, name));
+    // Son nom affiché change, ou son fuseau horaire : celui de son bureau aussi (le nom sur la porte, l'heure de ses horloges).
+    updateOwner(userId: string, owner: { name: string; timezone?: string }): void {
+      applied(d.desks.updateOwner(userId, owner));
     },
 
     // Son état d'activité change : sa porte s'ouvre ou se ferme peut-être d'elle-même.

@@ -28,9 +28,10 @@ export interface LightProfile {
 export interface LightEmitter {
   kind: LightKind;
   // La portée et la force propres à cet élément, quand elles ne sont pas celles du profil de sa sorte : un lampadaire porte plus loin qu'une lampe de
-  // bureau, qui est le profil des lampes.
+  // bureau, qui est le profil des lampes. De même pour sa couleur : les chiffres rouges de l'horloge LED.
   radiusTiles?: number;
   strength?: number;
+  color?: number;
   // Où elle brille dans l'image de l'élément, en pixels depuis le haut de l'image (toujours au milieu de sa largeur) : l'abat-jour d'une
   // lampe, le feu d'une cheminée, le milieu d'un écran. Le haut de l'image est souvent vide : un lampadaire de 3 cases a son abat-jour dans la
   // deuxième.
@@ -84,6 +85,10 @@ const BEDSIDE_LAMP: LightEmitter = { kind: 'lamp', radiusTiles: 1.75, strength: 
 const screenAt = (bulbY: number): LightEmitter => ({ kind: 'screen', bulbY });
 // Un panneau de sortie : un seul carreau, le panneau dans sa moitié haute.
 const EXIT_SIGN: LightEmitter = { kind: 'exit', bulbY: 6 };
+// Les horloges murales qui luisent la nuit : les chiffres rouges de l'horloge LED, et le cadran rétroéclairé de l'horloge de gare, à peine. La ronde et la
+// pendule n'éclairent pas.
+const LED_CLOCK: LightEmitter = { kind: 'glow', radiusTiles: 1.3, strength: 0.26, color: 0xff5a48, bulbY: 16 };
+const STATION_CLOCK: LightEmitter = { kind: 'glow', radiusTiles: 1.7, strength: 0.2, color: 0xfff1d0, bulbY: 31 };
 
 // Les éléments de la banque qui éclairent, par clé.
 export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
@@ -117,6 +122,9 @@ export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
   'tv-10-1': { kind: 'tv', bulbY: 22 },
   // L'écran de présentation, au mur : une lumière froide, très faible.
   'of-9-14': screenAt(36),
+  // Les horloges murales (decor/clocks.ts).
+  'horloge-led': LED_CLOCK,
+  'horloge-gare': STATION_CLOCK,
   // Les panneaux de sortie (vert vif et citron, vers la droite et vers la gauche).
   'mu-14-111': EXIT_SIGN,
   'mu-14-111-m': EXIT_SIGN,
@@ -197,7 +205,7 @@ export function sourcesFromItems(items: readonly { id: string; x: number; y: num
         y: y + emitter.bulbY,
         kind: emitter.kind,
         radius: (emitter.radiusTiles ?? profile.radiusTiles) * TILE_SIZE,
-        color: profile.color,
+        color: emitter.color ?? profile.color,
         strength: emitter.strength ?? profile.strength,
         ...(profile.flicker && { flicker: profile.flicker }),
       },
