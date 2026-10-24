@@ -377,6 +377,8 @@ export class Office extends Scene {
     else if (autoDirection !== null) this.player.step(autoDirection);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     this.player.tick(now);
+    // Les horloges murales : l'heure du navigateur (Date.now), et non celle du jeu, qui ne dit pas l'heure qu'il est.
+    this.decorLayer.tickClocks(Date.now());
     this.shakeMachine(now);
     this.teleportEffect.tick(now);
     this.arena?.tick(now, this.game.loop.delta);

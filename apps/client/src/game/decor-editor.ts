@@ -1,4 +1,4 @@
-import { DESK_ROOMS, TILE_SIZE, decorItem, footprintOf, type DeskRoomSpec, type Zone } from '@bureau/shared';
+import { DESK_ROOMS, TILE_SIZE, decorAtlasOf, decorItem, footprintOf, type DeskRoomSpec, type Zone } from '@bureau/shared';
 import type { GameObjects, Input } from 'phaser';
 import { anchorFor, handleOf, planPlace, type DecorSnap } from '../office/decor-draft';
 import { useOfficeStore, type DecorEditor as DecorEditorState } from '../state/office-store';
@@ -184,7 +184,7 @@ export class DecorEditorView {
     if (!item) return;
     if (!this.ghost || this.ghostFor !== item.id) {
       this.ghost?.destroy();
-      this.ghost = snapToPixels(this.scene.add.image(0, 0, decorTextureKey(item.cat), item.id).setOrigin(0, 1).setAlpha(0.7).setDepth(DEPTH.dessus - 1));
+      this.ghost = snapToPixels(this.scene.add.image(0, 0, decorTextureKey(decorAtlasOf(item)), item.id).setOrigin(0, 1).setAlpha(0.7).setDepth(DEPTH.dessus - 1));
       this.ghostFor = item.id;
     }
     // Au pixel près, comme l'élément une fois posé (layoutDecor).
