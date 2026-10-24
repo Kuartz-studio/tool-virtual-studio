@@ -775,8 +775,12 @@ export const fr = {
   shop: {
     toggle: 'Boutique',
     title: 'Boutique',
-    intro: 'Des pièces rares pour ta pièce. Achetées une fois, elles sont à toi : tu les poses depuis « Décorer mon bureau ».',
+    intro: 'Des pièces rares et des murs pour ta pièce. Achetés une fois, ils sont à toi : tu les poses depuis « Décorer mon bureau ».',
     wallet: 'Ta bourse',
+    shelves: 'Rayons',
+    shelf: { decor: 'Objets', walls: 'Murs' },
+    // Sous le nom d'un mur, à la place de sa taille.
+    wallMeta: 'Mur de la pièce',
     filters: 'Afficher',
     all: 'Tout',
     affordable: 'À ma portée',
@@ -899,6 +903,9 @@ export const fr = {
     drop: 'Lâcher',
     floorTitle: 'Sol',
     wallTitle: 'Murs',
+    // Les murs de la boutique, sous les autres : un mur pas encore acheté porte un cadenas et son prix, un clic propose de l'acheter.
+    shopWallsTitle: 'Murs de la boutique',
+    lockedWall: '{name} : à la boutique, {price} kuartzons',
     count: '{count} / {max} éléments',
     unsaved: 'Modifications non enregistrées.',
     save: 'Enregistrer',

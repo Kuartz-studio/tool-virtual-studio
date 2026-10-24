@@ -57,6 +57,17 @@ export function WallSwatch({ top, bottom }: { top: number; bottom: number }) {
   );
 }
 
+// L'aperçu d'un mur (la boutique) : sa face, sur `columns` cases de large.
+export function WallPreview({ top, bottom, columns = 2 }: { top: number; bottom: number; columns?: number }) {
+  return (
+    <span className="wall-preview" aria-hidden="true">
+      {Array.from({ length: columns }, (_, column) => (
+        <WallSwatch key={column} top={top} bottom={bottom} />
+      ))}
+    </span>
+  );
+}
+
 // L'imagette d'une pièce du personnage (characters/thumbs.png, en grille de 32 × 64 px) : le personnage de face, sans le vide au-dessus de sa tête.
 const THUMB_TOP = 14;
 export function PartThumb({ index }: { index: number }) {

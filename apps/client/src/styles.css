@@ -7064,6 +7064,20 @@ button.desk-place:disabled {
   height: 9px;
 }
 
+/* Les murs de la boutique : leur aperçu dans une carte (deux cases de large), en petit dans l'offre d'achat ; sous « Murs et sol », un mur pas encore acheté
+   porte le même cadenas et son prix. */
+.wall-preview {
+  display: inline-flex;
+}
+
+.decor-peek-thumb .swatch-wall {
+  zoom: 0.5;
+}
+
+.swatch[data-locked] {
+  position: relative;
+}
+
 .decor-offer {
   flex: none;
   display: flex;

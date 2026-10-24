@@ -1,11 +1,13 @@
-import { DECOR_CATEGORIES, DEFAULT_DESK_DECOR, decorItem, decorItemsOf, type DeskAck, type DeskInfo, type PublicPlayer } from '@bureau/shared';
+import { DECOR_CATEGORIES, DEFAULT_DESK_DECOR, SHOP_WALL_THEMES, decorItem, decorItemsOf, type DeskAck, type DeskInfo, type MyProgress, type PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr, t } from '../i18n/fr';
+import * as progressApi from '../lib/progress-api';
 import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
 import { DecorPanel } from './DecorPanel';
+import { formatNumber } from './progress-format';
 
 const me: PublicPlayer = {
   id: 'moi',
@@ -313,5 +315,58 @@ describe('avec un bureau', () => {
       });
       expect(screen.getByRole('alertdialog', { name: fr.decor.replace.titleMany })).toBeTruthy();
     });
+  });
+});
+
+describe('les murs de la boutique', () => {
+  const wall = SHOP_WALL_THEMES[0];
+  const progress = (over: Partial<MyProgress> = {}): MyProgress => ({ xp: 0, kuartzons: 0, streak: 0, todoXpLeft: 100, owned: [], ...over });
+
+  test('sous « Murs et sol » : un mur pas encore acheté porte son prix ; un clic propose de l\'acheter, et l\'achat le met au brouillon', async () => {
+    const user = userEvent.setup();
+    setup();
+    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 1000 })));
+    vi.mocked(progressApi.buyItem).mockResolvedValueOnce(progress({ kuartzons: 1000 - wall.price, owned: [wall.id] }));
+    await user.click(screen.getByRole('tab', { name: fr.decor.tabs.themes }));
+    await user.click(screen.getByRole('button', { name: t(fr.decor.lockedWall, { name: wall.label, price: formatNumber(wall.price) }) }));
+    expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(DEFAULT_DESK_DECOR.wall);
+    await user.click(screen.getByRole('button', { name: t(fr.shop.buyHere, { price: formatNumber(wall.price) }) }));
+    expect(progressApi.buyItem).toHaveBeenCalledWith(wall.id);
+    expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(wall.id);
+    expect(screen.getByRole('button', { name: wall.label }).getAttribute('aria-pressed')).toBe('true');
+  });
+
+  test('pas assez de kuartzons : le bouton d\'achat est éteint et dit combien il en manque', async () => {
+    const user = userEvent.setup();
+    setup();
+    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 100 })));
+    await user.click(screen.getByRole('tab', { name: fr.decor.tabs.themes }));
+    await user.click(screen.getByRole('button', { name: t(fr.decor.lockedWall, { name: wall.label, price: formatNumber(wall.price) }) }));
+    const buy = screen.getByRole('button', { name: t(fr.shop.buyHere, { price: formatNumber(wall.price) }) }) as HTMLButtonElement;
+    expect(buy.disabled).toBe(true);
+    expect(buy.title).toBe(t(fr.shop.missing, { count: formatNumber(wall.price - 100) }));
+  });
+
+  test('un objet de la boutique, dans le sélecteur : un clic propose de l\'acheter ; acheté, il est pris en main', async () => {
+    const user = userEvent.setup();
+    const item = decorItemsOf('boutique')[0]!;
+    setup();
+    act(() => useOfficeStore.getState().setProgress(progress({ kuartzons: 20_000 })));
+    vi.mocked(progressApi.buyItem).mockResolvedValueOnce(progress({ kuartzons: 20_000 - item.price!, owned: [item.id] }));
+    await user.click(screen.getByRole('button', { name: 'Boutique' }));
+    await user.click(within(screen.getByRole('group', { name: /^Éléments :/ })).getByRole('button', { name: item.name }));
+    expect(useOfficeStore.getState().decorEditor!.held).toBeNull();
+    await user.click(screen.getByRole('button', { name: t(fr.shop.buyHere, { price: formatNumber(item.price!) }) }));
+    expect(progressApi.buyItem).toHaveBeenCalledWith(item.id);
+    expect(useOfficeStore.getState().decorEditor!.held).toBe(item.id);
+  });
+
+  test('un mur acheté se choisit comme les autres', async () => {
+    const user = userEvent.setup();
+    setup();
+    act(() => useOfficeStore.getState().setProgress(progress({ owned: [wall.id] })));
+    await user.click(screen.getByRole('tab', { name: fr.decor.tabs.themes }));
+    await user.click(screen.getByRole('button', { name: wall.label }));
+    expect(useOfficeStore.getState().decorEditor!.draft.wall).toBe(wall.id);
   });
 });

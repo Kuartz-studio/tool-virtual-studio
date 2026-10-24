@@ -2,10 +2,10 @@ import { DECOR_CATEGORIES, decorItem, decorItemsOf, type DecorCategoryId, type D
 import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
+import { BuyOffer } from './BuyOffer';
 import { loadDecorRecents, rememberDecorItem, searchDecorItems } from './decor-picker';
-import { DecorCategoryIcon, EraserIcon, KuartzonIcon, LockIcon, RecentIcon, SearchIcon } from './icons';
+import { DecorCategoryIcon, EraserIcon, LockIcon, RecentIcon, SearchIcon } from './icons';
 import { formatNumber } from './progress-format';
-import { purchase } from './ShopPanel';
 import { DecorThumb } from './sprites';
 
 // Le sélecteur d'éléments de l'onglet « Objets » du panneau Décorer, à la manière d'un sélecteur d'émojis : la recherche et la gomme en
@@ -26,10 +26,8 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
   const [shelf, setShelf] = useState<Shelf>(() => (recents.length > 0 ? 'recent' : DECOR_CATEGORIES[0].id));
   const [search, setSearch] = useState('');
   const [peeked, setPeeked] = useState<string | null>(null);
-  // L'élément de la boutique qu'on propose d'acheter (un clic sur un élément pas encore acheté), et pourquoi l'achat a échoué.
+  // L'élément de la boutique qu'on propose d'acheter (un clic sur un élément pas encore acheté).
   const [offer, setOffer] = useState<DecorItem | null>(null);
-  const [offerError, setOfferError] = useState<string | null>(null);
-  const [buying, setBuying] = useState(false);
   const progress = useOfficeStore((state) => state.progress);
   const owned = useMemo(() => new Set(progress?.owned ?? []), [progress?.owned]);
   const locked = (item: DecorItem) => item.price !== undefined && !owned.has(item.id);
@@ -55,26 +53,17 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
     if (grid.current) grid.current.scrollTop = 0;
   }
 
-  async function buy(item: DecorItem) {
-    setBuying(true);
-    setOfferError(null);
-    const done = await purchase(item);
-    setBuying(false);
-    if (done !== true) {
-      setOfferError(done);
-      return;
-    }
-    setOffer(null);
-    take(item.id);
-  }
-
   function take(id: string) {
     const item = decorItem(id);
     if (item && locked(item)) {
       setOffer(item);
-      setOfferError(null);
       return;
     }
+    hold(id);
+  }
+
+  // Prendre un élément en main (ou le lâcher, si on le tenait) ; un élément qu'on vient d'acheter passe par ici, sans attendre que le magasin le sache.
+  function hold(id: string) {
     setOffer(null);
     const held = editor?.held === id ? null : id;
     store().holdDecorItem(held);
@@ -180,28 +169,7 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
         )}
       </div>
 
-      {offer && (
-        <div className="decor-offer" role="group" aria-label={offer.name}>
-          <span className="decor-peek-thumb">
-            <DecorThumb item={offer} box={36} />
-          </span>
-          <span className="decor-peek-text">
-            <span className="decor-peek-name">{offer.name}</span>
-            <span className="decor-peek-meta">{offerError ?? t(fr.shop.locked, { price: formatNumber(offer.price!) })}</span>
-          </span>
-          <button
-            type="button"
-            className="bar-button is-primary"
-            disabled={buying || (progress?.kuartzons ?? 0) < offer.price!}
-            title={(progress?.kuartzons ?? 0) < offer.price! ? t(fr.shop.missing, { count: formatNumber(offer.price! - (progress?.kuartzons ?? 0)) }) : undefined}
-            data-sfx="none"
-            onClick={() => void buy(offer)}
-          >
-            <KuartzonIcon />
-            {t(fr.shop.buyHere, { price: formatNumber(offer.price!) })}
-          </button>
-        </div>
-      )}
+      {offer && <BuyOffer key={offer.id} id={offer.id} name={offer.name} price={offer.price!} thumb={<DecorThumb item={offer} box={36} />} onBought={() => hold(offer.id)} />}
 
       <div className="decor-peek">
         {shown ? (

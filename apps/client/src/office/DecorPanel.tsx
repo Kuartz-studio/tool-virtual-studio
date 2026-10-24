@@ -1,15 +1,17 @@
-import { FLOOR_THEMES, MAX_DECOR_ITEMS, WALL_THEMES, decorItem, defaultDeskDecor } from '@bureau/shared';
+import { FLOOR_THEMES, MAX_DECOR_ITEMS, SHOP_WALL_THEMES, WALL_THEMES, decorItem, defaultDeskDecor } from '@bureau/shared';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { sendDeskCommand } from '../net/desk-commands';
 import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
+import { BuyOffer } from './BuyOffer';
 import { roomOfDesk, sameDecor } from './decor-draft';
 import { DecorPicker } from './DecorPicker';
-import { CloseIcon } from './icons';
+import { CloseIcon, LockIcon } from './icons';
 import { deskErrorText } from './desks';
 import { ReplaceDialog } from './ReplaceDialog';
+import { formatNumber } from './progress-format';
 import { FloorSwatch, WallSwatch } from './sprites';
 
 // Le panneau Décorer mon bureau : la banque d'éléments (le sélecteur, DecorPicker), et les murs et le sol. Il pilote le
@@ -43,6 +45,11 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
   }, []);
 
   const [tab, setTab] = useState<Tab>('items');
+  // Les murs de la boutique : ceux qu'on a achetés se choisissent comme les autres ; un clic sur un autre propose de l'acheter (son identifiant).
+  const ownedList = useOfficeStore((state) => state.progress?.owned);
+  const owned = useMemo(() => new Set(ownedList ?? []), [ownedList]);
+  const [wallOffer, setWallOffer] = useState<string | null>(null);
+  const offered = SHOP_WALL_THEMES.find((theme) => theme.id === wallOffer);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,6 +148,50 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
                     </button>
                   ))}
                 </div>
+                <h3 className="desk-subtitle">{fr.decor.shopWallsTitle}</h3>
+                <div className="swatch-grid" role="group" aria-label={fr.decor.shopWallsTitle}>
+                  {SHOP_WALL_THEMES.map((theme) => {
+                    const locked = !owned.has(theme.id);
+                    const label = locked ? t(fr.decor.lockedWall, { name: theme.label, price: formatNumber(theme.price) }) : theme.label;
+                    return (
+                      <button
+                        key={theme.id}
+                        type="button"
+                        className="swatch"
+                        data-locked={locked || undefined}
+                        aria-pressed={editor?.draft.wall === theme.id}
+                        title={label}
+                        aria-label={label}
+                        onClick={() => {
+                          if (locked) return setWallOffer(theme.id);
+                          setWallOffer(null);
+                          store().patchDecorTheme({ wall: theme.id });
+                        }}
+                      >
+                        <WallSwatch top={theme.top} bottom={theme.bottom} />
+                        {locked && (
+                          <span className="decor-tile-price">
+                            <LockIcon />
+                            {formatNumber(theme.price)}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {offered && (
+                  <BuyOffer
+                    key={offered.id}
+                    id={offered.id}
+                    name={offered.label}
+                    price={offered.price}
+                    thumb={<WallSwatch top={offered.top} bottom={offered.bottom} />}
+                    onBought={() => {
+                      setWallOffer(null);
+                      store().patchDecorTheme({ wall: offered.id });
+                    }}
+                  />
+                )}
               </>
             )}
           </div>
