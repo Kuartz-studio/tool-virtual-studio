@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   ARENA_RATE,
   COFFEE_DURATION_MS,
+  CONVERSATION_RATE,
   DESK_PLACE_PREFIX,
   EMPTY_GROUPING,
   GAME_LADDER_RATE,
@@ -16,30 +17,40 @@ import {
   activityIdSchema,
   arenaCommandSchema,
   chatSendSchema,
+  conversationCommandSchema,
   debugBoostSchema,
   debugGameSchema,
   deskCommandSchema,
   gameCommandSchema,
   gameLadderSchema,
   computeGroups,
+  isOutOfConversations,
   lightsSetSchema,
   mediaStateSchema,
   moveSchema,
   musicSetSchema,
+  overlayLocks,
   placeAt,
   speakingSchema,
   statusSchema,
+  withGroup,
   withinCoffeeReach,
   withinSwitchReach,
+  withoutGroup,
   type ArenaAck,
   type ChatAck,
   type ChatMessage,
+  type ConversationAck,
+  type ConversationCommand,
+  type ConversationLock,
+  type ConversationLockNotice,
   type DeskAck,
   type GameAck,
   type GroupConfig,
   type GroupingState,
   type LadderAck,
   type OfficeMap,
+  type ProximityPlayer,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
 import type { ActivityController } from '../activity/activity-controller';
@@ -96,6 +107,8 @@ export interface HandlerDeps {
   coffees: ReadonlyArray<{ x: number; y: number }>;
   /** L'octogone : `arena:do` y passe. */
   arena: Pick<ArenaController, 'run'>;
+  /** Les conversations verrouillées : `conversation:do` y passe (startGroupTicks). */
+  conversations: Pick<GroupTicks, 'command'>;
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
@@ -119,6 +132,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   const gameLimiter = createRateLimiter({ ...GAME_RATE, now: d.now });
   const ladderLimiter = createRateLimiter({ ...GAME_LADDER_RATE, now: d.now });
   const arenaLimiter = createRateLimiter({ ...ARENA_RATE, now: d.now });
+  const conversationLimiter = createRateLimiter({ ...CONVERSATION_RATE, now: d.now });
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
   // flot de messages invalides ne coûte presque rien. Refusé par le monde (trop vite, case bloquante, hors carte), il renvoie à
@@ -299,6 +313,21 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     reply(d.arena.run(userId, command.data));
   });
 
+  // Les commandes d'une conversation (la verrouiller, la déverrouiller, en sortir), avec accusé de réception : `conversation:lock` dit ce qui a
+  // changé à ses membres. Même tronc que `desk:do` : ignorée sans init ; au-delà de CONVERSATION_RATE par socket : `rate_limited` ; invalide :
+  // `invalid`. La commande vaut pour la conversation où le serveur voit la personne, jamais une autre : `no_group` (pas de conversation à
+  // verrouiller), `not_locked` (rien à déverrouiller ni à quitter).
+  socket.on('conversation:do', (payload, ack) => {
+    const reply = (r: ConversationAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    if (!conversationLimiter.take(socket.id)) return reply({ ok: false, error: 'rate_limited' });
+    const command = conversationCommandSchema.safeParse(payload);
+    if (!command.success) return reply({ ok: false, error: 'invalid' });
+    reply(d.conversations.command(userId, command.data));
+  });
+
   // Allumer ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
   // monde voit la personne (jamais là où elle dit être). Aucune réponse, quoi qu'il arrive : la confirmation est `lights:changed`, que tout
   // le bureau reçoit, émetteur compris. Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme
@@ -427,32 +456,100 @@ export interface GroupTicksDeps {
   coordinator: MediaCoordinator;
   /** L'envoi d'un événement média à une personne (à ses sockets entrées). */
   send: (userId: string, e: MediaEvent) => void;
-  /** Le nom affiché d'une personne, pour ses jetons. */
+  /** Le nom affiché d'une personne, pour ses jetons et pour dire qui a verrouillé sa conversation. */
   nameOf: (id: string) => string;
   groupsMs: number;
   /** Les distances des espaces ouverts : OPEN_SPACE_GROUPING par défaut (le son baisse avec la distance). */
   grouping?: GroupConfig;
   /** Appelé avec les groupes à chaque calcul (le faux live, SIM=1, en dépend). Ne doit pas lever : une exception est journalisée. */
   onGroups?: (state: GroupingState) => void;
+  /** Ce qui change pour une personne dans sa conversation verrouillée (`conversation:lock`, à ses sockets entrées). Ne doit pas lever. */
+  notifyLock?: (userId: string, notice: ConversationLockNotice) => void;
   /** L'horloge du monde (monotone), celle des délais de computeGroups : jamais Date.now, qui peut sauter. */
   now: () => number;
+  /** L'heure du mur (ms depuis 1970), celle que les verrous montrent (`at`) : Date.now par défaut. */
+  clock?: () => number;
   logger: Logger;
+}
+
+export interface GroupTicks {
+  stop(): void;
+  /** L'état du dernier calcul, conversations verrouillées comprises : celui du coordinateur, des zones occupées (busyZoneIds), du faux live. */
+  state(): GroupingState;
+  /** La conversation verrouillée où est cette personne, ou null. */
+  lockOf(userId: string): ConversationLock | null;
+  /** Une commande d'une conversation (`conversation:do`), de cette personne, sur la conversation où le serveur la voit. */
+  command(userId: string, command: ConversationCommand): ConversationAck;
 }
 
 // Toutes les `groupsMs`, les groupes de conversation sont recalculés à partir des joueurs du monde (computeGroups, à l'heure `now`),
 // puis le coordinateur dit à ceux qui changent de room de la quitter ou d'en rejoindre une (apply). Un joueur parti du monde (fin du
 // délai de grâce, retrait) n'est plus dans le calcul suivant : il sort de son groupe comme les autres.
 //
+// Les conversations verrouillées passent au-dessus du calcul (conversation-locks.ts) : verrouiller sort le groupe du calcul, sous son id (sa
+// room ne change pas, rien n'est coupé), et ses membres n'y reviennent qu'au déverrouillage. Entre-temps, ils restent ensemble où qu'ils aillent,
+// personne ne les rejoint par proximité, et ils ne rejoignent aucun autre groupe. Un verrou perd, à chaque calcul, ceux de ses membres qui sont
+// partis du bureau (la fin du délai de grâce : une coupure plus courte n'y change rien) ou hors de toute conversation (Ne pas déranger, un état
+// sans entendre ni être entendu), comme ceux qui en sortent d'eux-mêmes (« Quitter ») ; à moins de deux, il s'arrête, et celui qui reste revient
+// au calcul. Les verrous ne vivent qu'en mémoire : un redémarrage les oublie, comme les groupes.
+//
 // Chaque calcul part de l'état du précédent, retenu dès l'appel d'apply (le coordinateur le retient aussi à ce moment-là, même si apply
 // échoue ensuite). Tant qu'apply n'a pas fini (il attend la fabrication des jetons), les tours suivants sont sautés : deux apply ne se
-// chevauchent pas. state() : l'état du dernier calcul (les zones occupées, busyZoneIds, en viennent). Le minuteur ne retient pas le
-// processus ; stop() l'arrête.
-export function startGroupTicks(d: GroupTicksDeps): { stop(): void; state(): GroupingState } {
+// chevauchent pas. Le minuteur ne retient pas le processus ; stop() l'arrête.
+export function startGroupTicks(d: GroupTicksDeps): GroupTicks {
+  // L'état du calcul (sans les conversations verrouillées), et celui que voient les autres (avec elles).
+  let base: GroupingState = EMPTY_GROUPING;
   let state: GroupingState = EMPTY_GROUPING;
+  const locks = new Map<string, ConversationLock>();
   let applying = false;
+  const clock = d.clock ?? Date.now;
+  const who = (id: string) => ({ id, name: d.nameOf(id) });
+  const notify = (userId: string, notice: ConversationLockNotice): void => {
+    try {
+      d.notifyLock?.(userId, notice);
+    } catch (err) {
+      logServerError(d.logger, { err, userId }, 'Annonce d\'un verrou de conversation impossible');
+    }
+  };
+  const lockOf = (userId: string): ConversationLock | null => [...locks.values()].find((lock) => lock.members.includes(userId)) ?? null;
+
+  // Le verrou perd ces membres : chacun l'apprend (quit), les autres aussi (left), et ils reviennent au calcul, qui les placera au prochain
+  // tour. À moins de deux, la conversation n'est plus verrouillée (ended) : celui qui reste revient au calcul sous l'id du groupe, et y garde sa
+  // room s'il est près de quelqu'un (sinon, seul, il en sort au même tour).
+  function release(lock: ConversationLock, leavers: readonly string[], players: readonly ProximityPlayer[]): void {
+    const remaining = lock.members.filter((m) => !leavers.includes(m));
+    for (const leaver of leavers) notify(leaver, { lock: null, cause: 'quit', by: who(leaver) });
+    if (remaining.length >= 2) {
+      const next: ConversationLock = { ...lock, members: remaining };
+      locks.set(lock.id, next);
+      for (const m of remaining) for (const leaver of leavers) notify(m, { lock: next, cause: 'left', by: who(leaver) });
+      return;
+    }
+    locks.delete(lock.id);
+    base = withGroup(base, lock.id, remaining, players, d.map);
+    for (const m of remaining) notify(m, { lock: null, cause: 'ended', by: leavers.length === 1 ? who(leavers[0]!) : null });
+  }
+
   const stop = every(d.groupsMs, d.logger, 'Calcul des groupes impossible', () => {
     if (applying) return;
-    const next = computeGroups(d.world.proximityPlayers(), d.map, state, d.now(), d.grouping ?? OPEN_SPACE_GROUPING);
+    const players = d.world.proximityPlayers();
+    const present = new Map(players.map((p) => [p.id, p]));
+    for (const lock of [...locks.values()]) {
+      const leavers = lock.members.filter((m) => {
+        const p = present.get(m);
+        return p === undefined || isOutOfConversations(p);
+      });
+      if (leavers.length > 0) release(lock, leavers, players);
+    }
+    const locked = new Set([...locks.values()].flatMap((lock) => lock.members));
+    base = computeGroups(
+      players.filter((p) => !locked.has(p.id)),
+      d.map,
+      base,
+      d.now(),
+      d.grouping ?? OPEN_SPACE_GROUPING,
+    );
+    const next = overlayLocks(base, locks.values());
     const applied = d.coordinator.apply(state, next, d.send, d.nameOf);
     state = next;
     applying = true;
@@ -467,5 +564,32 @@ export function startGroupTicks(d: GroupTicksDeps): { stop(): void; state(): Gro
         applying = false;
       });
   });
-  return { stop, state: () => state };
+
+  // Verrouiller : le groupe où le calcul a mis la personne (affectée, pas en attente), à deux au moins. Déjà verrouillée : rien ne change.
+  // Déverrouiller : pour tous ses membres, qui reviennent au calcul ensemble, sous son id. Quitter : elle seule.
+  function command(userId: string, c: ConversationCommand): ConversationAck {
+    const current = lockOf(userId);
+    if (c.type === 'lock') {
+      if (current) return { ok: true };
+      const groupId = Object.hasOwn(base.assignment, userId) ? base.assignment[userId] : null;
+      const group = groupId != null && Object.hasOwn(base.groups, groupId) ? base.groups[groupId]! : null;
+      if (group === null || group.members.length < 2) return { ok: false, error: 'no_group' };
+      base = withoutGroup(base, group.id);
+      const lock: ConversationLock = { id: group.id, members: [...group.members], by: who(userId), at: clock() };
+      locks.set(lock.id, lock);
+      for (const m of lock.members) notify(m, { lock, cause: 'locked', by: who(userId) });
+      return { ok: true };
+    }
+    if (!current) return { ok: false, error: 'not_locked' };
+    if (c.type === 'unlock') {
+      locks.delete(current.id);
+      base = withGroup(base, current.id, current.members, d.world.proximityPlayers(), d.map);
+      for (const m of current.members) notify(m, { lock: null, cause: 'unlocked', by: who(userId) });
+      return { ok: true };
+    }
+    release(current, [userId], d.world.proximityPlayers());
+    return { ok: true };
+  }
+
+  return { stop, state: () => state, lockOf, command };
 }

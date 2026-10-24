@@ -452,6 +452,219 @@ describe('le droit de parler (canSpeak)', () => {
   });
 });
 
+describe('parquer et reprendre', () => {
+  // Un faux backend qui sait parquer : il enregistre, dans l'ordre, chaque appel (« park room id », « resume room id resume canSpeak », « remove
+  // room id »), et un test peut retenir les appels jusqu'à ce qu'il les libère.
+  function parkingBackend() {
+    const calls: string[] = [];
+    let hold: Promise<void> | null = null;
+    const wait = async () => {
+      if (hold) await hold;
+    };
+    const backend: MediaBackend = {
+      url: 'wss://faux.livekit.test',
+      mintToken: async (i) => `jeton(${i.room},${i.identity})`,
+      removeParticipant: async (room, identity) => {
+        await wait();
+        calls.push(`remove ${room} ${identity}`);
+      },
+      park: async (room, identity) => {
+        await wait();
+        calls.push(`park ${room} ${identity}`);
+      },
+      resume: async (room, identity, { resume, canSpeak }) => {
+        calls.push(`resume ${room} ${identity} ${resume} ${canSpeak}`);
+      },
+    };
+    const holdCalls = () => {
+      const d = deferred<void>();
+      hold = d.promise;
+      return () => {
+        hold = null;
+        d.resolve();
+      };
+    };
+    return { backend, calls, holdCalls };
+  }
+
+  function fakeTimers() {
+    vi.useFakeTimers();
+    onTestFinished(() => {
+      vi.useRealTimers();
+    });
+  }
+
+  test('quitter un groupe, encore au bureau : media:leave avec park, le backend la parque, et la retire parkRemoveMs plus tard', async () => {
+    fakeTimers();
+    const { backend, calls } = parkingBackend();
+    const media = new MediaCoordinator(backend, BOOT, undefined, { parkRemoveMs: 65_000 });
+    const { sent, send } = recorder();
+    await media.apply(grouping({}, ['a', 'b']), grouping({ g1: ['a', 'b'] }), send, nameOf);
+    sent.length = 0;
+
+    await media.apply(grouping({ g1: ['a', 'b'] }), grouping({}, ['a', 'b']), send, nameOf);
+    expect(sent).toEqual([
+      { userId: 'a', e: { type: 'leave', park: true } },
+      { userId: 'b', e: { type: 'leave', park: true } },
+    ]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toEqual([`park ${BOOT}-g1 a`, `park ${BOOT}-g1 b`]);
+    expect(media.parkedRoomOf('a')).toBe(`${BOOT}-g1`);
+
+    await vi.advanceTimersByTimeAsync(64_999);
+    expect(calls).toHaveLength(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(calls.slice(2).sort()).toEqual([`remove ${BOOT}-g1 a`, `remove ${BOOT}-g1 b`]);
+    expect(media.parkedRoomOf('a')).toBeNull();
+  });
+
+  test('revenir dans la room où l\'on est parqué : media:join avec resume ; le backend la reprend, et ne la retire plus', async () => {
+    fakeTimers();
+    const { backend, calls } = parkingBackend();
+    const media = new MediaCoordinator(backend, BOOT, undefined, { parkRemoveMs: 65_000 });
+    const { send, of, sent } = recorder();
+    const together = grouping({ g1: ['a', 'b'] });
+    await media.apply(grouping({}, ['a', 'b']), together, send, nameOf);
+    await media.apply(together, grouping({}, ['a', 'b']), send, nameOf);
+    sent.length = 0;
+
+    await media.apply(grouping({}, ['a', 'b']), together, send, nameOf);
+    const joins = sent.map(({ userId, e }) => ({ userId, p: (e as { type: 'join'; p: MediaJoinPayload }).p }));
+    expect(joins.map(({ userId, p }) => [userId, p.room, p.token])).toEqual([
+      ['a', `${BOOT}-g1`, `jeton(${BOOT}-g1,a)`],
+      ['b', `${BOOT}-g1`, `jeton(${BOOT}-g1,b)`],
+    ]);
+    // Chaque reprise a son numéro, neuf : le client n'attend jamais l'attribut d'une reprise d'avant.
+    const [ra, rb] = joins.map(({ p }) => p.resume);
+    expect(ra).toBeDefined();
+    expect(new Set([ra, rb]).size).toBe(2);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toEqual([`park ${BOOT}-g1 a`, `park ${BOOT}-g1 b`, `resume ${BOOT}-g1 a ${ra} true`, `resume ${BOOT}-g1 b ${rb} true`]);
+    expect(media.parkedRoomOf('a')).toBeNull();
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(calls.filter((c) => c.startsWith('remove'))).toEqual([]);
+    expect(of('a')).toEqual([`join ${BOOT}-g1`]);
+  });
+
+  test('rejoindre une autre room : un join sans resume ; la connexion parquée est retirée à son heure', async () => {
+    fakeTimers();
+    const { backend, calls } = parkingBackend();
+    const media = new MediaCoordinator(backend, BOOT, undefined, { parkRemoveMs: 65_000 });
+    const { send, sent } = recorder();
+    await media.apply(grouping({}, ['a', 'b', 'c']), grouping({ g1: ['a', 'b'] }, ['c']), send, nameOf);
+    await media.apply(grouping({ g1: ['a', 'b'] }, ['c']), grouping({ g2: ['a', 'c'] }, ['b']), send, nameOf);
+    const joinOfA = sent.filter(({ userId, e }) => userId === 'a' && e.type === 'join').at(-1)!.e as { type: 'join'; p: MediaJoinPayload };
+    expect(joinOfA.p).toEqual({ url: backend.url, room: `${BOOT}-g2`, token: `jeton(${BOOT}-g2,a)` });
+    await vi.advanceTimersByTimeAsync(65_000);
+    expect(calls).toEqual(expect.arrayContaining([`park ${BOOT}-g1 a`, `remove ${BOOT}-g1 a`]));
+  });
+
+  test('qui sort de toute conversation (canPark faux) ou du bureau : media:leave sans park, et retrait tout de suite', async () => {
+    const { backend, calls } = parkingBackend();
+    const media = new MediaCoordinator(backend, BOOT, undefined, { canPark: (id) => id !== 'b' });
+    const { sent, send } = recorder();
+    await media.apply(grouping({}, ['a', 'b', 'c']), grouping({ g1: ['a', 'b', 'c'] }), send, nameOf);
+    sent.length = 0;
+    // B passe en Ne pas déranger ; C quitte le bureau (absent du nouvel état) ; A reste seul.
+    await media.apply(grouping({ g1: ['a', 'b', 'c'] }), grouping({}, ['a', 'b']), send, nameOf);
+    await vi.waitFor(() => expect(calls).toHaveLength(3));
+    expect(sent).toEqual([
+      { userId: 'a', e: { type: 'leave', park: true } },
+      { userId: 'b', e: { type: 'leave' } },
+      { userId: 'c', e: { type: 'leave' } },
+    ]);
+    expect(calls.sort()).toEqual([`park ${BOOT}-g1 a`, `remove ${BOOT}-g1 b`, `remove ${BOOT}-g1 c`]);
+  });
+
+  test('les appels d\'une personne dans une room se suivent : la reprise attend un parcage lent', async () => {
+    const { backend, calls, holdCalls } = parkingBackend();
+    const media = new MediaCoordinator(backend, BOOT);
+    const { send, of } = recorder();
+    const together = grouping({ g1: ['a', 'b'] });
+    await media.apply(grouping({}, ['a', 'b']), together, send, nameOf);
+    const release = holdCalls();
+    await media.apply(together, grouping({}, ['a', 'b']), send, nameOf);   // les parcages attendent LiveKit…
+    await media.apply(grouping({}, ['a', 'b']), together, send, nameOf);   // … et ils reviennent déjà
+    // Le join part sans attendre LiveKit (le client attend l'attribut de la reprise) ; mais la reprise attend le parcage.
+    expect(of('a')).toEqual([`join ${BOOT}-g1`, 'leave', `join ${BOOT}-g1`]);
+    expect(calls).toEqual([]);
+    release();
+    await vi.waitFor(() => expect(calls).toHaveLength(4));
+    expect(calls.map((c) => c.split(' ').slice(0, 3).join(' '))).toEqual([`park ${BOOT}-g1 a`, `park ${BOOT}-g1 b`, `resume ${BOOT}-g1 a`, `resume ${BOOT}-g1 b`]);
+  });
+
+  test('un retrait encore en cours (une sortie pour de bon) : le join vers la même room l\'attend, il ne tombe jamais sur la connexion d\'après', async () => {
+    const { backend, calls, holdCalls } = parkingBackend();
+    let out = true;
+    const media = new MediaCoordinator(backend, BOOT, undefined, { canPark: () => !out });
+    const { send, of } = recorder();
+    const together = grouping({ g1: ['a', 'b'] });
+    out = false;
+    await media.apply(grouping({}, ['a', 'b']), together, send, nameOf);
+    out = true;
+    const release = holdCalls();
+    await media.apply(together, grouping({}, ['a', 'b']), send, nameOf);   // Ne pas déranger : retirés, et LiveKit est lent…
+    out = false;
+    const back = media.apply(grouping({}, ['a', 'b']), together, send, nameOf);   // … et ils reviennent aussitôt
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(of('a')).toEqual([`join ${BOOT}-g1`, 'leave']);   // pas encore de join : le retrait n'a pas fini
+    release();
+    await back;
+    expect(of('a')).toEqual([`join ${BOOT}-g1`, 'leave', `join ${BOOT}-g1`]);
+    expect(calls).toEqual([`remove ${BOOT}-g1 a`, `remove ${BOOT}-g1 b`]);
+  });
+
+  test('le droit de parler change dans la room : elle est parquée puis reprise, avec ses nouveaux droits ; rien n\'est retiré', async () => {
+    const { backend, calls } = parkingBackend();
+    let allowed = true;
+    const media = new MediaCoordinator(backend, BOOT, undefined, { canSpeak: (id) => id !== 'b' || allowed });
+    const { send, of } = recorder();
+    const together = grouping({ g1: ['a', 'b'] });
+    await media.apply(grouping({}, ['a', 'b']), together, send, nameOf);
+    allowed = false;
+    await media.apply(together, together, send, nameOf);
+    expect(of('b')).toEqual([`join ${BOOT}-g1`, 'leave', `join ${BOOT}-g1`]);
+    await vi.waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls[0]).toBe(`park ${BOOT}-g1 b`);
+    expect(calls[1]).toMatch(new RegExp(`^resume ${BOOT}-g1 b \\d+ false$`));
+  });
+});
+
+describe('le parcage chez LiveKit (UpdateParticipant)', () => {
+  test('parquer retire tous les droits et pose l\'attribut ; reprendre rend ceux du jeton et l\'attribut de la reprise ; « introuvable » ignoré', async () => {
+    const backend = createLiveKitBackend({ ...LIVEKIT, LIVEKIT_URL: 'ws://livekit.test:7880' })!;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    onTestFinished(() => {
+      fetchSpy.mockRestore();
+    });
+    const twirp = (status: number, body: object) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+    fetchSpy.mockImplementation(async () => twirp(200, {}));
+
+    await backend.park!(`${BOOT}-g1`, 'a');
+    await backend.resume!(`${BOOT}-g1`, 'a', { canSpeak: true, resume: '7' });
+    await backend.resume!(`${BOOT}-g1`, 'b', { canSpeak: false, resume: '8' });
+    const bodies = fetchSpy.mock.calls.map(([url, init]) => ({ url: String(url), body: JSON.parse(String(init!.body)) as Record<string, unknown> }));
+    expect(bodies.every(({ url }) => url === 'http://livekit.test:7880/twirp/livekit.RoomService/UpdateParticipant')).toBe(true);
+    expect(bodies[0]!.body).toMatchObject({ room: `${BOOT}-g1`, identity: 'a', attributes: { 'bureau.parked': '1' } });
+    expect(bodies[0]!.body.permission ?? {}).not.toHaveProperty('canSubscribe', true);
+    expect(bodies[0]!.body.permission ?? {}).not.toHaveProperty('canPublish', true);
+    expect(bodies[1]!.body).toMatchObject({
+      identity: 'a',
+      permission: { canSubscribe: true, canPublish: true },
+      attributes: { 'bureau.parked': '', 'bureau.resume': '7' },
+    });
+    expect((bodies[1]!.body.permission as Record<string, unknown>).canPublishSources ?? []).toEqual([]);
+    // Sans droit de parler : les mêmes sources que son jeton (tout, sauf le micro).
+    expect((bodies[2]!.body.permission as { canPublishSources: string[] }).canPublishSources).toEqual(expect.arrayContaining(['CAMERA', 'SCREEN_SHARE']));
+    expect((bodies[2]!.body.permission as { canPublishSources: string[] }).canPublishSources).not.toContain('MICROPHONE');
+
+    fetchSpy.mockResolvedValueOnce(twirp(404, { code: 'not_found', msg: 'participant not found' }));
+    await expect(backend.park!(`${BOOT}-g1`, 'a')).resolves.toBeUndefined();
+    fetchSpy.mockResolvedValueOnce(twirp(401, { code: 'unauthenticated', msg: 'invalid token' }));
+    await expect(backend.resume!(`${BOOT}-g1`, 'a', { canSpeak: true, resume: '9' })).rejects.toThrow('invalid token');
+  });
+});
+
 describe('le jeton LiveKit sans droit de parler', () => {
   test('il permet la caméra et le partage d\'écran, pas le micro ; avec le droit de parler : tout (aucune restriction de source)', async () => {
     const backend = createLiveKitBackend(LIVEKIT)!;

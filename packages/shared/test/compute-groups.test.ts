@@ -3,6 +3,8 @@ import {
   DEV_OFFICE,
   EMPTY_GROUPING,
   GROUP_DEBOUNCE_MS,
+  GROUP_MEMORY_MS,
+  REJOIN_DEBOUNCE_MS,
   ZONE_JOIN_DEBOUNCE_MS,
   CLOSE_JOIN_DISTANCE_PX as JOIN_DISTANCE_PX,
   CLOSE_LEAVE_DISTANCE_PX as LEAVE_DISTANCE_PX,
@@ -165,7 +167,8 @@ test('Ne pas déranger', () => {
   let s = step([player('A', at(4, 7)), B], EMPTY_GROUPING, 0, 500);
   expect(s.assignment).toEqual({ A: 'g1', B: 'g1' });
   s = run([dnd, B], s, 750);
-  expect(s).toEqual({ assignment: { A: null, B: null }, groups: {}, pending: {}, nextId: 2 });
+  // La mémoire garde les deux : ils retrouveraient g1 s'ils se reparlaient dans la minute.
+  expect(s).toEqual({ assignment: { A: null, B: null }, groups: {}, pending: {}, nextId: 2, recent: { g1: { zoneId: null, members: { A: 750, B: 750 } } } });
   // À trois, les deux autres restent ensemble.
   const C = player('C', at(8, 7));
   s = step([player('A', at(4, 7)), B, C], EMPTY_GROUPING, 0, 500);
@@ -183,7 +186,7 @@ test('sortir de la salle privée coupe tout de suite', () => {
   expect(s.assignment.A).toBeNull();
   // B, resté seul dans la salle, est libéré dans le même appel : un groupe d'une personne vers qui personne n'est en route est
   // dissous.
-  expect(s).toEqual({ assignment: { A: null, B: null }, groups: {}, pending: {}, nextId: 2 });
+  expect(s).toEqual({ assignment: { A: null, B: null }, groups: {}, pending: {}, nextId: 2, recent: { g1: { zoneId: ROOM, members: { A: 750, B: 750 } } } });
   // À trois dans la salle, ceux qui restent gardent leur groupe.
   const C = player('C', at(11, 2));
   s = step([player('A', at(9, 2)), B, C], EMPTY_GROUPING, 0, 500);
@@ -240,7 +243,7 @@ test('joueur parti', () => {
   expect(s.assignment).toEqual({ A: 'g1', B: 'g1' });
   s = run([A], s, 750);
   expect('B' in s.assignment).toBe(false);
-  expect(s).toEqual({ assignment: { A: null }, groups: {}, pending: {}, nextId: 2 });
+  expect(s).toEqual({ assignment: { A: null }, groups: {}, pending: {}, nextId: 2, recent: { g1: { zoneId: null, members: { A: 750, B: 750 } } } });
 });
 
 test('seul dans une zone : pas de groupe', () => {
@@ -385,6 +388,8 @@ test('sortir de la salle à deux : coupés tout de suite, ensemble dans le coulo
     groups: {},
     pending: { A: { target: 'g2', since: 750 }, B: { target: 'g2', since: 750 } },
     nextId: 3,
+    // L'id du groupe de la salle reste dans la mémoire, mais ne sort pas de la salle : le couloir ne le reprend pas.
+    recent: { g1: { zoneId: ROOM, members: { A: 750, B: 750 } } },
   });
   expect(states.map((st) => st.assignment.A)).toEqual([null, null, 'g2']);
   expect(states.at(-1)!.groups).toEqual({ g2: { id: 'g2', members: ['A', 'B'], zoneId: null } });
@@ -464,6 +469,7 @@ test("un groupe du couloir dont deux membres entrent dans la salle : celui qui r
     groups: { g1: { id: 'g1', members: ['A', 'B'], zoneId: ROOM } },
     pending: {},
     nextId: 2,
+    recent: { g1: { zoneId: ROOM, members: { C: 750 } } },
   });
 });
 
@@ -599,6 +605,89 @@ test("à voix égales, garder la zone du groupe passe avant la taille : la grapp
     { A: 'g2', B: 'g2', C: 'g1', D: 'g1', X: 'g2' },
     { A: 'g2', B: 'g2', C: 'g1', D: 'g1', X: 'g2' },
   ]);
+});
+
+// ---- La mémoire des groupes : les mêmes gens retrouvent leur room (octobre 2026) ---------------------------------------------------
+
+test("deux qui se séparent puis se retrouvent dans la minute : l'id de leur groupe défait (sa room, où ils sont parqués), après REJOIN_DEBOUNCE_MS", () => {
+  const A = player('A', at(4, 7));
+  let s = step([A, player('B', at(6, 7))], EMPTY_GROUPING, 0, 500);
+  expect(s.assignment).toEqual({ A: 'g1', B: 'g1' });
+  // B s'éloigne : le groupe se défait 500 ms plus tard, et la mémoire garde les deux.
+  s = step([A, player('B', at(14, 7))], s, 750, 1250);
+  expect(s.groups).toEqual({});
+  expect(s.recent).toEqual({ g1: { zoneId: null, members: { A: 1250, B: 1250 } } });
+  // B revient 4 s plus tard : leur grappe reprend g1, et l'attente n'est que de REJOIN_DEBOUNCE_MS (le pas suivant, 250 ms plus tard).
+  expect(REJOIN_DEBOUNCE_MS).toBeLessThan(TICK_MS);
+  const states = steps([A, player('B', at(6, 7))], s, 5000, 5250);
+  expect(states[0]!.pending).toEqual({ A: { target: 'g1', since: 5000 }, B: { target: 'g1', since: 5000 } });
+  expect(states[1]!.assignment).toEqual({ A: 'g1', B: 'g1' });
+  expect(states[1]!.nextId).toBe(2);   // aucun id neuf
+  // De retour dans le groupe, ils ne sont plus dans sa mémoire.
+  expect(states[1]!.recent).toBeUndefined();
+});
+
+test('au-delà de GROUP_MEMORY_MS, la mémoire a oublié : un id neuf, et 500 ms', () => {
+  const A = player('A', at(4, 7));
+  let s = step([A, player('B', at(6, 7))], EMPTY_GROUPING, 0, 500);
+  s = step([A, player('B', at(14, 7))], s, 750, 1250);
+  const back = 1250 + GROUP_MEMORY_MS;
+  const states = steps([A, player('B', at(6, 7))], s, back, back + 500);
+  expect(states[0]!.recent).toBeUndefined();
+  expect(states[0]!.pending).toEqual({ A: { target: 'g2', since: back }, B: { target: 'g2', since: back } });
+  expect(states.map((st) => st.assignment.A)).toEqual([null, null, 'g2']);
+});
+
+test("un seul ancien membre ne reprend pas l'id : il en faut deux du groupe défait", () => {
+  const A = player('A', at(4, 7));
+  let s = step([A, player('B', at(6, 7))], EMPTY_GROUPING, 0, 500);
+  s = step([A, player('B', at(14, 14))], s, 750, 1250);
+  // C s'arrête près de A : un id neuf, après 500 ms (C n'a jamais été de g1 ; A, si, mais seul il ne suffit pas).
+  const states = steps([A, player('B', at(14, 14)), player('C', at(6, 7))], s, 2000, 2500);
+  expect(states.map((st) => st.assignment)).toEqual([
+    { A: null, B: null, C: null },
+    { A: null, B: null, C: null },
+    { A: 'g2', B: null, C: 'g2' },
+  ]);
+});
+
+test("revenir dans un groupe qui continue sans soi : REJOIN_DEBOUNCE_MS ; un nouveau venu, lui, attend 500 ms", () => {
+  const row7 = (id: string, tx: number) => player(id, at(tx, 7));
+  let s = step([row7('A', 4), row7('B', 6), row7('C', 8)], EMPTY_GROUPING, 0, 500);   // g1 = {A, B, C}
+  s = step([row7('A', 16), row7('B', 6), row7('C', 8)], s, 750, 1250);
+  expect(s.assignment).toEqual({ A: null, B: 'g1', C: 'g1' });
+  expect(s.recent).toEqual({ g1: { zoneId: null, members: { A: 1250 } } });
+  // A revient, et D arrive en même temps de l'autre côté : A est dans g1 au pas suivant, D 500 ms après son arrivée.
+  const states = steps([row7('A', 4), row7('B', 6), row7('C', 8), row7('D', 10)], s, 2000, 2500);
+  expect(states.map((st) => [st.assignment.A, st.assignment.D])).toEqual([
+    [null, null],
+    ['g1', null],
+    ['g1', 'g1'],
+  ]);
+});
+
+test("revenir à deux dans la salle qu'on a quittée : l'id du groupe de la salle, qui n'en était pas sorti", () => {
+  let s = step([player('A', at(9, 2)), player('B', at(12, 3))], EMPTY_GROUPING, 0, 500);
+  s = step([player('A', at(4, 13)), player('B', at(14, 13))], s, 750, 1000);   // chacun de son côté, loin l'un de l'autre
+  expect(s.recent).toEqual({ g1: { zoneId: ROOM, members: { A: 750, B: 750 } } });
+  const states = steps([player('A', at(9, 2)), player('B', at(12, 3))], s, 3000, 3250);
+  expect(states[0]!.pending).toEqual({ A: { target: 'g1', since: 3000 }, B: { target: 'g1', since: 3000 } });
+  expect(states[1]!.groups).toEqual({ g1: { id: 'g1', members: ['A', 'B'], zoneId: ROOM } });
+});
+
+test("la mémoire ne prend pas l'id d'un groupe qui existe : partis de g1 puis séparés, C et D se retrouvent dans g2, pas dans g1 où A et B sont restés", () => {
+  const row7 = (id: string, tx: number) => player(id, at(tx, 7));
+  let s = step([row7('A', 4), row7('B', 6), row7('C', 8), row7('D', 10)], EMPTY_GROUPING, 0, 500);   // g1 = {A, B, C, D}
+  // C et D partent ensemble ligne 14 : ils forment g2 (et la mémoire de g1 les garde).
+  s = step([row7('A', 4), row7('B', 6), player('C', at(12, 14)), player('D', at(14, 14))], s, 750, 1250);
+  expect(s.assignment).toEqual({ A: 'g1', B: 'g1', C: 'g2', D: 'g2' });
+  // Puis ils se séparent : g2 se défait.
+  s = step([row7('A', 4), row7('B', 6), player('C', at(2, 14)), player('D', at(20, 14))], s, 1500, 2000);
+  expect(s.assignment).toEqual({ A: 'g1', B: 'g1', C: null, D: null });
+  expect(s.recent).toEqual({ g1: { zoneId: null, members: { C: 1250, D: 1250 } }, g2: { zoneId: null, members: { C: 2000, D: 2000 } } });
+  // Ils se retrouvent loin de A et B : g2 (défait), et non g1 (qui existe).
+  const back = step([row7('A', 4), row7('B', 6), player('C', at(12, 14)), player('D', at(14, 14))], s, 3000, 3250);
+  expect(back.assignment).toEqual({ A: 'g1', B: 'g1', C: 'g2', D: 'g2' });
 });
 
 // ---- Propriétés, sur des marches au hasard ----------------------------------------------------------------------------------
@@ -776,8 +865,10 @@ function violations(s: GroupingState, prev: GroupingState, players: ProximityPla
     const g = s.assignment[p.id] ?? null;
     const before = prev.assignment[p.id] ?? null;
     const waited = prev.pending[p.id];
-    // L'attente d'un groupe de zone est courte (ZONE_JOIN_DEBOUNCE_MS), celle des autres changements de GROUP_DEBOUNCE_MS.
-    const needed = g !== null && s.groups[g]?.zoneId != null ? ZONE_JOIN_DEBOUNCE_MS : GROUP_DEBOUNCE_MS;
+    // L'attente d'un groupe de zone est courte (ZONE_JOIN_DEBOUNCE_MS), comme celle d'un retour dans un groupe qu'on a quitté depuis moins de
+    // GROUP_MEMORY_MS (REJOIN_DEBOUNCE_MS) ; celle des autres changements est de GROUP_DEBOUNCE_MS.
+    const remembered = g !== null && prev.recent?.[g]?.members[p.id] !== undefined && now - prev.recent[g]!.members[p.id]! < GROUP_MEMORY_MS;
+    const needed = g !== null && s.groups[g]?.zoneId != null ? ZONE_JOIN_DEBOUNCE_MS : remembered ? REJOIN_DEBOUNCE_MS : GROUP_DEBOUNCE_MS;
     const matured = waited !== undefined && waited.target === g && now - waited.since >= needed;
     if (p.status === 'dnd' && (g !== null || p.id in s.pending)) out.push(`${p.id} est en Ne pas déranger mais affecté ou en attente`);
     // Entrer dans un groupe, ou en changer, attend toujours : 500 ms, ou ZONE_JOIN_DEBOUNCE_MS pour le groupe d'une zone.
@@ -881,7 +972,19 @@ describe('propriétés, sur des marches au hasard', () => {
   const SEEDS = Array.from({ length: 30 }, (_, i) => 1000 + i);
 
   test("à chaque appel : état cohérent, résultat indépendant de l'ordre des joueurs, état reçu jamais modifié", () => {
-    const seen = { openGroups: 0, zoneGroups: 0, alone: 0, immediate: 0, switches: 0, zoneExitsToCluster: 0, openToZone: 0, unchangedGroups: 0, linkedUnchanged: 0 };
+    const seen = {
+      openGroups: 0,
+      zoneGroups: 0,
+      alone: 0,
+      immediate: 0,
+      switches: 0,
+      zoneExitsToCluster: 0,
+      openToZone: 0,
+      unchangedGroups: 0,
+      linkedUnchanged: 0,
+      fromMemory: 0,
+      rejoins: 0,
+    };
     for (const seed of SEEDS) {
       const random = mulberry32(seed + 1);
       let s = EMPTY_GROUPING;
@@ -904,6 +1007,9 @@ describe('propriétés, sur des marches au hasard', () => {
         if (groups.some((g) => g.members.length === 1)) seen.alone++;
         // Un groupe d'espace ouvert repris par la grappe d'une zone.
         if (groups.some((g) => g.zoneId !== null && Object.hasOwn(prev.groups, g.id) && prev.groups[g.id]!.zoneId === null)) seen.openToZone++;
+        // Un id repris à la mémoire (une cible en attente qui n'est ni un groupe, ni un id neuf), et un retour dans un groupe qu'on avait quitté.
+        if (Object.values(next.pending).some((w) => w.target !== null && !Object.hasOwn(prev.groups, w.target) && Object.hasOwn(prev.recent ?? {}, w.target))) seen.fromMemory++;
+        if (players.some(({ id }) => { const g = next.assignment[id]; return g != null && g !== prev.assignment[id] && prev.recent?.[g]?.members[id] !== undefined; })) seen.rejoins++;
         for (const { id } of players) {
           const before = prev.assignment[id] ?? null;
           const after = next.assignment[id];
@@ -930,7 +1036,9 @@ describe('propriétés, sur des marches au hasard', () => {
         for (let t = now + 250; t <= now + 3000; t += 250) still = computeGroups(players, map, still, t);
         const context = `graine ${seed}, appel ${k}`;
         expect(still.pending, context).toEqual({});
-        expect(computeGroups(players, map, still, now + 3250), context).toEqual(still);
+        // La mémoire, elle, oublie avec le temps : on compare le reste.
+        const withoutMemory = (st: GroupingState) => ({ ...st, recent: undefined });
+        expect(withoutMemory(computeGroups(players, map, still, now + 3250)), context).toEqual(withoutMemory(still));
         expect(clusterViolations(still, players), context).toEqual([]);
       }
     }

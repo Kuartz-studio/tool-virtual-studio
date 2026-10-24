@@ -206,8 +206,13 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   if (media === null) {
     logger.warn({ missing: LIVEKIT_VARIABLES.filter((name) => !d.env[name]) }, 'LiveKit non configuré : audio et vidéo désactivés');
   }
-  // Un état d'activité où l'on n'est pas entendu (heard faux) retire le micro du jeton : le serveur ne laisse rien publier.
-  const coordinator = new MediaCoordinator(media, newBootId(), logger, { canSpeak: (userId) => world.get(userId)?.activity?.heard !== false });
+  // Un état d'activité où l'on n'est pas entendu (heard faux) retire le micro du jeton : le serveur ne laisse rien publier. Qui quitte un
+  // groupe garde sa connexion parquée s'il reste dans les conversations ; en Ne pas déranger (ou dans un état hors de toute conversation), il
+  // la quitte pour de bon.
+  const coordinator = new MediaCoordinator(media, newBootId(), logger, {
+    canSpeak: (userId) => world.get(userId)?.activity?.heard !== false,
+    canPark: (userId) => world.canConverse(userId),
+  });
 
   // Pas de récupération de connexion (connectionStateRecovery) : Socket.io renverrait à une socket revenue les diffusions qu'elle a
   // manquées avant même de repasser les middlewares, si bien qu'un membre retiré pendant sa coupure en recevrait jusqu'à 10 s.
@@ -304,6 +309,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     music,
     games,
     arena,
+    conversations: { lockOf: (userId) => groups.lockOf(userId) },
     onWelcome: (socket) => {
       resyncMedia(socket);
       games.onWelcome(socket.data.userId);
@@ -312,13 +318,15 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
 
   // Ce que chaque socket sait de sa room LiveKit : la room de son dernier media:join, null après un media:leave. La même consigne
   // n'est jamais envoyée deux fois de suite à une socket : le join de son retour (resyncMedia) et celui d'un changement de groupe
-  // (apply) peuvent se croiser, et un second join pour la même room ferait quitter puis rejoindre la room au client.
+  // (apply) peuvent se croiser, et un second join pour la même room ferait quitter puis rejoindre la room au client. media:leave porte
+  // `park` quand le client garde sa connexion parquée.
   const told = new WeakMap<TypedSocket, string | null>();
   function tell(socket: TypedSocket, e: MediaEvent): void {
     const room = e.type === 'join' ? e.p.room : null;
     if (told.has(socket) && told.get(socket) === room) return;
     told.set(socket, room);
     if (e.type === 'join') socket.emit('media:join', e.p);
+    else if (e.park) socket.emit('media:leave', { park: true });
     else socket.emit('media:leave');
   }
 
@@ -379,6 +387,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       coffeeLimiter,
       coffees: d.map.coffees,
       arena,
+      conversations: { command: (userId, command) => groups.command(userId, command) },
     });
   });
   // Un membre retiré : sa place est libre pour les autres.
@@ -409,6 +418,11 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     groupsMs: d.groupsMs ?? GROUPS_TICK_MS,
     grouping: d.grouping,
     onGroups: d.sim ? (state) => d.sim!.onGroups(state) : undefined,
+    // Ce qui change dans une conversation verrouillée, à chacune des sockets entrées de ses membres (jamais avant leur init : l'init dit le
+    // verrou du moment).
+    notifyLock: (userId, notice) => {
+      for (const socket of enteredSockets(userId)) socket.emit('conversation:lock', notice);
+    },
     now,
     logger,
   });

@@ -15,6 +15,7 @@ export * from './movement/speed';
 export * from './movement/validate-move';
 export * from './proximity/audio-gain';
 export * from './proximity/compute-groups';
+export * from './proximity/conversation-locks';
 export * from './decor/types';
 export * from './decor/generated';
 export * from './props/catalog';

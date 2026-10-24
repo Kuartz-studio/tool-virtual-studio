@@ -1,4 +1,4 @@
-import { OFFICE_ROOM, type ChatMessage, type Direction, type OfficeMap, type PublicPlayer } from '@bureau/shared';
+import { OFFICE_ROOM, type ChatMessage, type ConversationLock, type Direction, type OfficeMap, type PublicPlayer } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import type { ChatService } from '../chat/chat-service';
@@ -37,6 +37,8 @@ export interface PresenceDeps {
   games?: Pick<GamesController, 'initFor' | 'onSocketsGone' | 'onDepart' | 'onRemoved'>;
   /** L'octogone : chaque init le dit (ses départs, il les voit seul à son balayage). */
   arena?: Pick<ArenaController, 'initFor'>;
+  /** Les conversations verrouillées : chaque init dit celle de la personne (qui revient d'une coupure, ou ouvre un autre onglet). */
+  conversations?: { lockOf(userId: string): ConversationLock | null };
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -120,6 +122,7 @@ export function createPresence(d: PresenceDeps) {
     const self = d.world.get(userId)!;
     void socket.join(OFFICE_ROOM);
     const music = d.music.all();
+    const conversationLock = d.conversations?.lockOf(userId) ?? null;
     socket.emit('init', {
       self,
       players: d.world.list().filter((p) => p.id !== userId),
@@ -131,6 +134,7 @@ export function createPresence(d: PresenceDeps) {
       lights: d.lights.get(),
       // Seulement les pièces qu'on a réglées : sans réglage, le champ n'y est pas.
       ...(Object.keys(music).length > 0 ? { music } : {}),
+      ...(conversationLock ? { conversationLock } : {}),
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
     d.onWelcome?.(socket);
