@@ -159,11 +159,9 @@ test('A ferme son onglet → B le voit passer en « Hors ligne » après le dél
   // Le délai de grâce : A est encore là pour les autres.
   await b.page.waitForTimeout(GRACE_MS / 2);
   await expect(online.locator(`[data-user="${a.id}"]`)).toBeVisible();
-  // Puis il part : hors ligne, sous le même nom. Le groupe est replié, avec son compte : on le déplie.
+  // Puis il part : hors ligne, sous le même nom. Le groupe est déplié, avec son compte.
   const fold = offline.getByRole('button', { name: /^Hors ligne \(\d+\)$/ });
   await expect(fold).toBeVisible({ timeout: GRACE_MS + 10_000 });
-  await expect(fold).toHaveAttribute('aria-expanded', 'false');
-  await fold.click();
   await expect(fold).toHaveAttribute('aria-expanded', 'true');
   const rowOfA = offline.locator(`[data-user="${a.id}"]`);
   await expect(rowOfA).toBeVisible({ timeout: GRACE_MS + 10_000 });

@@ -113,6 +113,8 @@ test('« Ici », dans Personnes, ne réunit que ceux du même lieu : deux person
     await expect(whereChip(a)).toContainText('Café');
 
     const people = await openPanel(a, 'Personnes');
+    // Le panneau s'ouvre sur « Tout le bureau » : on passe sur « Ici ».
+    await people.getByRole('tab', { name: /^Ici/ }).click();
     const here = people.getByRole('region', { name: /^Ici/ });
     await expect(here.getByText('Axelle', { exact: true })).toBeVisible();
     await expect(here.getByText('Bruno', { exact: true })).toBeVisible({ timeout: 15_000 });

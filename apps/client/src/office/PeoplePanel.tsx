@@ -80,9 +80,10 @@ interface Row extends Person {
 
 type View = 'here' | 'all';
 
-// Le panneau Personnes (spec §10), dans la coque des panneaux (Drawer) : un sélecteur à deux positions, « Ici » (ceux qui sont dans le même lieu que
-// soi, soi compris : `place`, le lieu que la coque suit et donne aussi à la puce du lieu ; celui de chacun des autres est celui de placeAt) et « Tout le bureau » (tous ceux qui sont en ligne, puis les hors ligne, repliés sous
-// leur compte). Chaque ligne : le portrait de 38 px avec la pastille de son statut, le nom (et « toi » pour soi), et dessous ce qu'elle fait : son
+// Le panneau Personnes (spec §10), dans la coque des panneaux (Drawer) : un sélecteur à deux positions, « Tout le bureau » (tous ceux qui sont en ligne,
+// puis les hors ligne, dépliés sous leur compte, qu'un clic replie), choisi à chaque ouverture, et « Ici » (ceux qui sont dans le même lieu que soi, soi
+// compris : `place`, le lieu que la coque suit et donne aussi à la puce du lieu ; celui de chacun des autres est celui de placeAt). Chaque ligne : le
+// portrait de 38 px avec la pastille de son statut, le nom (et « toi » pour soi), et dessous ce qu'elle fait : son
 // mode (l'icône et le nom de l'état d'activité), sinon « Parle avec toi » si elle est dans notre conversation (`talkingWith` : ses identifiants), sinon
 // son lieu, sinon « En ligne ». Hors ligne, dessous : sa dernière connexion (« Il y a 3 h », LastSeen), rafraîchie chaque minute. Le statut
 // est dit aux lecteurs d'écran, la pastille ne leur dit rien.
@@ -99,8 +100,8 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
   const players = useOfficeStore((state) => state.players);
   const { members, failed, reload } = useMembers();
   const places = usePlaces();
-  const [view, setView] = useState<View>('here');
-  const [offlineOpen, setOfflineOpen] = useState(false);
+  const [view, setView] = useState<View>('all');
+  const [offlineOpen, setOfflineOpen] = useState(true);
   const uid = useId();
   const panelId = `${uid}-liste`;
   const tabId = (which: View) => `${uid}-onglet-${which}`;
@@ -176,8 +177,8 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
   }
 
   const options: SegmentedOption<View>[] = [
-    { id: 'here', label: fr.office.people.here, count: here.length },
     { id: 'all', label: fr.office.people.all, count: online.length },
+    { id: 'here', label: fr.office.people.here, count: here.length },
   ];
 
   // Ce qu'on sait d'une personne hors ligne : depuis quand on ne l'a plus vue. Jamais venue, rien.
