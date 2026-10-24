@@ -16,7 +16,7 @@ import {
   type WorldTick,
   type Zone,
 } from '@bureau/shared';
-import { Input, Scale, Scene, Scenes } from 'phaser';
+import { Scale, Scene, Scenes } from 'phaser';
 import { fr, t } from '../../i18n/fr';
 import { chairOf } from '../../games/table-view';
 import { deskTitle } from '../../office/desks';
@@ -325,18 +325,20 @@ export class Office extends Scene {
       }),
     ];
     document.addEventListener('visibilitychange', this.onVisibilityChange);
-    // La souris bouge sur le jeu, ou en sort (sur un panneau, un dock, hors de la page) : hors du jeu, elle ne survole aucun avatar. Un mouvement, et pas
-    // seulement l'entrée : la souris est peut-être déjà sur le canevas quand la scène démarre.
-    const pointerIn = () => {
-      this.pointerInGame = true;
+    // La souris bouge sur le canevas, ou le quitte (pour un panneau, un dock posés dessus, ou hors de la page) : hors de lui, elle ne survole aucun
+    // avatar. Les événements du canevas lui-même, et non ceux de Phaser, qui suit aussi la souris au-dessus de l'interface : un avatar caché sous le
+    // panneau Personnes aurait sa carte. Un mouvement, et pas seulement l'entrée : la souris est peut-être déjà sur le canevas quand la scène démarre.
+    // Au doigt, pas de survol.
+    const canvas = this.game.canvas;
+    const pointerIn = (event: PointerEvent) => {
+      this.pointerInGame = event.pointerType !== 'touch';
     };
     const pointerOut = () => {
       this.pointerInGame = false;
       this.hoverAvatars();
     };
-    this.input.on(Input.Events.GAME_OVER, pointerIn);
-    this.input.on(Input.Events.POINTER_MOVE, pointerIn);
-    this.input.on(Input.Events.GAME_OUT, pointerOut);
+    canvas.addEventListener('pointermove', pointerIn);
+    canvas.addEventListener('pointerleave', pointerOut);
 
     // SHUTDOWN puis DESTROY (le jeu détruit) : la seconde fois, il ne reste rien à retirer.
     const stop = () => {
@@ -353,9 +355,8 @@ export class Office extends Scene {
       unbindDrag();
       for (const off of unlisten.splice(0)) off();
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
-      this.input.off(Input.Events.GAME_OVER, pointerIn);
-      this.input.off(Input.Events.POINTER_MOVE, pointerIn);
-      this.input.off(Input.Events.GAME_OUT, pointerOut);
+      canvas.removeEventListener('pointermove', pointerIn);
+      canvas.removeEventListener('pointerleave', pointerOut);
       this.pointerInGame = false;
       this.hoverAvatars();
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
@@ -421,11 +422,11 @@ export class Office extends Scene {
   // avec le haut de sa tête en pixels de la page : elle y pose la carte de l'heure qu'il est chez cette personne. Bouton enfoncé (on fait glisser la
   // carte), ou autres avatars cachés : aucun.
   private hoverAvatars(): void {
-    const pointer = this.input?.activePointer;
     let id: string | null = null;
-    if (pointer && this.pointerInGame && !pointer.isDown && this.othersVisible) {
-      const at = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
-      id = avatarAt(at, [...this.remotes.values()].map((remote) => ({ id: remote.id, ...remote.position })));
+    // La souris n'est lue que sur le jeu : hors de lui (et à l'arrêt de la scène), il n'y a rien à lire.
+    if (this.pointerInGame && this.othersVisible) {
+      const pointer = this.input.activePointer;
+      if (!pointer.isDown) id = avatarAt(this.cameras.main.getWorldPoint(pointer.x, pointer.y), [...this.remotes.values()].map((remote) => ({ id: remote.id, ...remote.position })));
     }
     if (id === this.hoveredAvatar) return;
     this.hoveredAvatar = id;

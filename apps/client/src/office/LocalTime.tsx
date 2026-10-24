@@ -5,7 +5,7 @@ import { useMinute } from '../lib/use-clock';
 import { dayPart, describeGap, formatClock, formatUtcOffset, wallTime, zoneOffsetMinutes } from '../lib/zoned-time';
 import { useOfficeStore } from '../state/office-store';
 import { DayPartIcon } from './icons';
-import { zonePlace } from './timezones';
+import { zoneLabel } from './timezones';
 
 // L'heure qu'il est chez quelqu'un : son heure (à la minute, en direct), « demain » ou « hier » quand sa date n'est plus la nôtre, sa ville (celle de
 // son fuseau horaire), le moment de sa journée (matin, après-midi, soirée, nuit : une icône et un mot) et l'écart avec la sienne (« 7 h d'avance
@@ -25,7 +25,6 @@ export function LocalTimeCard({ timezone, name, self = false }: LocalTimeInfo) {
   const time = wallTime(zone, now);
   const shift = time.day - wallTime(mine, now).day;
   const part = dayPart(time.hours);
-  const { city, region } = zonePlace(zone);
 
   return (
     <div className="time-card" data-part={part}>
@@ -40,7 +39,7 @@ export function LocalTimeCard({ timezone, name, self = false }: LocalTimeInfo) {
         <time>{formatClock(time)}</time>
         {shift !== 0 && <span className="time-card-day">{shift > 0 ? fr.time.tomorrow : fr.time.yesterday}</span>}
       </p>
-      <p className="time-card-place">{region === null || region === city ? city : `${city}, ${region}`}</p>
+      <p className="time-card-place">{zoneLabel(zone)}</p>
       <p className="time-card-meta">
         <span>{formatUtcOffset(zoneOffsetMinutes(zone, now))}</span>
         {!self && <span>{describeGap(zone, mine, now)}</span>}
