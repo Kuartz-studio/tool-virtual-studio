@@ -1,4 +1,4 @@
-import { AVATAR_BODY, COFFEE_REACH_TILES, LIGHT_SWITCH_REACH_TILES, TILE_SIZE } from '../constants';
+import { AVATAR_BODY, CLERK_STAY_TILES, COFFEE_REACH_TILES, LIGHT_SWITCH_REACH_TILES, TILE_SIZE } from '../constants';
 import type { OfficeMap, Zone, ZoneType } from './parse-map';
 
 // Une case est praticable si elle est dans la carte et que le calque `collisions` n'y a pas de tuile.
@@ -61,6 +61,11 @@ export function withinSwitchReach(pos: { x: number; y: number }, switches: Reado
 // carte de développement), personne n'est à portée.
 export function withinCoffeeReach(pos: { x: number; y: number }, coffees: ReadonlyArray<{ x: number; y: number }>): boolean {
   return withinReach(pos, coffees, COFFEE_REACH_TILES);
+}
+
+// À CLERK_STAY_TILES cases ou moins d'une administratrice de l'accueil : là où l'on peut lui confier une mission.
+export function withinClerkReach(pos: { x: number; y: number }, clerks: ReadonlyArray<{ x: number; y: number }>): boolean {
+  return withinReach(pos, clerks, CLERK_STAY_TILES);
 }
 
 function withinReach(pos: { x: number; y: number }, points: ReadonlyArray<{ x: number; y: number }>, tiles: number): boolean {

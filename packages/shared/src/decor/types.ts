@@ -40,6 +40,8 @@ export interface DecorItem {
   solid: boolean;
   fx: number;
   fy: number;
+  // Un élément de la boutique : son prix, en écus. Il faut l'avoir acheté pour le poser. Absent : l'élément est libre, comme tous ceux de la banque.
+  price?: number;
 }
 
 // Un élément posé dans la pièce d'un bureau : `x` et `y` sont la position du coin haut-gauche de son empreinte, en cases au dixième près (2.5 : au

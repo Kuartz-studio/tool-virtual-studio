@@ -72,10 +72,10 @@ export class World {
     this.extraGuards.push(guard);
   }
 
-  // Fait entrer un joueur à (x, y), à l'arrêt, sans micro, caméra ni partage d'écran. L'appelant donne une position praticable
-  // (chooseSpawn) : join ne la vérifie pas. Son statut est aussi celui dont le monde se souvient. Un second join du même
+  // Fait entrer un joueur à (x, y), à l'arrêt, sans micro, caméra ni partage d'écran, à son niveau (0 si l'appelant ne le dit pas). L'appelant donne une position
+  // praticable (chooseSpawn) : join ne la vérifie pas. Son statut est aussi celui dont le monde se souvient. Un second join du même
   // identifiant remplace le joueur : sa position, son heure de référence et son mouvement en attente repartent de zéro.
-  join(p: { id: string; name: string; avatarKey: string | null; x: number; y: number; dir: Direction; status: Status }): PublicPlayer {
+  join(p: { id: string; name: string; avatarKey: string | null; x: number; y: number; dir: Direction; status: Status; level?: number }): PublicPlayer {
     const player: PublicPlayer = {
       id: p.id,
       name: p.name,
@@ -87,6 +87,7 @@ export class World {
       status: p.status,
       media: noMedia(),
       activity: this.activities.get(p.id) ?? null,
+      level: p.level ?? 0,
     };
     this.entries.delete(p.id);   // un joueur qui revient prend la dernière place de la liste
     this.entries.set(p.id, { player, at: this.now() });
@@ -271,6 +272,14 @@ export class World {
   setMedia(id: string, m: MediaState): void {
     const entry = this.entries.get(id);
     if (entry) entry.player.media = { mic: m.mic, cam: m.cam, screen: m.screen };
+  }
+
+  // Le niveau d'un joueur présent (sa progression a changé). Rend vrai s'il a changé (à diffuser) ; un identifiant qui n'est pas dans le monde est ignoré.
+  setLevel(id: string, level: number): boolean {
+    const entry = this.entries.get(id);
+    if (!entry || entry.player.level === level) return false;
+    entry.player.level = level;
+    return true;
   }
 
   setProfile(id: string, p: { name: string; avatarKey: string | null }): void {

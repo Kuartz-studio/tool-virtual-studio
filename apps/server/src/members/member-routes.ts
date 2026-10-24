@@ -1,11 +1,11 @@
-import { displayNameSchema, isAvatarKey } from '@bureau/shared';
+import { displayNameSchema, isAvatarKey, levelOf } from '@bureau/shared';
 import { asc, eq, isNull } from 'drizzle-orm';
 import { Router } from 'express';
 import { z } from 'zod';
 import type { Auth } from '../auth/auth';
 import { requireSession } from '../auth/require-session';
 import type { Db } from '../db/client';
-import { user } from '../db/schema';
+import { progress, user } from '../db/schema';
 import type { ServerEvents } from '../server-events';
 
 // Le nom suit displayNameSchema (espaces retirés, 1 à 40 caractères) et l'avatar doit être une clé de la galerie. Les autres
@@ -24,13 +24,15 @@ export function memberRoutes({ auth, db, events }: { auth: Auth; db: Db; events:
 
   // Les membres actifs, avec ce qu'un collègue a le droit de voir : ni adresse, ni rôle. Dans l'ordre d'arrivée. lastSeenAt : la
   // dernière présence au bureau (realtime/positions.ts), null pour qui n'y est jamais venu ; qui est en ligne, c'est le temps réel qui le dit.
+  // level : son niveau (0 sans progression).
   router.get('/members', needSession, async (_req, res) => {
-    const members = await db
-      .select({ id: user.id, name: user.name, avatarKey: user.avatarKey, lastSeenAt: user.lastSeenAt })
+    const rows = await db
+      .select({ id: user.id, name: user.name, avatarKey: user.avatarKey, lastSeenAt: user.lastSeenAt, xp: progress.xp })
       .from(user)
+      .leftJoin(progress, eq(progress.userId, user.id))
       .where(isNull(user.disabledAt))
       .orderBy(asc(user.createdAt), asc(user.id));
-    res.json(members);
+    res.json(rows.map(({ xp, ...member }) => ({ ...member, level: levelOf(xp ?? 0) })));
   });
 
   // PATCH /api/me est le seul chemin pour changer son profil : les routes équivalentes de Better Auth sont fermées (auth.ts),

@@ -153,6 +153,9 @@ describe('parseOfficeMap : cartes refusées', () => {
     ['spawn sur un bureau', (m) => { Object.assign(zoneObject(m, 'spawn'), { x: 4 * 32, y: 9 * 32 }); }, /apparition|spawn/],
     ['spawn hors de la carte', (m) => { Object.assign(zoneObject(m, 'spawn'), { x: 40 * 32, y: 2 * 32 }); }, /apparition|spawn/],
     ['deux zones spawn', (m) => { zonesLayer(m).objects.push(rect({ id: 7, type: 'spawn', x: 32, y: 32 })); }, /spawn/],
+    ['une administratrice sans nom', (m) => { zonesLayer(m).objects.push(rect({ id: 7, type: 'clerk', x: 32, y: 32 })); }, /administratrice[^]*nom/],
+    ['deux administratrices du même nom', (m) => { zonesLayer(m).objects.push(rect({ id: 7, type: 'clerk', name: 'margot', x: 32, y: 32 }), rect({ id: 8, type: 'clerk', name: 'margot', x: 64, y: 32 })); }, /« margot »/],
+    ['une administratrice de deux cases', (m) => { zonesLayer(m).objects.push(rect({ id: 7, type: 'clerk', name: 'margot', x: 32, y: 32, width: 64 })); }, /1 × 1/],
   ])('bad_zone : %s', (_name, mutate, message) => {
     const m = devJson();
     mutate(m);

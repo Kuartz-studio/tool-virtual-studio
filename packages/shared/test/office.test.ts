@@ -605,4 +605,12 @@ describe('l\'agencement : chaque siège regarde ce qu\'il sert, rien n\'est pos�
     expect(clock.x / tile).toBe(posts[0]!.x / tile - 1);
     expect(placeAt(map, posts[1]!.x + tile / 2, posts[1]!.y + tile / 2)?.key).toBe('reception');
   });
+
+  test('les administratrices : une à chaque poste de l\'accueil (Margot, Inès, Lucie), sur la case de sa réceptionniste, et l\'on se tient devant elle', () => {
+    const posts = propObjects.filter((p) => p.name.startsWith('receptionist')).sort((a, b) => a.x - b.x);
+    expect(map.clerks.map((clerk) => clerk.name)).toEqual(['margot', 'ines', 'lucie']);
+    // Un objet animé de la carte est rangé par son empreinte au sol (en pixels) : sa case est celle de son coin haut-gauche.
+    expect(map.clerks.map((clerk) => [tileOf(clerk.x), tileOf(clerk.y)])).toEqual(posts.map((post) => [post.x / tile, post.y / tile]));
+    for (const clerk of map.clerks) expect(walkable(tileOf(clerk.x), tileOf(clerk.y) + 1), `devant ${clerk.name}`).toBe(true);
+  });
 });

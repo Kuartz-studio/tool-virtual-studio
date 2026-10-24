@@ -59,6 +59,9 @@ export async function startTestServer(o: TestServerOptions = {}) {
       // Les scènes des tests tiennent dans la petite carte de développement : le cercle serré d'origine (3 cases, à l'arrêt) les y garde
       // lisibles. La règle du bureau (OPEN_SPACE_GROUPING) est celle des tests qui la demandent (grouping).
       grouping: CLOSE_RANGE_GROUPING,
+      // Le pointage du jour enverrait un `progress:mine` après chaque première arrivée : les tests qui comptent les événements reçus ne l'attendent pas. Ceux de la
+      // progression le rallument (checkIn: true).
+      checkIn: false,
       ...options,
     });
   }

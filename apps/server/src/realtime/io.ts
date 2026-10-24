@@ -7,20 +7,24 @@ import {
   DISCONNECT_GRACE_MS,
   GROUPS_TICK_MS,
   LIGHTS_RATE_MS,
+  MISSION_RATE,
   MUSIC_RATE_MS,
   OFFICE_ROOM,
   POSITION_SAVE_INTERVAL_MS,
   SOCKET_CONNECT_RATE,
   WORLD_TICK_MS,
   busyZoneIds,
+  levelOf,
   parseOfficeMap,
   type AnyGameDefinition,
   type ClientToServerEvents,
   type GameId,
   type GroupConfig,
+  type MyProgress,
   type OfficeMap,
   type Role,
   type ServerToClientEvents,
+  type TaskView,
   type TiledMapJson,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
@@ -43,6 +47,7 @@ import { createLogger, logServerError } from '../logger';
 import { LIVEKIT_VARIABLES, createLiveKitBackend, type MediaBackend } from '../media/livekit';
 import { MediaCoordinator, newBootId, type MediaEvent } from '../media/media-coordinator';
 import { MusicService } from '../music/music-service';
+import { ProgressService, outcomeOf } from '../progress/progress-service';
 import { createRateLimiter } from '../rate-limit';
 import type { ServerEvents } from '../server-events';
 import type { SimHost } from '../sim/sim-host';
@@ -110,6 +115,10 @@ export interface RealtimeDeps {
   music?: MusicService;
   /** Les notes et les parties des jeux. Par défaut, celles de la base (LadderService) ; les tests peuvent en passer une réglée à leur main. */
   ladder?: LadderService;
+  /** La progression de chacun (XP, écus, tâches, missions, boutique). Par défaut, celle de la base (ProgressService) : la même instance que les routes REST, si on la leur donne. */
+  progress?: ProgressService;
+  /** Le pointage du jour à l'arrivée (de l'XP, la première fois de la journée) : oui par défaut. Le serveur des tests l'éteint, sauf pour ceux qui l'éprouvent. */
+  checkIn?: boolean;
   /** Les jeux que le registre connaît : ceux de GAMES par défaut ; les tests y mettent le morpion. */
   gameDefinitions?: Partial<Record<GameId, AnyGameDefinition>>;
   /** La période du balayage des délais des jeux : GAME_SWEEP_MS par défaut. */
@@ -137,6 +146,8 @@ export interface Realtime {
   games: GamesController;
   /** L'octogone : ses combattants, ses spectateurs, son combat (en mémoire). */
   arena: ArenaController;
+  /** La progression de chacun : le temps réel annonce ses gains, ses niveaux et ses missions. */
+  progress: ProgressService;
   /** Les groupes de conversation et leurs rooms LiveKit : groupMembersOf sert au chat « À proximité ». */
   coordinator: MediaCoordinator;
   /**
@@ -246,6 +257,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     socketsOf: (userId) => enteredSockets(userId),
     teleport,
     now,
+    unowned: (userId, itemIds) => progress.unowned(userId, itemIds),
     logger,
   });
 
@@ -272,7 +284,14 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const coffeeLimiter = createRateLimiter({ max: 1, windowMs: COFFEE_RATE_MS, now });
 
   // Les tables de jeu (en mémoire), leur classement (en base) et le balayage de leurs délais. Celui qui accepte une invitation est posé près de la table (teleport).
+  // Une partie classée finie rapporte de l'XP à chacun de ses joueurs (victoire, nulle ou défaite, dans le plafond du jour).
   const games = createGamesController({
+    onMatchEnded: (match) => {
+      if (!match.ranked) return;
+      match.players.forEach((userId, seat) => {
+        announced(userId, 'XP de la partie impossible', progress.gamePlayed(userId, match.game, outcomeOf(match.ranking, seat, match.players.length)));
+      });
+    },
     io,
     world,
     map: d.map,
@@ -289,6 +308,28 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   // L'octogone (en mémoire) : les combattants posés dans le ring au début d'un combat (teleport).
   const arena = createArenaController({ io, world, map: d.map, teleport, now, logger });
 
+  // La progression (en base) : chacun apprend ses gains (`progress:mine`), tout le bureau ses niveaux (`progress:level`, que le monde retient pour ceux qui arrivent).
+  const progress = d.progress ?? new ProgressService(d.db);
+  const missionLimiter = createRateLimiter({ ...MISSION_RATE, now });
+  function announceProgress(userId: string, mine: MyProgress): void {
+    for (const socket of enteredSockets(userId)) socket.emit('progress:mine', mine);
+    const level = levelOf(mine.xp);
+    if (world.setLevel(userId, level)) io.to(OFFICE_ROOM).emit('progress:level', { id: userId, level });
+  }
+  // Une mission, à celles qu'elle concerne : `task:assigned` à celle qui la reçoit, `task:changed` quand elle change d'état.
+  function tellTask(userId: string, event: 'task:assigned' | 'task:changed', task: TaskView): void {
+    for (const socket of enteredSockets(userId)) socket.emit(event, task);
+  }
+  // Une promesse de la progression qui rejette (la base) ne doit pas rester sans réponse : journalisée, rien ne part.
+  const announced = (userId: string, what: string, task: Promise<MyProgress | null>): void => {
+    task.then(
+      (mine) => {
+        if (mine) announceProgress(userId, mine);
+      },
+      (err: unknown) => logServerError(logger, { err, userId }, what),
+    );
+  };
+
   const presence = createPresence({
     io,
     world,
@@ -304,9 +345,12 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     music,
     games,
     arena,
+    progress,
     onWelcome: (socket) => {
       resyncMedia(socket);
       games.onWelcome(socket.data.userId);
+      // La première arrivée du jour : le pointage.
+      if (d.checkIn !== false) announced(socket.data.userId, 'Pointage impossible', progress.checkIn(socket.data.userId));
     },
   });
 
@@ -379,6 +423,11 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       coffeeLimiter,
       coffees: d.map.coffees,
       arena,
+      progress,
+      clerks: d.map.clerks,
+      missionLimiter,
+      onAssigned: (task) => tellTask(task.owner.id, 'task:assigned', task),
+      onProgress: announceProgress,
     });
   });
   // Un membre retiré : sa place est libre pour les autres.
@@ -390,6 +439,12 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   const offSessionsRevoked = d.events.on('sessions:revoked', (userId) => presence.disconnectUser(userId));
   // Un de ses états d'activité est modifié ou supprimé (REST) : celui qu'elle porte suit.
   const offActivityEdited = d.events.on('activity:edited', (change) => activityController.edited(change));
+  // La progression d'une personne a changé par une route (une tâche cochée, un achat) : elle l'apprend, et son niveau va au bureau. Une mission qui change d'état
+  // (faite, rendue, retirée) : celle qu'elle concerne l'apprend.
+  const offProgressChanged = d.events.on('progress:changed', ({ userId, progress: mine }) => announceProgress(userId, mine));
+  const offTaskChanged = d.events.on('task:changed', ({ task, notify }) => {
+    for (const userId of notify) tellTask(userId, 'task:changed', task);
+  });
   // Un profil change (PATCH /api/me) : le monde le retient pour ceux qui arrivent ensuite, et tout le bureau l'apprend, même si la
   // personne n'est pas là (la liste des membres d'un autre onglet peut la suivre).
   const offProfileChanged = d.events.on('profile:changed', (profile) => {
@@ -425,6 +480,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       offSessionsRevoked();
       offProfileChanged();
       offActivityEdited();
+      offProgressChanged();
+      offTaskChanged();
       // Les jeux d'abord : plus de balayage, plus de commande, plus rien d'écrit.
       games.stop();
       arena.stop();
@@ -455,6 +512,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     games,
     arena,
     coordinator,
+    progress,
     stop,
   };
 }

@@ -3751,6 +3751,39 @@
           "width": 128,
           "x": 2240,
           "y": 256
+        },
+        {
+          "height": 32,
+          "id": 61,
+          "name": "margot",
+          "rotation": 0,
+          "type": "clerk",
+          "visible": true,
+          "width": 32,
+          "x": 1248,
+          "y": 544
+        },
+        {
+          "height": 32,
+          "id": 62,
+          "name": "ines",
+          "rotation": 0,
+          "type": "clerk",
+          "visible": true,
+          "width": 32,
+          "x": 1280,
+          "y": 544
+        },
+        {
+          "height": 32,
+          "id": 63,
+          "name": "lucie",
+          "rotation": 0,
+          "type": "clerk",
+          "visible": true,
+          "width": 32,
+          "x": 1312,
+          "y": 544
         }
       ],
       "opacity": 1,

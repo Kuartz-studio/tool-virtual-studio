@@ -143,7 +143,10 @@ describe('connexion', () => {
       status: 'available',
       media: { mic: false, cam: false, screen: false },
       activity: null,
+      level: 0,
     });
+    // Sa progression : rien encore.
+    expect(aInit.progress).toEqual({ xp: 0, ecus: 0, streak: 0, owned: [] });
     expect(aInit.players).toEqual([]);
     expect(aInit.mapKey).toBe('dev-office');
     expect(aInit.chatHistory).toEqual([]);

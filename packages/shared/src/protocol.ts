@@ -8,6 +8,7 @@ import type { PlacedItem } from './decor/types';
 import type { DebugGamePayload, GameAck, GameCommand, GameInvite, GameNotice, GameTableView, LadderAck } from './games/protocol';
 import type { GameId } from './games/types';
 import type { ArenaAck, ArenaAction, ArenaCommand, ArenaState } from './arena/arena';
+import type { MissionAck, MissionGivePayload, MyProgress, TaskView } from './progress/protocol';
 import type { SimRoomPayload } from './sim';
 
 export const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
@@ -90,6 +91,8 @@ export const lightsSetSchema = z.object({ on: z.boolean() });
 
 // Réservé aux tests de bout en bout (`debug:boost`, seulement avec E2E=1) : donne du café pendant `ms` ms (0 : le retire), comme la machine.
 export const debugBoostSchema = z.object({ ms: z.number().int().min(0).max(3_600_000) });
+// Réservé aux tests de bout en bout (`debug:xp`, seulement avec E2E=1) : donne `xp` d'expérience d'un coup (et ses niveaux, avec leurs écus), plus `ecus` écus.
+export const debugXpSchema = z.object({ xp: z.number().int().min(0).max(1_000_000), ecus: z.number().int().min(0).max(1_000_000).optional() });
 
 // La demande de régler la musique d'une pièce (`music:set`) : la clé du lieu (celle de la carte : `game`, `desk:A1` pour un bureau) et l'état voulu, `on`
 // (allumée ou éteinte) et/ou `scene` (l'ambiance ; null : celle par défaut de la pièce). Ce qui n'est pas dit ne change pas. Un état voulu, non une
@@ -110,7 +113,8 @@ export interface ActivityState extends ActivityInput { id: string }
 // `activity` : l'état d'activité qu'elle a choisi (absent ou null : un statut ordinaire, `status`). Il passe avant `status` pour le point
 // de couleur et le texte. `speaking` : elle parle en ce moment (absent : non), pour la bulle au-dessus de son avatar. `boost` : ce qu'il lui reste
 // de café, en ms (absent : pas de café), pour ceux qui arrivent pendant qu'elle en a un.
-export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean; boost?: number }
+// `level` : son niveau (absent : 0).
+export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean; boost?: number; level?: number }
 // Entrée du calcul des groupes. `excluded` : hors de toute conversation (un état d'activité sans entendre ni être entendu), comme en Ne pas déranger.
 export interface ProximityPlayer { id: string; x: number; y: number; moving: boolean; status: Status; excluded?: boolean }
 export interface ChatMessage { id: string; channel: ChatChannel; userId: string; name: string; text: string; sentAt: string }
@@ -165,6 +169,8 @@ export interface InitPayload {
   gameInvites?: GameInvite[];
   // L'octogone : qui s'y bat, qui regarde, où en est le combat. Absent : la carte n'en a pas.
   arena?: ArenaState;
+  // Sa propre progression (XP, écus, série de pointage, ce qu'elle possède de la boutique). Absente : la base ne l'a pas donnée, la liste la relira.
+  progress?: MyProgress;
 }
 // Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
 // le voient sauter à sa nouvelle place au lieu de glisser jusqu'à elle à travers les murs.
@@ -207,6 +213,10 @@ export interface ServerToClientEvents {
   'game:notice': (p: GameNotice) => void;                 // à l'invitante : la réponse, le silence ou le départ de l'invitée
   'arena:state': (p: ArenaState) => void;                 // à tout le bureau : l'octogone a changé (rôles, points de vie, phase)
   'arena:action': (p: ArenaAction) => void;               // à tout le bureau : un coup vient d'être porté (touché ou dans le vide)
+  'progress:mine': (p: MyProgress) => void;               // à une personne : sa progression a changé (`gain` : ce qui vient de l'y amener, à annoncer)
+  'progress:level': (p: { id: string; level: number }) => void;   // à tout le bureau : le niveau de quelqu'un a changé
+  'task:assigned': (p: TaskView) => void;                 // à une personne : on vient de lui confier une mission
+  'task:changed': (p: TaskView) => void;                  // à une personne : une mission qu'elle a confiée est faite ou rendue, ou une qu'elle avait reçue est retirée
   'media:join': (p: MediaJoinPayload) => void;
   'media:leave': () => void;
   'session:replaced': () => void;
@@ -227,7 +237,9 @@ export interface ClientToServerEvents {
   'game:do': (p: GameCommand, ack: (r: GameAck) => void) => void;   // une commande de jeu (regarder, s'asseoir, jouer un coup, inviter…) ; `game:table` dit ce qui a changé
   'game:ladder': (p: { game: GameId }, ack: (r: LadderAck) => void) => void;
   'arena:do': (p: ArenaCommand, ack: (r: ArenaAck) => void) => void;   // une commande de l'octogone (rôle, start, coup, garde) ; `arena:state` dit ce qui a changé   // le classement d'un jeu : les meilleurs, et son rang
+  'mission:give': (p: MissionGivePayload, ack: (r: MissionAck) => void) => void;   // confier une mission à quelqu'un, auprès d'une administratrice (à portée de l'une d'elles)
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
+  'debug:xp': (p: { xp: number; ecus?: number }) => void;   // accepté seulement si E2E=1 : donne de l'XP (et des écus) d'un coup
   'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1
   'debug:game': (p: DebugGamePayload) => void;   // accepté seulement si E2E=1 : remplace l'état de la partie en cours à une table
 }

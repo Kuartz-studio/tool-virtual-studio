@@ -60,7 +60,8 @@ export interface DeskDecor {
 // qui ne tombe pas sur un dixième de case, ou un élément mural qui n'est pas contre le mur), `out_of_room` (l'élément déborde de la pièce),
 // `overlap` (deux éléments qui se chevauchent), `blocks_door` (un meuble devant la porte), `unreachable` (un coin de la pièce que plus personne ne
 // peut atteindre à pied).
-export type DecorError = 'too_many' | 'unknown_item' | 'unknown_theme' | 'bad_position' | 'out_of_room' | 'overlap' | 'blocks_door' | 'unreachable';
+// `not_owned` : un élément de la boutique que la personne n'a pas acheté (le serveur seul le sait : checkDecor ne le dit jamais).
+export type DecorError = 'too_many' | 'unknown_item' | 'unknown_theme' | 'bad_position' | 'out_of_room' | 'overlap' | 'blocks_door' | 'unreachable' | 'not_owned';
 export type DecorCheck = { ok: true } | { ok: false; error: DecorError; index?: number };
 
 export interface Footprint {

@@ -104,6 +104,11 @@ export const SFX: Record<SfxId, Sfx> = {
   dice: sfx('dice', 0.8, 300),
   piece: sfx('piece', 0.8, 120),
   win: sfx('win', 0.9, 2000),
+  // La progression : une mission reçue, une tâche cochée (de l'XP), un niveau gagné, un achat à la boutique.
+  mission: sfx('mission', 0.8, 700),
+  xp: sfx('xp', 0.6, 150),
+  'level-up': sfx('level-up', 0.9, 2000),
+  coins: sfx('coins', 0.7, 300),
 };
 
 export const SFX_IDS = Object.keys(SFX) as SfxId[];

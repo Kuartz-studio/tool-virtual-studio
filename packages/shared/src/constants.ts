@@ -102,6 +102,11 @@ export const LIGHT_SWITCH_REACH_TILES = 3;
 export const COFFEE_DURATION_MS = 30_000;
 export const COFFEE_REACH_TILES = 2;
 export const COFFEE_RATE_MS = 2_000;
+// Les administratrices de l'accueil : on leur parle de CLERK_REACH_TILES cases au plus (la touche E), et la conversation tient tant qu'on reste à CLERK_STAY_TILES
+// cases ou moins ; le serveur n'accepte une mission confiée que là (withinClerkReach). Au plus MISSION_RATE missions confiées par fenêtre, par compte.
+export const CLERK_REACH_TILES = 2;
+export const CLERK_STAY_TILES = 4;
+export const MISSION_RATE = { max: 10, windowMs: 60_000 };
 // La musique de chaque pièce, que ceux qui y sont règlent pour tous : une personne la change au plus une fois par MUSIC_RATE_MS (le serveur ignore ce qui
 // vient avant).
 export const MUSIC_RATE_MS = 800;

@@ -18,17 +18,20 @@ import {
   chatSendSchema,
   debugBoostSchema,
   debugGameSchema,
+  debugXpSchema,
   deskCommandSchema,
   gameCommandSchema,
   gameLadderSchema,
   computeGroups,
   lightsSetSchema,
   mediaStateSchema,
+  missionGiveSchema,
   moveSchema,
   musicSetSchema,
   placeAt,
   speakingSchema,
   statusSchema,
+  withinClerkReach,
   withinCoffeeReach,
   withinSwitchReach,
   type ArenaAck,
@@ -39,7 +42,9 @@ import {
   type GroupConfig,
   type GroupingState,
   type LadderAck,
+  type MissionAck,
   type OfficeMap,
+  type TaskView,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
 import type { ActivityController } from '../activity/activity-controller';
@@ -52,6 +57,7 @@ import type { LightsService } from '../lights/lights-service';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
 import type { MusicService } from '../music/music-service';
+import type { ProgressService } from '../progress/progress-service';
 import { createRateLimiter, type RateLimiter } from '../rate-limit';
 import type { TypedServer, TypedSocket } from './io';
 import type { World } from './world';
@@ -96,6 +102,16 @@ export interface HandlerDeps {
   coffees: ReadonlyArray<{ x: number; y: number }>;
   /** L'octogone : `arena:do` y passe. */
   arena: Pick<ArenaController, 'run'>;
+  /** La progression : `mission:give` y confie une mission ; `debug:xp` (E2E seulement) y donne de l'XP. */
+  progress: Pick<ProgressService, 'give' | 'debugGrant'>;
+  /** Les administratrices de l'accueil (leur centre, en pixels) : sans l'une d'elles à portée, on ne confie pas de mission. */
+  clerks: ReadonlyArray<{ x: number; y: number }>;
+  /** La limite de débit des missions confiées (MISSION_RATE), par compte : une seule pour toutes les sockets d'une personne. */
+  missionLimiter: RateLimiter;
+  /** Une mission vient d'être confiée : celle qui la reçoit l'apprend tout de suite. */
+  onAssigned: (task: TaskView) => void;
+  /** Sa progression a changé (`debug:xp`) : elle l'apprend, et son niveau va au bureau. */
+  onProgress: (userId: string, progress: Awaited<ReturnType<ProgressService['debugGrant']>>) => void;
 }
 
 // Où `debug:teleport` pose le joueur : les mêmes entiers que `move`, sans direction ni état.
@@ -299,6 +315,33 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     reply(d.arena.run(userId, command.data));
   });
 
+  // Confier une mission à quelqu'un, auprès d'une administratrice de l'accueil, avec accusé de réception. Le tronc commun, comme `desk:do` : une socket qui n'a pas
+  // reçu son init, ou dont la personne n'est pas au monde, est ignorée sans réponse. Puis, dans cet ordre : 1. charge invalide (missionGiveSchema) : `invalid` ;
+  // 2. aucune administratrice à CLERK_STAY_TILES cases ou moins, là où le monde voit la personne (jamais là où elle dit être) : `too_far` ; 3. au-delà de MISSION_RATE
+  // par compte (se reconnecter ne la remet pas à zéro) : `rate_limited` ; 4. le service (ProgressService.give) : `self`, `unknown_member` ou `limit`, sinon la mission,
+  // que celle qui la reçoit apprend tout de suite (`task:assigned`). Une base en panne répond `unavailable`.
+  socket.on('mission:give', (payload, ack) => {
+    const reply = (r: MissionAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    const me = d.world.get(userId);
+    if (!me || !socket.rooms.has(OFFICE_ROOM)) return;
+    const mission = missionGiveSchema.safeParse(payload);
+    if (!mission.success) return reply({ ok: false, error: 'invalid' });
+    if (!withinClerkReach(me, d.clerks)) return reply({ ok: false, error: 'too_far' });
+    if (!d.missionLimiter.take(userId)) return reply({ ok: false, error: 'rate_limited' });
+    d.progress.give(userId, mission.data).then(
+      (result) => {
+        if (result.ok) d.onAssigned(result.task);
+        reply(result);
+      },
+      (err: unknown) => {
+        logServerError(d.logger, { err, userId }, 'Mission impossible à confier');
+        reply({ ok: false, error: 'unavailable' });
+      },
+    );
+  });
+
   // Allumer ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
   // monde voit la personne (jamais là où elle dit être). Aucune réponse, quoi qu'il arrive : la confirmation est `lights:changed`, que tout
   // le bureau reçoit, émetteur compris. Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme
@@ -379,6 +422,15 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
       if (!boost.success || !d.world.get(userId)) return;
       d.world.setBoost(userId, boost.data.ms === 0 ? null : boost.data.ms);
       io.to(OFFICE_ROOM).emit('coffee:changed', { id: userId, ms: boost.data.ms });
+    });
+    // De l'XP d'un coup (et des écus) : de quoi tester un passage de niveau ou un achat sans accomplir de missions.
+    socket.on('debug:xp', (payload) => {
+      const grant = debugXpSchema.safeParse(payload);
+      if (!grant.success || !d.world.get(userId)) return;
+      d.progress.debugGrant(userId, grant.data.xp, grant.data.ecus ?? 0).then(
+        (progress) => d.onProgress(userId, progress),
+        (err: unknown) => logServerError(d.logger, { err, userId }, 'XP de test impossible'),
+      );
     });
     // Remplace l'état de la partie en cours à une table par un état fabriqué (il doit passer les invariants du jeu), et impose les prochains dés : de quoi jouer une fin de
     // partie sans en jouer toute la longueur.

@@ -11,8 +11,9 @@ import type { TiledLayer, TiledMapJson, TiledObject, TiledObjectLayer, TiledTile
 // - coffee : la case, 1 × 1, devant la machine à café ; speaker : l'enceinte, 1 × 1 (nom = la clé du lieu qu'elle règle, qui a de la musique) ;
 // - game : la table d'un jeu (nom = chess, backgammon, connect4 ou ludo) ; seat : une chaise, 1 × 1 (nom = `<jeu>:<n>`, n à partir de 1) ;
 // - sign : un panneau (propriété text) ;
-// - arena : le ring de l'octogone (une seule zone : arena/arena.ts).
-export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch', 'place', 'coffee', 'speaker', 'game', 'seat', 'sign', 'arena'] as const;
+// - arena : le ring de l'octogone (une seule zone : arena/arena.ts) ;
+// - clerk : une administratrice de l'accueil, 1 × 1, la case où elle se tient (nom = sa clé : margot, ines…), à qui l'on parle (touche E).
+export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch', 'place', 'coffee', 'speaker', 'game', 'seat', 'sign', 'arena', 'clerk'] as const;
 export type ZoneType = (typeof ZONE_TYPES)[number];
 
 // Les zones dont les propriétés Tiled sont gardées (`Zone.properties`) : celles qui en portent.
@@ -66,6 +67,8 @@ export interface OfficeMap {
   signs: Array<Rect & { text: string }>;
   // Le ring de l'octogone, en pixels ; null si la carte n'en a pas.
   arena: Rect | null;
+  // Les administratrices de l'accueil : le centre de la case où chacune se tient, en pixels, et sa clé (son prénom, sans accent : margot, ines…).
+  clerks: Array<Point & { name: string }>;
 }
 
 // Pourquoi une carte est refusée :
@@ -126,6 +129,7 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
     tables: readTables(zones, tileSize),
     signs: readSigns(zones),
     arena: readArena(zones),
+    clerks: readClerks(zones, tileSize),
   };
   if (!isWalkablePoint(map, map.spawn.x, map.spawn.y)) {
     throw new MapError(
@@ -360,6 +364,18 @@ function readSpeakers(zones: Zone[], places: Place[], tileSize: number): Array<P
       }
       return { ...centre, place: target.key };
     });
+}
+
+// Les administratrices (zones `clerk`) : chacune a un nom, qui la désigne (deux ne peuvent pas porter le même).
+function readClerks(zones: Zone[], tileSize: number): Array<Point & { name: string }> {
+  const clerks: Array<Point & { name: string }> = [];
+  for (const zone of zones.filter((z) => z.type === 'clerk')) {
+    const centre = oneTile(zone, tileSize, 'une administratrice (zone clerk)');
+    if (!zone.name) throw new MapError('bad_zone', `${labelOf(zone)} : une administratrice (zone clerk) a un nom, sa clé (margot, ines…).`);
+    if (clerks.some((clerk) => clerk.name === zone.name)) throw new MapError('bad_zone', `${labelOf(zone)} : deux administratrices s'appellent « ${zone.name} ».`);
+    clerks.push({ ...centre, name: zone.name });
+  }
+  return clerks;
 }
 
 // Les tables de jeu (une zone `game` par jeu) et leurs sièges (zones `seat`, nommées `<jeu>:<n>`), dans l'ordre de leur numéro.

@@ -243,6 +243,11 @@ export function buildOffice(): OfficeBuild {
   c.zone({ type: 'switch', x: 28, y: 10, w: 1, h: 1 });
   // L'inscription de l'octogone, entre les fauteuils du public et la porte.
   c.zone({ type: 'label', text: 'OCTOGONE', x: 70, y: 8, w: 4, h: 1 });
+  // Les trois administratrices de l'accueil, chacune sur la case de son poste (les réceptionnistes de l'accueil) : on vient leur parler (la touche E) pour
+  // confier une mission à quelqu'un, voir la boutique ou ses caractéristiques. Margot et Lucie aux deux bouts, Inès au milieu. En dernier, elles aussi.
+  c.clerk('margot', 39, 17);
+  c.clerk('ines', 40, 17);
+  c.clerk('lucie', 41, 17);
 
   return { canvas: c, ascii: c.ascii(), zones: c.zones };
 }

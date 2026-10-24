@@ -57,6 +57,8 @@ export interface GamesOutput {
   inviteGone(userId: string, gone: { id: string; reason: 'expired' | 'cancelled' | 'answered' }): void;
   // Un avis, à l'invitante : la réponse, le silence ou le départ de l'invitée.
   notice(userId: string, notice: GameNotice): void;
+  // Une partie vient de finir : ses joueurs (identifiants, dans l'ordre des sièges), son classement (les sièges du meilleur au moins bon) et si elle est classée.
+  ended?(match: { game: GameId; players: string[]; ranking: number[][]; ranked: boolean }): void;
 }
 
 export interface GamesDeps {
@@ -550,6 +552,7 @@ export class GamesService {
     });
     // La partie finie n'accepte plus de coup (no_match) : sa version d'état ne sert plus.
     this.commit(table, events);
+    this.d.out.ended?.({ game: table.game, players: match.players.map((player) => player.userId), ranking: result.ranking, ranked: match.ranked });
   }
 
   // Un siège sort de la partie (abandon, délai, départ) : le jeu en tire la suite, et la partie finit peut-être.

@@ -15,6 +15,8 @@ import { errorHandler, notFound } from './http-errors';
 import { createLogger } from './logger';
 import type { Mailer } from './mail/mailer';
 import { memberRoutes } from './members/member-routes';
+import { progressRoutes } from './progress/progress-routes';
+import { ProgressService } from './progress/progress-service';
 import type { ServerEvents } from './server-events';
 import type { SimHost } from './sim/sim-host';
 import { simRoutes } from './sim/sim-routes';
@@ -37,6 +39,8 @@ export interface AppDeps {
   destinations?: ReadonlySet<string>;
   /** Le faux live (SIM=1) : ses routes sont sous /api/sim. Absent en production. */
   sim?: SimHost;
+  /** La progression de chacun (tâches, missions, XP, boutique). Par défaut, celle de la base ; le serveur donne la même instance au temps réel. */
+  progress?: ProgressService;
 }
 
 export function createApp(deps: AppDeps): express.Express {
@@ -70,6 +74,7 @@ export function createApp(deps: AppDeps): express.Express {
     '/api',
     activityRoutes({ auth: deps.auth, events: deps.events, activities: deps.activities ?? createActivityService(deps.db), destinations: deps.destinations ?? new Set<string>() }),
   );
+  app.use('/api', progressRoutes({ auth: deps.auth, events: deps.events, progress: deps.progress ?? new ProgressService(deps.db) }));
   // Une adresse inconnue sous /api répond en JSON, avant le client : jamais sa page HTML.
   app.use('/api', notFound);
 

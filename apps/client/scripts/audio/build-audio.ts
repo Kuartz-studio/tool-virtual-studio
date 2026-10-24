@@ -81,6 +81,12 @@ export const SFX_SOURCES = {
   dice: 'Card and Board/dice_roll_1.wav',
   piece: 'Card and Board/chips_place_1.wav',
   win: 'Other/applause.wav',
+  // La progression : une mission reçue (un air de mystère), une tâche cochée (une gemme ramassée), un niveau gagné (la fin de niveau du vibraphone, comme
+  // l'arrivée au bureau), des écus dépensés à la boutique.
+  mission: 'Musical Effects/vibraphone_mystery.wav',
+  xp: 'Items/gem_collect.wav',
+  'level-up': 'Musical Effects/vibraphone_level_complete.wav',
+  coins: 'Items/coins_gather_medium.wav',
 } as const;
 
 // Les effets trop longs pour ce qu'ils annoncent : écourtés à `seconds`, avec une extinction sur les `fadeSeconds` dernières secondes. Les

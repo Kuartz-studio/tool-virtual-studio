@@ -3,7 +3,7 @@ import { APIError } from 'better-auth/api';
 import { eq } from 'drizzle-orm';
 import request from 'supertest';
 import { describe, expect, onTestFinished, test, vi } from 'vitest';
-import { session, user } from '../src/db/schema';
+import { progress, session, user } from '../src/db/schema';
 import { createTestApp } from './helpers/test-app';
 
 const DAY_MS = 24 * 3600 * 1000;
@@ -40,12 +40,14 @@ describe('GET /api/members', () => {
     expect(res.get('Cache-Control')).toBe('no-store');
   });
 
-  test('id, nom, avatar et dernière présence des membres, et rien d\'autre (ni e-mail ni rôle)', async () => {
+  test('id, nom, avatar, dernière présence et niveau des membres, et rien d\'autre (ni e-mail ni rôle)', async () => {
     const t = await createTestApp();
     const lea = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
     const tom = await t.inviteAndAccept('tom@x.fr', { name: 'Tom', role: 'admin' });
     const seenAt = new Date('2026-10-23T08:15:00.000Z');
     await t.db.update(user).set({ avatarKey: PREMADE[0], lastSeenAt: seenAt }).where(eq(user.id, tom.userId));
+    // Tom a 12 340 XP : niveau 12. Léa n'a pas de progression : niveau 0.
+    await t.db.insert(progress).values({ userId: tom.userId, xp: 12_340 });
 
     // Un membre et un admin voient la même liste, dans l'ordre d'arrivée.
     for (const { cookie } of [lea, tom]) {
@@ -54,8 +56,8 @@ describe('GET /api/members', () => {
       expect(res.get('Cache-Control')).toBe('no-store');   // des données privées : pas de copie gardée par le navigateur
       // Léa n'est jamais venue au bureau : pas de dernière présence. Celle de Tom part en ISO 8601.
       expect(res.body).toEqual([
-        { id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null },
-        { id: tom.userId, name: 'Tom', avatarKey: PREMADE[0], lastSeenAt: seenAt.toISOString() },
+        { id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null, level: 0 },
+        { id: tom.userId, name: 'Tom', avatarKey: PREMADE[0], lastSeenAt: seenAt.toISOString(), level: 12 },
       ]);
     }
   });
@@ -68,7 +70,7 @@ describe('GET /api/members', () => {
 
     const res = await request(t.app).get('/api/members').set('Cookie', lea.cookie);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null }]);
+    expect(res.body).toEqual([{ id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null, level: 0 }]);
   });
 
   test('un compte désactivé dont la session a survécu est refusé quand même', async () => {

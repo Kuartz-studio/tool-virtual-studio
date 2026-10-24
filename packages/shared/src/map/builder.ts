@@ -204,6 +204,11 @@ export class MapCanvas {
     this.zones.push({ type: 'speaker', name: placeKey, x, y, w: 1, h: 1 });
   }
 
+  // Une administratrice de l'accueil, à qui l'on parle : la case où elle se tient (derrière le comptoir), et sa clé.
+  clerk(name: string, x: number, y: number): void {
+    this.zones.push({ type: 'clerk', name, x, y, w: 1, h: 1 });
+  }
+
   // La table d'un jeu (une seule par jeu) et ses sièges, numérotés à partir de 1 : une case chacun.
   table(game: GameId, area: Area): void {
     this.zones.push({ type: 'game', name: game, ...area });

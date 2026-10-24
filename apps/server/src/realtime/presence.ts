@@ -1,4 +1,4 @@
-import { OFFICE_ROOM, type ChatMessage, type Direction, type OfficeMap, type PublicPlayer } from '@bureau/shared';
+import { OFFICE_ROOM, levelOf, type ChatMessage, type Direction, type MyProgress, type OfficeMap, type PublicPlayer } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import type { Logger } from 'pino';
 import type { ChatService } from '../chat/chat-service';
@@ -12,6 +12,7 @@ import type { ArenaController } from '../arena/arena-controller';
 import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
 import type { MusicService } from '../music/music-service';
+import type { ProgressService } from '../progress/progress-service';
 import { chooseSpawn } from './spawn';
 import type { World } from './world';
 
@@ -37,6 +38,8 @@ export interface PresenceDeps {
   games?: Pick<GamesController, 'initFor' | 'onSocketsGone' | 'onDepart' | 'onRemoved'>;
   /** L'octogone : chaque init le dit (ses départs, il les voit seul à son balayage). */
   arena?: Pick<ArenaController, 'initFor'>;
+  /** La progression de chacun : son niveau entre au monde avec lui, et chaque init dit la sienne à la personne. Absente : niveau 0, rien dans l'init. */
+  progress?: Pick<ProgressService, 'mine'>;
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -112,10 +115,22 @@ export function createPresence(d: PresenceDeps) {
     }
   }
 
-  // Envoie l'état de départ à la socket (l'historique du chat est lu avant : `chatHistory`), puis annonce l'arrivée aux autres si c'en
+  // Sa progression, pour l'init et son niveau. Illisible (la base est tombée), elle est journalisée et l'init part sans elle : arriver au bureau ne dépend pas
+  // d'elle (le niveau est alors 0 jusqu'au prochain changement). Ne rejette jamais.
+  async function readProgress(userId: string): Promise<MyProgress | undefined> {
+    if (!d.progress) return undefined;
+    try {
+      return await d.progress.mine(userId);
+    } catch (err) {
+      logServerError(d.logger, { err, userId }, 'Progression illisible');
+      return undefined;
+    }
+  }
+
+  // Envoie l'état de départ à la socket (l'historique du chat et sa progression sont lus avant), puis annonce l'arrivée aux autres si c'en
   // est une (pas pour un onglet de plus ni pour un retour pendant le délai de grâce). La socket n'entre dans la salle du bureau qu'ici :
   // aucune diffusion ne lui parvient avant son init, ni message du chat, ni événement média. Puis onWelcome (sa room LiveKit).
-  function welcome(socket: TypedSocket, arrival: boolean, chatHistory: ChatMessage[]): void {
+  function welcome(socket: TypedSocket, arrival: boolean, chatHistory: ChatMessage[], progress: MyProgress | undefined): void {
     const { userId } = socket.data;
     const self = d.world.get(userId)!;
     void socket.join(OFFICE_ROOM);
@@ -131,6 +146,7 @@ export function createPresence(d: PresenceDeps) {
       lights: d.lights.get(),
       // Seulement les pièces qu'on a réglées : sans réglage, le champ n'y est pas.
       ...(Object.keys(music).length > 0 ? { music } : {}),
+      ...(progress ? { progress } : {}),
     });
     if (arrival) socket.to(OFFICE_ROOM).emit('player:joined', self);
     d.onWelcome?.(socket);
@@ -142,12 +158,13 @@ export function createPresence(d: PresenceDeps) {
     const { userId, name, avatarKey } = socket.data;
     try {
       await saves;   // un départ de cette personne est peut-être en cours d'écriture
-      const [saved, disabled, chatHistory] = await Promise.all([
+      const [saved, disabled, chatHistory, , , progress] = await Promise.all([
         loadPosition(d.db, userId),
         isDisabled(d.db, userId),
         readChatHistory(userId),
         lightsLoaded(userId),
         musicLoaded(userId),
+        readProgress(userId),
       ]);
       if (halted || !socket.connected) return;
       // Retiré entre la lecture de sa session par le middleware et maintenant : member:removed n'a pas pu fermer cette socket,
@@ -163,9 +180,9 @@ export function createPresence(d: PresenceDeps) {
         if (halted || !socket.connected) return;
         const spot = chooseSpawn(d.map, saved, d.busyZones(), (x, y) => d.desks.canStandAt(userId, x, y));
         const dir = saved && spot.x === saved.x && spot.y === saved.y ? saved.dir : DEFAULT_DIR;
-        d.world.join({ id: userId, name, avatarKey, x: spot.x, y: spot.y, dir, status: d.world.rememberedStatus(userId) });
+        d.world.join({ id: userId, name, avatarKey, x: spot.x, y: spot.y, dir, status: d.world.rememberedStatus(userId), level: levelOf(progress?.xp ?? 0) });
       }
-      welcome(socket, arrival, chatHistory);
+      welcome(socket, arrival, chatHistory, progress);
     } catch (err) {
       logServerError(d.logger, { err, userId }, 'Arrivée au bureau impossible');
       // Le transport seulement : le client se reconnecte de lui-même, et réessaie.
@@ -179,7 +196,7 @@ export function createPresence(d: PresenceDeps) {
   async function rejoin(socket: TypedSocket): Promise<void> {
     const { userId } = socket.data;
     try {
-      const [chatHistory] = await Promise.all([readChatHistory(userId), lightsLoaded(userId), musicLoaded(userId)]);
+      const [chatHistory, , , progress] = await Promise.all([readChatHistory(userId), lightsLoaded(userId), musicLoaded(userId), readProgress(userId)]);
       if (halted || !socket.connected) return;
       // Une socket enregistrée garde sa personne au monde (ni le délai de grâce ni member:removed ne la retirent alors) : ce cas ne
       // devrait pas se produire. Sans personne à montrer, le client se reconnecte et arrive pour de bon, au lieu d'attendre un init.
@@ -187,7 +204,7 @@ export function createPresence(d: PresenceDeps) {
         socket.conn.close();
         return;
       }
-      welcome(socket, false, chatHistory);
+      welcome(socket, false, chatHistory, progress);
     } catch (err) {
       logServerError(d.logger, { err, userId }, 'Retour au bureau impossible');
       if (socket.connected) socket.conn.close();

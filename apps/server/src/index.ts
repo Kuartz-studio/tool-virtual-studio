@@ -11,6 +11,7 @@ import { loadEnv, type Env } from './env';
 import { createLogger } from './logger';
 import { createMemoryMailer, createNoneMailer, createResendMailer, type Mailer } from './mail/mailer';
 import { attachRealtime, loadOfficeMap, type Realtime } from './realtime/io';
+import { ProgressService } from './progress/progress-service';
 import { createServerEvents } from './server-events';
 import { SIM_ACCOUNT, ensureSimAccount, wantsSimAccount } from './sim/sim-account';
 import { createSimHost } from './sim/sim-host';
@@ -90,9 +91,11 @@ async function main(): Promise<void> {
     // Le faux live (SIM=1) : ses routes sont dans l'application, ses personnes fictives dans le temps réel.
     const sim = env.SIM === '1' ? createSimHost(env) : undefined;
 
-    const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger, sim, destinations: new Set(destinationKeys(map)) }));
+    // Une seule progression pour les routes et le temps réel : les gains d'une même personne passent l'un après l'autre (sa file), d'où qu'ils viennent.
+    const progress = new ProgressService(db);
+    const server = createServer(createApp({ env, db, auth, invitations, mailer, events, logger, sim, progress, destinations: new Set(destinationKeys(map)) }));
     // Le temps réel partage le serveur HTTP de l'application : /socket.io, sur la même origine que le client et /api.
-    const realtime = attachRealtime(server, { auth, db, map, mapKey: env.MAP_KEY, events, env, logger, sim });
+    const realtime = attachRealtime(server, { auth, db, map, mapKey: env.MAP_KEY, events, env, logger, sim, progress });
     await new Promise<void>((resolve, reject) => {
       server.once('error', reject);
       const listening = () => {

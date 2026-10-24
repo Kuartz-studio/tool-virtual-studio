@@ -46,4 +46,8 @@ export const MEASURED_SFX = {
   dice: { gain: 0.7, seconds: 0.43 },
   piece: { gain: 0.705, seconds: 0.337 },
   win: { gain: 0.344, seconds: 3.5 },
+  mission: { gain: 0.977, seconds: 1.723 },
+  xp: { gain: 1.691, seconds: 1.684 },
+  'level-up': { gain: 1.271, seconds: 3.96 },
+  coins: { gain: 0.376, seconds: 0.882 },
 } as const;

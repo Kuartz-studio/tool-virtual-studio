@@ -66,7 +66,7 @@ test('statut retenu après leave puis join', () => {
 // ---- Arrivée, départ, lecture ---------------------------------------------------------------------------------------------
 
 describe('join, leave, get, list', () => {
-  test('join : le joueur arrive à l\'arrêt, sans micro, sans caméra et sans partage d\'écran', () => {
+  test('join : le joueur arrive à l\'arrêt, sans micro, sans caméra et sans partage d\'écran, au niveau 0 si on ne lui en donne pas', () => {
     const { join } = setup();
     expect(join('a', { x: 336, y: 80, dir: 'up', status: 'busy' })).toEqual({
       id: 'a',
@@ -79,7 +79,18 @@ describe('join, leave, get, list', () => {
       status: 'busy',
       media: { mic: false, cam: false, screen: false },
       activity: null,
+      level: 0,
     });
+  });
+
+  test('le niveau : celui qu\'on donne à l\'arrivée, puis setLevel, qui dit s\'il a changé', () => {
+    const { world, join } = setup();
+    join('a', { level: 12 });
+    expect(world.get('a')?.level).toBe(12);
+    expect(world.setLevel('a', 12)).toBe(false);
+    expect(world.setLevel('a', 13)).toBe(true);
+    expect(world.get('a')?.level).toBe(13);
+    expect(world.setLevel('inconnu', 3)).toBe(false);
   });
 
   test('join accepte un joueur sans avatar choisi (avatarKey: null)', () => {

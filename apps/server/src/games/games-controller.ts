@@ -38,6 +38,8 @@ export interface GamesControllerDeps {
   now: () => number;
   /** La période du balayage des délais : GAME_SWEEP_MS par défaut. */
   sweepMs?: number;
+  /** Une partie vient de finir (ses joueurs dans l'ordre des sièges, son classement, si elle est classée) : la progression en tire l'XP de chacun. */
+  onMatchEnded?: (match: { game: GameId; players: string[]; ranking: number[][]; ranked: boolean }) => void;
   logger: Logger;
 }
 
@@ -83,6 +85,13 @@ export function createGamesController(d: GamesControllerDeps) {
       invite: (userId, invite) => send(userId, 'game:invite', invite),
       inviteGone: (userId, gone) => send(userId, 'game:invite:gone', gone),
       notice: (userId, notice) => send(userId, 'game:notice', notice),
+      ended: (match) => {
+        try {
+          d.onMatchEnded?.(match);
+        } catch (err) {
+          logServerError(d.logger, { err, game: match.game }, 'Fin de partie : progression impossible');
+        }
+      },
     },
     now: d.now,
     logger: d.logger,
