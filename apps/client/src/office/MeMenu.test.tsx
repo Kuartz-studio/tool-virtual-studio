@@ -196,7 +196,7 @@ describe('le menu', () => {
     expect(entry(fr.office.signingOut).disabled).toBe(true);
   });
 
-  test('le menu a, dans l\'ordre, l\'apparence, le nom, une seule liste (Disponible, puis les modes, chacun suivi de son crayon, puis « Nouveau mode ») et la déconnexion', async () => {
+  test('le menu a, dans l\'ordre, l\'apparence, le nom, une seule liste (Disponible, puis les modes, chacun suivi de son crayon, puis « Nouveau mode »), le fuseau horaire et la déconnexion', async () => {
     const user = userEvent.setup();
     renderChip({ states: [focus, lunch] });
     await user.click(trigger());
@@ -209,6 +209,7 @@ describe('le menu', () => {
       'À table',
       t(fr.modes.edit, { label: 'À table' }),
       fr.modes.create,
+      expect.stringMatching(/^Fuseau horaire : Paris, \d\d:\d\d$/),
       'Se déconnecter',
     ]);
     // Une seule section : plus de « Statut » à part, ni de « Mes modes ».

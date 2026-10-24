@@ -1,4 +1,4 @@
-import type { ActivityState, Status } from '@bureau/shared';
+import { timezoneOrDefault, type ActivityState, type Status } from '@bureau/shared';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { fr, t } from '../i18n/fr';
 import { api } from '../lib/api';
@@ -7,6 +7,7 @@ import { useOfficeStore } from '../state/office-store';
 import { ActivityMark } from './ActivityMark';
 import { AudioLinesIcon, ChevronRightIcon, LastSeenIcon, PlaceIcon } from './icons';
 import { LastSeen } from './LastSeen';
+import { useLocalTimeHover } from './LocalTime';
 import { sortPeople, type Person } from './people';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
@@ -14,12 +15,13 @@ import { Segmented, type SegmentedOption } from './ui/Segmented';
 import { usePlaces } from './use-here';
 
 // Un membre, tel que GET /api/members le dit (les membres actifs, sans adresse ni rôle). lastSeenAt : sa dernière connexion (ISO 8601),
-// null s'il n'est jamais venu au bureau.
+// null s'il n'est jamais venu au bureau. timezone : son fuseau horaire (absent d'un serveur d'avant la colonne : l'heure de Paris).
 interface Member {
   id: string;
   name: string;
   avatarKey: string | null;
   lastSeenAt: string | null;
+  timezone?: string;
 }
 
 interface Members {
@@ -76,6 +78,8 @@ interface Row extends Person {
   activity: ActivityState | null;
   // En millisecondes ; null : jamais venue (ou en ligne, où elle ne sert pas).
   seenAt: number | null;
+  // Son fuseau horaire : l'heure qu'il est chez elle, au survol de sa ligne.
+  timezone: string;
 }
 
 type View = 'here' | 'all';
@@ -86,7 +90,8 @@ type View = 'here' | 'all';
 // portrait de 38 px avec la pastille de son statut, le nom (et « toi » pour soi), et dessous ce qu'elle fait : son
 // mode (l'icône et le nom de l'état d'activité), sinon « Parle avec toi » si elle est dans notre conversation (`talkingWith` : ses identifiants), sinon
 // son lieu, sinon « En ligne ». Hors ligne, dessous : sa dernière connexion (« Il y a 3 h », LastSeen), rafraîchie chaque minute. Le statut
-// est dit aux lecteurs d'écran, la pastille ne leur dit rien.
+// est dit aux lecteurs d'écran, la pastille ne leur dit rien. Au survol d'une ligne, ou à son focus (chaque ligne en prend un), la carte de l'heure
+// qu'il est chez la personne (useLocalTimeHover : son fuseau, en direct, et l'écart avec le sien), en ligne ou non.
 //
 // Qui est en ligne et avec quel statut, c'est le magasin (ce que le serveur dit en direct) : les personnes en ligne sont affichées dès
 // l'ouverture, sans attendre la liste des membres (GET /api/members, chargée à l'ouverture), qui apporte les hors ligne. Une personne en
@@ -133,11 +138,13 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
 
   const { online, offline } = useMemo(() => {
     const people = new Map<string, Row>();
-    for (const { lastSeenAt, ...member } of members ?? []) {
-      people.set(member.id, { ...member, status: null, activity: null, seenAt: lastSeenAt ? Date.parse(lastSeenAt) : null });
+    for (const { lastSeenAt, timezone, ...member } of members ?? []) {
+      people.set(member.id, { ...member, status: null, activity: null, seenAt: lastSeenAt ? Date.parse(lastSeenAt) : null, timezone: timezoneOrDefault(timezone) });
     }
-    // Le nom en ligne est celui que le serveur vient de dire, pas celui de la liste chargée à l'ouverture.
-    for (const p of present) people.set(p.id, { id: p.id, name: p.name, avatarKey: p.avatarKey, status: p.status, activity: p.activity ?? null, seenAt: null });
+    // Le nom et le fuseau en ligne sont ceux que le serveur vient de dire, pas ceux de la liste chargée à l'ouverture.
+    for (const p of present) {
+      people.set(p.id, { id: p.id, name: p.name, avatarKey: p.avatarKey, status: p.status, activity: p.activity ?? null, seenAt: null, timezone: timezoneOrDefault(p.timezone ?? people.get(p.id)?.timezone) });
+    }
     const sorted = sortPeople([...people.values()], presentIds);
     // Soi-même d'abord : c'est la ligne qu'on cherche en premier.
     return { online: [...sorted.online.filter((p) => p.id === self?.id), ...sorted.online.filter((p) => p.id !== self?.id)], offline: sorted.offline };
@@ -146,6 +153,13 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
   // Ceux d'ici : soi, et ceux dont le lieu est le sien. Sans carte (le jeu n'est pas encore là), on n'a pas de lieu : soi seul.
   const here = useMemo(() => online.filter((p) => p.id === self?.id || (place !== null && places.get(p.id) === place)), [online, self?.id, place, places]);
   const talking = useMemo(() => new Set(talkingWith), [talkingWith]);
+
+  // L'heure qu'il est chez chacun, au survol de sa ligne : la carte lit, à chaque rendu, le fuseau et le nom du moment.
+  const byId = useMemo(() => new Map([...online, ...offline].map((person) => [person.id, person])), [online, offline]);
+  const timeHover = useLocalTimeHover((id) => {
+    const person = byId.get(id);
+    return person && { timezone: person.timezone, name: person.name, self: person.id === self?.id };
+  });
 
   // Ce que fait la personne, sous son nom : son mode, sinon la conversation, sinon son lieu (le sien, pour soi : la puce du lieu), sinon
   // qu'elle est en ligne (le lieu n'est connu qu'avec la carte).
@@ -194,7 +208,7 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
     const mine = person.id === self?.id;
     const sub = person.status === null ? lastSeen(person) : doing(person);
     return (
-      <li key={person.id} className="person" data-user={person.id} data-status={person.status ?? undefined}>
+      <li key={person.id} className="person" data-user={person.id} data-status={person.status ?? undefined} {...timeHover.bind(person.id)}>
         <AvatarPortrait avatarKey={person.avatarKey} name={person.name} size={38} status={person.status} />
         <span className="person-text">
           <span className="person-head">
@@ -261,6 +275,7 @@ export function PeoplePanel({ id, place, onClose, talkingWith = NOBODY }: { id?:
           </>
         )}
       </div>
+      {timeHover.card}
     </Drawer>
   );
 }

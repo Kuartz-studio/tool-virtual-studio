@@ -17,6 +17,7 @@ import {
   FlaskConical,
   Focus,
   Gamepad2,
+  Globe,
   Headphones,
   History,
   Image as Picture,
@@ -25,6 +26,7 @@ import {
   Lightbulb,
   LightbulbOff,
   ListMusic,
+  LocateFixed,
   Lock,
   LogOut,
   MapPin,
@@ -36,6 +38,7 @@ import {
   Minus,
   Monitor,
   MonitorUp,
+  Moon,
   Music,
   Pencil,
   Paperclip,
@@ -50,6 +53,9 @@ import {
   Slash,
   SlidersHorizontal,
   Sofa,
+  Sun,
+  Sunrise,
+  Sunset,
   Trash2,
   Undo2,
   UserX,
@@ -332,5 +338,25 @@ const DECOR_CATEGORY_ICONS: Readonly<Record<string, LucideIcon>> = {
 
 export function DecorCategoryIcon({ category }: { category: string }) {
   const Icon = DECOR_CATEGORY_ICONS[category] ?? Shapes;
+  return <Icon />;
+}
+
+// ---- Les fuseaux horaires (le menu « Moi », la carte de l'heure locale d'une personne) ----
+
+// Un globe : son fuseau horaire, dans le menu « Moi ».
+export function GlobeIcon() {
+  return <Globe />;
+}
+
+// Une cible : le fuseau de cet appareil, suggéré en tête de la liste.
+export function DeviceZoneIcon() {
+  return <LocateFixed />;
+}
+
+// Le moment de la journée chez quelqu'un : le soleil qui se lève (le matin), le soleil (l'après-midi), le soleil qui se couche (la soirée), la lune (la nuit).
+const DAY_PART_ICONS: Readonly<Record<'morning' | 'afternoon' | 'evening' | 'night', LucideIcon>> = { morning: Sunrise, afternoon: Sun, evening: Sunset, night: Moon };
+
+export function DayPartIcon({ part }: { part: 'morning' | 'afternoon' | 'evening' | 'night' }) {
+  const Icon = DAY_PART_ICONS[part];
   return <Icon />;
 }
