@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TIMEZONE,
   DESK_NAME_MAX_LENGTH,
   DESK_ROOMS,
   checkDecor,
@@ -59,6 +60,8 @@ interface DeskState {
   key: string;
   ownerId: string | null;
   ownerName: string | null;
+  // Le fuseau horaire de l'occupant (ses horloges murales donnent son heure) ; null pour une place libre.
+  ownerTimezone: string | null;
   name: string | null;
   locked: boolean;
   // Exclus (id → nom) et admis : pour la durée du serveur seulement.
@@ -113,7 +116,7 @@ export class DeskService {
     this.ownerAllowsEntry = options.ownerAllowsEntry ?? (() => true);
     this.logger = options.logger;
     for (const slot of this.slots) {
-      this.states.set(slot.key, { key: slot.key, ownerId: null, ownerName: null, name: null, locked: false, banned: new Map(), admitted: new Set() });
+      this.states.set(slot.key, { key: slot.key, ownerId: null, ownerName: null, ownerTimezone: null, name: null, locked: false, banned: new Map(), admitted: new Set() });
     }
     this.ready = this.load();
     // L'échec est pour ceux qui attendent `ready` ; sans eux, il ne doit pas rester une promesse rejetée que personne n'attrape.
@@ -131,13 +134,13 @@ export class DeskService {
   // checkDecor l'a validé à l'écriture.
   private async load(): Promise<void> {
     const rows = await this.db
-      .select({ key: desk.key, ownerId: desk.ownerId, name: desk.name, locked: desk.locked, ownerName: user.name, disabledAt: user.disabledAt })
+      .select({ key: desk.key, ownerId: desk.ownerId, name: desk.name, locked: desk.locked, ownerName: user.name, ownerTimezone: user.timezone, disabledAt: user.disabledAt })
       .from(desk)
       .innerJoin(user, eq(user.id, desk.ownerId));
     for (const row of rows) {
       const state = this.states.get(row.key);
       if (!state || row.disabledAt !== null) continue;
-      Object.assign(state, { ownerId: row.ownerId, ownerName: row.ownerName, name: row.name, locked: row.locked });
+      Object.assign(state, { ownerId: row.ownerId, ownerName: row.ownerName, ownerTimezone: row.ownerTimezone, name: row.name, locked: row.locked });
       this.byOwner.set(row.ownerId, row.key);
     }
     for (const row of await this.db.select().from(deskSetup)) {
@@ -181,8 +184,8 @@ export class DeskService {
   }
 
   // Prendre cette place. Une personne qui a déjà un bureau le déménage (nom et verrou suivent ; exclus et admis restent dans l'ancienne
-  // pièce). Prendre la sienne ne change rien.
-  claim(userId: string, userName: string, key: string): Promise<DeskResult> {
+  // pièce). Prendre la sienne ne change rien. `timezone` : celui de la personne, que ses horloges donneront (l'heure de Paris si on ne le dit pas).
+  claim(userId: string, userName: string, key: string, timezone: string = DEFAULT_TIMEZONE): Promise<DeskResult> {
     return this.serial('desks', async () => {
       await this.ready;
       const target = this.states.get(key);
@@ -197,7 +200,7 @@ export class DeskService {
         return fail('unavailable');
       }
       const changed: DeskState[] = [target];
-      Object.assign(target, { ownerId: userId, ownerName: userName, name: previous?.name ?? null, locked: previous?.locked ?? false });
+      Object.assign(target, { ownerId: userId, ownerName: userName, ownerTimezone: timezone, name: previous?.name ?? null, locked: previous?.locked ?? false });
       target.banned.clear();
       target.admitted.clear();
       this.byOwner.set(userId, key);
@@ -311,11 +314,12 @@ export class DeskService {
     return this.ok([state], true);
   }
 
-  // Le nom affiché du propriétaire a changé.
-  renameOwner(userId: string, userName: string): DeskResult {
+  // Le profil du propriétaire a changé : son nom affiché, et son fuseau horaire (celui de ses horloges) s'il est dit.
+  updateOwner(userId: string, owner: { name: string; timezone?: string }): DeskResult {
     const state = this.stateOf(userId);
     if (!state) return this.ok([], false);
-    state.ownerName = userName;
+    state.ownerName = owner.name;
+    if (owner.timezone !== undefined) state.ownerTimezone = owner.timezone;
     return this.ok([state], false);
   }
 
@@ -326,10 +330,10 @@ export class DeskService {
   }
 
   // Une personne a un bureau ? Sinon, la première place libre, si une l'est.
-  autoAssign(userId: string, userName: string): Promise<DeskResult> {
+  autoAssign(userId: string, userName: string, timezone: string = DEFAULT_TIMEZONE): Promise<DeskResult> {
     const free = this.slots.find((slot) => this.states.get(slot.key)!.ownerId === null);
     if (this.byOwner.has(userId) || !free) return Promise.resolve(this.ok([], false));
-    return this.claim(userId, userName, free.key);
+    return this.claim(userId, userName, free.key, timezone);
   }
 
   private stateOf(userId: string): DeskState | undefined {
@@ -338,7 +342,7 @@ export class DeskService {
   }
 
   private vacate(state: DeskState): void {
-    Object.assign(state, { ownerId: null, ownerName: null, name: null, locked: false });
+    Object.assign(state, { ownerId: null, ownerName: null, ownerTimezone: null, name: null, locked: false });
     state.banned.clear();
     state.admitted.clear();
   }
@@ -389,6 +393,8 @@ export class DeskService {
       // Des copies : ce qui part dans une `DeskInfo` ne doit jamais permettre de changer le décor par défaut ou celui d'une personne.
       items: copyItems(decor.items),
       ...(unfit ? { decorUnfit: true as const } : {}),
+      // Le fuseau de l'occupant, pour les horloges de sa pièce ; une place libre n'en a pas (ses horloges sont à l'heure de Paris).
+      ...(state.ownerId !== null ? { ownerTimezone: state.ownerTimezone ?? DEFAULT_TIMEZONE } : {}),
     };
   }
 }

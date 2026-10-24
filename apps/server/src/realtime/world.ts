@@ -1,4 +1,5 @@
 import {
+  DEFAULT_TIMEZONE,
   MAX_SPEED_PX_PER_S,
   MOVE_JITTER_MS,
   NORMAL_MAX_SPEED_PX_PER_S,
@@ -74,8 +75,9 @@ export class World {
 
   // Fait entrer un joueur à (x, y), à l'arrêt, sans micro, caméra ni partage d'écran. L'appelant donne une position praticable
   // (chooseSpawn) : join ne la vérifie pas. Son statut est aussi celui dont le monde se souvient. Un second join du même
-  // identifiant remplace le joueur : sa position, son heure de référence et son mouvement en attente repartent de zéro.
-  join(p: { id: string; name: string; avatarKey: string | null; x: number; y: number; dir: Direction; status: Status }): PublicPlayer {
+  // identifiant remplace le joueur : sa position, son heure de référence et son mouvement en attente repartent de zéro. Sans fuseau horaire
+  // (un joueur des tests), il est à l'heure de Paris : chacun en a un pour les autres.
+  join(p: { id: string; name: string; avatarKey: string | null; x: number; y: number; dir: Direction; status: Status; timezone?: string }): PublicPlayer {
     const player: PublicPlayer = {
       id: p.id,
       name: p.name,
@@ -87,6 +89,7 @@ export class World {
       status: p.status,
       media: noMedia(),
       activity: this.activities.get(p.id) ?? null,
+      timezone: p.timezone ?? DEFAULT_TIMEZONE,
     };
     this.entries.delete(p.id);   // un joueur qui revient prend la dernière place de la liste
     this.entries.set(p.id, { player, at: this.now() });
@@ -273,11 +276,12 @@ export class World {
     if (entry) entry.player.media = { mic: m.mic, cam: m.cam, screen: m.screen };
   }
 
-  setProfile(id: string, p: { name: string; avatarKey: string | null }): void {
+  setProfile(id: string, p: { name: string; avatarKey: string | null; timezone?: string }): void {
     const entry = this.entries.get(id);
     if (!entry) return;
     entry.player.name = p.name;
     entry.player.avatarKey = p.avatarKey;
+    if (p.timezone !== undefined) entry.player.timezone = p.timezone;
   }
 
   // Les mouvements à diffuser dans le prochain world:tick : au plus un par joueur, le dernier accepté (ou la téléportation)

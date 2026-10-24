@@ -29,6 +29,9 @@ const MAX_STEP_MS = 250;
 // cases de haut : deux personnes sur des cases voisines (32 px) se cacheraient le visage et le nom, l'une devant l'autre ; en diagonale
 // (45 px), non.
 const OCCUPIED_PX = 44;
+// Les fuseaux horaires des personnes fictives, l'un après l'autre : de quoi voir, au survol, des heures d'ailleurs (la première est à Paris,
+// comme tout le monde par défaut).
+export const SIM_BOT_TIMEZONES = ['Europe/Paris', 'America/Montreal', 'Asia/Tokyo', 'America/Sao_Paulo', 'Australia/Sydney', 'Africa/Dakar'] as const;
 
 // Pourquoi une commande est refusée : unknown_bot (cet identifiant n'est pas une personne fictive), unknown_audio (ce fichier n'est pas
 // dans le dossier), unreachable (la personne est sur une case bloquante : rien à faire marcher).
@@ -60,6 +63,7 @@ interface Bot {
   id: string;
   name: string;
   avatarKey: string;
+  timezone: string;
   audio: string | null;
   // Sa position exacte (les pieds, en pixels, décimaux) : le monde ne garde que des entiers, et les pas d'un demi-pixel s'y perdraient.
   pos: Point;
@@ -141,6 +145,7 @@ export class SimBots {
       id: `${SIM_BOT_PREFIX}${randomUUID().slice(0, 8)}`,
       name: options.name ?? `Fictif ${n}`,
       avatarKey: formatPremade(((n - 1) % CHARACTER_PARTS.premade) + 1),   // les personnages prêts à l'emploi, l'un après l'autre
+      timezone: SIM_BOT_TIMEZONES[(n - 1) % SIM_BOT_TIMEZONES.length]!,
       audio,
       pos: spot,
       path: [],
@@ -149,7 +154,7 @@ export class SimBots {
       speed: options.speed ?? SIM_BOT_SPEED_PX_PER_S,
     };
     this.bots.set(bot.id, bot);
-    const player = this.d.world.join({ id: bot.id, name: bot.name, avatarKey: bot.avatarKey, x: spot.x, y: spot.y, dir: 'down', status: 'available' });
+    const player = this.d.world.join({ id: bot.id, name: bot.name, avatarKey: bot.avatarKey, x: spot.x, y: spot.y, dir: 'down', status: 'available', timezone: bot.timezone });
     this.d.world.setMedia(bot.id, { mic: audio !== null, cam: false, screen: false });
     this.d.io.to(OFFICE_ROOM).emit('player:joined', { ...player, media: { mic: audio !== null, cam: false, screen: false } });
     return this.infoOf(bot);

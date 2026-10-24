@@ -27,6 +27,11 @@ async function accountOf(t: TestApp, userId: string) {
   return found;
 }
 
+async function timezoneOf(t: TestApp, userId: string): Promise<string | undefined> {
+  const [found] = await t.db.select({ timezone: user.timezone }).from(user).where(eq(user.id, userId));
+  return found?.timezone;
+}
+
 function patchMe(t: TestApp, cookie: string, body: unknown) {
   return request(t.app).patch('/api/me').set('Cookie', cookie).send(body as object);
 }
@@ -40,22 +45,22 @@ describe('GET /api/members', () => {
     expect(res.get('Cache-Control')).toBe('no-store');
   });
 
-  test('id, nom, avatar et dernière présence des membres, et rien d\'autre (ni e-mail ni rôle)', async () => {
+  test('id, nom, avatar, dernière présence et fuseau horaire des membres, et rien d\'autre (ni e-mail ni rôle)', async () => {
     const t = await createTestApp();
     const lea = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
     const tom = await t.inviteAndAccept('tom@x.fr', { name: 'Tom', role: 'admin' });
     const seenAt = new Date('2026-10-23T08:15:00.000Z');
-    await t.db.update(user).set({ avatarKey: PREMADE[0], lastSeenAt: seenAt }).where(eq(user.id, tom.userId));
+    await t.db.update(user).set({ avatarKey: PREMADE[0], lastSeenAt: seenAt, timezone: 'America/Montreal' }).where(eq(user.id, tom.userId));
 
     // Un membre et un admin voient la même liste, dans l'ordre d'arrivée.
     for (const { cookie } of [lea, tom]) {
       const res = await request(t.app).get('/api/members').set('Cookie', cookie);
       expect(res.status).toBe(200);
       expect(res.get('Cache-Control')).toBe('no-store');   // des données privées : pas de copie gardée par le navigateur
-      // Léa n'est jamais venue au bureau : pas de dernière présence. Celle de Tom part en ISO 8601.
+      // Léa n'est jamais venue au bureau : pas de dernière présence. Celle de Tom part en ISO 8601. Léa n'a pas choisi de fuseau : l'heure de Paris.
       expect(res.body).toEqual([
-        { id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null },
-        { id: tom.userId, name: 'Tom', avatarKey: PREMADE[0], lastSeenAt: seenAt.toISOString() },
+        { id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null, timezone: 'Europe/Paris' },
+        { id: tom.userId, name: 'Tom', avatarKey: PREMADE[0], lastSeenAt: seenAt.toISOString(), timezone: 'America/Montreal' },
       ]);
     }
   });
@@ -68,7 +73,7 @@ describe('GET /api/members', () => {
 
     const res = await request(t.app).get('/api/members').set('Cookie', lea.cookie);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual([{ id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null }]);
+    expect(res.body).toEqual([{ id: lea.userId, name: 'Léa', avatarKey: null, lastSeenAt: null, timezone: 'Europe/Paris' }]);
   });
 
   test('un compte désactivé dont la session a survécu est refusé quand même', async () => {
@@ -116,28 +121,58 @@ describe('PATCH /api/me', () => {
     // Le nom : 200, enregistré, et profile:changed part avec le profil complet.
     const renamed = await patchMe(t, cookie, { name: 'Léa B.' });
     expect(renamed.status).toBe(200);
-    expect(renamed.body).toEqual({ id: userId, name: 'Léa B.', avatarKey: null });
+    expect(renamed.body).toEqual({ id: userId, name: 'Léa B.', avatarKey: null, timezone: 'Europe/Paris' });
     expect(await accountOf(t, userId)).toMatchObject({ name: 'Léa B.', avatarKey: null });
     expect(changed).toHaveBeenCalledTimes(1);
-    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa B.', avatarKey: null });
+    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa B.', avatarKey: null, timezone: 'Europe/Paris' });
 
     // L'avatar : le profil envoyé aux autres porte aussi le nom actuel.
     const avatarKey = PREMADE[1];
     const withAvatar = await patchMe(t, cookie, { avatarKey });
     expect(withAvatar.status).toBe(200);
-    expect(withAvatar.body).toEqual({ id: userId, name: 'Léa B.', avatarKey });
+    expect(withAvatar.body).toEqual({ id: userId, name: 'Léa B.', avatarKey, timezone: 'Europe/Paris' });
     expect(changed).toHaveBeenCalledTimes(2);
-    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa B.', avatarKey });
+    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa B.', avatarKey, timezone: 'Europe/Paris' });
 
     // Les deux ensemble, dans une seule requête et un seul événement ; une clé de personnage assemblé vaut une clé de personnage prêt à l'emploi.
     const both = await patchMe(t, cookie, { name: 'Léa', avatarKey: BUILT });
     expect(both.status).toBe(200);
     expect(changed).toHaveBeenCalledTimes(3);
-    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa', avatarKey: BUILT });
+    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa', avatarKey: BUILT, timezone: 'Europe/Paris' });
+
+    // Le fuseau horaire, seul : le profil entier repart, avec le nom et l'avatar du moment.
+    const moved = await patchMe(t, cookie, { timezone: 'America/Montreal' });
+    expect(moved.status).toBe(200);
+    expect(moved.body).toEqual({ id: userId, name: 'Léa', avatarKey: BUILT, timezone: 'America/Montreal' });
+    expect(changed).toHaveBeenCalledTimes(4);
+    expect(changed).toHaveBeenLastCalledWith({ id: userId, name: 'Léa', avatarKey: BUILT, timezone: 'America/Montreal' });
 
     // Better Auth relit la même base : la session voit le nouveau profil.
     const me = await request(t.app).get('/api/auth/get-session').set('Cookie', cookie);
-    expect(me.body.user).toMatchObject({ id: userId, name: 'Léa', avatarKey: BUILT });
+    expect(me.body.user).toMatchObject({ id: userId, name: 'Léa', avatarKey: BUILT, timezone: 'America/Montreal' });
+  });
+
+  test('un compte neuf est à l\'heure de Paris ; le fuseau doit être un nom IANA réel, gardé tel qu\'il est écrit', async () => {
+    const t = await createTestApp();
+    const { cookie, userId } = await t.inviteAndAccept('lea@x.fr');
+    expect(await timezoneOf(t, userId)).toBe('Europe/Paris');
+
+    // Un décalage fixe, un nom inventé, une ville seule, un autre type : refusés, rien ne change.
+    const refused = ['', '   ', 'Paris', 'Europe/Pariss', 'Mars/Olympus_Mons', '+01:00', 'UTC+2', 'GMT+0100', 'Europe/../Paris', 'Europe Paris', 'x'.repeat(65), null, 2, ['Europe/Paris']];
+    for (const timezone of refused) {
+      const res = await patchMe(t, cookie, { timezone });
+      expect(res.status, JSON.stringify(timezone)).toBe(400);
+      expect(res.body).toEqual({ error: 'invalid' });
+    }
+    expect(await timezoneOf(t, userId)).toBe('Europe/Paris');
+
+    // Les noms IANA, anciens compris (un navigateur peut encore donner « Asia/Calcutta ») ; les espaces autour sont retirés, le nom n'est pas réécrit.
+    for (const timezone of ['Asia/Tokyo', 'America/Argentina/Buenos_Aires', 'Asia/Kolkata', 'Asia/Calcutta', 'UTC', 'Etc/GMT+5', 'Pacific/Chatham']) {
+      const res = await patchMe(t, cookie, { timezone });
+      expect(res.status, timezone).toBe(200);
+      expect(await timezoneOf(t, userId)).toBe(timezone);
+    }
+    expect((await patchMe(t, cookie, { timezone: '  Europe/Paris  ' })).body.timezone).toBe('Europe/Paris');
   });
 
   test('le nom suit displayNameSchema : espaces retirés, vide ou trop long refusé', async () => {
@@ -172,7 +207,7 @@ describe('PATCH /api/me', () => {
     expect((await accountOf(t, userId))?.avatarKey).toBe(BUILT);
   });
 
-  test('un corps sans nom ni avatar → 400, pas d\'événement', async () => {
+  test('un corps sans nom, ni avatar, ni fuseau → 400, pas d\'événement', async () => {
     const t = await createTestApp();
     const { cookie } = await t.inviteAndAccept('lea@x.fr');
     const changed = vi.fn();
@@ -187,7 +222,7 @@ describe('PATCH /api/me', () => {
     expect(changed).not.toHaveBeenCalled();
   });
 
-  test('seuls le nom et l\'avatar se changent : le client ne choisit ni son rôle, ni son adresse, ni son identifiant', async () => {
+  test('seuls le nom, l\'avatar et le fuseau se changent : le client ne choisit ni son rôle, ni son adresse, ni son identifiant', async () => {
     const t = await createTestApp();
     const lea = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
     const tom = await t.inviteAndAccept('tom@x.fr', { name: 'Tom' });
@@ -196,7 +231,7 @@ describe('PATCH /api/me', () => {
       name: 'Léa B.', role: 'admin', email: 'pirate@x.fr', id: tom.userId, disabledAt: new Date().toISOString(), emailVerified: false,
     });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ id: lea.userId, name: 'Léa B.', avatarKey: null });
+    expect(res.body).toEqual({ id: lea.userId, name: 'Léa B.', avatarKey: null, timezone: 'Europe/Paris' });
     expect(await accountOf(t, lea.userId)).toEqual({ name: 'Léa B.', email: 'lea@x.fr', role: 'member', avatarKey: null });
     expect(await accountOf(t, tom.userId)).toEqual({ name: 'Tom', email: 'tom@x.fr', role: 'member', avatarKey: null });
     const [stored] = await t.db.select({ disabledAt: user.disabledAt, emailVerified: user.emailVerified }).from(user).where(eq(user.id, lea.userId));
@@ -211,7 +246,7 @@ describe('routes de profil de Better Auth fermées', () => {
     const t = await createTestApp();
     const { cookie, userId } = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
 
-    for (const body of [{ role: 'admin' }, { name: 'x'.repeat(41) }, { name: 'Pirate' }, { avatarKey: 'nope' }, { image: 'https://x.fr/a.png' }]) {
+    for (const body of [{ role: 'admin' }, { name: 'x'.repeat(41) }, { name: 'Pirate' }, { avatarKey: 'nope' }, { image: 'https://x.fr/a.png' }, { timezone: 'Mars/Olympus_Mons' }]) {
       const res = await request(t.app).post('/api/auth/update-user').set('Cookie', cookie).send(body);
       expect(res.status, JSON.stringify(body)).toBe(404);
     }

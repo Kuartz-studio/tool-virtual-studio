@@ -1,6 +1,7 @@
 export * from './constants';
 export * from './avatars';
 export * from './protocol';
+export * from './timezone';
 export * from './sim';
 export * from './map/tiled-types';
 export * from './audio/scenes';
@@ -21,6 +22,7 @@ export * from './props/catalog';
 export * from './decor/generated-themes';
 export * from './character/types';
 export * from './character/generated';
+export * from './decor/clocks';
 export * from './decor/catalog';
 export * from './decor/themes';
 export * from './decor/placement';

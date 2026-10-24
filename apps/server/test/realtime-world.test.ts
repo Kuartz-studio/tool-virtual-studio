@@ -309,9 +309,31 @@ describe('profils', () => {
     const res = await request(srv.app).patch('/api/me').set('Cookie', cookieA).send({ name: 'Léa' });
 
     expect(res.status).toBe(200);
-    expect(await forB).toEqual({ id: a.id, name: 'Léa', avatarKey: null });
-    expect(await forA).toEqual({ id: a.id, name: 'Léa', avatarKey: null });
+    expect(await forB).toEqual({ id: a.id, name: 'Léa', avatarKey: null, timezone: 'Europe/Paris' });
+    expect(await forA).toEqual({ id: a.id, name: 'Léa', avatarKey: null, timezone: 'Europe/Paris' });
     expect(srv.realtime.world.get(a.id)).toMatchObject({ name: 'Léa', avatarKey: null });
+  });
+
+  test('PATCH /api/me { timezone } → diffusé à tout le bureau ; le monde le retient, un nouvel arrivant le voit, et une reconnexion le garde', async () => {
+    const srv = await startTestServer();
+    const cookieA = await srv.inviteAndLogin('a@x.fr');
+    const a = await enter(srv, cookieA);
+    const b = await enter(srv, await srv.inviteAndLogin('b@x.fr'));
+    expect(b.init.players.find((p) => p.id === a.id)?.timezone).toBe('Europe/Paris');
+
+    const forB = nextEvent(b.socket, 'profile:changed');
+    const res = await request(srv.app).patch('/api/me').set('Cookie', cookieA).send({ timezone: 'America/Montreal' });
+
+    expect(res.status).toBe(200);
+    expect(await forB).toEqual({ id: a.id, name: 'a', avatarKey: null, timezone: 'America/Montreal' });
+    expect(srv.realtime.world.get(a.id)?.timezone).toBe('America/Montreal');
+    const c = await enter(srv, await srv.inviteAndLogin('c@x.fr'));
+    expect(c.init.players.find((p) => p.id === a.id)?.timezone).toBe('America/Montreal');
+
+    // Un fuseau inconnu est refusé : rien n'est diffusé, rien ne change.
+    const refused = await request(srv.app).patch('/api/me').set('Cookie', cookieA).send({ timezone: 'Mars/Olympus_Mons' });
+    expect(refused.status).toBe(400);
+    expect(srv.realtime.world.get(a.id)?.timezone).toBe('America/Montreal');
   });
 
   test('PATCH /api/me { avatarKey } → le profil complet est diffusé, et un nouvel arrivant voit le nouveau', async () => {
@@ -324,7 +346,7 @@ describe('profils', () => {
     const res = await request(srv.app).patch('/api/me').set('Cookie', cookieA).send({ avatarKey: formatPremade(2) });
 
     expect(res.status).toBe(200);
-    expect(await forB).toEqual({ id: a.id, name: 'a', avatarKey: 'p.02' });   // avec le nom : le client remplace les deux ensemble
+    expect(await forB).toEqual({ id: a.id, name: 'a', avatarKey: 'p.02', timezone: 'Europe/Paris' });   // avec le nom : le client remplace le tout
     const c = await enter(srv, await srv.inviteAndLogin('c@x.fr'));
     expect(c.init.players.find((p) => p.id === a.id)).toMatchObject({ name: 'a', avatarKey: 'p.02' });
   });
@@ -339,7 +361,7 @@ describe('profils', () => {
     const res = await request(srv.app).patch('/api/me').set('Cookie', cookieA).send({ name: 'Zoé' });
 
     expect(res.status).toBe(200);
-    expect(await forB).toEqual({ id, name: 'Zoé', avatarKey: null });   // la liste des membres d'un autre onglet peut la suivre
+    expect(await forB).toEqual({ id, name: 'Zoé', avatarKey: null, timezone: 'Europe/Paris' });   // la liste des membres d'un autre onglet peut la suivre
     expect(srv.realtime.world.get(id)).toBeUndefined();
   });
 
@@ -347,7 +369,7 @@ describe('profils', () => {
     const srv = await startTestServer();
     const setProfile = vi.spyOn(srv.realtime.world, 'setProfile');
     await srv.realtime.stop();
-    srv.events.emit('profile:changed', { id: 'quelqu-un', name: 'Zoé', avatarKey: null });
+    srv.events.emit('profile:changed', { id: 'quelqu-un', name: 'Zoé', avatarKey: null, timezone: 'Europe/Paris' });
     expect(setProfile).not.toHaveBeenCalled();
   });
 });

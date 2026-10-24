@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import {
   CHARACTER_PARTS,
+  CLOCK_ATLAS,
+  CLOCK_ITEMS,
+  DECOR_CATALOG,
   DECOR_CATEGORIES,
   DECOR_ITEMS,
   DEFAULT_DESK_DECOR,
@@ -10,11 +13,16 @@ import {
   WALL_THEMES,
   blockedCells,
   checkDecor,
+  decorAtlasNames,
+  decorAtlasOf,
+  decorAtlasUrl,
   decorItem,
   defaultDeskDecor,
   doorEntryCells,
   decorItemsOf,
   floorTheme,
+  isClockId,
+  isDecorId,
   isDecorStep,
   isFloorTheme,
   isWallTheme,
@@ -50,6 +58,32 @@ describe('la banque d\'éléments', () => {
     expect(decorItem('of-14-12')?.cat).toBe('ecrans');
     expect(decorItem('of-7-28')?.cat).toBe('bureaux');
     expect(decorItem('nope')).toBeUndefined();
+  });
+
+  test('les horloges murales sont dans la banque, à part du pack : quatre tailles, au mur, gratuites, dans leur propre atlas', () => {
+    expect(CLOCK_ITEMS.map((item) => item.id)).toEqual(['horloge-ronde', 'horloge-led', 'horloge-gare', 'horloge-balancier']);
+    expect(new Set(CLOCK_ITEMS.map((item) => `${item.w}×${item.h}`)).size).toBe(4);
+    for (const item of CLOCK_ITEMS) {
+      expect(item, item.id).toMatchObject({ cat: 'deco', kind: 'wall', claim: 0, solid: false, atlas: CLOCK_ATLAS.name });
+      expect(item.h, item.id).toBeLessThanOrEqual(2);
+      expect(isClockId(item.id) && isDecorId(item.id), item.id).toBe(true);
+      expect(decorItem(item.id), item.id).toBe(item);
+      // L'image et son cadran nu tiennent dans l'atlas.
+      expect(item.fx + item.w * 32, item.id).toBeLessThanOrEqual(CLOCK_ATLAS.width);
+      expect(item.fy + CLOCK_ATLAS.bareRowOffset + item.h * 32, item.id).toBeLessThanOrEqual(CLOCK_ATLAS.height);
+    }
+    expect(isClockId('of-15-0')).toBe(false);
+    // Aucune clé du pack n'est prise, et la banque entière n'a pas de doublon ; les horloges ouvrent « Déco & murs ».
+    expect(new Set(DECOR_CATALOG.map((item) => item.id)).size).toBe(DECOR_CATALOG.length);
+    expect(DECOR_CATALOG).toHaveLength(DECOR_ITEMS.length + CLOCK_ITEMS.length);
+    expect(decorItemsOf('deco').slice(0, 4)).toEqual(CLOCK_ITEMS);
+  });
+
+  test('l\'atlas d\'un élément : celui de sa catégorie, ou le sien', () => {
+    expect(decorAtlasOf(decorItem('of-15-0')!)).toBe('deco');
+    expect(decorAtlasOf(decorItem('horloge-gare')!)).toBe('horloges');
+    expect(decorAtlasUrl('horloges')).toBe('/assets/decor/horloges.png');
+    expect(decorAtlasNames()).toEqual([...DECOR_CATEGORIES.map((c) => c.id), 'horloges']);
   });
 
   test('des thèmes de sol et de mur à choisir', () => {
@@ -107,6 +141,21 @@ describe('checkDecor', () => {
     expect(checkDecor(decor([{ id: 'of-15-0', x: 0, y: 0 }]))).toEqual({ ok: true });
     expect(checkDecor(decor([{ id: 'of-15-0', x: 0, y: 2 }]))).toEqual({ ok: false, error: 'bad_position', index: 0 });
     expect(checkDecor(decor([{ id: 'of-9-12', x: 0, y: 0 }, { id: 'of-15-0', x: 1, y: 0 }]))).toEqual({ ok: false, error: 'overlap', index: 1 });
+  });
+
+  test('les horloges se posent au mur comme les autres éléments muraux : côte à côte, jamais l\'une sur l\'autre, ni ailleurs que sur la bande', () => {
+    const clocks = [
+      { id: 'horloge-ronde', x: 0, y: 0 },
+      { id: 'horloge-led', x: 1, y: 0 },
+      { id: 'horloge-gare', x: 3, y: 0 },
+      { id: 'horloge-balancier', x: 5.5, y: 0 },
+    ];
+    expect(checkDecor(decor(clocks))).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: 'horloge-ronde', x: 2, y: 3 }]))).toEqual({ ok: false, error: 'bad_position', index: 0 });
+    expect(checkDecor(decor([{ id: 'horloge-gare', x: 0, y: 0 }, { id: 'horloge-ronde', x: 1.5, y: 0 }]))).toEqual({ ok: false, error: 'overlap', index: 1 });
+    expect(checkDecor(decor([{ id: 'horloge-led', x: DESK_ROOMS.standard.width - 1, y: 0 }]))).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    // Un élément mural ne gêne pas le passage.
+    expect(blockedCells(clocks).size).toBe(0);
   });
 
   test('on ne mure pas sa porte, et on n\'enferme pas un coin de la pièce', () => {

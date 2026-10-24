@@ -110,6 +110,17 @@ test('setStatus, setMedia, setProfile : pour un autre joueur, et pour soi-même'
   expect(self).toMatchObject({ status: 'busy', media: { mic: false, cam: true, screen: false }, name: 'Moi-même', avatarKey: 'dev-green' });
 });
 
+test('setProfile : le fuseau horaire suit le profil ; un profil sans fuseau garde celui qu\'on connaissait', () => {
+  store.getState().applyInit(init({ ...SELF, timezone: 'Europe/Paris' }, [{ ...A, timezone: 'Europe/Paris' }]));
+  const { setProfile } = store.getState();
+  setProfile({ id: 'a', name: 'Alice', avatarKey: null, timezone: 'Asia/Tokyo' });
+  setProfile({ id: 'moi', name: 'Moi', avatarKey: null, timezone: 'America/Montreal' });
+  expect(store.getState().players.a?.timezone).toBe('Asia/Tokyo');
+  expect(store.getState().self?.timezone).toBe('America/Montreal');
+  setProfile({ id: 'a', name: 'Alice B.', avatarKey: null });
+  expect(store.getState().players.a).toMatchObject({ name: 'Alice B.', timezone: 'Asia/Tokyo' });
+});
+
 test('un identifiant inconnu (parti, ou pas encore arrivé) ne change rien, et ne crée personne', () => {
   store.getState().applyInit(init(SELF, [A]));
   const before = store.getState();

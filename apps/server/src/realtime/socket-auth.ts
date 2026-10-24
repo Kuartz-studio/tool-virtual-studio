@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders } from 'node:http';
+import { timezoneOrDefault } from '@bureau/shared';
 import { isAPIError } from 'better-auth/api';
 import { fromNodeHeaders } from 'better-auth/node';
 import type { Logger } from 'pino';
@@ -44,8 +45,8 @@ async function identify(
   if (found.user.disabledAt) return 'disabled';
   // Par compte, jamais par adresse : un rechargement en boucle ou un client qui se reconnecte sans fin est arrêté.
   if (!d.limiter.take(found.user.id)) return 'rate_limited';
-  const { id, name, avatarKey, role } = found.user;
-  return { userId: id, name, avatarKey: avatarKey ?? null, role: role === 'admin' ? 'admin' : 'member' };
+  const { id, name, avatarKey, role, timezone } = found.user;
+  return { userId: id, name, avatarKey: avatarKey ?? null, role: role === 'admin' ? 'admin' : 'member', timezone: timezoneOrDefault(timezone) };
 }
 
 // Le middleware `io.use` : pose socket.data (le compte) ou refuse la connexion. Une erreur inattendue est journalisée et refuse

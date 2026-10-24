@@ -1,4 +1,4 @@
-import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, SESSION_TTL_S } from '@bureau/shared';
+import { DEFAULT_TIMEZONE, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, SESSION_TTL_S } from '@bureau/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -86,12 +86,14 @@ export function createAuth({
         disabledAt: { type: 'date', required: false, input: false },
         // La dernière présence au bureau (realtime/positions.ts) : null tant que la personne n'est jamais repartie.
         lastSeenAt: { type: 'date', required: false, input: false },
+        // Son fuseau horaire (un nom IANA) : l'heure de Paris tant qu'elle n'en a pas choisi d'autre (PATCH /api/me, qui le valide : timezoneSchema).
+        timezone: { type: 'string', required: true, defaultValue: DEFAULT_TIMEZONE, input: false },
       },
     },
     // Avec le faux live (SIM=1) : aussi les autres écritures de l'adresse de la machine (127.0.0.1 pour localhost), sinon [].
     trustedOrigins: [env.APP_URL, ...simOrigins(env)],
     // Les routes de Better Auth qui changent le profil ou le compte répondent 404. PATCH /api/me est le seul chemin pour changer
-    // son nom et son avatar : /update-user accepte n'importe quel nom (un nom de 41 caractères passe), sans displayNameSchema ni
+    // son nom, son avatar et son fuseau horaire : /update-user accepte n'importe quel nom (un nom de 41 caractères passe), sans displayNameSchema ni
     // la liste des avatars. Le changement d'adresse et la suppression de compte n'existent pas en V1 (désactivés par défaut :
     // on ferme aussi la route, pour qu'une option activée plus tard ne l'ouvre pas sans que quelqu'un le décide).
     disabledPaths: ['/update-user', '/change-email', '/delete-user'],

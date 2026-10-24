@@ -218,7 +218,8 @@ export interface OfficeState {
   setMedia(id: string, m: MediaState): void;
   // Cette personne se met à parler (vrai), ou se tait (faux : la clé disparaît, comme dans les messages du serveur) : `speaking:changed`.
   setSpeaking(id: string, speaking: boolean): void;
-  setProfile(p: { id: string; name: string; avatarKey: string | null }): void;
+  // Le profil d'un joueur (`profile:changed`, ou la réponse de PATCH /api/me) : son nom, son personnage et son fuseau horaire. Sans fuseau, il garde le sien.
+  setProfile(p: { id: string; name: string; avatarKey: string | null; timezone?: string }): void;
   setReplaced(v: boolean): void;
   // La connexion coupée : setReady(false). (L'`init` la rend prête : applyInit.)
   setReady(ready: boolean): void;
@@ -559,7 +560,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           delete quiet.speaking;
           return quiet;
         }),
-      setProfile: ({ id, name, avatarKey }) => updatePlayer(id, (p) => ({ ...p, name, avatarKey })),
+      setProfile: ({ id, name, avatarKey, timezone }) => updatePlayer(id, (p) => ({ ...p, name, avatarKey, ...(timezone !== undefined ? { timezone } : {}) })),
       setReplaced: (replaced) => set({ replaced }),
       setReady: (ready) => set({ ready }),
       setMediaInstruction: (mediaInstruction) => set({ mediaInstruction }),

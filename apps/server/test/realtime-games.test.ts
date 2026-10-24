@@ -315,7 +315,7 @@ describe('la présence', () => {
     const srv = await startTestServer(OFFICE);
     const { a, seenByA } = await twoInTheGameRoom(srv);
     await command(a, { type: 'sit', game: 'connect4' });
-    srv.events.emit('profile:changed', { id: a.id, name: 'Anaïs', avatarKey: null });
+    srv.events.emit('profile:changed', { id: a.id, name: 'Anaïs', avatarKey: null, timezone: 'Europe/Paris' });
     await waitFor(() => seenByA.table()?.chairs[0]?.name === 'Anaïs');
   });
 

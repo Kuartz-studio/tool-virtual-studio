@@ -28,7 +28,8 @@ export const DECOR_KINDS = ['object', 'floor', 'onTop', 'wall'] as const;
 export type DecorKind = (typeof DECOR_KINDS)[number];
 
 // Un élément de la banque. `w` et `h` sont la taille de l'image en cases ; `claim`, le nombre de rangées du bas qu'il occupe au sol.
-// `atlas` et `fx`, `fy` disent où est l'image (en pixels) dans l'atlas de sa catégorie.
+// `fx`, `fy` disent où est l'image (en pixels) dans l'atlas de sa catégorie, ou dans `atlas` quand il en a un à lui : les horloges murales,
+// dessinées à part (decor/clocks.ts), ont le leur, que le pipeline des images du pack ne touche pas (decorAtlasOf).
 export interface DecorItem {
   id: string;
   cat: DecorCategoryId;
@@ -40,6 +41,7 @@ export interface DecorItem {
   solid: boolean;
   fx: number;
   fy: number;
+  atlas?: string;
 }
 
 // Un élément posé dans la pièce d'un bureau : `x` et `y` sont la position du coin haut-gauche de son empreinte, en cases au dixième près (2.5 : au

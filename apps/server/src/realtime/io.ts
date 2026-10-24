@@ -52,12 +52,14 @@ import { createPresence } from './presence';
 import { socketAuth } from './socket-auth';
 import { World } from './world';
 
-// Le compte d'une socket, posé par le middleware d'authentification (socket-auth.ts) à chaque connexion.
+// Le compte d'une socket, posé par le middleware d'authentification (socket-auth.ts) à chaque connexion. `timezone` : son fuseau horaire à la
+// connexion ; ensuite, c'est le monde qui le tient à jour (`profile:changed`).
 export interface SocketData {
   userId: string;
   name: string;
   avatarKey: string | null;
   role: Role;
+  timezone: string;
 }
 
 export type TypedServer = Server<ClientToServerEvents, ServerToClientEvents, Record<string, never>, SocketData>;
@@ -391,13 +393,13 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
   // Un de ses états d'activité est modifié ou supprimé (REST) : celui qu'elle porte suit.
   const offActivityEdited = d.events.on('activity:edited', (change) => activityController.edited(change));
   // Un profil change (PATCH /api/me) : le monde le retient pour ceux qui arrivent ensuite, et tout le bureau l'apprend, même si la
-  // personne n'est pas là (la liste des membres d'un autre onglet peut la suivre).
+  // personne n'est pas là (la liste des membres d'un autre onglet peut la suivre). Son bureau suit son nom et son fuseau (ses horloges).
   const offProfileChanged = d.events.on('profile:changed', (profile) => {
-    world.setProfile(profile.id, { name: profile.name, avatarKey: profile.avatarKey });
-    deskController.renameOwner(profile.id, profile.name);
+    world.setProfile(profile.id, { name: profile.name, avatarKey: profile.avatarKey, timezone: profile.timezone });
+    deskController.updateOwner(profile.id, { name: profile.name, timezone: profile.timezone });
     games.profileChanged(profile.id, profile.name, profile.avatarKey);
     arena.profileChanged(profile.id);
-    io.to(OFFICE_ROOM).emit('profile:changed', { id: profile.id, name: profile.name, avatarKey: profile.avatarKey });
+    io.to(OFFICE_ROOM).emit('profile:changed', { id: profile.id, name: profile.name, avatarKey: profile.avatarKey, timezone: profile.timezone });
   });
   const stopTicks = startWorldTicks(io, world, d.tickMs ?? WORLD_TICK_MS, now, logger);
   const groups = startGroupTicks({

@@ -176,7 +176,7 @@ describe('au redémarrage', () => {
     await service.setLocked('ana', true);
     service.kick('ana', 'bob', 'Bob');
     const reloaded = await DeskService.create(db, map);
-    expect(reloaded.get('A3')).toEqual({ key: 'A3', ownerId: 'ana', ownerName: 'ANA', name: 'Chez Ana', locked: true, closedByState: false, ...defaultSetupOf('A3') });
+    expect(reloaded.get('A3')).toEqual({ key: 'A3', ownerId: 'ana', ownerName: 'ANA', ownerTimezone: 'Europe/Paris', name: 'Chez Ana', locked: true, closedByState: false, ...defaultSetupOf('A3') });
     expect(reloaded.deskOf('ana')?.key).toBe('A3');
     // Les exclus et les admis ne sont pas gardés.
     expect(reloaded.bansOf('ana')).toEqual([]);
@@ -210,8 +210,32 @@ describe('nommer, fermer', () => {
   test('le nom affiché du propriétaire suit son profil', async () => {
     const { service } = await setup();
     await service.claim('ana', 'Ana', 'A1');
-    expect(service.renameOwner('ana', 'Anaïs')).toMatchObject({ ok: true, changed: [{ key: 'A1', ownerName: 'Anaïs' }] });
-    expect(service.renameOwner('bob', 'Bob')).toEqual({ ok: true, changed: [], access: false });
+    expect(service.updateOwner('ana', { name: 'Anaïs' })).toMatchObject({ ok: true, changed: [{ key: 'A1', ownerName: 'Anaïs', ownerTimezone: 'Europe/Paris' }] });
+    expect(service.updateOwner('bob', { name: 'Bob' })).toEqual({ ok: true, changed: [], access: false });
+  });
+
+  test('le fuseau horaire de l\'occupant : celui qu\'il a en prenant la place (Paris par défaut), puis celui de son profil ; une place libre n\'en a pas', async () => {
+    const { service } = await setup();
+    expect(service.get('A1')).not.toHaveProperty('ownerTimezone');
+    await service.claim('ana', 'Ana', 'A1', 'America/Montreal');
+    expect(service.get('A1')).toMatchObject({ ownerId: 'ana', ownerTimezone: 'America/Montreal' });
+    await service.claim('bob', 'Bob', 'A2');
+    expect(service.get('A2')).toMatchObject({ ownerId: 'bob', ownerTimezone: 'Europe/Paris' });
+    expect(service.updateOwner('ana', { name: 'Ana', timezone: 'Asia/Tokyo' })).toMatchObject({ ok: true, changed: [{ key: 'A1', ownerTimezone: 'Asia/Tokyo' }] });
+    // Un déménagement emporte le fuseau qu'on lui donne (le contrôleur donne celui du joueur) ; rendre la place l'efface.
+    await service.claim('ana', 'Ana', 'A3', 'Asia/Tokyo');
+    expect(service.get('A3')).toMatchObject({ ownerTimezone: 'Asia/Tokyo' });
+    expect(service.get('A1')).not.toHaveProperty('ownerTimezone');
+    await service.release('ana');
+    expect(service.get('A3')).not.toHaveProperty('ownerTimezone');
+  });
+
+  test('au redémarrage, le fuseau de chaque occupant vient de son compte', async () => {
+    const { db, service } = await setup();
+    await service.claim('bob', 'Bob', 'A2');
+    await db.update(user).set({ timezone: 'Pacific/Noumea' }).where(eq(user.id, 'bob'));
+    const reloaded = await DeskService.create(db, map);
+    expect(reloaded.get('A2')).toMatchObject({ ownerId: 'bob', ownerTimezone: 'Pacific/Noumea' });
   });
 });
 
@@ -384,7 +408,7 @@ describe('le décor de la pièce', () => {
     await service.claim('ana', 'Ana', 'A4');
     await service.setDecor('ana', CUSTOM_DECOR);
     const reloaded = await DeskService.create(db, map);
-    expect(reloaded.get('A4')).toEqual({ key: 'A4', ownerId: 'ana', ownerName: 'ANA', name: null, locked: false, closedByState: false, ...CUSTOM_DECOR });
+    expect(reloaded.get('A4')).toEqual({ key: 'A4', ownerId: 'ana', ownerName: 'ANA', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...CUSTOM_DECOR });
     expect(reloaded.get('A1')).toMatchObject(DEFAULT_SETUP);
   });
 

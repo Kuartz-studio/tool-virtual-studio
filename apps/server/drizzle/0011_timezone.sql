@@ -1,0 +1,1 @@
+ALTER TABLE "user" ADD COLUMN "timezone" text DEFAULT 'Europe/Paris' NOT NULL;
