@@ -113,6 +113,27 @@ export function blockedCells(items: readonly PlacedItem[], width: number = DESK_
   return blocked;
 }
 
+// Les cases de la carte que bloquent les meubles solides posés dans les bureaux (`desks` : la clé de chaque place et ses éléments), en numéros de case de la
+// carte (y × largeur + x) : la même règle de passage que blockedCells, dans chaque pièce que la carte décrit avec une porte (ailleurs, pas de décor). Pour
+// chercher où poser quelqu'un sans le mettre dans un meuble (spotNear), ou le chemin de qui en suit un autre.
+export function furnitureTiles(map: OfficeMap, desks: ReadonlyArray<{ key: string; items: readonly PlacedItem[] }>): Set<number> {
+  const tiles = new Set<number>();
+  const itemsOf = new Map(desks.map((desk) => [desk.key, desk.items] as const));
+  const size = map.tileSize;
+  for (const zone of map.zones) {
+    if (zone.type !== 'desk') continue;
+    const key = deskKey(zone);
+    const items = itemsOf.get(key);
+    if (!items || deskRoomSpecOf(map, key) === undefined) continue;
+    const [left, top, width, height] = [Math.round(zone.x / size), Math.round(zone.y / size), Math.round(zone.width / size), Math.round(zone.height / size)];
+    for (const cell of blockedCells(items, width)) {
+      const [x, y] = [cell % width, Math.floor(cell / width)];
+      if (y < height) tiles.add((top + y) * map.widthTiles + left + x);
+    }
+  }
+  return tiles;
+}
+
 // Les cases de la pièce juste derrière la porte : l'entrée, qui doit rester libre. La rangée du bas pour une porte au sud, celle du haut pour une porte
 // au nord.
 export function doorEntryCells(room: DeskRoomSpec): Array<{ x: number; y: number }> {

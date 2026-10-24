@@ -1,4 +1,4 @@
-import type { ConversationLockNotice, LightsState, PublicPlayer } from '@bureau/shared';
+import type { ConversationLockNotice, LightLevel, LightsState, PublicPlayer } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -210,13 +210,13 @@ describe('la lumière', () => {
     act(() =>
       useOfficeStore.getState().applyInit({ self: player('moi', 'Léa'), players: [player('bob', 'Bob Martin')], mapKey: 'dev-office', chatHistory: [], desks: [], closedDesks: [], deskBans: [], lights }),
     );
-  const changed = (on: boolean, by: string, name: string, at = 1) => act(() => void emitOnBus(EventBus, 'lights:changed', { on, by: { id: by, name }, at }));
+  const changed = (level: LightLevel, by: string, name: string, at = 1) => act(() => void emitOnBus(EventBus, 'lights:changed', { level, by: { id: by, name }, at }));
   const icon = () => screen.getByRole('status').querySelector('.toast-icon svg') as SVGElement;
 
   test('un autre éteint : son nom, son portrait, et l\'ampoule barrée', () => {
     arrive();
     setup();
-    changed(false, 'bob', 'Bob Martin');
+    changed('off', 'bob', 'Bob Martin');
     const status = screen.getByRole('status');
     expect(status.textContent).toContain(t(fr.lights.off, { name: 'Bob Martin' }));
     expect(status.querySelector('.portrait-initials')?.textContent).toBe('BM');
@@ -226,19 +226,29 @@ describe('la lumière', () => {
   test('un autre rallume : « a rallumé la lumière », l\'ampoule', () => {
     arrive();
     setup();
-    changed(true, 'bob', 'Bob Martin');
+    changed('on', 'bob', 'Bob Martin');
     expect(screen.getByRole('status').textContent).toContain(t(fr.lights.on, { name: 'Bob Martin' }));
     expect(icon().classList.contains('lucide-lightbulb')).toBe(true);
     expect(icon().classList.contains('lucide-lightbulb-off')).toBe(false);
   });
 
+  test('un autre tamise : « a tamisé la lumière », le soleil voilé ; soi-même : « Tu as tamisé la lumière »', () => {
+    arrive();
+    setup();
+    changed('dim', 'bob', 'Bob Martin');
+    expect(screen.getByRole('status').textContent).toContain(t(fr.lights.dim, { name: 'Bob Martin' }));
+    expect(icon().classList.contains('lucide-sun-dim')).toBe(true);
+    changed('dim', 'moi', 'Léa', 2);
+    expect(screen.getByRole('status').textContent).toContain(fr.lights.selfDim);
+  });
+
   test('celui qui a appuyé lit « Tu as éteint la lumière », puis « Tu as rallumé la lumière », avec son propre portrait', () => {
     arrive();
     setup();
-    changed(false, 'moi', 'Léa');
+    changed('off', 'moi', 'Léa');
     expect(screen.getByRole('status').textContent).toContain(fr.lights.selfOff);
     expect(screen.getByRole('status').querySelector('.portrait-initials')?.textContent).toBe('L');
-    changed(true, 'moi', 'Léa', 2);
+    changed('on', 'moi', 'Léa', 2);
     expect(screen.getByRole('status').textContent).toContain(fr.lights.selfOn);
   });
 
@@ -246,9 +256,9 @@ describe('la lumière', () => {
     vi.useFakeTimers();
     arrive();
     setup();
-    changed(false, 'bob', 'Bob Martin');
-    changed(true, 'moi', 'Léa', 2);
-    changed(false, 'bob', 'Bob Martin', 3);
+    changed('off', 'bob', 'Bob Martin');
+    changed('on', 'moi', 'Léa', 2);
+    changed('off', 'bob', 'Bob Martin', 3);
     expect(screen.getByRole('status').querySelectorAll('.toast')).toHaveLength(1);
     expect(screen.getByRole('status').textContent).toContain(t(fr.lights.off, { name: 'Bob Martin' }));
     act(() => {
@@ -259,24 +269,24 @@ describe('la lumière', () => {
 
   test('aucun toast à l\'arrivée, même dans le noir : l\'état d\'un init n\'est pas un changement', () => {
     setup();
-    arrive({ on: false, by: { id: 'bob', name: 'Bob Martin' }, at: 5 });
+    arrive({ level: 'off', by: { id: 'bob', name: 'Bob Martin' }, at: 5 });
     expect(screen.queryByRole('status')).toBeNull();
     // Le magasin seul (sans événement du bus) n'en fait pas non plus.
-    act(() => useOfficeStore.getState().setLights({ on: true, by: { id: 'bob', name: 'Bob Martin' }, at: 6 }));
+    act(() => useOfficeStore.getState().setLights({ level: 'on', by: { id: 'bob', name: 'Bob Martin' }, at: 6 }));
     expect(screen.queryByRole('status')).toBeNull();
   });
 
   test('sans auteur (le serveur le dit toujours), rien à dire', () => {
     arrive();
     setup();
-    act(() => void emitOnBus(EventBus, 'lights:changed', { on: false, by: null, at: 1 }));
+    act(() => void emitOnBus(EventBus, 'lights:changed', { level: 'off', by: null, at: 1 }));
     expect(screen.queryByRole('status')).toBeNull();
   });
 
   test('un auteur qui n\'est plus là (parti, ou inconnu) a quand même son message, avec ses initiales', () => {
     arrive();
     setup();
-    changed(false, 'parti', 'Zoé');
+    changed('off', 'parti', 'Zoé');
     expect(screen.getByRole('status').textContent).toContain(t(fr.lights.off, { name: 'Zoé' }));
     expect(screen.getByRole('status').querySelector('.portrait-initials')?.textContent).toBe('Z');
   });
@@ -335,5 +345,52 @@ describe('le verrou de la conversation', () => {
     notice({ lock: null, cause: 'quit', by: { id: 'moi', name: 'Léa' } });
     expect(screen.getByRole('status').textContent).toContain(fr.media.lock.toast.quit);
     expect(screen.getByRole('status').querySelector('.portrait-initials')).toBeNull();
+  });
+});
+
+describe('les invitations dans un bureau, et « Suivre »', () => {
+  const invite = { id: 'inv-1', key: 'A1', from: { id: 'lea', name: 'Léa', avatarKey: null }, ttlMs: 60_000 };
+
+  test('reçue : « Léa t\'invite dans son bureau », avec Accepter et Refuser ; Accepter répond au serveur et retire le toast', async () => {
+    const socket = setup();
+    socket.connect();
+    socket.serverAccepts();
+    act(() => useOfficeStore.getState().addDeskInvite(invite));
+    const status = screen.getByRole('status');
+    expect(status.textContent).toContain(t(fr.person.invited, { name: 'Léa' }));
+    await userEvent.click(screen.getByRole('button', { name: t(fr.person.acceptLabel, { name: 'Léa' }) }));
+    expect(socket.sentOf('desk:do')).toEqual([{ type: 'answer', invite: 'inv-1', accept: true }]);
+    expect(useOfficeStore.getState().deskInvites).toEqual([]);
+    expect(screen.queryByText(t(fr.person.invited, { name: 'Léa' }))).toBeNull();
+  });
+
+  test('l\'invitation qui n\'est plus valable : son toast part ; le serveur qui refuse la réponse le dit', async () => {
+    const socket = setup();
+    socket.connect();
+    socket.serverAccepts();
+    act(() => useOfficeStore.getState().addDeskInvite(invite));
+    await userEvent.click(screen.getByRole('button', { name: t(fr.person.declineLabel, { name: 'Léa' }) }));
+    expect(socket.sentOf('desk:do')).toEqual([{ type: 'answer', invite: 'inv-1', accept: false }]);
+    await act(async () => socket.serverAcks('desk:do', { ok: false, error: 'expired' }));
+    expect(screen.getByRole('status').textContent).toContain(fr.desk.errors.expired);
+  });
+
+  test('elle expire : son toast s\'efface de lui-même, et le magasin l\'oublie', () => {
+    vi.useFakeTimers();
+    setup();
+    act(() => useOfficeStore.getState().addDeskInvite(invite));
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(useOfficeStore.getState().deskInvites).toEqual([]);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  test('la réponse à la mienne, et la fin d\'un « Suivre » que je n\'ai pas demandée', () => {
+    setup();
+    act(() => void emitOnBus(EventBus, 'desk:notice', { kind: 'accepted', user: { id: 'zoe', name: 'Zoé' } }));
+    expect(screen.getByRole('status').textContent).toContain(t(fr.person.accepted, { name: 'Zoé' }));
+    act(() => void emitOnBus(EventBus, 'follow:lost', { id: 'bob', name: 'Bob', reason: 'left' }));
+    expect(screen.getByRole('status').textContent).toContain(t(fr.person.lost.left, { name: 'Bob' }));
   });
 });

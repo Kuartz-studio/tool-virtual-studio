@@ -105,6 +105,17 @@ export const ACTIVITY_LABEL_MAX_LENGTH = 24;
 export const ACTIVITY_MAX_PER_USER = 12;
 export const DESK_RATE = { max: 10, windowMs: 2_000 };
 export const DESK_KNOCK_COOLDOWN_MS = 5_000;
+// Inviter quelqu'un dans son bureau (le menu d'une personne, au clic droit) : l'invitation attend sa réponse DESK_INVITE_TTL_MS, et l'on ne réinvite
+// pas la même personne avant DESK_INVITE_COOLDOWN_MS (une invitation renvoyée plus tôt ne repart pas).
+export const DESK_INVITE_TTL_MS = 60_000;
+export const DESK_INVITE_COOLDOWN_MS = 5_000;
+// Suivre ou rejoindre quelqu'un (le même menu) : à moins de FOLLOW_RANGE_TILES cases de lui, on le suit (l'avatar marche derrière lui et s'arrête à
+// FOLLOW_GAP_TILES case) ; plus loin, on le rejoint (le serveur pose à côté de lui, à la case libre la plus proche, cherchée à JOIN_SEARCH_TILES pas au
+// plus). Un compte demande à rejoindre au plus JOIN_RATE fois par fenêtre.
+export const FOLLOW_RANGE_TILES = 5;
+export const FOLLOW_GAP_TILES = 1;
+export const JOIN_SEARCH_TILES = 12;
+export const JOIN_RATE = { max: 4, windowMs: 10_000 };
 // La lumière du bureau, une pour tout le monde, que l'on change à l'interrupteur du couloir. Une personne la change au plus une fois par
 // LIGHTS_RATE_MS (le serveur ignore ce qui vient avant), et seulement de près : à LIGHT_SWITCH_REACH_TILES cases ou moins de la plaque
 // (withinSwitchReach, la même règle pour le serveur et pour le client).

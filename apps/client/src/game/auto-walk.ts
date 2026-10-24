@@ -113,6 +113,20 @@ export function planWalk(map: OfficeMap, from: Point, to: Point): Point[] | null
   return cornersOf(straighten(map, steps)).map((t) => centerOf(map, t));
 }
 
+// Le trajet de `from` jusqu'à la case d'à côté de celle de `to`, celle d'où l'on arrive : le plus court chemin jusqu'à sa case, sans son dernier pas (« Suivre »
+// s'arrête à une case de la personne suivie). La case de `to` fermée (la personne est dans l'encadrement d'une porte qui nous est fermée, sur un meuble) : on
+// va à la case libre qui la touche, si le chemin y mène. null : on n'arrive pas jusqu'à elle. Un seul point : on y est déjà.
+export function planApproach(map: OfficeMap, from: Point, to: Point): Point[] | null {
+  const found = findPath(map, from, to, { diagonals: false });
+  if (found === null) return null;
+  const [goal, wanted] = [tileOf(map, found.goal), tileOf(map, to)];
+  const reached = sameTile(goal, wanted);
+  if (!reached && Math.max(Math.abs(goal.tx - wanted.tx), Math.abs(goal.ty - wanted.ty)) > 1) return null;
+  const steps = [tileOf(map, from), ...found.path.map((p) => tileOf(map, p))].filter((t, i, all) => i === 0 || !sameTile(t, all[i - 1]!));
+  if (reached && steps.length > 1) steps.pop();
+  return cornersOf(straighten(map, steps)).map((t) => centerOf(map, t));
+}
+
 // La pièce d'un bureau, en cases de la carte : son coin haut-gauche et sa taille. Le décor des occupants n'existe que dans les pièces que la
 // carte décrit avec une porte (DecorLayer) : les autres cartes (celle de développement) n'ont pas de meubles.
 function roomTiles(map: OfficeMap, room: Zone): { tx: number; ty: number; width: number; height: number; decorated: boolean } {

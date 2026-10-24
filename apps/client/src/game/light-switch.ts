@@ -1,4 +1,4 @@
-import { LIGHT_SWITCH_REACH_TILES } from '@bureau/shared';
+import { LIGHT_LEVELS, LIGHT_SWITCH_REACH_TILES, type LightLevel } from '@bureau/shared';
 import type { GameObjects, Scene, Textures } from 'phaser';
 import { fr } from '../i18n/fr';
 import { DECOR_DEPTH } from './decor-layout';
@@ -8,11 +8,18 @@ import { snapToPixels } from './pixel-snap';
 // L'interrupteur de la lumière : une plaque au mur du couloir, que tout le monde actionne de près (3 cases au plus : LIGHT_SWITCH_REACH_TILES,
 // la règle du serveur aussi), par la touche E ou d'un clic sur la plaque. C'est une cible du gestionnaire de la touche E (interactions.ts) :
 // c'est lui qui retient la plus proche, et l'étiquette « [E] … » est la sienne. Actionné, il ne change rien lui-même : il demande (onUse), et la
-// plaque ne bascule qu'à l'annonce du serveur (setOn), comme pour tout le monde. Ce fichier n'importe de Phaser que des types : la scène
+// plaque ne bascule qu'à l'annonce du serveur (setLevel), comme pour tout le monde. Ce fichier n'importe de Phaser que des types : la scène
 // lui donne de quoi dessiner.
+//
+// Un variateur à trois positions : chaque appui passe à l'état suivant, allumée → tamisée → éteinte → allumée (nextLightLevel).
 
-// Les textures de la plaque, créées une fois au chargement (addSwitchTextures) : `on` quand la lumière est allumée, `off` quand elle est éteinte.
-export const SWITCH_TEXTURES = { on: 'switch:on', off: 'switch:off' } as const;
+// L'état où passe la lumière quand on actionne l'interrupteur : le suivant de LIGHT_LEVELS, puis le premier.
+export function nextLightLevel(level: LightLevel): LightLevel {
+  return LIGHT_LEVELS[(LIGHT_LEVELS.indexOf(level) + 1) % LIGHT_LEVELS.length]!;
+}
+
+// Les textures de la plaque, créées une fois au chargement (addSwitchTextures), une par état de la lumière.
+export const SWITCH_TEXTURES: Readonly<Record<LightLevel, string>> = { on: 'switch:on', dim: 'switch:dim', off: 'switch:off' };
 
 // La plaque fait 10 × 14 px du monde. Elle est dessinée au pixel, comme les meubles du pack : un contour sombre, un biseau clair en haut
 // à gauche et plus sombre en bas à droite, et au milieu un basculeur de 2 × 6 px dont une moitié est claire et l'autre dans l'ombre.
@@ -21,7 +28,7 @@ export const SWITCH_TEXTURES = { on: 'switch:on', off: 'switch:off' } as const;
 export const PLATE = { width: 10, height: 14, offsetY: -4 } as const;
 
 // Chaque lettre est une couleur de la palette, le point est transparent. `T` et `B` sont les moitiés haute et basse du basculeur : allumée,
-// c'est la haute qui est claire (basculeur levé) ; éteinte, la basse.
+// c'est la haute qui est claire (basculeur levé) ; éteinte, la basse ; tamisée, les deux rangées du milieu (le basculeur à mi-course).
 const PLATE_ART: readonly string[] = [
   '..oooooo..',
   '.ohhhhhho.',
@@ -47,24 +54,31 @@ const PALETTE: Readonly<Record<string, string>> = {
   d: '#8c8577',   // sa moitié dans l'ombre
 };
 
-// Les pixels de la plaque, rangée par rangée, allumée ou éteinte.
-export function plateRows(on: boolean): string[] {
-  return PLATE_ART.map((row) => row.replaceAll('T', on ? 'k' : 'd').replaceAll('B', on ? 'd' : 'k'));
+// Les rangées du milieu du basculeur : la première de sa moitié basse, et celle juste au-dessus (la dernière de sa moitié haute).
+const FIRST_BOTTOM_ROW = PLATE_ART.findIndex((row) => row.includes('B'));
+const MIDDLE_ROWS = [FIRST_BOTTOM_ROW - 1, FIRST_BOTTOM_ROW];
+
+// Les pixels de la plaque, rangée par rangée, pour cet état de la lumière.
+export function plateRows(level: LightLevel): string[] {
+  return PLATE_ART.map((row, y) => {
+    const lit = (half: 'T' | 'B') => (level === 'dim' ? MIDDLE_ROWS.includes(y) : (half === 'T') === (level === 'on'));
+    return row.replaceAll('T', lit('T') ? 'k' : 'd').replaceAll('B', lit('B') ? 'k' : 'd');
+  });
 }
 
 type MakeCanvas = () => HTMLCanvasElement;
 
-// Crée les deux textures de la plaque, sauf celles qui existent déjà (le jeu relance la scène à chaque connexion à une autre carte).
+// Crée les trois textures de la plaque, sauf celles qui existent déjà (le jeu relance la scène à chaque connexion à une autre carte).
 export function addSwitchTextures(textures: Textures.TextureManager, makeCanvas: MakeCanvas = () => document.createElement('canvas')): void {
-  for (const on of [true, false]) {
-    const key = on ? SWITCH_TEXTURES.on : SWITCH_TEXTURES.off;
+  for (const level of LIGHT_LEVELS) {
+    const key = SWITCH_TEXTURES[level];
     if (textures.exists(key)) continue;
     const canvas = makeCanvas();
     canvas.width = PLATE.width;
     canvas.height = PLATE.height;
     const context = canvas.getContext('2d');
     if (context) {
-      plateRows(on).forEach((row, y) => {
+      plateRows(level).forEach((row, y) => {
         [...row].forEach((pixel, x) => {
           const color = PALETTE[pixel];
           if (color === undefined) return;
@@ -93,7 +107,7 @@ export class LightSwitch {
   private readonly plate: GameObjects.Image;
   private readonly beacon: GameObjects.Rectangle;
   private readonly unregister: () => void;
-  private on = true;
+  private level: LightLevel = 'on';
 
   // `pos` : le centre de l'interrupteur, en pixels (OfficeMap.switches). `interactions` : le gestionnaire de la touche E, qui sait où sont les
   // pieds de l'avatar ; l'interrupteur s'y inscrit. `onUse` : la personne l'actionne, de près.
@@ -111,7 +125,7 @@ export class LightSwitch {
       pos,
       reachTiles: LIGHT_SWITCH_REACH_TILES,
       labelAt: { x: pos.x, y: pos.y + PLATE.offsetY - PLATE.height / 2 - LABEL_GAP },
-      prompt: () => `[E] ${this.on ? fr.lights.use : fr.lights.useOn}`,
+      prompt: () => `[E] ${fr.lights.action[nextLightLevel(this.level)]}`,
       use: onUse,
     };
     this.unregister = interactions.register(target);
@@ -119,12 +133,12 @@ export class LightSwitch {
     this.plate.on('pointerdown', () => interactions.useTarget(target));
   }
 
-  // L'état de la lumière tel que le serveur l'annonce : la plaque bascule, le témoin ambré brille dans le noir. L'étiquette, elle, relit
-  // le texte de la cible à chaque image : elle dit ce que la touche fera.
-  setOn(on: boolean): void {
-    this.on = on;
-    this.plate.setTexture(on ? SWITCH_TEXTURES.on : SWITCH_TEXTURES.off);
-    this.beacon.setVisible(!on);
+  // L'état de la lumière tel que le serveur l'annonce : la plaque bascule, le témoin ambré brille dans le noir (la nuit seulement : tamisée, on y voit
+  // encore). L'étiquette, elle, relit le texte de la cible à chaque image : elle dit ce que la touche fera.
+  setLevel(level: LightLevel): void {
+    this.level = level;
+    this.plate.setTexture(SWITCH_TEXTURES[level]);
+    this.beacon.setVisible(level === 'off');
   }
 
   destroy(): void {

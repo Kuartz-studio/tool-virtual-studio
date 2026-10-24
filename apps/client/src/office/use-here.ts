@@ -1,5 +1,5 @@
 import { placeAt as placeOf, type OfficeMap, type PublicPlayer } from '@bureau/shared';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { EventBus } from '../game/EventBus';
 import { listenOnBus } from '../net/office-connection';
 import { soundAt } from '../audio/scene-at';
@@ -35,6 +35,27 @@ export function useFeetValue<T>(read: (x: number, y: number, map: OfficeMap) => 
   }, [map, read]);
 
   return value;
+}
+
+// Les pieds de l'avatar local, tenus à jour sans redessiner : ceux de l'arrivée (ou l'apparition), puis ceux que le jeu envoie en marchant (`local:move`) ;
+// null sans carte. Pour qui en a besoin au moment d'un geste (le menu d'une personne : est-elle à moins de 5 cases ?), pas pour l'afficher.
+export function useFeetRef(): RefObject<{ x: number; y: number } | null> {
+  const map = useOfficeStore((state) => state.officeMap);
+  const feet = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (map === null) {
+      feet.current = null;
+      return;
+    }
+    const start = feet.current ?? useOfficeStore.getState().self ?? map.spawn;
+    feet.current = { x: start.x, y: start.y };
+    return listenOnBus(EventBus, 'local:move', (move) => {
+      feet.current = { x: move.x, y: move.y };
+    });
+  }, [map]);
+
+  return feet;
 }
 
 // Le nom du lieu où l'on est (placeAt, où que l'on regarde : la puce, Personnes). null sans carte.

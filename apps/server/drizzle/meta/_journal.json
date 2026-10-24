@@ -92,6 +92,13 @@
       "when": 1792834383788,
       "tag": "0012_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1792844552089,
+      "tag": "0013_lights_dim",
+      "breakpoints": true
     }
   ]
 }

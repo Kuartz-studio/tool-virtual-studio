@@ -33,6 +33,8 @@ export const displayNameSchema = z.string().trim().min(1).max(DISPLAY_NAME_MAX_L
 // - kick : exclure quelqu'un qui est dans son bureau (il en est sorti, et n'y rentre plus tant qu'on ne l'a pas réadmis) ; unban : le
 //   réadmettre ;
 // - knock : toquer à la porte d'un bureau fermé (le propriétaire est prévenu) ; admit : laisser entrer quelqu'un qui a toqué ;
+// - invite : inviter quelqu'un dans son bureau, quand on y est (il le voit, et accepte ou refuse) ; answer : répondre à une invitation reçue (`invite`, son
+//   identifiant) : l'accepter pose la personne dans le bureau, même porte fermée ;
 // - goto : aller à son bureau ;
 // - decor : régler la pièce de son bureau (sol, murs et éléments posés, d'un seul bloc : checkDecor, côté serveur, le valide en entier ; les
 //   positions sont en cases au dixième près, et checkDecor refuse celles qui ne tombent pas sur un dixième). `buy` : les éléments et le mur de la
@@ -49,6 +51,8 @@ export const deskCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('unban'), userId: userIdSchema }),
   z.object({ type: z.literal('knock'), key: deskKeySchema }),
   z.object({ type: z.literal('admit'), userId: userIdSchema }),
+  z.object({ type: z.literal('invite'), userId: userIdSchema }),
+  z.object({ type: z.literal('answer'), invite: z.string().min(1).max(64), accept: z.boolean() }),
   z.object({ type: z.literal('goto') }),
   z.object({
     type: z.literal('decor'),
@@ -88,10 +92,16 @@ export const activityInputSchema = z.object({
 // L'identifiant d'un état d'activité à prendre (`state:set`), ou null pour revenir à un statut ordinaire.
 export const activityIdSchema = z.string().min(1).max(64).nullable();
 
-// La demande d'allumer ou d'éteindre la lumière du bureau (`lights:set`) : l'état voulu, et non une bascule. Une demande répétée, ou qui
-// croise celle d'un autre, ne change donc rien : le serveur fait foi, et tout le monde finit dans le même état.
-export const lightsSetSchema = z.object({ on: z.boolean() });
+// Les trois états de la lumière du bureau : allumée (`on`, le jour), tamisée (`dim` : plus faible, entre le jour et la nuit) et
+// éteinte (`off`, la nuit). L'interrupteur passe de l'un au suivant, dans cet ordre, puis revient au premier.
+export const LIGHT_LEVELS = ['on', 'dim', 'off'] as const;
+export type LightLevel = (typeof LIGHT_LEVELS)[number];
+// La demande de changer la lumière du bureau (`lights:set`) : l'état voulu, et non une bascule. Une demande répétée, ou qui croise celle d'un
+// autre, ne change donc rien : le serveur fait foi, et tout le monde finit dans le même état.
+export const lightsSetSchema = z.object({ level: z.enum(LIGHT_LEVELS) });
 
+// Rejoindre quelqu'un (`person:join`) : le serveur pose la personne qui le demande à côté de lui.
+export const personJoinSchema = z.object({ userId: userIdSchema });
 // Réservé aux tests de bout en bout (`debug:boost`, seulement avec E2E=1) : donne du café pendant `ms` ms (0 : le retire), comme la machine.
 export const debugBoostSchema = z.object({ ms: z.number().int().min(0).max(3_600_000) });
 // Réservé aux tests de bout en bout (`debug:xp`, seulement avec E2E=1) : donne `xp` d'expérience d'un coup (et ses niveaux, avec leurs kuartzons), plus `kuartzons` kuartzons.
@@ -119,6 +129,7 @@ export type DeskCommand = z.infer<typeof deskCommandSchema>;
 export type MediaState = z.infer<typeof mediaStateSchema>;
 export type ChatSendPayload = z.infer<typeof chatSendSchema>;
 export type LightsSetPayload = z.infer<typeof lightsSetSchema>;
+export type PersonJoinPayload = z.infer<typeof personJoinSchema>;
 export type MusicSetPayload = z.infer<typeof musicSetSchema>;
 
 export interface ActivityState extends ActivityInput { id: string }
@@ -158,9 +169,13 @@ export interface DeskInfo {
 export interface DeskBan { id: string; name: string }
 // Quelqu'un qui toque à la porte d'un bureau.
 export interface DeskKnock { key: string; userId: string; name: string }
-// La lumière du bureau, la même pour tout le monde. `by` : qui l'a changée en dernier (null : personne n'y a touché, ou son compte n'existe
-// plus), `at` : quand, en ms depuis 1970 (0 : jamais).
-export interface LightsState { on: boolean; by: { id: string; name: string } | null; at: number }
+// Une invitation dans le bureau de quelqu'un, reçue : son identifiant (pour y répondre), la clé de la place, qui invite, et ce qu'il lui reste à vivre (ms).
+export interface DeskInvite { id: string; key: string; from: { id: string; name: string; avatarKey: AvatarKey | null }; ttlMs: number }
+// Ce que la personne qui invite apprend : l'invitée a accepté (elle arrive) ou refusé.
+export interface DeskInviteNotice { kind: 'accepted' | 'declined'; user: { id: string; name: string } }
+// La lumière du bureau, la même pour tout le monde : allumée, tamisée ou éteinte (`level`). `by` : qui l'a changée en dernier (null : personne
+// n'y a touché, ou son compte n'existe plus), `at` : quand, en ms depuis 1970 (0 : jamais).
+export interface LightsState { level: LightLevel; by: { id: string; name: string } | null; at: number }
 // La musique d'une pièce, la même pour tous ceux qui y sont : allumée ou éteinte (`on`), son ambiance (`scene` ; null : celle par défaut de la pièce, que la carte
 // donne), qui l'a réglée en dernier (null : personne n'y a touché, ou son compte n'existe plus) et quand (ms depuis 1970 ; 0 : jamais).
 export interface RoomMusic { on: boolean; scene: MusicScene | null; by: { id: string; name: string } | null; at: number }
@@ -177,6 +192,8 @@ export interface InitPayload {
   closedDesks: string[];
   // Ceux qu'elle a exclus de son bureau (vide sans bureau).
   deskBans: DeskBan[];
+  // Les invitations dans un bureau qui attendent sa réponse. Absent : aucune.
+  deskInvites?: DeskInvite[];
   // La lumière du bureau. Absente : allumée.
   lights?: LightsState;
   // La musique des pièces que quelqu'un a réglées, par clé de lieu. Absente (ou une pièce qui n'y est pas) : allumée, son ambiance par défaut.
@@ -231,12 +248,40 @@ export type ChatAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limit
 // La réponse du serveur à `desk:do` : `invalid` (commande refusée), `rate_limited`, `unknown_desk` (aucune place de cette clé),
 // `taken` (déjà occupée par quelqu'un d'autre), `no_desk` (la commande suppose un bureau, et la personne n'en a pas), `not_inside`
 // (exclure quelqu'un qui n'est pas dans son bureau), `not_locked` (toquer à une porte ouverte), `unavailable` (la base n'a pas pris le
-// changement : rien n'a changé), `self` (exclure ou admettre soi-même), `bad_decor` (la déco est refusée : `reason` dit pourquoi, checkDecor),
-// `too_poor` (enregistrer une déco en achetant ce qui manque : le total dépasse ses kuartzons ; rien n'est acheté ni enregistré).
+// changement : rien n'a changé), `self` (exclure, admettre ou inviter soi-même), `bad_decor` (la déco est refusée : `reason` dit pourquoi, checkDecor),
+// `too_poor` (enregistrer une déco en achetant ce qui manque : le total dépasse ses kuartzons ; rien n'est acheté ni enregistré), `not_home` (inviter
+// sans être dans son bureau), `offline` (inviter quelqu'un qui n'est pas au bureau), `already_inside` (inviter quelqu'un qui est déjà dans son bureau),
+// `expired` (répondre à une invitation qui n'existe plus : expirée, ou celle qui invitait est partie ou n'a plus ce bureau), `no_spot` (accepter une
+// invitation dans un bureau où il n'y a plus une case libre), `dnd` (inviter quelqu'un qui ne veut pas être dérangé : Ne pas déranger, ou un mode qui ferme
+// sa porte ou le conduit ailleurs).
 export type DeskAck =
   | { ok: true }
-  | { ok: false; error: 'invalid' | 'rate_limited' | 'unknown_desk' | 'taken' | 'no_desk' | 'not_inside' | 'not_locked' | 'unavailable' | 'self' | 'too_poor'; reason?: undefined }
+  | {
+      ok: false;
+      error:
+        | 'invalid'
+        | 'rate_limited'
+        | 'unknown_desk'
+        | 'taken'
+        | 'no_desk'
+        | 'not_inside'
+        | 'not_locked'
+        | 'unavailable'
+        | 'self'
+        | 'too_poor'
+        | 'not_home'
+        | 'offline'
+        | 'already_inside'
+        | 'expired'
+        | 'no_spot'
+        | 'dnd';
+      reason?: undefined;
+    }
   | { ok: false; error: 'bad_decor'; reason: DecorError };
+// La réponse du serveur à `person:join` : `invalid` (demande refusée), `rate_limited`, `self` (se rejoindre soi-même), `offline` (la personne n'est pas au
+// bureau), `busy` (on se bat dans l'octogone : on n'en sort pas), `no_spot` (aucune case libre autour d'elle). `unavailable` ne vient que du client : pas de
+// connexion, ou pas de réponse à temps.
+export type JoinAck = { ok: true } | { ok: false; error: 'invalid' | 'rate_limited' | 'self' | 'offline' | 'busy' | 'no_spot' | 'unavailable' };
 
 export interface ServerToClientEvents {
   init: (p: InitPayload) => void;
@@ -254,7 +299,10 @@ export interface ServerToClientEvents {
   'desk:access': (p: { closed: string[] }) => void;       // à une personne : les places dont la porte lui est fermée
   'desk:bans': (p: DeskBan[]) => void;                    // à un propriétaire : ceux qu'il a exclus
   'desk:knock': (p: DeskKnock) => void;                   // à un propriétaire : quelqu'un toque à sa porte
-  'lights:changed': (p: LightsState) => void;             // à tout le bureau : la lumière vient d'être allumée ou éteinte
+  'desk:invite': (p: DeskInvite) => void;                 // à une personne : on l'invite dans un bureau
+  'desk:invite:gone': (p: { id: string }) => void;        // à une personne : l'invitation n'est plus à montrer (elle y a répondu d'un autre onglet, ou on l'a renvoyée)
+  'desk:notice': (p: DeskInviteNotice) => void;           // à qui a invité : la réponse de l'invitée
+  'lights:changed': (p: LightsState) => void;             // à tout le bureau : la lumière vient d'être allumée, tamisée ou éteinte
   'music:changed': (p: { place: string; state: RoomMusic }) => void;   // à tout le bureau : la musique d'une pièce vient d'être réglée
   'coffee:changed': (p: { id: string; ms: number }) => void;   // à tout le bureau : quelqu'un prend un café (ms : la durée qui lui reste) ou le sien est fini (0)
   'game:table': (p: GameTableView) => void;               // à tout le bureau : une table de jeu a changé (la table entière : rien n'y est caché)
@@ -282,7 +330,8 @@ export interface ClientToServerEvents {
   'speaking:set': (speaking: boolean) => void;   // « je parle » / « je me tais » ; redit toutes les SPEAKING_HEARTBEAT_MS tant qu'on parle ; ignoré micro coupé, ou sans être entendu
   'chat:send': (p: ChatSendPayload, ack: (r: ChatAck) => void) => void;
   'desk:do': (p: DeskCommand, ack: (r: DeskAck) => void) => void;
-  'lights:set': (p: LightsSetPayload) => void;   // allumer ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé
+  'person:join': (p: PersonJoinPayload, ack: (r: JoinAck) => void) => void;   // rejoindre quelqu'un : le serveur pose à côté de lui
+  'lights:set': (p: LightsSetPayload) => void;   // allumer, tamiser ou éteindre, de près (3 cases au plus d'un interrupteur) ; sans réponse : `lights:changed` dit ce qui a changé
   'music:set': (p: MusicSetPayload) => void;   // régler la musique de la pièce où l'on est (dans un bureau : le sien) ; sans réponse : `music:changed` dit ce qui a changé
   'coffee:take': () => void;   // prendre un café, de près (2 cases au plus de la machine) ; sans réponse : `coffee:changed` dit ce qui a changé
   'game:do': (p: GameCommand, ack: (r: GameAck) => void) => void;   // une commande de jeu (regarder, s'asseoir, jouer un coup, inviter…) ; `game:table` dit ce qui a changé

@@ -1,21 +1,33 @@
+import { randomUUID } from 'node:crypto';
 import {
+  DESK_INVITE_COOLDOWN_MS,
+  DESK_INVITE_TTL_MS,
   DESK_KNOCK_COOLDOWN_MS,
+  JOIN_SEARCH_TILES,
   OFFICE_ROOM,
   deskKey,
+  furnitureTiles,
   isWalkablePoint,
+  refusesGameInvites,
+  spotNear,
   zoneAt,
+  type AvatarKey,
   type DeskAck,
   type DeskBan,
   type DeskCommand,
   type DeskInfo,
+  type DeskInvite,
+  type DeskInviteNotice,
   type OfficeMap,
+  type Point,
 } from '@bureau/shared';
 import type { Logger } from 'pino';
 import { logServerError } from '../logger';
 import type { TypedServer, TypedSocket } from '../realtime/io';
 import type { World } from '../realtime/world';
 import type { Teleport } from '../teleport';
-import type { DeskResult, DeskService } from './desk-service';
+import { ARRIVAL_APART_PX } from '../join/join-person';
+import type { DeskResult, DeskService, DeskSlot } from './desk-service';
 
 export interface DeskControllerDeps {
   io: TypedServer;
@@ -35,7 +47,18 @@ export interface DeskControllerDeps {
   /** Acheter d'un coup ces éléments de la boutique (ceux qu'une déco pose sans qu'elle les ait) : tout, ou rien (`too_poor` : le total dépasse ses kuartzons).
    * Absent : on n'achète pas en enregistrant, il faut passer par la boutique. */
   buyAll?: (userId: string, itemIds: string[]) => Promise<{ ok: true } | { ok: false; error: 'unknown_item' | 'too_poor' }>;
+  /** L'identifiant d'une nouvelle invitation : un uuid par défaut (les tests en passent de lisibles). */
+  newId?: () => string;
   logger: Logger;
+}
+
+// Une invitation dans un bureau qui attend la réponse de l'invitée (`to`) : le bureau, qui invite, et jusqu'à quand (ms, horloge du temps réel).
+interface PendingInvite {
+  id: string;
+  key: string;
+  from: { id: string; name: string; avatarKey: AvatarKey | null };
+  to: string;
+  expiresAt: number;
 }
 
 // Ce que le serveur fait des bureaux (DeskService) : il applique les commandes d'une personne (`desk:do`), dit à tout le monde ce qui
@@ -46,6 +69,10 @@ export function createDeskController(d: DeskControllerDeps) {
   const sentAccess = new WeakMap<TypedSocket, string>();
   // Le dernier « toc toc » de chaque personne à chaque porte (ms).
   const lastKnock = new Map<string, number>();
+  // Les invitations dans un bureau qui attendent leur réponse, par identifiant ; la dernière invitation de chaque personne à chaque autre (ms).
+  const invites = new Map<string, PendingInvite>();
+  const lastInvite = new Map<string, number>();
+  const newId = d.newId ?? randomUUID;
 
   // Entrer dans un bureau dont on ne peut pas franchir la porte est refusé comme un mur. Qui est déjà dans la pièce y reste libre de ses
   // pas, même si la porte vient de se fermer.
@@ -132,6 +159,10 @@ export function createDeskController(d: DeskControllerDeps) {
         return kick(userId, command.userId);
       case 'knock':
         return knock(userId, me.name, command.key);
+      case 'invite':
+        return invite(userId, command.userId);
+      case 'answer':
+        return answer(userId, command.invite, command.accept);
       case 'goto':
         return goto(userId);
       case 'decor':
@@ -188,6 +219,92 @@ export function createDeskController(d: DeskControllerDeps) {
     return { ok: true };
   }
 
+  // Les invitations dont le temps est passé, et les délais entre deux invitations qui ne comptent plus : oubliés.
+  function dropExpired(now: number): void {
+    for (const pending of [...invites.values()]) if (pending.expiresAt <= now) invites.delete(pending.id);
+    for (const [key, at] of [...lastInvite]) if (now - at >= DESK_INVITE_COOLDOWN_MS) lastInvite.delete(key);
+  }
+
+  // Ce que l'invitée voit d'une invitation : ce qu'il lui reste à vivre plutôt que son échéance (les horloges du serveur et du navigateur ne sont pas les mêmes).
+  const viewOf = (pending: PendingInvite, now: number): DeskInvite => ({ id: pending.id, key: pending.key, from: pending.from, ttlMs: Math.max(0, pending.expiresAt - now) });
+
+  function tell(userId: string, notice: DeskInviteNotice): void {
+    for (const socket of d.socketsOf(userId)) socket.emit('desk:notice', notice);
+  }
+
+  // Inviter quelqu'un dans son bureau, quand on y est : il le voit (`desk:invite`) et a DESK_INVITE_TTL_MS pour répondre. Qui ne veut pas être dérangé (Ne pas
+  // déranger, un mode qui ferme sa porte ou qui le conduit ailleurs : la règle des invitations aux tables) ne l'est pas : `dnd`. Réinviter la même personne
+  // remplace l'invitation (son délai repart), sauf moins de DESK_INVITE_COOLDOWN_MS après la précédente : rien ne repart, et la réponse est la même, ok.
+  function invite(ownerId: string, targetId: string): DeskAck {
+    const mine = d.desks.deskOf(ownerId);
+    const slot = mine && d.desks.slot(mine.key);
+    if (!mine || !slot) return { ok: false, error: 'no_desk' };
+    if (targetId === ownerId) return { ok: false, error: 'self' };
+    const inMine = (p: Point) => zoneAt(d.map, p.x, p.y, ['desk'])?.id === slot.zone.id;
+    const me = d.world.get(ownerId);
+    if (!me || !inMine(me)) return { ok: false, error: 'not_home' };
+    const target = d.world.get(targetId);
+    if (!target) return { ok: false, error: 'offline' };
+    if (inMine(target)) return { ok: false, error: 'already_inside' };
+    if (refusesGameInvites(target)) return { ok: false, error: 'dnd' };
+    const now = d.now();
+    dropExpired(now);
+    const pair = `${ownerId}\u0000${targetId}`;
+    if (lastInvite.has(pair)) return { ok: true };
+    lastInvite.set(pair, now);
+    for (const earlier of [...invites.values()]) {
+      if (earlier.from.id !== ownerId || earlier.to !== targetId) continue;
+      invites.delete(earlier.id);
+      for (const socket of d.socketsOf(targetId)) socket.emit('desk:invite:gone', { id: earlier.id });
+    }
+    const pending: PendingInvite = { id: newId(), key: mine.key, from: { id: ownerId, name: me.name, avatarKey: me.avatarKey }, to: targetId, expiresAt: now + DESK_INVITE_TTL_MS };
+    invites.set(pending.id, pending);
+    for (const socket of d.socketsOf(targetId)) socket.emit('desk:invite', viewOf(pending, now));
+    return { ok: true };
+  }
+
+  // Où poser l'invitée qui arrive : près de la personne qui invite si elle est dans sa pièce, sinon près du milieu de la pièce ; jamais hors de la pièce, ni dans
+  // un meuble, ni sur quelqu'un (spotNear).
+  function arrivalSpot(userId: string, slot: DeskSlot, ownerId: string): Point | null {
+    const { zone } = slot;
+    const inside = (x: number, y: number) => x >= zone.x && x < zone.x + zone.width && y >= zone.y && y < zone.y + zone.height;
+    const owner = d.world.get(ownerId);
+    const near = owner && inside(owner.x, owner.y) ? owner : null;
+    const furniture = furnitureTiles(d.map, d.desks.list());
+    return spotNear(d.map, near ?? { x: zone.x + zone.width / 2, y: zone.y + zone.height / 2 }, {
+      blocked: (tx, ty) => furniture.has(ty * d.map.widthTiles + tx),
+      canStand: inside,
+      taken: d.world.list().filter((p) => p.id !== userId),
+      apartPx: ARRIVAL_APART_PX,
+      maxSteps: JOIN_SEARCH_TILES,
+      includeStart: near === null,
+    });
+  }
+
+  // Répondre à une invitation. La refuser le dit à qui invitait. L'accepter fait entrer dans son bureau même porte fermée (admise jusqu'à la prochaine fermeture, et
+  // plus exclue : c'est lui qui l'a voulu), à une case libre près de lui, par un voyage voulu (l'anneau de lumière), et le lui dit. Une invitation qui n'existe plus
+  // (expirée, ou celle qui invitait est partie ou n'a plus ce bureau) répond `expired`, et rien ne change ; le bureau plein, `no_spot`.
+  function answer(userId: string, inviteId: string, accept: boolean): DeskAck {
+    const pending = invites.get(inviteId);
+    if (!pending || pending.to !== userId) return { ok: false, error: 'expired' };
+    invites.delete(inviteId);
+    for (const socket of d.socketsOf(userId)) socket.emit('desk:invite:gone', { id: inviteId });
+    const ownerId = pending.from.id;
+    const slot = d.desks.deskOf(ownerId)?.key === pending.key ? d.desks.slot(pending.key) : undefined;
+    if (pending.expiresAt <= d.now() || !d.world.get(ownerId) || !slot) return { ok: false, error: 'expired' };
+    const who = { id: userId, name: d.world.get(userId)?.name ?? '' };
+    if (!accept) {
+      tell(ownerId, { kind: 'declined', user: who });
+      return { ok: true };
+    }
+    const spot = arrivalSpot(userId, slot, ownerId);
+    if (spot === null) return { ok: false, error: 'no_spot' };
+    applied(d.desks.admit(ownerId, userId), ownerId);
+    d.teleport(userId, spot, 'teleport');
+    tell(ownerId, { kind: 'accepted', user: who });
+    return { ok: true };
+  }
+
   function goto(userId: string): DeskAck {
     const mine = d.desks.deskOf(userId);
     const slot = mine && d.desks.slot(mine.key);
@@ -231,12 +348,14 @@ export function createDeskController(d: DeskControllerDeps) {
       applied(d.desks.refreshOwner(userId));
     },
 
-    // Ce que l'init de cette socket dit des bureaux.
-    initFor(socket: TypedSocket): { desks: DeskInfo[]; closedDesks: string[]; deskBans: DeskBan[] } {
+    // Ce que l'init de cette socket dit des bureaux, et les invitations qui attendent la réponse de la personne (un rechargement ne les perd pas).
+    initFor(socket: TypedSocket): { desks: DeskInfo[]; closedDesks: string[]; deskBans: DeskBan[]; deskInvites?: DeskInvite[] } {
       const { userId } = socket.data;
       const closedDesks = d.desks.closedFor(userId);
       sentAccess.set(socket, closedDesks.join(','));
-      return { desks: d.desks.list(), closedDesks, deskBans: d.desks.bansOf(userId) };
+      const now = d.now();
+      const deskInvites = [...invites.values()].filter((pending) => pending.to === userId && pending.expiresAt > now).map((pending) => viewOf(pending, now));
+      return { desks: d.desks.list(), closedDesks, deskBans: d.desks.bansOf(userId), ...(deskInvites.length > 0 ? { deskInvites } : {}) };
     },
 
     // Un point où cette personne peut se tenir : pas dans un bureau dont la porte lui est fermée.

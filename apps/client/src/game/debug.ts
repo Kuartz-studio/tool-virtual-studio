@@ -57,6 +57,8 @@ export interface OfficeDebug {
   // L'avatar local marche-t-il tout seul (« Aller à mon bureau », voir auto-walk.ts) ? Faux dès qu'il est arrivé, qu'une touche de déplacement
   // l'a interrompu, ou qu'il est bloqué.
   autoWalking(): boolean;
+  // La personne que l'avatar suit (« Suivre », le menu d'une personne), ou null.
+  following(): string | null;
   // Les tables de jeu de la carte, en pixels : le jeu, le rectangle de la table, et le centre de chacune de ses chaises, dans l'ordre. Vide sur une carte sans table.
   tables(): Array<{ game: string; x: number; y: number; width: number; height: number; seats: Array<{ x: number; y: number }> }>;
   // La vue que le magasin a de la table de ce jeu (celle que le serveur a dite : chaises, spectateurs, partie), ou null sans table.

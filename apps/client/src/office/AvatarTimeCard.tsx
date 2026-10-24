@@ -25,8 +25,10 @@ export function AvatarTimeCard() {
   }, []);
 
   const player = useOfficeStore((state) => (hover ? state.players[hover.id] : undefined));
+  // Le menu d'une personne ouvert (un clic droit) : la carte s'efface, pour ne pas le couvrir.
+  const menuOpen = useOfficeStore((state) => state.personMenu !== null);
   const place = useCallback((card: { width: number; height: number }, viewport: { width: number; height: number }) => (hover ? placeAbove(hover, card, viewport) : null), [hover]);
   const hide = useCallback(() => setHover(null), []);
-  if (!hover || !player) return null;
+  if (!hover || !player || menuOpen) return null;
   return <FloatingTimeCard info={{ timezone: player.timezone ?? DEFAULT_TIMEZONE, name: player.name }} place={place} onGone={hide} />;
 }

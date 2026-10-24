@@ -77,10 +77,12 @@ export const activityState = pgTable(
 );
 
 // La lumière du bureau, la même pour tout le monde : une seule ligne (id = 1), écrite au premier changement. Sans ligne, la lumière est
-// allumée. `changedBy` est celui qui l'a changée en dernier (null si son compte n'existe plus), `changedAt` le moment du changement.
+// allumée. `on` faux : éteinte ; `on` et `dim` vrais : tamisée (`dim` ne compte que la lumière allumée). `changedBy` est celui qui l'a changée
+// en dernier (null si son compte n'existe plus), `changedAt` le moment du changement.
 export const officeLights = pgTable('office_lights', {
   id: integer('id').primaryKey().default(1),
   on: boolean('on').notNull().default(true),
+  dim: boolean('dim').notNull().default(false),
   changedBy: text('changed_by').references(() => user.id, { onDelete: 'set null' }),
   changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -6,6 +6,7 @@ import {
   COFFEE_RATE_MS,
   DISCONNECT_GRACE_MS,
   GROUPS_TICK_MS,
+  JOIN_RATE,
   LIGHTS_RATE_MS,
   MISSION_RATE,
   MUSIC_RATE_MS,
@@ -35,6 +36,7 @@ import { createActivityController } from '../activity/activity-controller';
 import { createActivityService, type ActivityService } from '../activity/activity-service';
 import { createArenaController, type ArenaController } from '../arena/arena-controller';
 import { createDeskController } from '../desks/desk-controller';
+import { createJoin } from '../join/join-person';
 import { createModeTravel } from '../modes/mode-travel';
 import { createTeleport } from '../teleport';
 import { DeskService } from '../desks/desk-service';
@@ -320,6 +322,10 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
 
   // L'octogone (en mémoire) : les combattants posés dans le ring au début d'un combat (teleport).
   const arena = createArenaController({ io, world, map: d.map, teleport, now, logger });
+  // Rejoindre quelqu'un (le menu d'une personne) : poser à côté de lui (teleport), hors du bureau fermé d'un autre et du ring ; et la limite de débit de ces
+  // demandes, par compte.
+  const join = createJoin({ world, map: d.map, desks: { canStandAt: (userId, x, y) => deskController.canStandAt(userId, x, y), list: () => desks.list() }, arena, teleport });
+  const joinLimiter = createRateLimiter({ ...JOIN_RATE, now });
 
   // La progression (en base) : chacun apprend ses gains (`progress:mine`), tout le bureau ses niveaux (`progress:level`, que le monde retient pour ceux qui arrivent).
   const progress = d.progress ?? new ProgressService(d.db);
@@ -428,6 +434,8 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       socketsOf: enteredSockets,
       desks: deskController,
       activity: activityController,
+      join,
+      joinLimiter,
       lights,
       lightsLimiter,
       switches: d.map.switches,

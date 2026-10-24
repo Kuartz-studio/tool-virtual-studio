@@ -152,8 +152,9 @@ test('la lumière : les messages de ceux qui changent l\'état, le tien et celui
   expect(t(fr.lights.on, { name: 'Léa' })).toBe('Léa a rallumé la lumière');
   expect(fr.lights.selfOff).toBe('Tu as éteint la lumière');
   expect(fr.lights.selfOn).toBe('Tu as rallumé la lumière');
-  expect(fr.lights.use).toBe('Éteindre');
-  expect(fr.lights.useOn).toBe('Allumer');
+  expect(t(fr.lights.dim, { name: 'Léa' })).toBe('Léa a tamisé la lumière');
+  expect(fr.lights.selfDim).toBe('Tu as tamisé la lumière');
+  expect(fr.lights.action).toEqual({ on: 'Allumer', dim: 'Tamiser', off: 'Éteindre' });
 });
 
 // Les jeux : les noms et les phrases que lisent les tests de bout en bout (e2e/jeux-*.ts), mot pour mot, et les listes complètes (chaque jeu, chaque erreur du serveur).

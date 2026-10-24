@@ -105,7 +105,8 @@ type View = 'here' | 'all';
 //
 // Le focus va au titre à l'ouverture (le lecteur d'écran l'annonce, et Tab entre dans le panneau) ; Échap ferme.
 // Le niveau de chacun, à côté de son nom (celui du temps réel pour qui est en ligne, celui de la liste pour les autres) ; un clic sur une ligne ouvre ses
-// caractéristiques (`onOpenSheet`), les siennes comprises.
+// caractéristiques (`onOpenSheet`), les siennes comprises. Un clic droit sur une ligne (ou la touche du menu contextuel, Maj+F10, sur une ligne qui a le focus)
+// ouvre le menu de la personne (PersonMenu : Profil, Suivre ou Rejoindre, Inviter dans le bureau), à la place de celui du navigateur.
 export function PeoplePanel({
   id,
   place,
@@ -121,6 +122,8 @@ export function PeoplePanel({
 }) {
   const self = useOfficeStore((state) => state.self);
   const players = useOfficeStore((state) => state.players);
+  // Le menu d'une personne ouvert (un clic droit sur une ligne) : la carte de l'heure s'efface, pour ne pas le couvrir.
+  const menuOpen = useOfficeStore((state) => state.personMenu !== null);
   const { members, failed, reload } = useMembers();
   const places = usePlaces();
   const [view, setView] = useState<View>('all');
@@ -227,7 +230,26 @@ export function PeoplePanel({
     const mine = person.id === self?.id;
     const sub = person.status === null ? lastSeen(person) : doing(person);
     return (
-      <li key={person.id} className="person" data-user={person.id} data-status={person.status ?? undefined} {...timeHover.bind(person.id)}>
+      <li
+        key={person.id}
+        className="person"
+        data-user={person.id}
+        data-status={person.status ?? undefined}
+        {...timeHover.bind(person.id)}
+        onContextMenu={(event) => {
+          event.preventDefault();
+          // Au clavier, le navigateur ne dit pas de point (0, 0) : le menu s'ouvre sur la ligne.
+          const row = event.currentTarget.getBoundingClientRect();
+          const fromKeyboard = event.clientX === 0 && event.clientY === 0;
+          useOfficeStore.getState().openPersonMenu({
+            userId: person.id,
+            x: fromKeyboard ? row.left + 24 : event.clientX,
+            y: fromKeyboard ? row.bottom : event.clientY,
+            name: person.name,
+            opener: document.activeElement instanceof HTMLElement && event.currentTarget.contains(document.activeElement) ? document.activeElement : event.currentTarget,
+          });
+        }}
+      >
         <AvatarPortrait avatarKey={person.avatarKey} name={person.name} size={38} status={person.status} />
         <span className="person-text">
           <span className="person-head">
@@ -299,7 +321,7 @@ export function PeoplePanel({
           </>
         )}
       </div>
-      {timeHover.card}
+      {!menuOpen && timeHover.card}
     </Drawer>
   );
 }

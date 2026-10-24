@@ -5,6 +5,7 @@ import {
   isSimBot,
   parseOfficeMap,
   type ActivityState,
+  type Direction,
   type ArenaState,
   type GameId,
   type GameTable,
@@ -27,6 +28,7 @@ import { AVATAR_HEAD_PX, avatarAt } from '../avatar-hover';
 import { avatarObjectName } from '../avatars';
 import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
 import { exposeDebug, mediaDebug, type OfficeDebug } from '../debug';
+import { Follow, followWalkMap } from '../follow';
 import { DecorEditorView } from '../decor-editor';
 import { DecorLayer } from '../decor-layer';
 import { ArenaLayer } from '../arena-layer';
@@ -40,7 +42,7 @@ import { Interactions } from '../interactions';
 import { clerkTarget, stillWithClerk } from '../clerks';
 import { ProgressEffects } from '../progress-effects';
 import { sourcesFromItems, sourcesFromProps } from '../light-sources';
-import { LightSwitch } from '../light-switch';
+import { LightSwitch, nextLightLevel } from '../light-switch';
 import { LightingLayer } from '../lighting';
 import { addZoneLabels, buildMapLayers } from '../map-layers';
 import { addMapSigns } from '../map-signs';
@@ -70,16 +72,18 @@ const clock = () => performance.now();
 // `init` à chaque reconnexion. Elle envoie l'état de l'avatar local sur le bus (`local:move`), au rythme de MoveSender. Qui parle dans
 // la conversation (`media:speaking`, de l'audio et de la vidéo), ou dans le bureau (`net:speaking`, même loin de soi), fait paraître une bulle de
 // parole au-dessus de son étiquette (SpeakingBubbles). L'interrupteur de la lumière (une
-// plaque au mur du couloir, LightSwitch) demande l'état contraire de celui qu'on voit (`local:lights`) quand on l'actionne de près ;
+// plaque au mur du couloir, LightSwitch) demande l'état qui suit celui qu'on voit (`local:lights` : allumée, tamisée, éteinte) quand on l'actionne de près ;
 // il bascule à l'annonce du serveur, avec tout le monde (le magasin dit la lumière). La machine à café (une cible de la touche E devant le bar) demande
 // un café (`local:coffee`) ; il commence à l'annonce du serveur (`coffee:changed`) : le magasin en tient l'échéance de chacun, l'avatar local en prend la vitesse
 // du café, et chacun, soi compris, a une tasse fumante au-dessus de la tête et de la poussière derrière lui quand il court. La machine s'agite 1 s quand quelqu'un
-// se sert. Lumière éteinte, c'est la nuit (LightingLayer) :
+// se sert. Lumière éteinte, c'est la nuit (LightingLayer), et tamisée, une pièce plus sombre, comme moins exposée :
 // l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. Ce qu'on actionne
 // de près (la touche E, ou un clic) passe par un seul gestionnaire (Interactions), qui retient la cible la plus proche et dont l'étiquette
 // « [E] … » est unique. « Aller à mon
 // bureau » (`local:walk-to-desk`) fait marcher l'avatar tout seul jusqu'à sa place (AutoWalk), comme le ferait le clavier ; une touche de
-// déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à l'interface s'il marche.
+// déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à l'interface s'il marche. « Suivre » quelqu'un (`local:follow`, du menu
+// d'une personne) le fait marcher derrière elle, à une case (Follow), jusqu'à une touche de déplacement, son départ ou son saut ailleurs. Un clic droit sur un
+// avatar ouvre le menu de sa personne (le magasin : `personMenu`), à la place de celui du navigateur.
 export class Office extends Scene {
   private officeMap: OfficeMap;
   private tilemap: Phaser.Tilemaps.Tilemap;
@@ -88,6 +92,12 @@ export class Office extends Scene {
   private directions: DirectionInput;
   // « Aller à mon bureau » : la marche automatique, qui prend la place du clavier tant qu'elle dure.
   private autoWalk: AutoWalk;
+  // « Suivre » quelqu'un : la marche automatique vers une personne qui bouge ; et la carte de cette marche (les meubles et les portes fermées en plus), refaite
+  // quand les bureaux changent.
+  private readonly follow = new Follow();
+  // Son nom, pris quand on commence à la suivre : quand elle part, le magasin ne la connaît plus.
+  private followName = '';
+  private followMap: { desks: unknown; closed: unknown; map: OfficeMap } | null = null;
   private moveSender: MoveSender;
   private selfId: string;
   private readonly remotes = new Map<string, RemotePlayer>();
@@ -162,6 +172,7 @@ export class Office extends Scene {
       zoom: () => this.cameras.main.zoom,
       nightLevel: () => this.lighting?.level ?? 0,
       autoWalking: () => this.autoWalk?.walking ?? false,
+      following: () => this.follow.id,
       doors: () => this.deskLayer?.phases() ?? {},
       tables: () => (this.officeMap?.tables ?? []).map((table) => ({ game: table.game, ...table.rect, seats: table.seats.map((seat) => ({ x: seat.x, y: seat.y })) })),
       gameTable: (game) => useOfficeStore.getState().games[game as GameId] ?? null,
@@ -236,9 +247,9 @@ export class Office extends Scene {
     const unbindTables = this.bindGameTables();
     const unbindClerks = this.bindClerks();
     const showLights = (instant = false) => {
-      const { on } = useOfficeStore.getState().lights;
-      for (const lightSwitch of this.switches) lightSwitch.setOn(on);
-      this.lighting.setOn(on, { instant });
+      const { level } = useOfficeStore.getState().lights;
+      for (const lightSwitch of this.switches) lightSwitch.setLevel(level);
+      this.lighting.setLevel(level, { instant });
     };
     // On arrive dans le noir : la nuit tout de suite, sans fondu ni éclair de jour.
     showLights(true);
@@ -260,9 +271,10 @@ export class Office extends Scene {
       () => this.arenaRole() === 'fighting',
       () => emitOnBus(EventBus, 'local:arena', { type: 'attack', dir: this.player.movePayload().dir }),
     );
-    // La marche automatique le dit à l'interface (`walk:state`) à chaque départ et à chaque arrêt ; une touche de déplacement l'interrompt.
+    // La marche automatique le dit à l'interface (`walk:state`) à chaque départ et à chaque arrêt ; une touche de déplacement l'interrompt, et arrête aussi de suivre.
     this.autoWalk = new AutoWalk((walking) => emitOnBus(EventBus, 'walk:state', { walking }));
     const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
+    const unbindFollowKeys = this.directions.onPress(() => this.stopFollowing());
 
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
     // pas prendre pour le zoom de la page), et les touches + - 0. Le pourcentage est au magasin ; la caméra y glisse (glideZoom).
@@ -329,6 +341,7 @@ export class Office extends Scene {
       }),
       listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
       listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
+      listenOnBus(EventBus, 'local:follow', ({ id }) => (id === null ? this.stopFollowing() : this.startFollowing(id))),
       useOfficeStore.subscribe((state, previous) => {
         if (state.desks !== previous.desks || state.closedDesks !== previous.closedDesks) showDesks();
         if (state.lights !== previous.lights) showLights();
@@ -359,14 +372,25 @@ export class Office extends Scene {
     };
     canvas.addEventListener('pointermove', pointerIn);
     canvas.addEventListener('pointerleave', pointerOut);
+    // Un clic droit sur un avatar (le sien compris) : le menu de sa personne, à la place de celui du navigateur ; ailleurs, celui du navigateur.
+    const onContextMenu = (event: MouseEvent) => {
+      const id = this.avatarAtPage(event.clientX, event.clientY);
+      if (id === null) return;
+      event.preventDefault();
+      const { players, self } = useOfficeStore.getState();
+      useOfficeStore.getState().openPersonMenu({ userId: id, x: event.clientX, y: event.clientY, name: (id === self?.id ? self : players[id])?.name });
+    };
+    canvas.addEventListener('contextmenu', onContextMenu);
 
     // SHUTDOWN puis DESTROY (le jeu détruit) : la seconde fois, il ne reste rien à retirer.
     const stop = () => {
       this.scale.off(Scale.Events.RESIZE, this.layoutCamera);
       this.events.off(Scenes.Events.POST_UPDATE, this.afterPhysics, this);
-      // Une marche en cours s'arrête, et l'interface le sait (le bus est encore branché).
+      // Une marche en cours s'arrête, et l'interface le sait (le bus est encore branché). On ne suit plus personne.
       this.autoWalk.cancel();
+      this.stopFollowing();
       unbindWalkKeys();
+      unbindFollowKeys();
       unbindKeyboard();
       unbindUse();
       unbindArena();
@@ -377,6 +401,7 @@ export class Office extends Scene {
       document.removeEventListener('visibilitychange', this.onVisibilityChange);
       canvas.removeEventListener('pointermove', pointerIn);
       canvas.removeEventListener('pointerleave', pointerOut);
+      canvas.removeEventListener('contextmenu', onContextMenu);
       this.pointerInGame = false;
       this.hoverAvatars();
       for (const id of [...this.remotes.keys()]) this.removeRemote(id);
@@ -414,11 +439,13 @@ export class Office extends Scene {
   update() {
     const now = clock();
     const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
+    const followStep = autoDirection === null ? this.followStep(now) : null;
     // Pendant le compte à rebours, les combattants attendent dans leur coin : le clavier ne les déplace pas.
     // La carte avait été glissée ailleurs : l'avatar se remet en marche, la caméra revient à lui.
-    if (this.cameraFree && (autoDirection !== null || this.directions.current() !== null)) this.recenterCamera();
+    if (this.cameraFree && (autoDirection !== null || followStep !== null || this.directions.current() !== null)) this.recenterCamera();
     if (this.arenaRole() === 'waiting') this.player.step(null);
     else if (autoDirection !== null) this.player.step(autoDirection);
+    else if (followStep !== null) this.player.step(followStep.dir, followStep.sprint);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     this.player.tick(now);
     // Les horloges murales et les sols et les murs qui bougent : l'heure du navigateur (Date.now), et non celle du jeu, qui ne dit pas l'heure qu'il est.
@@ -440,6 +467,63 @@ export class Office extends Scene {
     // Les portes s'ouvrent devant qui s'en approche, avec les positions de cette image.
     this.deskLayer.tick();
     this.hoverAvatars();
+  }
+
+  // Suivre cette personne (`local:follow`) : la marche vers son bureau s'arrête, et le magasin dit qui l'on suit. Soi-même, ou quelqu'un qu'on ne voit pas : rien.
+  private startFollowing(id: string): void {
+    if (id === this.selfId || !this.remotes.has(id)) return;
+    this.autoWalk.cancel();
+    this.follow.start(id);
+    this.followName = useOfficeStore.getState().players[id]?.name ?? '';
+    useOfficeStore.getState().setFollowing(id);
+  }
+
+  // Ne plus suivre personne. `reason` : ce n'est pas la personne qui l'a demandé (la suivie est partie, a sauté ailleurs, est hors d'atteinte ; ou l'on a été posé
+  // ailleurs) : l'interface le lui dit (`follow:lost`).
+  private stopFollowing(reason?: 'left' | 'jumped' | 'blocked' | 'moved'): void {
+    const id = this.follow.id;
+    if (id === null) return;
+    this.follow.stop();
+    useOfficeStore.getState().setFollowing(null);
+    if (reason) emitOnBus(EventBus, 'follow:lost', { id, name: this.followName, reason });
+  }
+
+  // Une image de « Suivre » : la direction à prendre, et s'il faut courir ; null hors de cette marche, ou à côté de la personne suivie.
+  private followStep(now: number): { dir: Direction; sprint: boolean } | null {
+    const id = this.follow.id;
+    if (id === null) return null;
+    const remote = this.remotes.get(id);
+    if (!remote) {
+      this.stopFollowing('left');
+      return null;
+    }
+    const step = this.follow.update(this.followWalkMap(), { x: this.player.x, y: this.player.y }, remote.position, now);
+    if (step === 'blocked') {
+      this.stopFollowing('blocked');
+      return null;
+    }
+    return step;
+  }
+
+  // La carte de la marche de qui suit : celle du jeu, plus les meubles des bureaux et les portes qui nous sont fermées (followWalkMap) ; refaite seulement quand les
+  // bureaux ou ces portes changent.
+  private followWalkMap(): OfficeMap {
+    const { desks, closedDesks } = useOfficeStore.getState();
+    if (this.followMap?.desks !== desks || this.followMap.closed !== closedDesks) {
+      this.followMap = { desks, closed: closedDesks, map: followWalkMap(this.officeMap, desks, closedDesks) };
+    }
+    return this.followMap.map;
+  }
+
+  // L'avatar à ce point de la page (celui d'un clic droit), le sien compris : le point est ramené au canevas, puis à la carte. Lu sur l'événement lui-même, pas
+  // sur le pointeur de Phaser, qui n'a peut-être pas vu la souris arriver là. null : aucun, ou les autres sont cachés.
+  private avatarAtPage(clientX: number, clientY: number): string | null {
+    const canvas = this.game.canvas.getBoundingClientRect();
+    if (canvas.width === 0 || canvas.height === 0) return null;
+    const x = ((clientX - canvas.left) * this.scale.width) / canvas.width;
+    const y = ((clientY - canvas.top) * this.scale.height) / canvas.height;
+    const avatars = [{ id: this.selfId, ...this.feet() }, ...(this.othersVisible ? [...this.remotes.values()].map((remote) => ({ id: remote.id, ...remote.position })) : [])];
+    return avatarAt(this.cameras.main.getWorldPoint(x, y), avatars);
   }
 
   // Quel avatar la souris survole-t-elle, à cette image (les avatars bougent, la caméra aussi) ? Quand cela change, l'interface le sait (`avatar:hover`),
@@ -634,15 +718,16 @@ export class Office extends Scene {
     camera.pan(...tableFocus(table.rect, camera.zoom, this.scale.gameSize), 450, 'Sine.easeInOut', true);
   }
 
-  // L'interrupteur est actionné de près (E, ou un clic sur la plaque) : on demande l'état contraire de celui qu'on voit. La lumière ne change qu'à
-  // l'annonce du serveur ; sans réponse (un autre vient de l'actionner, la connexion est coupée), rien ne bouge.
+  // L'interrupteur est actionné de près (E, ou un clic sur la plaque) : on demande l'état qui suit celui qu'on voit (allumée, tamisée, éteinte, puis de
+  // nouveau allumée). La lumière ne change qu'à l'annonce du serveur ; sans réponse (un autre vient de l'actionner, la connexion est coupée), rien ne bouge.
   private useLights(): void {
-    emitOnBus(EventBus, 'local:lights', { on: !useOfficeStore.getState().lights.on });
+    emitOnBus(EventBus, 'local:lights', { level: nextLightLevel(useOfficeStore.getState().lights.level) });
   }
 
   // « Aller à mon bureau » (`local:walk-to-desk`) : l'avatar marche tout seul jusqu'à sa place, par le plus court chemin (auto-walk.ts). Mon bureau est
   // celui que le magasin donne à mon identifiant. Sans bureau ou sans chemin, il ne bouge pas, et le jeu le dit (`walk:state` faux).
   private walkToDesk(): void {
+    this.stopFollowing();
     const { desks, selfId } = useOfficeStore.getState();
     const desk = selectDeskOf({ desks }, selfId);
     const room = desk ? this.officeMap.zones.find((zone) => zone.type === 'desk' && deskKey(zone) === desk.key) : undefined;
@@ -671,8 +756,9 @@ export class Office extends Scene {
   private onInit(p: InitPayload): void {
     if (p.mapKey !== this.mapKey) return;
     const now = clock();
-    // L'avatar est replacé là où le serveur le voit : le trajet qu'il suivait n'est plus le sien.
+    // L'avatar est replacé là où le serveur le voit : le trajet qu'il suivait n'est plus le sien, ni la personne qu'il suivait.
     this.autoWalk.cancel();
+    this.stopFollowing();
     this.player.placeAt(p.self.x, p.self.y, p.self.dir);
     this.arenaFeet = null;
     this.player.setAvatar(p.self.avatarKey);
@@ -696,10 +782,12 @@ export class Office extends Scene {
     for (const move of moves) {
       if (move.id === this.selfId) continue;
       const remote = this.remotes.get(move.id);
-      // Quelqu'un saute (un mode le conduit à la salle de sport, ou le ramène au bureau) : un anneau de lumière là où il était, un autre là où il arrive.
+      // Quelqu'un saute (un mode le conduit à la salle de sport, ou le ramène au bureau) : un anneau de lumière là où il était, un autre là où il arrive. Celle
+      // qu'on suivait est partie ailleurs : on ne la suit plus.
       if (remote && move.tp === true) {
         this.teleportEffect.play(this.aroundFeet(remote.position), at);
         this.teleportEffect.play(this.aroundFeet(move), at);
+        if (move.id === this.follow.id) this.stopFollowing('jumped');
       }
       remote?.push(at, move, move.tp === true);
     }
@@ -713,8 +801,10 @@ export class Office extends Scene {
   // Le serveur a refusé un `move` : l'avatar retourne à la dernière position acceptée, et le serveur relit tout de suite notre état
   // (direction, marche) à cet endroit.
   private onCorrect(x: number, y: number, reason?: 'teleport'): void {
-    // Le serveur n'est pas d'accord avec le trajet (une porte, un meuble qu'il connaît mieux que nous) : on s'arrête, au lieu de buter en boucle.
+    // Le serveur n'est pas d'accord avec le trajet (une porte, un meuble qu'il connaît mieux que nous) : on s'arrête, au lieu de buter en boucle. Posé ailleurs
+    // (un voyage voulu : un mode, « Rejoindre », une invitation), on ne suit plus personne.
     this.autoWalk.cancel();
+    if (reason === 'teleport') this.stopFollowing('moved');
     // Un voyage voulu (un mode) : un anneau de lumière au départ et à l'arrivée (le son, lui, vient de sfx-events).
     if (reason === 'teleport') {
       const now = clock();
@@ -790,6 +880,7 @@ export class Office extends Scene {
   }
 
   private removeRemote(id: string): void {
+    if (id === this.follow.id) this.stopFollowing('left');
     this.simDrag?.clear(id);
     this.remotes.get(id)?.destroy();
     this.remotes.delete(id);
@@ -888,8 +979,9 @@ export class Office extends Scene {
       for (const remote of this.remotes.values()) remote.snapToLatest();
       return;
     }
-    // La marche automatique s'arrête aussi : l'avatar reste où il est, et ne repart pas seul au retour de la personne.
+    // La marche automatique s'arrête aussi, et l'on ne suit plus personne : l'avatar reste où il est, et ne repart pas seul au retour de la personne.
     this.autoWalk.cancel();
+    this.stopFollowing();
     this.directions.clear();
     this.player.step(null);
     this.sendLocalState(clock());

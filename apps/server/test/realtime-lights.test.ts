@@ -32,8 +32,8 @@ describe('l\'état de la lumière', () => {
   test('l\'init dit la lumière : allumée tant que personne n\'y a touché', async () => {
     const srv = await startLights();
     const a = await person(srv, 'a@x.fr');
-    expect(a.init.lights).toEqual({ on: true, by: null, at: 0 });
-    expect(srv.realtime.lights.get()).toEqual({ on: true, by: null, at: 0 });
+    expect(a.init.lights).toEqual({ level: 'on', by: null, at: 0 });
+    expect(srv.realtime.lights.get()).toEqual({ level: 'on', by: null, at: 0 });
   });
 
   test('quelqu\'un à 2 cases éteint : tout le bureau l\'apprend, avec son nom, et qui arrive ensuite la trouve éteinte', async () => {
@@ -45,9 +45,9 @@ describe('l\'état de la lumière', () => {
     const seenByB = nextEvent(b.socket, 'lights:changed');
 
     const before = Date.now();
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     const changed = await seenByA;
-    expect(changed).toEqual({ on: false, by: { id: a.id, name: 'a' }, at: expect.any(Number) });
+    expect(changed).toEqual({ level: 'off', by: { id: a.id, name: 'a' }, at: expect.any(Number) });
     expect(changed.at).toBeGreaterThanOrEqual(before);
     expect(changed.at).toBeLessThanOrEqual(Date.now());
     expect(await seenByB).toEqual(changed);
@@ -64,12 +64,12 @@ describe('l\'état de la lumière', () => {
     await teleport(srv, a, NEAR_SWITCH);
     await teleport(srv, b, { x: SWITCH_AT.x + 32, y: SWITCH_AT.y + 64 });
 
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await nextEvent(b.socket, 'lights:changed');
     const lit = nextEvent(a.socket, 'lights:changed');
-    b.socket.emit('lights:set', { on: true });
-    expect(await lit).toEqual({ on: true, by: { id: b.id, name: 'b' }, at: expect.any(Number) });
-    expect(srv.realtime.lights.get().on).toBe(true);
+    b.socket.emit('lights:set', { level: 'on' });
+    expect(await lit).toEqual({ level: 'on', by: { id: b.id, name: 'b' }, at: expect.any(Number) });
+    expect(srv.realtime.lights.get().level).toBe('on');
   });
 
   test('quelqu\'un à plus de 3 cases : rien ne change, rien n\'est diffusé', async () => {
@@ -79,21 +79,21 @@ describe('l\'état de la lumière', () => {
     const seenByA = record(a.socket);
     const seenByB = record(b.socket);
 
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await sleep(200);
     expect(seenByA.names()).not.toContain('lights:changed');
     expect(seenByB.names()).not.toContain('lights:changed');
-    expect(srv.realtime.lights.get().on).toBe(true);
+    expect(srv.realtime.lights.get().level).toBe('on');
 
     // À 4 cases, c'est encore trop loin ; à 3, c'est bon (la limite elle-même est dans les tests de withinSwitchReach).
     await teleport(srv, a, { x: SWITCH_AT.x, y: SWITCH_AT.y + 4 * 32 });
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await sleep(200);
-    expect(srv.realtime.lights.get().on).toBe(true);
+    expect(srv.realtime.lights.get().level).toBe('on');
     await teleport(srv, a, { x: SWITCH_AT.x, y: SWITCH_AT.y + 3 * 32 });
     const changed = nextEvent(b.socket, 'lights:changed');
-    a.socket.emit('lights:set', { on: false });
-    expect(await changed).toMatchObject({ on: false });
+    a.socket.emit('lights:set', { level: 'off' });
+    expect(await changed).toMatchObject({ level: 'off' });
   });
 
   test('la grande carte du bureau (office) : l\'interrupteur de la rue, case (28, 10), s\'actionne depuis la rue et pas depuis l\'accueil', async () => {
@@ -101,14 +101,14 @@ describe('l\'état de la lumière', () => {
     expect(srv.map.switches).toEqual([{ x: 28 * 32 + 16, y: 10 * 32 + 16 }]);
     const a = await person(srv, 'a@x.fr');   // à l'accueil, à l'autre bout de la carte
     const seen = record(a.socket);
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await sleep(150);
     expect(seen.names()).not.toContain('lights:changed');
 
     await teleport(srv, a, { x: 27 * 32 + 16, y: 12 * 32 + 16 });   // la rue, 2 cases au sud-ouest de la plaque
     const changed = nextEvent(a.socket, 'lights:changed');
-    a.socket.emit('lights:set', { on: false });
-    expect(await changed).toMatchObject({ on: false, by: { id: a.id } });
+    a.socket.emit('lights:set', { level: 'off' });
+    expect(await changed).toMatchObject({ level: 'off', by: { id: a.id } });
   });
 
   test('une carte sans interrupteur (la carte de développement) : la lumière ne se change pas', async () => {
@@ -116,10 +116,10 @@ describe('l\'état de la lumière', () => {
     const a = await person(srv, 'a@x.fr');
     await teleport(srv, a, NEAR_SWITCH);
     const seen = record(a.socket);
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await sleep(200);
     expect(seen.names()).not.toContain('lights:changed');
-    expect(srv.realtime.lights.get().on).toBe(true);
+    expect(srv.realtime.lights.get().level).toBe('on');
   });
 
   test('un changement par personne et par 800 ms : le suivant, trop tôt, est ignoré ; passé le délai, il est pris', async () => {
@@ -129,18 +129,18 @@ describe('l\'état de la lumière', () => {
     await teleport(srv, a, NEAR_SWITCH);
     const seen = record(a.socket);
 
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(1));
     clock += 100;
-    a.socket.emit('lights:set', { on: true });
+    a.socket.emit('lights:set', { level: 'on' });
     await sleep(200);
     expect(seen.payloadsOf('lights:changed')).toHaveLength(1);
-    expect(srv.realtime.lights.get().on).toBe(false);
+    expect(srv.realtime.lights.get().level).toBe('off');
 
     clock += LIGHTS_RATE_MS - 100;   // 800 ms après le premier changement
-    a.socket.emit('lights:set', { on: true });
+    a.socket.emit('lights:set', { level: 'on' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(2));
-    expect(srv.realtime.lights.get().on).toBe(true);
+    expect(srv.realtime.lights.get().level).toBe('on');
   });
 
   test('la limite est celle de la personne : deux personnes n\'attendent pas l\'une l\'autre', async () => {
@@ -152,12 +152,12 @@ describe('l\'état de la lumière', () => {
     await teleport(srv, b, NEAR_SWITCH);
     const seen = record(b.socket);
 
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(1));
     clock += 50;
-    b.socket.emit('lights:set', { on: true });
+    b.socket.emit('lights:set', { level: 'on' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(2));
-    expect(seen.payloadsOf('lights:changed').at(-1)).toMatchObject({ on: true, by: { id: b.id } });
+    expect(seen.payloadsOf('lights:changed').at(-1)).toMatchObject({ level: 'on', by: { id: b.id } });
   });
 
   test('deux personnes éteignent en même temps : une seule diffusion, et tout le monde finit éteint', async () => {
@@ -169,13 +169,13 @@ describe('l\'état de la lumière', () => {
     const seenByA = record(a.socket);
     const seenByB = record(b.socket);
 
-    a.socket.emit('lights:set', { on: false });
-    b.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
+    b.socket.emit('lights:set', { level: 'off' });
     await sleep(300);
     expect(seenByA.payloadsOf('lights:changed')).toHaveLength(1);
     expect(seenByB.payloadsOf('lights:changed')).toHaveLength(1);
     expect(seenByA.payloadsOf('lights:changed')).toEqual(seenByB.payloadsOf('lights:changed'));
-    expect(srv.realtime.lights.get().on).toBe(false);
+    expect(srv.realtime.lights.get().level).toBe('off');
   });
 
   test('« éteindre » est un état demandé, non une bascule : le redemander ne change rien et ne dit rien à personne', async () => {
@@ -185,14 +185,14 @@ describe('l\'état de la lumière', () => {
     await teleport(srv, a, NEAR_SWITCH);
     const seen = record(a.socket);
 
-    a.socket.emit('lights:set', { on: true });   // déjà allumée
+    a.socket.emit('lights:set', { level: 'on' });   // déjà allumée
     await sleep(150);
     expect(seen.names()).not.toContain('lights:changed');
 
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(1));
     clock += LIGHTS_RATE_MS;
-    a.socket.emit('lights:set', { on: false });   // déjà éteinte
+    a.socket.emit('lights:set', { level: 'off' });   // déjà éteinte
     await sleep(150);
     expect(seen.payloadsOf('lights:changed')).toHaveLength(1);
   });
@@ -206,32 +206,32 @@ describe('l\'état de la lumière', () => {
     await teleport(srv, b, NEAR_SWITCH);
     const seen = record(b.socket);
 
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(1));
     // B appuie sur un écran qui n'a pas encore appris l'extinction : il demande « éteindre », déjà fait. Puis, tout de suite, il rallume.
-    b.socket.emit('lights:set', { on: false });
+    b.socket.emit('lights:set', { level: 'off' });
     await sleep(100);
     clock += 100;
-    b.socket.emit('lights:set', { on: true });
+    b.socket.emit('lights:set', { level: 'on' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(2));
-    expect(srv.realtime.lights.get().on).toBe(true);
+    expect(srv.realtime.lights.get().level).toBe('on');
   });
 
-  test('une charge utile qui n\'est pas { on: booléen } est ignorée, sans rien dire à personne', async () => {
+  test('une charge utile qui n\'est pas { level: on, dim ou off } est ignorée, sans rien dire à personne', async () => {
     const srv = await startLights();
     const a = await person(srv, 'a@x.fr');
     await teleport(srv, a, NEAR_SWITCH);
     const seen = record(a.socket);
 
-    for (const payload of [{ on: 'non' }, { on: 0 }, {}, null, 'éteindre', 42, [false]]) sendRaw(a, payload);
+    for (const payload of [{ level: 'mi' }, { level: 0 }, { on: false }, {}, null, 'éteindre', 42, [false]]) sendRaw(a, payload);
     await sleep(200);
     expect(seen.names()).not.toContain('lights:changed');
-    expect(srv.realtime.lights.get().on).toBe(true);
+    expect(srv.realtime.lights.get().level).toBe('on');
 
     // Les messages refusés n'ont rien consommé : un bon message passe tout de suite.
     const changed = nextEvent(a.socket, 'lights:changed');
-    sendRaw(a, { on: false, by: 'quelqu\'un d\'autre' });
-    expect(await changed).toMatchObject({ on: false, by: { id: a.id, name: 'a' } });
+    sendRaw(a, { level: 'off', by: 'quelqu\'un d\'autre' });
+    expect(await changed).toMatchObject({ level: 'off', by: { id: a.id, name: 'a' } });
   });
 
   test('un redémarrage du serveur garde la lumière éteinte, et dit qui l\'a éteinte et quand', async () => {
@@ -239,7 +239,7 @@ describe('l\'état de la lumière', () => {
     const a = await person(srv, 'a@x.fr');
     await teleport(srv, a, NEAR_SWITCH);
     const changed = nextEvent(a.socket, 'lights:changed');
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     const off = await changed;
 
     const reinit = nextEvent(a.socket, 'init', 5000);
@@ -257,15 +257,45 @@ describe('l\'état de la lumière', () => {
     const a = await person(srv, 'a@x.fr');
     await teleport(srv, a, NEAR_SWITCH);
     const seen = record(a.socket);
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(1));
     clock += LIGHTS_RATE_MS;
-    a.socket.emit('lights:set', { on: true });
+    a.socket.emit('lights:set', { level: 'on' });
     await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(2));
 
     const reinit = nextEvent(a.socket, 'init', 5000);
     await srv.restart();
-    expect((await reinit).lights).toMatchObject({ on: true, by: { id: a.id, name: 'a' } });
+    expect((await reinit).lights).toMatchObject({ level: 'on', by: { id: a.id, name: 'a' } });
+  });
+
+  test('tamiser : allumée, puis tamisée, puis éteinte, puis rallumée ; tamisée, elle le reste après un redémarrage', async () => {
+    let clock = 1000;
+    const srv = await startLights({ now: () => clock });
+    const a = await person(srv, 'a@x.fr');
+    await teleport(srv, a, NEAR_SWITCH);
+    const seen = record(a.socket);
+
+    a.socket.emit('lights:set', { level: 'dim' });
+    await vi.waitFor(() => expect(seen.payloadsOf('lights:changed')).toHaveLength(1));
+    expect(seen.payloadsOf('lights:changed')[0]).toEqual({ level: 'dim', by: { id: a.id, name: 'a' }, at: expect.any(Number) });
+    clock += LIGHTS_RATE_MS;
+    a.socket.emit('lights:set', { level: 'dim' });   // déjà tamisée : rien
+    await sleep(100);
+    expect(seen.payloadsOf('lights:changed')).toHaveLength(1);
+
+    const reinit = nextEvent(a.socket, 'init', 5000);
+    await srv.restart();
+    expect((await reinit).lights).toMatchObject({ level: 'dim', by: { id: a.id, name: 'a' } });
+    expect(srv.realtime.lights.get().level).toBe('dim');
+
+    const after = record(a.socket);
+    clock += LIGHTS_RATE_MS;
+    a.socket.emit('lights:set', { level: 'off' });
+    await vi.waitFor(() => expect(after.payloadsOf('lights:changed')).toHaveLength(1));
+    clock += LIGHTS_RATE_MS;
+    a.socket.emit('lights:set', { level: 'on' });
+    await vi.waitFor(() => expect(after.payloadsOf('lights:changed')).toHaveLength(2));
+    expect(after.payloadsOf('lights:changed')).toMatchObject([{ level: 'off' }, { level: 'on' }]);
   });
 
   test('l\'auteur n\'a plus de compte : la lumière reste éteinte, sans nom', async () => {
@@ -273,14 +303,14 @@ describe('l\'état de la lumière', () => {
     const a = await person(srv, 'a@x.fr');
     await teleport(srv, a, NEAR_SWITCH);
     const changed = nextEvent(a.socket, 'lights:changed');
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     const off = await changed;
     a.socket.disconnect();
     await srv.db.delete(user).where(eq(user.id, a.id));
 
     await srv.restart();
     const b = await person(srv, 'b@x.fr');
-    expect(b.init.lights).toEqual({ on: false, by: null, at: off.at });
+    expect(b.init.lights).toEqual({ level: 'off', by: null, at: off.at });
   });
 
   test('la base n\'enregistre pas le changement : rien n\'est diffusé, la lumière reste allumée, l\'erreur est journalisée', async () => {
@@ -291,9 +321,9 @@ describe('l\'état de la lumière', () => {
     const seen = record(a.socket);
     await srv.db.execute(sql`drop table "office_lights"`);
 
-    a.socket.emit('lights:set', { on: false });
+    a.socket.emit('lights:set', { level: 'off' });
     await vi.waitFor(() => expect(lines.some((line) => line.msg === 'Changement de la lumière impossible')).toBe(true));
     expect(seen.names()).not.toContain('lights:changed');
-    expect(srv.realtime.lights.get().on).toBe(true);
+    expect(srv.realtime.lights.get().level).toBe('on');
   });
 });

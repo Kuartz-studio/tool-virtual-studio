@@ -27,6 +27,7 @@ import {
   computeGroups,
   isOutOfConversations,
   lightsSetSchema,
+  personJoinSchema,
   mediaStateSchema,
   missionGiveSchema,
   moveSchema,
@@ -49,6 +50,7 @@ import {
   type ConversationLockNotice,
   type DeskAck,
   type GameAck,
+  type JoinAck,
   type GroupConfig,
   type GroupingState,
   type LadderAck,
@@ -62,6 +64,7 @@ import type { ActivityController } from '../activity/activity-controller';
 import type { ArenaController } from '../arena/arena-controller';
 import type { ChatService } from '../chat/chat-service';
 import type { DeskController } from '../desks/desk-controller';
+import type { Join } from '../join/join-person';
 import type { Env } from '../env';
 import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
@@ -91,6 +94,10 @@ export interface HandlerDeps {
   desks: Pick<DeskController, 'run'>;
   /** Les états d'activité : `state:set` y passe, et un statut ordinaire en efface un. */
   activity: Pick<ActivityController, 'choose' | 'clear'>;
+  /** Rejoindre quelqu'un : `person:join` y passe (createJoin). */
+  join: Join;
+  /** La limite de débit de ces demandes (JOIN_RATE), par compte : une seule pour toutes les sockets d'une personne. */
+  joinLimiter: RateLimiter;
   /** La lumière du bureau : `lights:set` la change. */
   lights: Pick<LightsService, 'get' | 'set'>;
   /** La limite de débit des changements de lumière (une prise par LIGHTS_RATE_MS), par compte : une seule pour toutes les sockets d'une personne. */
@@ -279,6 +286,20 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     });
   });
 
+  // Rejoindre quelqu'un (le menu d'une personne) : le serveur pose à côté de lui (createJoin), avec accusé de réception. Une socket qui n'a pas reçu son init, ou dont
+  // la personne n'est pas au monde, est ignorée sans réponse, comme pour `desk:do`. Puis, dans cet ordre : 1. demande invalide (personJoinSchema) : `invalid` ;
+  // 2. au-delà de JOIN_RATE par compte : `rate_limited` ; 3. la demande.
+  socket.on('person:join', (payload, ack) => {
+    const reply = (r: JoinAck): void => {
+      if (typeof ack === 'function') ack(r);
+    };
+    if (!d.world.get(userId) || !socket.rooms.has(OFFICE_ROOM)) return;
+    const request = personJoinSchema.safeParse(payload);
+    if (!request.success) return reply({ ok: false, error: 'invalid' });
+    if (!d.joinLimiter.take(userId)) return reply({ ok: false, error: 'rate_limited' });
+    reply(d.join(userId, request.data.userId));
+  });
+
   // Les commandes d'une table de jeu (regarder, s'asseoir, se dire prêt, jouer un coup, abandonner, proposer la nulle, inviter, répondre à une invitation), avec accusé de
   // réception : `game:table` dit ce qui a changé à tout le bureau. Le tronc commun, comme `desk:do` : une socket qui n'a pas reçu son init, ou dont la personne n'est pas au
   // monde, est ignorée sans réponse ; puis, dans cet ordre : 1. au-delà de GAME_RATE par socket : `rate_limited` ; 2. commande invalide (gameCommandSchema) : `invalid` ; 3. la
@@ -371,7 +392,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     reply(d.conversations.command(userId, command.data));
   });
 
-  // Allumer ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
+  // Allumer, tamiser ou éteindre la lumière du bureau, de près : à LIGHT_SWITCH_REACH_TILES cases ou moins d'un interrupteur de la carte, là où le
   // monde voit la personne (jamais là où elle dit être). Aucune réponse, quoi qu'il arrive : la confirmation est `lights:changed`, que tout
   // le bureau reçoit, émetteur compris. Une socket qui n'a pas reçu son init, ou dont la personne n'est pas au monde, est ignorée, comme
   // pour le chat. Puis, dans cet ordre, ce qui ne passe pas est ignoré :
@@ -386,8 +407,8 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     if (!me || !socket.rooms.has(OFFICE_ROOM)) return;
     const request = lightsSetSchema.safeParse(payload);
     if (!request.success || !withinSwitchReach(me, d.switches)) return;
-    if (d.lights.get().on === request.data.on || !d.lightsLimiter.take(userId)) return;
-    d.lights.set(request.data.on, { id: userId, name: me.name }).then(
+    if (d.lights.get().level === request.data.level || !d.lightsLimiter.take(userId)) return;
+    d.lights.set(request.data.level, { id: userId, name: me.name }).then(
       (state) => {
         if (state) io.to(OFFICE_ROOM).emit('lights:changed', state);
       },

@@ -107,10 +107,10 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKe
       const level = doorSoundLevel(distancePx);
       if (level > 0) engine.playSfx(open ? 'door-open' : 'door-close', { level });
     }),
-    // La lumière du bureau change : le bruit d'un interrupteur, qui s'éteint (`toggle-off`) ou se rallume (`toggle-on`). Celui d'un autre ne
-    // sonne pas en « Ne pas déranger » ; le sien, toujours.
-    listenOnBus(bus, 'lights:changed', ({ on, by }) => {
-      if (by?.id === state().selfId || !quiet()) engine.playSfx(on ? 'toggle-on' : 'toggle-off');
+    // La lumière du bureau change : le bruit d'un interrupteur, qui baisse (`toggle-off` : tamisée ou éteinte) ou se rallume (`toggle-on`). Celui d'un
+    // autre ne sonne pas en « Ne pas déranger » ; le sien, toujours.
+    listenOnBus(bus, 'lights:changed', ({ level, by }) => {
+      if (by?.id === state().selfId || !quiet()) engine.playSfx(level === 'on' ? 'toggle-on' : 'toggle-off');
     }),
     // On se sert un café : le bruit de la machine, puis le coup de fouet du café un instant après, même en « Ne pas déranger » (c'est sa propre action). Le
     // café des autres, et la fin du sien, ne sonnent pas.

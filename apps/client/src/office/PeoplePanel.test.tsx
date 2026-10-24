@@ -280,6 +280,22 @@ describe('une ligne', () => {
     expect(onOpenSheet).toHaveBeenCalledWith('zoe');
   });
 
+  test('un clic droit sur une ligne ouvre le menu de la personne (en ligne ou non), là où l\'on a cliqué, à la place de celui du navigateur', async () => {
+    fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
+    arrive([player('zoe', 'Zoé')]);
+    render(<PeoplePanel place={null} onClose={() => {}} />);
+    await offlineSection();
+    const menu = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 120, clientY: 80 });
+    act(() => void row('zoe').dispatchEvent(menu));
+    expect(menu.defaultPrevented).toBe(true);
+    const { opener, ...request } = useOfficeStore.getState().personMenu!;
+    expect(request).toEqual({ userId: 'zoe', x: 120, y: 80, name: 'Zoé' });
+    expect(opener).toBe(row('zoe'));
+    // Hors ligne aussi : son nom vient de la liste des membres.
+    act(() => void row('alice').dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 20 })));
+    expect([useOfficeStore.getState().personMenu?.userId, useOfficeStore.getState().personMenu?.name]).toEqual(['alice', 'Alice']);
+  });
+
   test('on se reconnaît : « toi »', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arrive([player('bob', 'Bob')]);

@@ -1,4 +1,4 @@
-import type { ActivityState, ArenaAction, ArenaCommand, ConversationLockNotice, DebugGamePayload, GameNotice, InitPayload, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, TaskView, WorldTick, XpGain } from '@bureau/shared';
+import type { ActivityState, ArenaAction, ArenaCommand, ConversationLockNotice, DebugGamePayload, DeskInviteNotice, GameNotice, InitPayload, LightLevel, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, TaskView, WorldTick, XpGain } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -24,7 +24,7 @@ export interface OfficeBusEvents {
   // Quelqu'un se met à parler, ou se tait, d'après le serveur (`speaking:changed`) : la bulle au-dessus de son avatar, même loin de soi et hors de
   // sa conversation. Le magasin le dit déjà à jour (pour ceux qu'il connaît) quand l'événement part.
   'net:speaking': (p: { id: string; speaking: boolean }) => void;
-  // La lumière du bureau vient d'être allumée ou éteinte, par quelqu'un (soi-même compris) : le serveur l'annonce à tout le bureau. Le magasin
+  // La lumière du bureau vient d'être allumée, tamisée ou éteinte, par quelqu'un (soi-même compris) : le serveur l'annonce à tout le bureau. Le magasin
   // la dit déjà à jour quand l'événement part. Pas à l'arrivée : l'état d'un `init` n'est pas un changement.
   'lights:changed': (p: LightsState) => void;
   // Quelqu'un vient de prendre un café (`ms` : ce qui lui en reste, 30 s tout neuf) ou le sien est fini (`ms` 0), soi-même compris : le serveur l'annonce à
@@ -33,6 +33,8 @@ export interface OfficeBusEvents {
   // L'invitée a répondu à l'une de nos invitations à une table (elle accepte, refuse, ne dit rien, ou a quitté le bureau), ou n'a pas répondu à temps : un message
   // passager (la file de toasts). Le magasin n'en garde rien.
   'game:notice': (p: GameNotice) => void;
+  // De même pour une invitation dans son bureau : l'invitée accepte (elle arrive) ou refuse.
+  'desk:notice': (p: DeskInviteNotice) => void;
   // Ce qui change dans sa conversation verrouillée (verrouillée, déverrouillée, quelqu'un en sort), d'après le serveur (`conversation:lock`) : le
   // magasin la dit déjà à jour quand l'événement part. Les messages passagers et le son en font un toast et un bruit de verrou.
   'conversation:lock': (p: ConversationLockNotice) => void;
@@ -46,7 +48,7 @@ export interface OfficeBusEvents {
   'door:moved': (p: { key: string; open: boolean; ownerId: string | null; distancePx: number }) => void;
   // Le jeu : la personne actionne l'interrupteur de la lumière, de près. La connexion demande l'état voulu au serveur (`lights:set`) ; la
   // lumière ne change qu'à son annonce (`lights:changed`).
-  'local:lights': (p: { on: boolean }) => void;
+  'local:lights': (p: { level: LightLevel }) => void;
   // Le jeu : la personne se sert à la machine à café, de près. La connexion le demande au serveur (`coffee:take`) ; le café ne commence qu'à son annonce
   // (`coffee:changed`).
   'local:coffee': () => void;
@@ -86,6 +88,12 @@ export interface OfficeBusEvents {
   // Le jeu : la souris est sur l'avatar de cette personne (un autre que soi), dont le haut de la tête est en (x, y), en pixels de la page ; null : sur
   // aucun. Dit quand cela change. L'interface y pose la carte de l'heure qu'il est chez elle (AvatarTimeCard).
   'avatar:hover': (p: { id: string; x: number; y: number } | null) => void;
+  // L'interface demande au jeu de suivre cette personne (l'avatar marche derrière elle, à FOLLOW_GAP_TILES case), ou d'arrêter (null). Rien ne part au serveur :
+  // l'avatar marche comme au clavier. Le jeu dit qui il suit au magasin (`following`).
+  'local:follow': (p: { id: string | null }) => void;
+  // Le jeu : il ne suit plus cette personne sans qu'on le lui ait demandé (`left` : elle est partie ; `jumped` : elle a sauté ailleurs, un mode, un voyage ;
+  // `blocked` : plus de chemin jusqu'à elle, une porte fermée ; `moved` : soi-même, on a été posé ailleurs). L'interface le dit (un message passager).
+  'follow:lost': (p: { id: string; name: string; reason: 'left' | 'jumped' | 'blocked' | 'moved' }) => void;
 }
 
 // Un écouteur, typé comme ceux d'eventemitter3 : ce que l'événement porte, il le reçoit (emitOnBus et listenOnBus le typent).
@@ -214,6 +222,10 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     'desk:access': (p) => state().setClosedDesks(p.closed),
     'desk:bans': (bans) => state().setDeskBans(bans),
     'desk:knock': (knock) => state().addDeskKnock(knock),
+    // Les invitations dans un bureau : reçues (et retirées) au magasin ; la réponse à l'une des nôtres, au bus, pour les messages passagers.
+    'desk:invite': (invite) => state().addDeskInvite(invite),
+    'desk:invite:gone': ({ id }) => state().removeDeskInvite(id),
+    'desk:notice': (notice) => emitOnBus(bus, 'desk:notice', notice),
     // La lumière : le magasin d'abord (le jeu et l'interface y lisent le nouvel état), puis le bus, pour le jeu, le son et les messages.
     'lights:changed': (lights) => {
       state().setLights(lights);
@@ -289,8 +301,8 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     listenOnBus(bus, 'local:xp', (p) => {
       if (state().ready) socket.emit('debug:xp', p);
     }),
-    listenOnBus(bus, 'local:lights', ({ on }) => {
-      if (state().ready) socket.emit('lights:set', { on });
+    listenOnBus(bus, 'local:lights', ({ level }) => {
+      if (state().ready) socket.emit('lights:set', { level });
     }),
     listenOnBus(bus, 'local:coffee', () => {
       if (state().ready) socket.emit('coffee:take');

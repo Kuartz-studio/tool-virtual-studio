@@ -158,13 +158,15 @@ describe('la mise en page', () => {
 
   // La lumière du bureau est une pour tous : éteinte, la couche d'interface prend les couleurs de la nuit (les jetons de
   // `.office-ui[data-theme='night']`, styles.css), et `data-lights` le dit aussi.
-  test('la couche dit le jour (lumière allumée) ou la nuit (éteinte) : data-theme et data-lights, qui suivent la lumière du magasin', () => {
+  test('la couche dit le jour (lumière allumée ou tamisée) ou la nuit (éteinte) : data-theme et data-lights, qui suivent la lumière du magasin', () => {
     const { container } = renderShell();
     const layer = container.querySelector('.office-ui')!;
     expect([layer.getAttribute('data-theme'), layer.getAttribute('data-lights')]).toEqual(['day', 'on']);
-    act(() => useOfficeStore.getState().setLights({ on: false, by: { id: 'bob', name: 'Bob' }, at: 1 }));
+    act(() => useOfficeStore.getState().setLights({ level: 'dim', by: { id: 'bob', name: 'Bob' }, at: 1 }));
+    expect([layer.getAttribute('data-theme'), layer.getAttribute('data-lights')]).toEqual(['day', 'dim']);
+    act(() => useOfficeStore.getState().setLights({ level: 'off', by: { id: 'bob', name: 'Bob' }, at: 2 }));
     expect([layer.getAttribute('data-theme'), layer.getAttribute('data-lights')]).toEqual(['night', 'off']);
-    act(() => useOfficeStore.getState().setLights({ on: true, by: { id: 'moi', name: 'Léa' }, at: 2 }));
+    act(() => useOfficeStore.getState().setLights({ level: 'on', by: { id: 'moi', name: 'Léa' }, at: 3 }));
     expect([layer.getAttribute('data-theme'), layer.getAttribute('data-lights')]).toEqual(['day', 'on']);
   });
 
@@ -180,7 +182,7 @@ describe('la mise en page', () => {
         desks: [],
         closedDesks: [],
         deskBans: [],
-        lights: { on: false, by: { id: 'bob', name: 'Bob' }, at: 1 },
+        lights: { level: 'off', by: { id: 'bob', name: 'Bob' }, at: 1 },
       }),
     );
     expect(container.querySelector('.office-ui')?.getAttribute('data-theme')).toBe('night');

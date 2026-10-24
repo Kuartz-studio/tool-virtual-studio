@@ -1570,10 +1570,19 @@ svg.lucide.icon-s {
 }
 
 /* Le café qu'on a pris : une petite pastille sous la puce du lieu, avec ce qu'il en reste en secondes. Elle ne reçoit pas la souris : elle ne fait que dire. */
-.coffee-pill {
+/* Les pastilles sous la puce du lieu, l'une sous l'autre : le café, puis la personne qu'on suit. */
+.office-pills {
   position: absolute;
   top: calc(var(--bar-gap) + 40px);
   left: var(--bar-gap);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.coffee-pill {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1593,6 +1602,63 @@ svg.lucide.icon-s {
   width: 14px;
   height: 14px;
   color: var(--text-soft);
+}
+
+/* « Tu suis Tom » : comme la pastille du café, avec une croix qui arrête (elle seule prend la souris). */
+.follow-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px 2px 8px;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text);
+  background: var(--surface);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--shadow-dock);
+  transition: background-color var(--dur-theme) var(--ease-out), color var(--dur-theme) var(--ease-out), box-shadow var(--dur-theme) var(--ease-out);
+}
+
+.follow-pill > svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--accent);
+}
+
+.follow-pill-stop {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-soft);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-pill);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.follow-pill-stop:hover,
+.follow-pill-stop:focus-visible {
+  color: var(--text);
+  background: var(--surface-soft);
+  outline: none;
+}
+
+/* Le menu d'une personne (un clic droit sur son avatar, ou sur sa ligne du panneau Personnes) : une fenêtre posée au point du clic, le nom en tête. */
+.person-menu {
+  min-width: 200px;
+}
+
+.person-menu-name {
+  margin: 2px 10px 6px;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* La barre : un groupe sans surface, qui laisse passer la souris entre les docks. Le dock du milieu est au milieu de la page (les deux autres

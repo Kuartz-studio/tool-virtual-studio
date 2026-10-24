@@ -1,0 +1,1 @@
+ALTER TABLE "office_lights" ADD COLUMN "dim" boolean DEFAULT false NOT NULL;

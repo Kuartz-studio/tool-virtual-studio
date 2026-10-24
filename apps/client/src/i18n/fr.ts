@@ -331,7 +331,52 @@ export const fr = {
       bad_decor: 'Cette déco n\'est pas valable.',
       too_poor: 'Il te manque des kuartzons pour ces achats.',
       rate_limited: 'Trop d\'actions à la suite. Patiente un instant.',
+      not_home: 'Va dans ton bureau pour y inviter quelqu\'un.',
+      offline: 'Cette personne n\'est plus au bureau.',
+      already_inside: 'Cette personne est déjà dans ton bureau.',
+      expired: 'Cette invitation n\'est plus valable.',
+      no_spot: 'Plus une place libre dans ce bureau.',
+      dnd: 'Cette personne ne veut pas être dérangée.',
       generic: 'Cette action a échoué. Réessaie.',
+    },
+  },
+  // Le menu d'une personne : un clic droit sur son avatar, dans le jeu, ou sur sa ligne du panneau Personnes. Suivre (à moins de 5 cases : on marche derrière
+  // elle, à une case), rejoindre (plus loin : on arrive à côté d'elle), l'inviter dans son bureau (quand on y est).
+  person: {
+    menu: 'Actions pour {name}',
+    profile: 'Profil',
+    follow: 'Suivre',
+    join: 'Rejoindre',
+    unfollow: 'Arrêter de suivre',
+    invite: 'Inviter dans le bureau',
+    // À la place de l'invitation, pour qui ne veut pas être dérangé : pourquoi on ne l'invite pas.
+    inviteRefused: 'Ne pas déranger',
+    inviteSent: 'Invitation envoyée à {name}.',
+    // L'invitation reçue (un toast), ses boutons, et ce qu'apprend qui a invité.
+    invited: '{name} t\'invite dans son bureau',
+    accept: 'Accepter',
+    decline: 'Refuser',
+    acceptLabel: 'Accepter l\'invitation de {name}',
+    declineLabel: 'Refuser l\'invitation de {name}',
+    accepted: '{name} arrive dans ton bureau.',
+    declined: '{name} a refusé ton invitation.',
+    // La pastille sous la puce du lieu, tant qu'on suit quelqu'un, et son bouton.
+    following: 'Tu suis {name}',
+    stop: 'Arrêter de suivre',
+    // Pourquoi l'avatar ne suit plus personne, sans qu'on l'ait demandé.
+    lost: {
+      left: '{name} a quitté le bureau : tu ne suis plus personne.',
+      jumped: '{name} a changé de lieu : tu ne suis plus personne.',
+      blocked: 'Tu ne peux plus suivre {name} : une porte fermée te barre le chemin.',
+      moved: 'Tu ne suis plus {name}.',
+    },
+    // « Rejoindre » qui n'a pas abouti.
+    joinErrors: {
+      offline: 'Cette personne n\'est plus au bureau.',
+      busy: 'Tu es en plein combat : impossible de partir.',
+      no_spot: 'Pas de place libre à côté de cette personne.',
+      rate_limited: 'Trop de demandes à la suite. Patiente un instant.',
+      generic: 'Impossible de rejoindre cette personne. Réessaie.',
     },
   },
   // Les boutons de zoom du jeu, en bas à droite : de 25 % à 200 %, 100 % au départ ; le pourcentage du milieu le rétablit.
@@ -348,10 +393,12 @@ export const fr = {
   lights: {
     off: '{name} a éteint la lumière',
     on: '{name} a rallumé la lumière',
+    dim: '{name} a tamisé la lumière',
     selfOff: 'Tu as éteint la lumière',
     selfOn: 'Tu as rallumé la lumière',
-    use: 'Éteindre',
-    useOn: 'Allumer',
+    selfDim: 'Tu as tamisé la lumière',
+    // L'étiquette de l'interrupteur : ce que fera la touche, selon l'état où elle fera passer la lumière.
+    action: { on: 'Allumer', dim: 'Tamiser', off: 'Éteindre' },
   },
   // La musique de la pièce où l'on est, la même pour tous ceux qui y sont : l'enceinte (« [E] Couper la musique », de près), le bouton haut-parleur de la puce du lieu
   // et la carte « Musique de la pièce » du juke-box (sa vignette ouvre la liste des musiques). Dans un bureau, son propriétaire seul y touche.

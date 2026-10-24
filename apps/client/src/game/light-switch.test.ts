@@ -5,7 +5,7 @@ import { PNG } from 'pngjs';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { DECOR_DEPTH, layoutDecor, type Drawn } from './decor-layout';
 import { Interactions } from './interactions';
-import { addSwitchTextures, LightSwitch, PLATE, plateRows, SWITCH_TEXTURES } from './light-switch';
+import { addSwitchTextures, LightSwitch, nextLightLevel, PLATE, plateRows, SWITCH_TEXTURES } from './light-switch';
 import { DEPTH } from './map-layers';
 
 const POS = { x: 1040, y: 336 };
@@ -92,13 +92,13 @@ describe('la plaque', () => {
 
   test('éteinte : la plaque « éteinte » et le témoin ambré de 2 × 2 px, au-dessus de la nuit ; rallumée : le témoin s\'éteint', () => {
     const { lightSwitch, plate, beacon } = setup();
-    lightSwitch.setOn(false);
+    lightSwitch.setLevel('off');
     expect(plate().textureKey).toBe(SWITCH_TEXTURES.off);
     expect(beacon().visible).toBe(true);
     expect(beacon().extra).toMatchObject({ width: 2, height: 2, color: 0xf59e0b });
     // La couche de nuit sera à 1 000 000,5 : le témoin passe devant, pour qu'on trouve la plaque dans le noir.
     expect(beacon().depth).toBe(1_000_000.6);
-    lightSwitch.setOn(true);
+    lightSwitch.setLevel('on');
     expect(plate().textureKey).toBe(SWITCH_TEXTURES.on);
     expect(beacon().visible).toBe(false);
   });
@@ -135,14 +135,27 @@ describe('la cible de l\'interrupteur', () => {
     expect(target.labelAt!.y).toBeLessThanOrEqual(plate().y - PLATE.height / 2);
   });
 
-  test('son texte dit ce que la touche va faire : « [E] Éteindre » quand c\'est allumé, « [E] Allumer » quand c\'est éteint', () => {
+  test('son texte dit ce que la touche va faire : « [E] Tamiser » allumée, « [E] Éteindre » tamisée, « [E] Allumer » éteinte', () => {
     const { interactions, lightSwitch } = setup();
     const target = interactions.update(feet(0, 0))!;
+    expect(target.prompt()).toBe('[E] Tamiser');
+    lightSwitch.setLevel('dim');
     expect(target.prompt()).toBe('[E] Éteindre');
-    lightSwitch.setOn(false);
+    lightSwitch.setLevel('off');
     expect(target.prompt()).toBe('[E] Allumer');
-    lightSwitch.setOn(true);
-    expect(target.prompt()).toBe('[E] Éteindre');
+    lightSwitch.setLevel('on');
+    expect(target.prompt()).toBe('[E] Tamiser');
+  });
+
+  test('tamisée : la plaque à mi-course, sans témoin (on y voit encore)', () => {
+    const { lightSwitch, plate, beacon } = setup();
+    lightSwitch.setLevel('dim');
+    expect(plate().textureKey).toBe(SWITCH_TEXTURES.dim);
+    expect(beacon().visible).toBe(false);
+  });
+
+  test('chaque appui passe à l\'état suivant : allumée, tamisée, éteinte, puis de nouveau allumée', () => {
+    expect([nextLightLevel('on'), nextLightLevel('dim'), nextLightLevel('off')]).toEqual(['dim', 'off', 'on']);
   });
 });
 
@@ -177,11 +190,11 @@ describe('la touche E et le clic', () => {
     expect(onUse).toHaveBeenCalledTimes(1);
   });
 
-  test('ce n\'est qu\'une demande : la plaque ne change qu\'à l\'annonce du serveur (setOn)', () => {
+  test('ce n\'est qu\'une demande : la plaque ne change qu\'à l\'annonce du serveur (setLevel)', () => {
     const { interactions, lightSwitch, plate } = setup();
     interactions.use(feet(0, cases(1)));
     expect(plate().textureKey).toBe(SWITCH_TEXTURES.on);
-    lightSwitch.setOn(false);
+    lightSwitch.setLevel('off');
     expect(plate().textureKey).toBe(SWITCH_TEXTURES.off);
   });
 
@@ -256,8 +269,8 @@ describe('les textures de la plaque', () => {
   const COLORS = new Set(['o', 'h', 'p', 's', 'k', 'd']);
 
   test('14 rangées de 10 pixels, chacun transparent ou d\'une couleur de la palette', () => {
-    for (const on of [true, false]) {
-      const rows = plateRows(on);
+    for (const level of ['on', 'dim', 'off'] as const) {
+      const rows = plateRows(level);
       expect(rows).toHaveLength(PLATE.height);
       for (const row of rows) {
         expect(row).toHaveLength(PLATE.width);
@@ -267,14 +280,26 @@ describe('les textures de la plaque', () => {
   });
 
   test('un contour sombre ferme la plaque : rien de clair sur un bord', () => {
-    const rows = plateRows(true);
+    const rows = plateRows('on');
     expect([...rows[0]!].filter((pixel) => pixel !== '.' && pixel !== 'o')).toEqual([]);
     expect([...rows.at(-1)!].filter((pixel) => pixel !== '.' && pixel !== 'o')).toEqual([]);
     for (const row of rows.slice(1, -1)) expect(row.replaceAll('.', '').at(0) === 'o' && row.replaceAll('.', '').at(-1) === 'o').toBe(true);
   });
 
-  test('allumée et éteinte ne diffèrent que par le basculeur : sa moitié claire est en haut, ou en bas', () => {
-    const [on, off] = [plateRows(true), plateRows(false)];
+  test('allumée, tamisée et éteinte ne diffèrent que par le basculeur : sa partie claire est en haut, au milieu, ou en bas', () => {
+    const [on, dim, off] = [plateRows('on'), plateRows('dim'), plateRows('off')];
+    for (const other of [dim, off]) {
+      for (const [y, row] of on.entries()) {
+        for (const [x, pixel] of [...row].entries()) {
+          if (pixel === other[y]![x]) continue;
+          expect(x).toBeGreaterThanOrEqual(4);
+          expect(x).toBeLessThanOrEqual(5);
+          expect(y).toBeGreaterThanOrEqual(4);
+          expect(y).toBeLessThanOrEqual(9);
+        }
+      }
+    }
+    expect([4, 5, 6, 7, 8, 9].map((y) => dim[y]![4])).toEqual(['d', 'd', 'k', 'k', 'd', 'd']);
     const differing = on.flatMap((row, y) => [...row].flatMap((pixel, x) => (pixel === off[y]![x] ? [] : [[x, y] as const])));
     expect(differing.length).toBeGreaterThan(0);
     // Tous dans la face du basculeur (2 pixels de large, au milieu), et ni sur son contour ni sur la plaque.
@@ -322,13 +347,13 @@ describe('les textures de la plaque', () => {
       return { textures, makeCanvas, drawn, canvases, existing };
     }
 
-    test('les deux plaques, de 10 × 14 px, dessinées pixel par pixel', () => {
+    test('les trois plaques, de 10 × 14 px, dessinées pixel par pixel', () => {
       const game = fakeTextures();
       addSwitchTextures(game.textures, game.makeCanvas);
-      expect([...game.drawn.keys()]).toEqual(['switch:on', 'switch:off']);
-      expect(game.canvases.map((canvas) => [canvas.width, canvas.height])).toEqual([[10, 14], [10, 14]]);
+      expect([...game.drawn.keys()]).toEqual(['switch:on', 'switch:dim', 'switch:off']);
+      expect(game.canvases.map((canvas) => [canvas.width, canvas.height])).toEqual([[10, 14], [10, 14], [10, 14]]);
       for (const [key, fills] of game.drawn) {
-        const rows = plateRows(key === 'switch:on');
+        const rows = plateRows(key === 'switch:on' ? 'on' : key === 'switch:dim' ? 'dim' : 'off');
         const opaque = rows.flatMap((row) => [...row]).filter((pixel) => pixel !== '.').length;
         expect(fills, key).toHaveLength(opaque);
         expect(fills.every(([, , w, h]) => w === 1 && h === 1)).toBe(true);
@@ -340,14 +365,14 @@ describe('les textures de la plaque', () => {
       const game = fakeTextures();
       addSwitchTextures(game.textures, game.makeCanvas);
       addSwitchTextures(game.textures, game.makeCanvas);
-      expect(game.canvases).toHaveLength(2);
+      expect(game.canvases).toHaveLength(3);
     });
 
     test('un navigateur sans contexte 2D : pas de plantage, les textures existent quand même (vides), pas de rectangle vert « texture absente »', () => {
       const game = fakeTextures();
       const noContext = () => ({ width: 0, height: 0, getContext: () => null }) as unknown as HTMLCanvasElement;
       expect(() => addSwitchTextures(game.textures, noContext)).not.toThrow();
-      expect([...game.existing]).toEqual(['switch:on', 'switch:off']);
+      expect([...game.existing]).toEqual(['switch:on', 'switch:dim', 'switch:off']);
     });
   });
 });

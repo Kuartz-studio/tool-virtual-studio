@@ -49,6 +49,9 @@ describe('la recherche', () => {
     expect(cities('new york')).toEqual(['New York']);
     expect(cities('france')).toContain('Paris');
     expect(cities('france')).toContain('Nouméa');
+    expect(cities('bali')).toEqual(['Denpasar (Bali)']);
+    expect(cities('denpasar')).toEqual(['Denpasar (Bali)']);
+    expect(cities('ubud')).toEqual(['Denpasar (Bali)']);
   });
 
   test('un décalage se compare au décalage entier : « utc+1 » ne trouve pas UTC+10', () => {

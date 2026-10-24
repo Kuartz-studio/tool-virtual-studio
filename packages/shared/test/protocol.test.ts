@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ACTIVITY_ICONS, activityInputSchema, moveSchema, chatSendSchema, statusSchema, displayNameSchema, isAvatarKey, lightsSetSchema, LIGHTS_RATE_MS, LIGHT_SWITCH_REACH_TILES } from '../src';
+import { ACTIVITY_ICONS, activityInputSchema, moveSchema, chatSendSchema, statusSchema, displayNameSchema, isAvatarKey, lightsSetSchema, LIGHT_LEVELS, LIGHTS_RATE_MS, LIGHT_SWITCH_REACH_TILES } from '../src';
 
 test('move : entiers et direction connue', () => {
   expect(moveSchema.safeParse({ x: 10, y: 20, dir: 'down', moving: true }).success).toBe(true);
@@ -26,14 +26,14 @@ test('avatars : personnage prêt à l\'emploi, personnage assemblé, ou rien', (
   expect(isAvatarKey('dev-red')).toBe(false);
   expect(isAvatarKey('nope')).toBe(false);
 });
-test('lumière : lights:set demande un état (un booléen), rien d\'autre', () => {
-  expect(lightsSetSchema.safeParse({ on: false }).success).toBe(true);
-  expect(lightsSetSchema.safeParse({ on: true }).success).toBe(true);
-  expect(lightsSetSchema.safeParse({ on: 'non' }).success).toBe(false);
-  expect(lightsSetSchema.safeParse({ on: 0 }).success).toBe(false);
+test('lumière : lights:set demande un état (allumée, tamisée ou éteinte), rien d\'autre', () => {
+  expect(LIGHT_LEVELS).toEqual(['on', 'dim', 'off']);
+  for (const level of LIGHT_LEVELS) expect(lightsSetSchema.safeParse({ level }).success).toBe(true);
+  expect(lightsSetSchema.safeParse({ level: 'mi' }).success).toBe(false);
+  expect(lightsSetSchema.safeParse({ on: false }).success).toBe(false);   // l'ancienne demande, un booléen, n'en est plus une
   expect(lightsSetSchema.safeParse({}).success).toBe(false);
   expect(lightsSetSchema.safeParse(null).success).toBe(false);
-  expect(lightsSetSchema.parse({ on: false, by: 'moi' })).toEqual({ on: false });   // l'auteur est celui du serveur : un champ en trop est écarté
+  expect(lightsSetSchema.parse({ level: 'dim', by: 'moi' })).toEqual({ level: 'dim' });   // l'auteur est celui du serveur : un champ en trop est écarté
 });
 test('lumière : un changement par personne et par 800 ms, un interrupteur à 3 cases', () => {
   expect(LIGHTS_RATE_MS).toBe(800);

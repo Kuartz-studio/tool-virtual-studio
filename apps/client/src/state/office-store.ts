@@ -9,6 +9,7 @@ import {
   type DeskBan,
   type DeskDecor,
   type DeskInfo,
+  type DeskInvite,
   type DeskKnock,
   type GameId,
   type GameInvite,
@@ -78,6 +79,19 @@ export interface PendingReplace {
 // Une invitation à une table, telle que le magasin la garde : ce que le serveur a dit, et jusqu'à quand elle vaut, en ms sur l'horloge de la page (performance.now), puisque le
 // serveur ne donne que ce qu'il lui reste à vivre à la réception.
 export type GameInviteEntry = GameInvite & { until: number };
+// De même pour une invitation dans un bureau.
+export type DeskInviteEntry = DeskInvite & { until: number };
+
+// Le menu d'une personne (un clic droit sur son avatar, ou sur sa ligne du panneau Personnes) : de qui, où l'ouvrir (en pixels de la page), et ce qui l'a
+// ouvert, à qui rendre le focus à sa fermeture (une ligne du panneau ; rien pour le jeu).
+export interface PersonMenuRequest {
+  userId: string;
+  x: number;
+  y: number;
+  // Son nom, quand le magasin ne le connaît pas (une personne hors ligne, que seul le panneau Personnes connaît).
+  name?: string;
+  opener?: HTMLElement | null;
+}
 
 export interface OfficeState {
   // Le compte connecté, d'après le dernier `init` ; null avant le premier.
@@ -132,7 +146,7 @@ export interface OfficeState {
   // Un message passager sur les bureaux (porte fermée, toc toc envoyé), qui s'efface de lui-même ; null sans message.
   deskNotice: string | null;
   // La lumière du bureau, la même pour tout le monde : allumée tant que le serveur n'a rien dit, puis celle du dernier `init` ou de
-  // `lights:changed`. Le jeu l'obscurcit quand elle est éteinte ; `by` et `at` disent qui l'a changée en dernier, et quand.
+  // `lights:changed`. Le jeu l'obscurcit quand elle est éteinte, à moitié quand elle est tamisée ; `by` et `at` disent qui l'a changée en dernier, et quand.
   lights: LightsState;
   // Jusqu'à quand chaque personne a un café, en ms sur l'horloge de la page (performance.now) : le serveur dit ce qu'il lui reste (`coffee:changed`, ou
   // `boost` dans l'`init`), le magasin en fait une échéance. Qui n'a pas de ligne n'a pas de café. Le jeu y lit ceux dont la tasse se montre (et si
@@ -185,6 +199,13 @@ export interface OfficeState {
   // Un panneau que quelqu'un d'autre que ses boutons demande d'ouvrir (le bouton « Voir » d'un toast, l'administratrice, une ligne du panneau Personnes) : la coque
   // l'ouvre, puis l'oublie. `tab` : l'onglet du panneau Missions ; `userId` : de qui montrer les caractéristiques. null : rien à ouvrir.
   panelRequest: PanelRequest | null;
+  // Les invitations dans un bureau qui attendent sa réponse (celles de l'`init`, puis `desk:invite`) ; une invitation y reste jusqu'à ce qu'on réponde, qu'elle
+  // expire ou que le serveur la retire (`desk:invite:gone`).
+  deskInvites: DeskInviteEntry[];
+  // Le menu d'une personne, ouvert ; null : fermé.
+  personMenu: PersonMenuRequest | null;
+  // La personne que l'avatar suit (le jeu le fait marcher derrière elle), ou null.
+  following: string | null;
   // La dernière position connue de chaque autre joueur présent (init, arrivée, ticks). Un Map modifié sur place, sans prévenir les
   // abonnés : un `init` et reset() le remplacent, un départ en retire le joueur ; rien n'y reste de ceux qui sont partis.
   positions: Map<string, PlayerPosition>;
@@ -288,6 +309,12 @@ export interface OfficeState {
   openClerk(clerk: string | null): void;
   // Demander l'ouverture d'un panneau ; la coque l'ouvre, puis l'oublie (null).
   requestPanel(request: PanelRequest | null): void;
+  addDeskInvite(invite: DeskInvite): void;
+  removeDeskInvite(id: string): void;
+  // Ouvrir le menu d'une personne, ou le fermer (null).
+  openPersonMenu(menu: PersonMenuRequest | null): void;
+  // Le jeu suit cette personne, ou plus personne (null).
+  setFollowing(id: string | null): void;
   // Retour à l'état de départ : le bureau quitté (déconnexion, autre compte).
   reset(): void;
 }
@@ -334,10 +361,13 @@ type Data = Pick<
   | 'given'
   | 'clerk'
   | 'panelRequest'
+  | 'deskInvites'
+  | 'personMenu'
+  | 'following'
 >;
 
 // La lumière que personne n'a touchée : allumée, jamais changée. C'est aussi celle d'un `init` qui n'en dit rien.
-const LIGHTS_ON: LightsState = { on: true, by: null, at: 0 };
+const LIGHTS_ON: LightsState = { level: 'on', by: null, at: 0 };
 
 const initialData = (): Data => ({
   selfId: null,
@@ -380,6 +410,9 @@ const initialData = (): Data => ({
   given: null,
   clerk: null,
   panelRequest: null,
+  deskInvites: [],
+  personMenu: null,
+  following: null,
 });
 
 const positionOf = (p: PlayerPosition): PlayerPosition => ({ x: p.x, y: p.y, dir: p.dir, moving: p.moving });
@@ -407,6 +440,7 @@ function withoutBoost(p: PublicPlayer): PublicPlayer {
 
 // Une invitation reçue, avec l'échéance que lui donne ce qu'il lui reste à vivre.
 const inviteEntry = (invite: GameInvite): GameInviteEntry => ({ ...invite, until: performance.now() + invite.ttlMs });
+const deskInviteEntry = (invite: DeskInvite): DeskInviteEntry => ({ ...invite, until: performance.now() + invite.ttlMs });
 
 // Les tables d'un `init`, par jeu.
 const gamesOf = (tables: readonly GameTableView[] | undefined): Partial<Record<GameId, GameTableView>> => Object.fromEntries((tables ?? []).map((table) => [table.game, table]));
@@ -538,6 +572,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           // Les tables et les invitations du moment ; une partie qu'on jouait et que le serveur ne connaît plus est signalée (et le reste jusqu'à ce qu'on l'ait lue).
           games: gamesOf(p.games),
           gameInvites: (p.gameInvites ?? []).map(inviteEntry),
+          deskInvites: (p.deskInvites ?? []).map(deskInviteEntry),
           arena: p.arena ?? EMPTY_ARENA,
           arenaCountdownEndsAt: performance.now() + (p.arena?.countdownMs ?? 0),
           // Sa progression du moment ; un init qui n'en dit rien (la base n'a pas répondu) garde celle qu'on connaissait.
@@ -708,6 +743,11 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       upsertGiven: (task) => set((state) => ({ given: upsert(state.given, task) })),
       openClerk: (clerk) => set({ clerk }),
       requestPanel: (panelRequest) => set({ panelRequest }),
+      // Une invitation de plus ; la même (une seconde fois) prend la place de la première, avec sa nouvelle échéance.
+      addDeskInvite: (invite) => set((state) => ({ deskInvites: [...state.deskInvites.filter((known) => known.id !== invite.id), deskInviteEntry(invite)] })),
+      removeDeskInvite: (id) => set((state) => (state.deskInvites.some((invite) => invite.id === id) ? { deskInvites: state.deskInvites.filter((invite) => invite.id !== id) } : state)),
+      openPersonMenu: (personMenu) => set({ personMenu }),
+      setFollowing: (following) => set((state) => (state.following === following ? state : { following })),
 
       reset: () => set(initialData()),
     };

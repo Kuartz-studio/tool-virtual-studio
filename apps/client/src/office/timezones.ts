@@ -73,6 +73,7 @@ export const ZONES: readonly ZoneEntry[] = [
   { id: 'Asia/Bangkok', city: 'Bangkok', region: 'Thaïlande', also: 'Phnom Penh Cambodge Vientiane Laos' },
   { id: 'Asia/Ho_Chi_Minh', city: 'Hô Chi Minh-Ville', region: 'Viêt Nam', also: 'Saïgon Hanoï Vietnam' },
   { id: 'Asia/Jakarta', city: 'Jakarta', region: 'Indonésie', also: 'Java' },
+  { id: 'Asia/Makassar', city: 'Denpasar (Bali)', region: 'Indonésie', also: 'Ubud Kuta Canggu Seminyak Sanur Lombok Makassar Sulawesi' },
   { id: 'Asia/Singapore', city: 'Singapour', region: 'Singapour', also: 'Kuala Lumpur Malaisie' },
   { id: 'Asia/Manila', city: 'Manille', region: 'Philippines' },
   { id: 'Asia/Shanghai', city: 'Pékin', region: 'Chine', also: 'Beijing Shanghai Shenzhen Canton' },

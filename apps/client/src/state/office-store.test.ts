@@ -524,9 +524,9 @@ describe('zoom', () => {
 });
 
 describe('la lumière', () => {
-  const OFF = { on: false, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
-  const ON = { on: true, by: { id: 'b', name: 'B' }, at: 1_700_000_050_000 };
-  const LIT = { on: true, by: null, at: 0 };
+  const OFF = { level: 'off' as const, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
+  const ON = { level: 'on' as const, by: { id: 'b', name: 'B' }, at: 1_700_000_050_000 };
+  const LIT = { level: 'on' as const, by: null, at: 0 };
 
   test('allumée au départ, tant que le serveur n\'a rien dit', () => {
     expect(store.getState().lights).toEqual(LIT);

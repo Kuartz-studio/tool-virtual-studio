@@ -6,6 +6,7 @@ import {
   BookOpen,
   CalendarDays,
   Check,
+  CircleStop,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -19,6 +20,7 @@ import {
   Eraser,
   Flame,
   FlaskConical,
+  Footprints,
   Focus,
   Gamepad2,
   Gem,
@@ -48,6 +50,7 @@ import {
   MonitorUp,
   Moon,
   Music,
+  Navigation,
   Pencil,
   Paperclip,
   Play,
@@ -65,11 +68,13 @@ import {
   Sparkles,
   Store,
   Sun,
+  SunDim,
   Sunrise,
   Sunset,
   Trash2,
   Trophy,
   Undo2,
+  UserRound,
   UserX,
   Sprout,
   Users,
@@ -80,6 +85,7 @@ import {
   X,
   createLucideIcon,
 } from 'lucide-react';
+import type { LightLevel } from '@bureau/shared';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 
@@ -176,9 +182,10 @@ export function LogOutIcon() {
   return <LogOut />;
 }
 
-// Une ampoule : la lumière du bureau, éteinte ou allumée.
-export function LightbulbIcon({ off = false }: { off?: boolean }) {
-  return off ? <LightbulbOff /> : <Lightbulb />;
+// Une ampoule : la lumière du bureau, allumée ou éteinte (barrée) ; tamisée, un soleil voilé.
+export function LightbulbIcon({ level = 'on' }: { level?: LightLevel }) {
+  if (level === 'dim') return <SunDim />;
+  return level === 'off' ? <LightbulbOff /> : <Lightbulb />;
 }
 
 // Un canapé : la déco du bureau.
@@ -209,9 +216,26 @@ export function DoorIcon() {
   return <DoorClosed />;
 }
 
-// Une porte ouverte : y aller (« Aller à mon bureau »).
+// Une porte ouverte : y aller (« Aller à mon bureau »), y inviter quelqu'un.
 export function DoorOpenIcon() {
   return <DoorOpen />;
+}
+
+// Le menu d'une personne : son profil, la suivre (des pas), la rejoindre (une flèche de navigation), arrêter de la suivre.
+export function ProfileIcon() {
+  return <UserRound />;
+}
+
+export function FollowIcon() {
+  return <Footprints />;
+}
+
+export function JoinIcon() {
+  return <Navigation />;
+}
+
+export function StopFollowIcon() {
+  return <CircleStop />;
 }
 
 // Des curseurs : les réglages du bureau, une fois dedans.

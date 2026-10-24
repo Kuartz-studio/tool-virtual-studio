@@ -1,0 +1,40 @@
+# Vérifie chaque poussée sur main et chaque pull request : les types, puis les tests unitaires.
+# Le déploiement n'est pas ici : Railway le lance lui-même à chaque poussée sur main (le service est relié au dépôt GitHub).
+# Avec « Wait for CI » dans les réglages du service, il attend la fin de ce workflow et ne déploie pas un commit qui l'a fait
+# échouer : l'ancienne version reste en service.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Une poussée plus récente sur la même branche annule la vérification en cours : seul le dernier commit compte. Railway ne
+# déploie pas le commit annulé, mais déploie le suivant une fois vérifié, qui le contient.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verifier:
+    name: Types et tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # pnpm à la version du champ « packageManager » de package.json, comme Corepack dans le Dockerfile.
+      - uses: pnpm/action-setup@v6
+
+      # Node 24, celui de l'image de production (node:24-slim).
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm test

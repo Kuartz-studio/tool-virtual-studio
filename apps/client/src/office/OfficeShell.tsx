@@ -23,8 +23,10 @@ import { DecorPanel } from './DecorPanel';
 import { ControlBar } from './ControlBar';
 import { ConversationLockBar } from './ConversationLock';
 import { DeskPanel } from './DeskPanel';
+import { FollowPill } from './FollowPill';
 import type { PanelControls, PanelId } from './panels';
 import { PeoplePanel } from './PeoplePanel';
+import { PersonMenu } from './PersonMenu';
 import { LevelUpBanner, useProgressToasts } from './progress-announcements';
 import { QuestPanel, type QuestTab } from './QuestPanel';
 import { ReplacedScreen } from './ReplacedScreen';
@@ -75,13 +77,14 @@ interface OfficeShellProps {
 }
 
 // La page du bureau : le jeu en plein écran, et par-dessus (`.office-ui`, qui laisse passer la souris hors de ses éléments) :
-// - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), avec dessous la pastille du café quand on en a un (CoffeePill), et en haut au
+// - en haut à gauche, le lieu où l'on est et ceux qui y sont (WhereChip), avec dessous la pastille du café quand on en a un (CoffeePill) et celle de la personne
+//   qu'on suit (FollowPill), et en haut au
 //   milieu les vignettes de la conversation (VideoStrip), avec au-dessus le verrou de la conversation (ConversationLockBar) ;
 // - sous elles, les messages passagers (Toasts) : un toc toc à la porte de son bureau, une porte fermée ;
 // - à droite, un seul panneau à la fois (Personnes, Chat, Mon bureau, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
 // - en bas, la barre (ControlBar) : des docks à icônes (la puce « Moi » avec ton statut, le micro, la caméra, la musique et le bureau, le zoom, le
 //   chat et les personnes).
-//   Une seule lumière pour tout le bureau : éteinte, la couche prend les couleurs de la nuit (`data-theme`, `data-lights`).
+//   Une seule lumière pour tout le bureau : éteinte, la couche prend les couleurs de la nuit (`data-theme`, `data-lights`) ; tamisée, elle garde celles du jour.
 // Rien de cela ne prend de place au jeu : les éléments sont posés sur lui, et ouvrir un panneau ne redimensionne pas le canevas (ni
 // ne change le zoom de la caméra).
 //
@@ -104,9 +107,9 @@ export function OfficeShell({
   // Le serveur a dit qui est là : avant, le panneau Personnes ne saurait pas qui est en ligne.
   const knowsWhoIsHere = useOfficeStore((state) => state.self !== null);
   const replaced = useOfficeStore((state) => state.replaced);
-  // La lumière du bureau (une pour tous, que le serveur annonce) : allumée, le jour ; éteinte, la nuit, dont les jetons de couleur sont ceux
-  // de `.office-ui[data-theme='night']` (styles.css). `data-lights` dit la même chose pour qui n'a pas besoin du mot « thème ».
-  const lightsOn = useOfficeStore((state) => state.lights.on);
+  // La lumière du bureau (une pour tous, que le serveur annonce) : allumée ou tamisée, le jour ; éteinte, la nuit, dont les jetons de couleur sont ceux
+  // de `.office-ui[data-theme='night']` (styles.css). `data-lights` dit l'état lui-même : `on`, `dim` ou `off`.
+  const lights = useOfficeStore((state) => state.lights.level);
   // Le son des autres baisse avec la distance dans un espace ouvert : ceux qu'on n'entend plus n'ont plus de vignette.
   const inaudible = useSpatialAudio(media.client, media.snapshot);
 
@@ -250,10 +253,14 @@ export function OfficeShell({
     <main className="office">
       <h1 className="visually-hidden">{fr.common.appName}</h1>
       {children}
-      <div ref={layer} className="office-ui" data-theme={lightsOn ? 'day' : 'night'} data-lights={lightsOn ? 'on' : 'off'} inert={replaced}>
+      <div ref={layer} className="office-ui" data-theme={lights === 'off' ? 'night' : 'day'} data-lights={lights} inert={replaced}>
         <WhereChip place={place} />
-        <CoffeePill />
+        <div className="office-pills">
+          <CoffeePill />
+          <FollowPill />
+        </div>
         <AvatarTimeCard />
+        <PersonMenu socket={socket} />
         <ArenaCard socket={socket} />
         <div className="office-top">
           <VideoStrip

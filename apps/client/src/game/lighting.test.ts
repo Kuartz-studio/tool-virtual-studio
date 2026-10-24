@@ -2,7 +2,7 @@ import { TILE_SIZE } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import type { LightSource } from './light-sources';
 import { LIGHT_TEXTURE_SIZE, LIGHT_TEXTURES } from './light-textures';
-import { FALLBACK_ALPHA, GLOW_ALPHA, LightingLayer, NIGHT_ALPHA, NIGHT_COLOR, NIGHT_SIZE_STEP, PERSON_RADIUS_TILES, tintOf, VIEW_MARGIN, viewRect } from './lighting';
+import { darknessColor, DIM_COLOR, DIM_LEVEL, DIM_PERSON, DIM_TINT, FALLBACK_ALPHA, GLOW_ALPHA, LightingLayer, NIGHT_ALPHA, NIGHT_COLOR, NIGHT_SIZE_STEP, PERSON_RADIUS_TILES, tintOf, VIEW_MARGIN, viewRect } from './lighting';
 import { DEPTH } from './map-layers';
 
 // Les modes de mélange de Phaser (BlendModes) : l'ajout (les halos), la multiplication (les teintes) et l'effacement (les trous dans l'obscurité).
@@ -46,6 +46,8 @@ class FakeObject {
   setSize(width: number, height: number) { this.width = width; this.height = height; return this; }
   setBlendMode(mode: number) { this.blendMode = mode; return this; }
   setTint(tint: number) { this.tint = tint; return this; }
+  // La couleur d'un rectangle (le voile du repli).
+  setFillStyle(color: number) { this.extra.color = color; return this; }
   // Ce que dessine une RenderTexture.
   resize(width: number, height: number) { this.width = width; this.height = height; this.calls.push(['resize', width, height]); return this; }
   clear() { this.calls.push(['clear']); return this; }
@@ -147,7 +149,7 @@ describe('viewRect', () => {
 describe('LightingLayer', () => {
   test('lumière allumée : la couche est invisible et ne dessine rien', () => {
     const { layer, darkness, veil, glows, camera } = setup();
-    layer.setOn(true, { instant: true });
+    layer.setLevel('on', { instant: true });
     layer.setStatic([IN_VIEW]);
     layer.track('moi', () => ({ x: 1700, y: 950 }));
     layer.update();
@@ -160,17 +162,17 @@ describe('LightingLayer', () => {
     expect(glows().every((glow) => !glow.visible)).toBe(true);
   });
 
-  test('setOn(false, { instant: true }) : la nuit tout de suite, sans fondu (on arrive dans le noir)', () => {
+  test('setLevel(\'off\', { instant: true }) : la nuit tout de suite, sans fondu (on arrive dans le noir)', () => {
     const { layer } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     expect(layer.level).toBe(1);
   });
 
   test('on éteint : un fondu de 450 ms, qui ralentit à la fin', () => {
     const { layer, clock } = setup();
-    layer.setOn(true, { instant: true });
+    layer.setLevel('on', { instant: true });
     clock.now = 1000;
-    layer.setOn(false);
+    layer.setLevel('off');
     const at = (ms: number) => {
       clock.now = 1000 + ms;
       layer.update();
@@ -186,9 +188,9 @@ describe('LightingLayer', () => {
 
   test('on allume : un clignotement de néon, 1 → 0,25 → 0,9 → 0,15 → 0 en 320 ms', () => {
     const { layer, clock } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     clock.now = 5000;
-    layer.setOn(true);
+    layer.setLevel('on');
     const seen: number[] = [];
     for (let ms = 0; ms <= 400; ms += 5) {
       clock.now = 5000 + ms;
@@ -201,15 +203,127 @@ describe('LightingLayer', () => {
 
   test('en mouvement réduit, les bascules sont instantanées', () => {
     const { layer } = setup({ reducedMotion: true });
-    layer.setOn(false);
+    layer.setLevel('off');
     expect(layer.level).toBe(1);
-    layer.setOn(true);
+    layer.setLevel('on');
     expect(layer.level).toBe(0);
+  });
+
+  test('la couleur de l\'obscurité va du bleu nuit (0) au presque-noir de la lumière tamisée (1)', () => {
+    expect(darknessColor(0)).toBe(NIGHT_COLOR);
+    expect(darknessColor(1)).toBe(DIM_COLOR);
+    const middle = darknessColor(0.5);
+    for (const shift of [16, 8, 0]) {
+      const channel = (color: number) => (color >> shift) & 255;
+      expect(channel(middle)).toBeGreaterThanOrEqual(Math.min(channel(NIGHT_COLOR), channel(DIM_COLOR)));
+      expect(channel(middle)).toBeLessThanOrEqual(Math.max(channel(NIGHT_COLOR), channel(DIM_COLOR)));
+    }
+  });
+
+  test('tamisée assombrit sans teinter, comme une exposition plus courte : un blanc devient un gris à peine chaud, à un peu plus de la moitié de sa clarté', () => {
+    // Ce que montre l'écran sous l'obscurité de la lumière tamisée (sa couleur posée par-dessus, à son opacité), canal par canal.
+    const alpha = NIGHT_ALPHA * DIM_LEVEL;
+    const under = (day: number) => [16, 8, 0].map((shift) => day * (1 - alpha) + ((DIM_COLOR >> shift) & 255) * alpha);
+    const [red, green, blue] = under(255);
+    for (const channel of [red!, green!, blue!]) {
+      expect(channel / 255).toBeGreaterThan(0.45);
+      expect(channel / 255).toBeLessThan(0.62);
+    }
+    // À peine chaud : le rouge devant le bleu, de moins de 6 % (l'ambre d'abord essayé le teintait de 30 %, un filtre jaune).
+    expect(red).toBeGreaterThan(blue!);
+    expect(red! / blue!).toBeLessThan(1.06);
+    // Et le noir reste noir : pas de voile sur les ombres.
+    expect(Math.max(...under(0))).toBeLessThan(12);
+  });
+
+  test('tamisée : l\'obscurité plus légère et presque noire, trouée par les lampes de toute leur force, leur teinte plus discrète, et un reflet du halo des personnes', () => {
+    const { layer, darkness, glows } = setup();
+    layer.setStatic([IN_VIEW]);
+    layer.track('moi', () => ({ x: 1650, y: 900 }));
+    layer.setLevel('dim', { instant: true });
+    layer.update();
+    expect(layer.level).toBe(DIM_LEVEL);
+    expect(layer.toneLevel).toBe(1);
+    const rt = darkness()!;
+    expect(rt.visible).toBe(true);
+    expect(rt.calls.find(([name]) => name === 'fill')).toEqual(['fill', DIM_COLOR, NIGHT_ALPHA * DIM_LEVEL]);
+    const holes = stamps(rt.calls);
+    expect(holes.map(([, key]) => key)).toEqual([LIGHT_TEXTURES.banded, LIGHT_TEXTURES.soft]);
+    expect(holes.map(([, , , , config]) => config.alpha)).toEqual([IN_VIEW.strength, DIM_PERSON]);
+    const glow = glows().find((image) => image.blendMode === ADD)!;
+    expect(glow.visible).toBe(true);
+    expect(glow.alpha).toBeCloseTo(GLOW_ALPHA * IN_VIEW.strength * DIM_LEVEL);
+    // Les teintes multipliées : celle de la lampe, puis celle de la personne.
+    const [lampTint, personTint] = glows().filter((image) => image.blendMode === MULTIPLY);
+    expect(lampTint!.alpha).toBeCloseTo(DIM_LEVEL * IN_VIEW.strength * DIM_TINT);
+    expect(personTint!.alpha).toBeCloseTo(DIM_LEVEL * DIM_PERSON);
+  });
+
+  test('du jour à la lumière tamisée : un fondu de 450 ms jusqu\'à DIM_LEVEL, presque noir dès le départ', () => {
+    const { layer, darkness, clock } = setup();
+    layer.setLevel('on', { instant: true });
+    clock.now = 1000;
+    layer.setLevel('dim');
+    const at = (ms: number) => {
+      clock.now = 1000 + ms;
+      layer.update();
+      return layer.level;
+    };
+    expect(at(0)).toBe(0);
+    expect(at(225)).toBeGreaterThan(DIM_LEVEL / 2);
+    expect(at(225)).toBeLessThan(DIM_LEVEL);
+    expect(darkness()!.calls.filter(([name]) => name === 'fill').at(-1)![1]).toBe(DIM_COLOR);
+    expect(at(450)).toBe(DIM_LEVEL);
+    expect(at(2000)).toBe(DIM_LEVEL);
+    expect(layer.toneLevel).toBe(1);
+  });
+
+  test('de la lumière tamisée à la nuit, et retour : le niveau, la couleur et le halo des personnes glissent ensemble', () => {
+    const { layer, darkness, clock } = setup();
+    layer.track('moi', () => ({ x: 1650, y: 900 }));
+    // Le trou de la personne, au dernier dessin (elle est trouée la dernière).
+    const personHole = () => stamps(darkness()!.calls).at(-1)![4].alpha;
+    layer.setLevel('dim', { instant: true });
+    clock.now = 1000;
+    layer.setLevel('off');
+    clock.now = 1225;
+    layer.update();
+    expect(layer.level).toBeGreaterThan(DIM_LEVEL);
+    expect(layer.level).toBeLessThan(1);
+    expect(layer.toneLevel).toBeGreaterThan(0);
+    expect(layer.toneLevel).toBeLessThan(1);
+    expect(personHole()).toBeGreaterThan(DIM_PERSON);
+    expect(personHole()).toBeLessThan(1);
+    clock.now = 1450;
+    layer.update();
+    expect([layer.level, layer.toneLevel]).toEqual([1, 0]);
+    expect(personHole()).toBe(1);
+
+    clock.now = 3000;
+    layer.setLevel('dim');
+    clock.now = 3450;
+    layer.update();
+    expect([layer.level, layer.toneLevel]).toEqual([DIM_LEVEL, 1]);
+    expect(personHole()).toBe(DIM_PERSON);
+  });
+
+  test('de la lumière tamisée au jour : le néon clignote depuis DIM_LEVEL', () => {
+    const { layer, clock } = setup();
+    layer.setLevel('dim', { instant: true });
+    clock.now = 5000;
+    layer.setLevel('on');
+    const seen: number[] = [];
+    for (let ms = 0; ms <= 400; ms += 5) {
+      clock.now = 5000 + ms;
+      layer.update();
+      if (seen.at(-1) !== layer.level) seen.push(layer.level);
+    }
+    expect(seen).toEqual([1, 0.25, 0.9, 0.15, 0].map((step) => DIM_LEVEL * step));
   });
 
   test('la nuit : l\'obscurité couvre la vue, trouée en paliers par les lumières de la vue et en douceur autour des personnes', () => {
     const { layer, darkness, camera } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.setStatic([IN_VIEW, FAR]);
     layer.track('moi', () => ({ x: 1650.4, y: 900.6 }));
     layer.update();
@@ -236,12 +350,14 @@ describe('LightingLayer', () => {
     const [, , personX, personY, personConfig] = holes[1]!;
     expect([personX, personY]).toEqual([Math.round(1650.4 - rect.x), Math.round(900.6 - rect.y)]);
     expect(personConfig.scale! * LIGHT_TEXTURE_SIZE).toBeCloseTo(2 * PERSON_RADIUS_TILES * TILE_SIZE);
+    // La nuit, le halo d'une personne est plein.
+    expect(personConfig.alpha).toBe(1);
   });
 
   test('pendant le fondu, l\'obscurité est plus légère', () => {
     const { layer, darkness, clock } = setup();
-    layer.setOn(true, { instant: true });
-    layer.setOn(false);
+    layer.setLevel('on', { instant: true });
+    layer.setLevel('off');
     clock.now = 225;
     layer.update();
     const fill = darkness()!.calls.find(([name]) => name === 'fill')!;
@@ -250,7 +366,7 @@ describe('LightingLayer', () => {
 
   test('la couche suit la caméra : si la vue a bougé au moment de dessiner l\'image, l\'obscurité se redessine à la nouvelle place', () => {
     const { layer, darkness, camera } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.update();
     const renders = () => darkness()!.calls.filter(([name]) => name === 'render').length;
     expect(renders()).toBe(1);
@@ -266,7 +382,7 @@ describe('LightingLayer', () => {
 
   test('le zoom change : la couche se redimensionne pour couvrir la nouvelle vue, sans dépasser la finesse de l\'écran', () => {
     const { layer, darkness, camera } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.update();
     camera.setZoom(0.5);
     layer.update();
@@ -281,7 +397,7 @@ describe('LightingLayer', () => {
 
   test('la texture change de taille par paliers de NIGHT_SIZE_STEP : un glissement du zoom ne la refait pas à chaque image, et elle couvre toujours la vue', () => {
     const { layer, darkness, camera } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     camera.setZoom(1.5);
     layer.update();
     const rt = darkness()!;
@@ -303,7 +419,7 @@ describe('LightingLayer', () => {
   test('les lampes gagnent un halo chaud en ADD, juste au-dessus de l\'obscurité ; il suit le niveau', () => {
     const { layer, glows, clock } = setup();
     layer.setStatic([IN_VIEW]);
-    layer.setOn(true, { instant: true });
+    layer.setLevel('on', { instant: true });
     layer.update();
     const [glow, ...others] = glows().filter((image) => image.blendMode === ADD);
     expect(others).toEqual([]);
@@ -312,7 +428,7 @@ describe('LightingLayer', () => {
     expect(glow!.tint).toBe(0xffc56b);
     expect(glow!.depth).toBeGreaterThan(DEPTH.night);
     expect(glow!.depth).toBeLessThan(1_000_000.6);
-    layer.setOn(false);
+    layer.setLevel('off');
     clock.now = 225;
     layer.update();
     expect(glow!.visible).toBe(true);
@@ -322,7 +438,7 @@ describe('LightingLayer', () => {
   test('ce qu\'éclaire une lampe prend sa couleur : une teinte chaude multipliée, sur toute sa portée, par les mêmes paliers que sa lumière', () => {
     const { layer, glows } = setup();
     layer.setStatic([IN_VIEW, { ...IN_VIEW, kind: 'screen', color: 0x8cbeff, strength: 0.22 }]);
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.update();
     const tints = glows().filter((image) => image.blendMode === MULTIPLY);
     expect(tints.map((tint) => tint.extra.texture)).toEqual([LIGHT_TEXTURES.banded, LIGHT_TEXTURES.banded]);
@@ -340,7 +456,7 @@ describe('LightingLayer', () => {
   test('le trou est tamponné avec la force de la lumière : une lumière faible laisse de l\'obscurité même à son centre', () => {
     const { layer, darkness } = setup();
     const screen: LightSource = { ...lamp(1600, 900), kind: 'screen', strength: 0.22 };
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.setStatic([IN_VIEW, screen]);
     layer.track('moi', () => ({ x: 1800, y: 1000 }));
     layer.update();
@@ -355,9 +471,9 @@ describe('LightingLayer', () => {
   test('la teinte et le halo suivent la force : une source à 0,22 les a à 0,22 du niveau de nuit', () => {
     const { layer, glows, clock } = setup();
     layer.setStatic([{ ...IN_VIEW, kind: 'screen', color: 0x8cbeff, strength: 0.22 }]);
-    layer.setOn(true, { instant: true });
+    layer.setLevel('on', { instant: true });
     // Au milieu du fondu : le niveau n'est ni 0 ni 1.
-    layer.setOn(false);
+    layer.setLevel('off');
     clock.now = 225;
     layer.update();
     expect(layer.level).toBeGreaterThan(0.3);
@@ -367,7 +483,7 @@ describe('LightingLayer', () => {
     expect(tint.alpha).toBeCloseTo(0.22 * layer.level);
     expect(glow.alpha).toBeCloseTo(GLOW_ALPHA * 0.22 * layer.level);
     // En pleine nuit : à 0,22 de la teinte et du halo d'une lumière pleine.
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.update();
     expect(tint.alpha).toBeCloseTo(0.22);
     expect(glow.alpha).toBeCloseTo(GLOW_ALPHA * 0.22);
@@ -399,7 +515,7 @@ describe('LightingLayer', () => {
     expect(tint!.tint & 0xff).toBeGreaterThan(0xb0);
     layer.update();
     expect(tint!.visible).toBe(false);
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.update();
     expect([tint!.visible, tint!.x, tint!.y, tint!.alpha]).toEqual([true, 1700, 950, 1]);
     at = null;
@@ -411,7 +527,7 @@ describe('LightingLayer', () => {
 
   test('une personne qui s\'en va (ou qu\'on cache) n\'a plus de halo', () => {
     const { layer, darkness } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     let hidden = false;
     layer.track('a', () => (hidden ? null : { x: 1700, y: 950 }));
     layer.track('b', () => ({ x: 1750, y: 970 }));
@@ -426,7 +542,7 @@ describe('LightingLayer', () => {
   // Les portées avec lesquelles la lumière a troué l'obscurité, en une demi-seconde d'images à 60 par seconde.
   const radiiOf = (source: LightSource, reducedMotion: boolean) => {
     const { layer, darkness, clock } = setup({ reducedMotion });
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.setStatic([source]);
     const seen = new Set<number>();
     for (let ms = 0; ms < 500; ms += 16) {
@@ -461,7 +577,7 @@ describe('LightingLayer', () => {
     const { layer, darkness, veil, glows, camera } = setup({ renderer: { type: 1 } });
     layer.setStatic([IN_VIEW]);
     layer.track('moi', () => ({ x: 1700, y: 950 }));
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     layer.update();
     expect(darkness()?.calls ?? []).toEqual([]);
     expect(darkness()?.visible ?? false).toBe(false);
@@ -472,14 +588,18 @@ describe('LightingLayer', () => {
     expect([veil().x, veil().y, veil().width, veil().height]).toEqual([rect.x, rect.y, rect.width, rect.height]);
     expect(veil().depth).toBe(DEPTH.night);
     expect(glows().every((glow) => !glow.visible)).toBe(true);
-    layer.setOn(true, { instant: true });
+    layer.setLevel('dim', { instant: true });
+    layer.update();
+    expect(veil().extra.color).toBe(DIM_COLOR);
+    expect(veil().alpha).toBeCloseTo(FALLBACK_ALPHA * DIM_LEVEL);
+    layer.setLevel('on', { instant: true });
     layer.update();
     expect(veil().visible).toBe(false);
   });
 
   test('contexte WebGL perdu : le voile uni ; au retour du contexte, l\'obscurité trouée revient', () => {
     const { layer, darkness, veil, renderer } = setup();
-    layer.setOn(false, { instant: true });
+    layer.setLevel('off', { instant: true });
     renderer.contextLost = true;
     layer.update();
     expect(veil().visible).toBe(true);

@@ -9,6 +9,7 @@ export * from './map/parse-map';
 export * from './map/places';
 export * from './map/queries';
 export * from './map/find-path';
+export * from './map/spot-near';
 export * from './map/build-tiled';
 export * from './map/dev-office';
 export * from './map/office';

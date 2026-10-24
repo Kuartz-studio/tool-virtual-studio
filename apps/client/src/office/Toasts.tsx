@@ -4,10 +4,11 @@ import { EventBus } from '../game/EventBus';
 import { useGameToasts } from '../games/InviteToast';
 import { fr, t } from '../i18n/fr';
 import { sendDeskCommand } from '../net/desk-commands';
+import { deskErrorText } from './desks';
 import { listenOnBus } from '../net/office-connection';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
-import { DoorIcon, LightbulbIcon, LockIcon, LockOpenIcon } from './icons';
+import { DoorIcon, DoorOpenIcon, FollowIcon, LightbulbIcon, LockIcon, LockOpenIcon } from './icons';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 
 // Combien de temps un message passager reste affiché (celui d'une porte, d'un toc toc envoyé).
@@ -116,24 +117,96 @@ function useDeskToasts(socket: OfficeSocket | null): void {
   }, [notice]);
 }
 
+// Le préfixe de la clé d'un toast d'invitation dans un bureau : `desk-invite:<identifiant>`.
+export const DESK_INVITE_TOAST = 'desk-invite:';
+
+// Les invitations dans un bureau (celles que dit le magasin), les réponses aux siennes, et la fin d'un « Suivre », par la file de toasts :
+// - une invitation reçue : « Léa t'invite dans son bureau », le temps qu'il lui reste à vivre (60 s au départ), avec « Accepter » et « Refuser ». Accepter répond au
+//   serveur, qui pose dans la pièce, porte fermée comprise. Le toast disparaît à la réponse, à l'expiration, ou quand le serveur retire l'invitation ;
+// - la réponse à ses propres invitations (l'invitée arrive, ou refuse) : un toast de quelques secondes ;
+// - l'avatar ne suit plus personne sans qu'on l'ait demandé (la personne est partie, a changé de lieu, une porte s'est fermée) : un toast de quelques secondes.
+function usePersonToasts(socket: OfficeSocket | null): void {
+  const invites = useOfficeStore((state) => state.deskInvites);
+
+  useEffect(() => {
+    const { push, dismiss, items } = useToasts.getState();
+    const waiting = new Set(invites.map((invite) => `${DESK_INVITE_TOAST}${invite.id}`));
+    for (const item of items) if (item.id.startsWith(DESK_INVITE_TOAST) && !item.id.startsWith(`${DESK_INVITE_TOAST}notice:`) && !waiting.has(item.id)) dismiss(item.id);
+    for (const invite of invites) {
+      const key = `${DESK_INVITE_TOAST}${invite.id}`;
+      if (items.some((item) => item.id === key)) continue;
+      const answer = (accept: boolean) => {
+        useOfficeStore.getState().removeDeskInvite(invite.id);
+        void sendDeskCommand(socket, { type: 'answer', invite: invite.id, accept }).then((ack) => {
+          if (!ack.ok) useToasts.getState().push({ key: `${DESK_INVITE_TOAST}notice:refused`, icon: <DoorOpenIcon />, text: deskErrorText(ack) });
+        });
+      };
+      push({
+        key,
+        icon: <DoorOpenIcon />,
+        avatarKey: invite.from.avatarKey,
+        name: invite.from.name,
+        text: t(fr.person.invited, { name: invite.from.name }),
+        ttl: Math.max(0, invite.until - performance.now()),
+        actions: [
+          { label: fr.person.accept, ariaLabel: t(fr.person.acceptLabel, { name: invite.from.name }), onClick: () => answer(true) },
+          { label: fr.person.decline, ariaLabel: t(fr.person.declineLabel, { name: invite.from.name }), onClick: () => answer(false) },
+        ],
+      });
+    }
+  }, [invites, socket]);
+
+  // Une invitation dont le temps est écoulé (son toast s'est éteint de lui-même) : le magasin ne la garde pas non plus.
+  useEffect(() => {
+    const timers = invites.map((invite) => setTimeout(() => useOfficeStore.getState().removeDeskInvite(invite.id), Math.max(0, invite.until - performance.now())));
+    return () => timers.forEach(clearTimeout);
+  }, [invites]);
+
+  useEffect(() => {
+    const offNotice = listenOnBus(EventBus, 'desk:notice', ({ kind, user }) => {
+      useToasts.getState().push({
+        key: `${DESK_INVITE_TOAST}notice:${user.id}`,
+        icon: <DoorOpenIcon />,
+        avatarKey: useOfficeStore.getState().players[user.id]?.avatarKey ?? null,
+        name: user.name,
+        text: t(kind === 'accepted' ? fr.person.accepted : fr.person.declined, { name: user.name }),
+      });
+    });
+    const offLost = listenOnBus(EventBus, 'follow:lost', ({ name, reason }) => {
+      useToasts.getState().push({ key: 'follow-lost', icon: <FollowIcon />, text: t(fr.person.lost[reason], { name }) });
+    });
+    return () => {
+      offNotice();
+      offLost();
+    };
+  }, []);
+}
+
+// Ce que dit le toast de la lumière, selon l'état où elle passe : pour qui a appuyé, puis pour les autres.
+const LIGHT_TEXTS = {
+  on: { mine: fr.lights.selfOn, theirs: fr.lights.on },
+  dim: { mine: fr.lights.selfDim, theirs: fr.lights.dim },
+  off: { mine: fr.lights.selfOff, theirs: fr.lights.off },
+} as const;
+
 // La lumière du bureau qui change (`lights:changed` sur le bus : le magasin la dit déjà à jour) : un toast avec le portrait de qui a appuyé sur
-// l'interrupteur et l'ampoule, allumée ou barrée. « Fictif 2 a éteint la lumière » pour les autres, « Tu as éteint la lumière » pour celui qui
+// l'interrupteur et l'ampoule, allumée, tamisée ou barrée. « Fictif 2 a éteint la lumière » pour les autres, « Tu as éteint la lumière » pour celui qui
 // a appuyé. Un seul toast pour la lumière : un interrupteur actionné coup sur coup remplace le message au lieu de les empiler. Rien à
 // l'arrivée : l'état d'un `init` n'est pas un changement (la connexion n'émet pas `lights:changed` pour lui).
 function useLightsToasts(): void {
   useEffect(
     () =>
-      listenOnBus(EventBus, 'lights:changed', ({ on, by }) => {
+      listenOnBus(EventBus, 'lights:changed', ({ level, by }) => {
         // Le serveur dit toujours qui a appuyé ; sans auteur, il n'y aurait personne à nommer.
         if (!by) return;
         const { selfId, self, players } = useOfficeStore.getState();
         const mine = by.id === selfId;
         useToasts.getState().push({
           key: 'lights',
-          icon: <LightbulbIcon off={!on} />,
+          icon: <LightbulbIcon level={level} />,
           avatarKey: (mine ? self : players[by.id])?.avatarKey ?? null,
           name: by.name,
-          text: mine ? (on ? fr.lights.selfOn : fr.lights.selfOff) : t(on ? fr.lights.on : fr.lights.off, { name: by.name }),
+          text: mine ? LIGHT_TEXTS[level].mine : t(LIGHT_TEXTS[level].theirs, { name: by.name }),
         });
       }),
     [],
@@ -208,6 +281,7 @@ export function Toasts({ socket }: { socket: OfficeSocket | null }) {
   useLightsToasts();
   useConversationToasts();
   useGameToasts(socket);
+  usePersonToasts(socket);
   // Quitter le bureau (la déconnexion, une autre page) vide la file : rien ne reparaît à la prochaine arrivée.
   useEffect(() => () => useToasts.getState().clear(), []);
   if (items.length === 0) return null;

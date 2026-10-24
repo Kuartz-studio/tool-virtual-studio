@@ -256,29 +256,29 @@ describe('connectOffice', () => {
   });
 
   describe('la lumière', () => {
-    const OFF = { on: false, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
+    const OFF = { level: 'off' as const, by: { id: 'a', name: 'A' }, at: 1_700_000_000_000 };
 
     test('init : l\'état de la lumière va au magasin ; sans lumière dans l\'init, elle est allumée', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.receive('init', { ...init(), lights: OFF });
       expect(store.getState().lights).toEqual(OFF);
       socket.receive('init', init());
-      expect(store.getState().lights).toEqual({ on: true, by: null, at: 0 });
+      expect(store.getState().lights).toEqual({ level: 'on' as const, by: null, at: 0 });
     });
 
     test('lights:changed : au magasin, puis au jeu et au son (lights:changed sur le bus), qui y lisent déjà le nouvel état', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.receive('init', init());
-      let seenByGame: boolean | null = null;
+      let seenByGame: string | null = null;
       bus.on('lights:changed', () => {
-        seenByGame = store.getState().lights.on;
+        seenByGame = store.getState().lights.level;
       });
       socket.receive('lights:changed', OFF);
       expect(store.getState().lights).toEqual(OFF);
       expect(bus.emittedOf('lights:changed')).toEqual([OFF]);
-      expect(seenByGame).toBe(false);
+      expect(seenByGame).toBe('off');
       // Rallumée : de même.
-      const lit = { on: true, by: { id: 'moi', name: 'MOI' }, at: OFF.at + 5000 };
+      const lit = { level: 'on' as const, by: { id: 'moi', name: 'MOI' }, at: OFF.at + 5000 };
       socket.receive('lights:changed', lit);
       expect(store.getState().lights).toEqual(lit);
       expect(bus.emittedOf('lights:changed')).toEqual([OFF, lit]);
@@ -287,32 +287,32 @@ describe('connectOffice', () => {
     test('local:lights part au serveur (lights:set) une fois l\'init reçu ; avant, et pendant une coupure, rien', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.connect();
-      bus.emit('local:lights', { on: false });
+      bus.emit('local:lights', { level: 'off' });
       socket.serverAccepts();
-      bus.emit('local:lights', { on: false });
+      bus.emit('local:lights', { level: 'off' });
       expect(socket.sentOf('lights:set')).toEqual([]);
 
       socket.receive('init', init());
-      bus.emit('local:lights', { on: false });
-      expect(socket.sentOf('lights:set')).toEqual([{ on: false }]);
-      bus.emit('local:lights', { on: true });
-      expect(socket.sentOf('lights:set')).toEqual([{ on: false }, { on: true }]);
+      bus.emit('local:lights', { level: 'off' });
+      expect(socket.sentOf('lights:set')).toEqual([{ level: 'off' }]);
+      bus.emit('local:lights', { level: 'on' });
+      expect(socket.sentOf('lights:set')).toEqual([{ level: 'off' }, { level: 'on' }]);
 
       // Pendant une coupure, Socket.io garderait le message pour le rendre au retour, périmé.
       socket.connectionDrops();
-      bus.emit('local:lights', { on: false });
+      bus.emit('local:lights', { level: 'off' });
       socket.serverAccepts();
-      bus.emit('local:lights', { on: false });
-      expect(socket.sentOf('lights:set')).toEqual([{ on: false }, { on: true }]);
+      bus.emit('local:lights', { level: 'off' });
+      expect(socket.sentOf('lights:set')).toEqual([{ level: 'off' }, { level: 'on' }]);
     });
 
     test('local:lights n\'est qu\'une demande : le magasin ne change qu\'à la réponse du serveur (lights:changed)', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.receive('init', init());
-      bus.emit('local:lights', { on: false });
-      expect(store.getState().lights.on).toBe(true);
+      bus.emit('local:lights', { level: 'off' });
+      expect(store.getState().lights.level).toBe('on');
       socket.receive('lights:changed', OFF);
-      expect(store.getState().lights.on).toBe(false);
+      expect(store.getState().lights.level).toBe('off');
     });
   });
 
@@ -426,6 +426,25 @@ describe('connectOffice', () => {
       expect(store.getState().coffee).toEqual({});
       socket.receive('coffee:changed', { id: 'moi', ms: 30_000 });
       expect(store.getState().coffee).toEqual({ moi: 40_000 });
+    });
+  });
+
+  describe('les invitations dans un bureau', () => {
+    const invite = { id: 'd1', key: 'A1', from: { id: 'a', name: 'A', avatarKey: null }, ttlMs: 60_000 };
+
+    test('init, desk:invite : au magasin ; desk:invite:gone la retire ; desk:notice va au bus', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.receive('init', { ...init(), deskInvites: [invite] });
+      expect(store.getState().deskInvites).toEqual([{ ...invite, until: expect.any(Number) }]);
+      socket.receive('desk:invite:gone', { id: 'd1' });
+      expect(store.getState().deskInvites).toEqual([]);
+      socket.receive('desk:invite', invite);
+      expect(store.getState().deskInvites).toEqual([{ ...invite, until: expect.any(Number) }]);
+      socket.receive('init', init());
+      expect(store.getState().deskInvites).toEqual([]);
+      const notice = { kind: 'declined' as const, user: { id: 'b', name: 'B' } };
+      socket.receive('desk:notice', notice);
+      expect(bus.emittedOf('desk:notice')).toEqual([notice]);
     });
   });
 
