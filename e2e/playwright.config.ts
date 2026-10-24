@@ -13,8 +13,9 @@ const OFFICE_PORT = Number(process.env.E2E_OFFICE_PORT ?? 3101);
 const OFFICE_URL = `http://localhost:${OFFICE_PORT}`;
 
 // Les tests qui veulent la vraie carte : la personnalisation (six bureaux libres), la musique par endroit (les zones de la grande carte), la
-// lumière (l'interrupteur de la rue nord), les portes vitrées des bureaux, le café (la machine du bar) et la musique de chaque pièce.
-const OFFICE_SPECS = /(personnalisation|musique-lieux|musique-pieces|lumiere|portes|cafe|modes|octogone|camera)\.spec\.ts/;
+// lumière (l'interrupteur de la rue nord), les portes vitrées des bureaux, le café (la machine du bar), la musique de chaque pièce et l'accueil
+// (ses administratrices).
+const OFFICE_SPECS = /(personnalisation|musique-lieux|musique-pieces|lumiere|portes|cafe|modes|octogone|camera|accueil)\.spec\.ts/;
 
 // Les jeux de la salle de jeu, eux aussi sur la vraie carte (ses tables). Le spec de la plateforme (invitations, sièges, « prêt ») passe d'abord ; ceux des quatre jeux (une table
 // chacun : une partie jouée à deux navigateurs) viennent ensuite, et ne touchent qu'à leur table.

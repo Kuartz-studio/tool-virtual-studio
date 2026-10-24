@@ -6,7 +6,9 @@ import { fr, t } from '../i18n/fr';
 const integer = new Intl.NumberFormat('fr-FR');
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 
-export const formatNumber = (n: number): string => integer.format(n);
+// L'espace des milliers : Intl met une espace fine insécable, que la police de l'interface (Instrument Sans) dessine presque sans largeur (« 4275 écus »).
+// Une espace insécable ordinaire se voit, et ne coupe pas plus le nombre.
+export const formatNumber = (n: number): string => integer.format(n).replace(/\u202f/g, '\u00a0');
 
 export const xpText = (xp: number): string => t(fr.progress.xp, { xp: formatNumber(xp) });
 

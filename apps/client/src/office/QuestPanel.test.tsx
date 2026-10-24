@@ -43,7 +43,7 @@ describe('le panneau Missions', () => {
     const card = document.querySelector('.quest-card') as HTMLElement;
     expect(card.textContent).toContain('Niveau 12 · Stagiaire');
     expect(card.textContent).toContain('Encore 660 XP avant le niveau 13');
-    expect(card.textContent?.replace(/ /g, ' ')).toContain('1 450 écus');
+    expect(card.textContent?.replace(/[\u202f\u00a0]/g, ' ')).toContain('1 450 écus');
     expect(card.textContent).toContain('3 jours');
   });
 
