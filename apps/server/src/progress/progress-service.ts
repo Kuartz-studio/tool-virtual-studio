@@ -31,6 +31,7 @@ import { alias } from 'drizzle-orm/pg-core';
 import type { Db } from '../db/client';
 import { gameRating, progress, shopPurchase, task, user, xpEvent } from '../db/schema';
 import { oneAtATimePerKey } from '../one-at-a-time';
+import { isUuid } from '../uuid';
 
 // Les tâches fermées (faites, rendues, retirées) restent dans les listes une semaine : de quoi voir ce qu'on vient de faire, sans traîner tout l'historique.
 const CLOSED_KEPT_MS = 7 * 24 * 3600_000;
@@ -118,12 +119,19 @@ export class ProgressService {
 
   // Sa progression : XP, kuartzons, série de pointage (celle qui court encore : une série qu'un jour ouvré manqué a cassée vaut 0) et ce qu'elle possède.
   async mine(userId: string): Promise<MyProgress> {
-    const [[row], owned, today] = await Promise.all([
+    const today = await this.today(userId);
+    const [[row], owned, todoEarned] = await Promise.all([
       this.db.select().from(progress).where(eq(progress.userId, userId)),
       this.db.select({ itemId: shopPurchase.itemId }).from(shopPurchase).where(eq(shopPurchase.userId, userId)).orderBy(shopPurchase.boughtAt),
-      this.today(userId),
+      earnedOn(this.db, userId, 'todo', today),
     ]);
-    return { xp: row?.xp ?? 0, kuartzons: row?.kuartzons ?? 0, streak: currentStreak(row, today), owned: owned.map((o) => o.itemId) };
+    return {
+      xp: row?.xp ?? 0,
+      kuartzons: row?.kuartzons ?? 0,
+      streak: currentStreak(row, today),
+      todoXpLeft: Math.max(0, TODO_DAILY_XP - todoEarned),
+      owned: owned.map((o) => o.itemId),
+    };
   }
 
   // Le niveau de chacune de ces personnes (0 pour qui n'a pas de ligne) : pour le monde, et la liste des membres.
@@ -173,19 +181,22 @@ export class ProgressService {
     return [...open, ...closed];
   }
 
-  // Une tâche à soi. `limit` : sa liste a déjà MAX_OPEN_TASKS tâches ouvertes.
-  async createTodo(userId: string, input: TodoInput): Promise<{ ok: true; task: TaskView } | { ok: false; error: 'limit' }> {
-    if ((await this.openCount(userId)) >= MAX_OPEN_TASKS) return { ok: false, error: 'limit' };
-    const now = new Date(this.clock());
-    const [row] = await this.db
-      .insert(task)
-      .values({ ownerId: userId, kind: 'todo', title: input.title, notes: notesOf(input.notes), xp: TODO_XP, seenAt: now, createdAt: now })
-      .returning({ id: task.id });
-    return { ok: true, task: (await this.view(row!.id))! };
+  // Une tâche à soi. `limit` : sa liste a déjà MAX_OPEN_TASKS tâches ouvertes (compté dans sa file : deux ajouts en même temps ne la dépassent pas).
+  createTodo(userId: string, input: TodoInput): Promise<{ ok: true; task: TaskView } | { ok: false; error: 'limit' }> {
+    return this.serial(userId, async () => {
+      if ((await this.openCount(userId)) >= MAX_OPEN_TASKS) return { ok: false, error: 'limit' } as const;
+      const now = new Date(this.clock());
+      const [row] = await this.db
+        .insert(task)
+        .values({ ownerId: userId, kind: 'todo', title: input.title, notes: notesOf(input.notes), xp: TODO_XP, seenAt: now, createdAt: now })
+        .returning({ id: task.id });
+      return { ok: true, task: (await this.view(row!.id))! } as const;
+    });
   }
 
   // Modifier une de ses tâches ouvertes (pas une mission : son intitulé est celui de qui l'a confiée). null : aucune tâche de ce genre.
   async updateTodo(userId: string, id: string, patch: TodoPatch): Promise<TaskView | null> {
+    if (!isUuid(id)) return null;
     const set: Partial<TaskRow> = {};
     if (patch.title !== undefined) set.title = patch.title;
     if (patch.notes !== undefined) set.notes = notesOf(patch.notes);
@@ -199,6 +210,7 @@ export class ProgressService {
 
   // Supprimer une de ses tâches (ouverte ou faite : l'XP qu'elle a rapportée reste au journal). Une mission ne se supprime pas : elle se rend.
   async deleteTodo(userId: string, id: string): Promise<boolean> {
+    if (!isUuid(id)) return false;
     const deleted = await this.db.delete(task).where(and(eq(task.id, id), eq(task.ownerId, userId), eq(task.kind, 'todo'))).returning({ id: task.id });
     return deleted.length > 0;
   }
@@ -206,6 +218,7 @@ export class ProgressService {
   // Cocher une de ses tâches ouvertes : elle est faite, et rapporte son XP (une mission : celle de sa difficulté ; une tâche à soi : TODO_XP, dans la limite du
   // plafond du jour). null : aucune tâche ouverte de ce nom dans sa liste.
   complete(userId: string, id: string): Promise<Completed | null> {
+    if (!isUuid(id)) return Promise.resolve(null);
     return this.serial(userId, async () => {
       const day = await this.today(userId);
       const done = await this.db.transaction(async (tx) => {
@@ -228,6 +241,7 @@ export class ProgressService {
 
   // Rendre une mission qu'on ne fera pas : elle sort de sa liste, et celle qui l'a confiée le saura. null : aucune mission ouverte de ce nom dans sa liste.
   async decline(userId: string, id: string): Promise<TaskView | null> {
+    if (!isUuid(id)) return null;
     const closed = await this.db
       .update(task)
       .set({ status: 'declined', doneAt: new Date(this.clock()) })
@@ -250,25 +264,29 @@ export class ProgressService {
     if (mission.to === giverId) return { ok: false, error: 'self' };
     const [target] = await this.db.select({ id: user.id }).from(user).where(and(eq(user.id, mission.to), isNull(user.disabledAt)));
     if (!target) return { ok: false, error: 'unknown_member' };
-    if ((await this.openCount(mission.to)) >= MAX_OPEN_TASKS) return { ok: false, error: 'limit' };
-    const [row] = await this.db
-      .insert(task)
-      .values({
-        ownerId: mission.to,
-        giverId,
-        kind: 'mission',
-        title: mission.title,
-        notes: notesOf(mission.notes),
-        tier: mission.tier,
-        xp: missionXp(mission.tier),
-        createdAt: new Date(this.clock()),
-      })
-      .returning({ id: task.id });
-    return { ok: true, task: (await this.view(row!.id))! };
+    // Compter puis ajouter dans la file de qui la reçoit : deux missions confiées en même temps ne dépassent pas sa limite.
+    return this.serial(mission.to, async () => {
+      if ((await this.openCount(mission.to)) >= MAX_OPEN_TASKS) return { ok: false, error: 'limit' } as const;
+      const [row] = await this.db
+        .insert(task)
+        .values({
+          ownerId: mission.to,
+          giverId,
+          kind: 'mission',
+          title: mission.title,
+          notes: notesOf(mission.notes),
+          tier: mission.tier,
+          xp: missionXp(mission.tier),
+          createdAt: new Date(this.clock()),
+        })
+        .returning({ id: task.id });
+      return { ok: true, task: (await this.view(row!.id))! } as const;
+    });
   }
 
   // Retirer une mission qu'on a confiée et qui n'est pas encore faite. null : aucune mission ouverte de ce nom confiée par elle.
   async cancel(giverId: string, id: string): Promise<TaskView | null> {
+    if (!isUuid(id)) return null;
     const closed = await this.db
       .update(task)
       .set({ status: 'cancelled', doneAt: new Date(this.clock()) })
@@ -277,13 +295,16 @@ export class ProgressService {
     return closed.length === 0 ? null : this.view(id);
   }
 
-  // Le pointage : la première arrivée du jour (dans son fuseau) rapporte checkInXp de sa série de jours ouvrés. null : déjà pointé aujourd'hui.
+  // Le pointage : la première arrivée du jour (dans son fuseau) rapporte checkInXp de sa série de jours ouvrés. null : déjà pointé ce jour-là (ou un jour plus
+  // tard, sous un autre fuseau).
   checkIn(userId: string): Promise<MyProgress | null> {
     return this.serial(userId, async () => {
       const day = await this.today(userId);
       const gain = await this.db.transaction(async (tx) => {
         const row = await lockProgress(tx, userId);
-        if (row.checkInDay === day) return null;
+        // Le jour doit avancer, et non seulement changer : changer de fuseau horaire ne refait pas pointer (vers l'ouest, on attend le lendemain ; vers
+        // l'est, on pointe un peu plus tôt, une seule fois). Les dates « AAAA-MM-JJ » se comparent comme du texte.
+        if (row.checkInDay !== null && day <= row.checkInDay) return null;
         const streak = nextStreak(row.checkInDay, row.streak, day);
         await tx.update(progress).set({ checkInDay: day, streak }).where(eq(progress.userId, userId));
         return this.award(tx, userId, { amount: checkInXp(streak), source: 'checkin', label: streak > 1 ? `Pointage, ${streak} jours de suite` : 'Pointage du jour', day });

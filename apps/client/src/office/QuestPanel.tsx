@@ -2,7 +2,7 @@ import { MAX_LEVEL, TODO_DAILY_XP, TODO_XP, levelOf, levelProgress, type TaskVie
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
 import { fr, t } from '../i18n/fr';
 import { ApiError } from '../lib/api';
-import { completeTask, createTodo, declineMission, deleteTodo, markMissionsSeen, updateTodo } from '../lib/progress-api';
+import { completeTask, createTodo, declineMission, deleteTodo, fetchMyProgress, markMissionsSeen, updateTodo } from '../lib/progress-api';
 import { Alert } from '../pages/AuthLayout';
 import { selectNewMissions, useOfficeStore } from '../state/office-store';
 import { CharacterSheet } from './CharacterSheet';
@@ -14,9 +14,6 @@ import { LevelBadge, TierPips, XpBar } from './ui/ProgressBits';
 import { Segmented, type SegmentedOption } from './ui/Segmented';
 
 export type QuestTab = 'todo' | 'sheet';
-
-// Le jour (« AAAA-MM-JJ ») d'une date, dans le fuseau du navigateur : de quoi savoir si une tâche cochée l'a été aujourd'hui.
-const dayOf = (date: Date): string => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 
 // Sa progression, en tête du panneau : la pastille du niveau, le grade, la barre de l'XP et ce qu'il reste avant le niveau suivant, puis ses kuartzons et sa série.
 function ProgressCard() {
@@ -99,8 +96,9 @@ function MissionCard({ task, onFinish, onGiveBack, busy }: { task: TaskView; onF
   );
 }
 
-// Une tâche de sa liste : la case à cocher, l'intitulé (un clic le modifie : Entrée enregistre, Échap renonce), l'XP qu'elle rapportera, et la corbeille.
-function TodoRow({ task, capped, busy, onCheck, onRename, onRemove }: { task: TaskView; capped: boolean; busy: boolean; onCheck(): void; onRename(title: string): void; onRemove(): void }) {
+// Une tâche de sa liste : la case à cocher, l'intitulé (un clic le modifie : Entrée enregistre, Échap renonce), l'XP qu'elle rapportera (`xp` : 0 une fois le
+// plafond du jour atteint), et la corbeille.
+function TodoRow({ task, xp, busy, onCheck, onRename, onRemove }: { task: TaskView; xp: number; busy: boolean; onCheck(): void; onRename(title: string): void; onRemove(): void }) {
   const [editing, setEditing] = useState(false);
   const [value, setValue] = useState(task.title);
 
@@ -129,8 +127,8 @@ function TodoRow({ task, capped, busy, onCheck, onRename, onRemove }: { task: Ta
           {task.title}
         </button>
       )}
-      <span className="todo-xp" data-capped={capped || undefined}>
-        {capped ? '0 XP' : t(fr.missions.todoXp, { xp: TODO_XP })}
+      <span className="todo-xp" data-capped={xp === 0 || undefined}>
+        {xp === 0 ? '0 XP' : t(fr.missions.todoXp, { xp })}
       </span>
       <button type="button" className="todo-remove" aria-label={t(fr.missions.remove, { title: task.title })} disabled={busy} onClick={onRemove}>
         <TrashIcon />
@@ -160,7 +158,8 @@ function ClosedRow({ task }: { task: TaskView }) {
 //   onglet rend ses missions nouvelles « vues ».
 // - « Caractéristiques » : sa fiche (CharacterSheet).
 // Les gestes partent à l'API ; la réponse met la liste à jour, et le temps réel annonce les gains (le toast, le son, la montée de niveau).
-export function QuestPanel({ id, tab: initialTab = 'todo', onClose }: { id?: string; tab?: QuestTab; onClose(): void }) {
+// `tab` : l'onglet à l'ouverture, et à chaque nouvelle demande (`ask` change), même si c'est le même qu'avant.
+export function QuestPanel({ id, tab: initialTab = 'todo', ask = 0, onClose }: { id?: string; tab?: QuestTab; ask?: number; onClose(): void }) {
   const selfId = useOfficeStore((state) => state.selfId);
   const tasks = useOfficeStore((state) => state.tasks);
   const fresh = useOfficeStore(selectNewMissions);
@@ -172,7 +171,7 @@ export function QuestPanel({ id, tab: initialTab = 'todo', onClose }: { id?: str
   const uid = useId();
   const input = useRef<HTMLInputElement>(null);
 
-  useEffect(() => setTab(initialTab), [initialTab]);
+  useEffect(() => setTab(initialTab), [initialTab, ask]);
 
   // L'onglet « À faire » ouvert : ses missions nouvelles sont vues (ici tout de suite, au serveur ensuite).
   useEffect(() => {
@@ -184,19 +183,28 @@ export function QuestPanel({ id, tab: initialTab = 'todo', onClose }: { id?: str
     });
   }, [tab, fresh]);
 
-  const { missions, todos, closed, capped } = useMemo(() => {
+  const { missions, todos, closed } = useMemo(() => {
     const list = tasks ?? [];
-    const today = dayOf(new Date());
-    const earnedToday = list
-      .filter((task) => task.kind === 'todo' && task.status === 'done' && task.doneAt !== null && dayOf(new Date(task.doneAt)) === today)
-      .reduce((sum, task) => sum + task.xp, 0);
     return {
       missions: list.filter((task) => task.kind === 'mission' && task.status === 'open'),
       todos: list.filter((task) => task.kind === 'todo' && task.status === 'open'),
       closed: list.filter((task) => task.status !== 'open'),
-      capped: earnedToday >= TODO_DAILY_XP,
     };
   }, [tasks]);
+  // Ce qu'une tâche cochée rapportera : le serveur dit ce qui reste sous le plafond du jour (dans le fuseau de la personne, qu'il connaît).
+  const todoXpLeft = useOfficeStore((state) => state.progress?.todoXpLeft ?? TODO_DAILY_XP);
+  const todoXp = Math.min(TODO_XP, todoXpLeft);
+
+  // À l'ouverture, sa progression relue : le plafond du jour a pu repartir à zéro depuis la dernière (un nouveau jour, l'onglet resté ouvert).
+  useEffect(() => {
+    const seq = useOfficeStore.getState().progressSeq;
+    fetchMyProgress().then(
+      (progress) => useOfficeStore.getState().setProgressSince(progress, seq),
+      () => {
+        // Illisible : celle qu'on a reste affichée.
+      },
+    );
+  }, []);
 
   // Un geste sur une tâche : `busy` l'éteint pendant l'appel ; un échec se dit en haut de la liste.
   async function act(taskId: string, work: () => Promise<void>) {
@@ -217,10 +225,11 @@ export function QuestPanel({ id, tab: initialTab = 'todo', onClose }: { id?: str
 
   const complete = (task: TaskView) =>
     act(task.id, async () => {
+      const seq = useOfficeStore.getState().progressSeq;
       const done = await completeTask(task.id);
       const store = useOfficeStore.getState();
       store.upsertTask(done.task);
-      store.setProgress(done.progress);
+      store.setProgressSince(done.progress, seq);
     });
 
   async function add(event: FormEvent) {
@@ -281,13 +290,13 @@ export function QuestPanel({ id, tab: initialTab = 'todo', onClose }: { id?: str
             {todos.length > 0 && (
               <section className="quest-section" aria-label={fr.missions.mine}>
                 <h3>{fr.missions.mine}</h3>
-                {capped && <p className="quest-hint">{fr.missions.todoCapped}</p>}
+                {todoXp === 0 && <p className="quest-hint">{fr.missions.todoCapped}</p>}
                 <ul className="todo-list">
                   {todos.map((task) => (
                     <TodoRow
                       key={task.id}
                       task={task}
-                      capped={capped}
+                      xp={todoXp}
                       busy={busy.has(task.id)}
                       onCheck={() => void complete(task)}
                       onRename={(title) => void act(task.id, async () => useOfficeStore.getState().upsertTask(await updateTodo(task.id, { title })))}

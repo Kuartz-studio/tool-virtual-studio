@@ -676,10 +676,10 @@ describe('connectOffice', () => {
       socket.serverAccepts();
       socket.receive('init', init());
       const gain = { amount: 500, source: 'mission' as const, label: 'Refaire le logo', levelBefore: 0, levelAfter: 0, kuartzons: 0 };
-      socket.receive('progress:mine', { xp: 520, kuartzons: 0, streak: 1, owned: [], gain });
-      expect(store.getState().progress).toEqual({ xp: 520, kuartzons: 0, streak: 1, owned: [] });
+      socket.receive('progress:mine', { xp: 520, kuartzons: 0, streak: 1, todoXpLeft: 100, owned: [], gain });
+      expect(store.getState().progress).toEqual({ xp: 520, kuartzons: 0, streak: 1, todoXpLeft: 100, owned: [] });
       expect(bus.emittedOf('progress:gain')).toEqual([gain]);
-      socket.receive('progress:mine', { xp: 520, kuartzons: 0, streak: 1, owned: ['statue'] });
+      socket.receive('progress:mine', { xp: 520, kuartzons: 0, streak: 1, todoXpLeft: 100, owned: ['statue'] });
       expect(store.getState().progress?.owned).toEqual(['statue']);
       expect(bus.emittedOf('progress:gain')).toHaveLength(1);
     });
@@ -697,6 +697,8 @@ describe('connectOffice', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.serverAccepts();
       socket.receive('init', init());
+      // Sa liste a été lue (vide) : la mission s'y ajoute.
+      store.getState().setTasks([]);
       socket.receive('task:assigned', mission);
       expect(store.getState().tasks).toEqual([mission]);
       expect(bus.emittedOf('task:assigned')).toEqual([mission]);

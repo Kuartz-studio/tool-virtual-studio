@@ -24,7 +24,9 @@ export const SHOP_ITEMS: readonly DecorItem[] = DECOR_ITEMS.filter((item) => ite
 // Acheter un élément : l'appel, puis sa progression au magasin, le bruit des kuartzons et un toast. Rend vrai si c'est fait ; sinon le texte du refus.
 export async function purchase(item: DecorItem): Promise<true | string> {
   try {
-    useOfficeStore.getState().setProgress(await buyItem(item.id));
+    // La réponse ne remplace pas une progression plus récente, arrivée par le temps réel pendant l'achat.
+    const seq = useOfficeStore.getState().progressSeq;
+    useOfficeStore.getState().setProgressSince(await buyItem(item.id), seq);
     emitOnBus(EventBus, 'shop:bought', { itemId: item.id });
     useToasts.getState().push({ icon: <KuartzonIcon />, text: t(fr.shop.success, { name: item.name }) });
     return true;

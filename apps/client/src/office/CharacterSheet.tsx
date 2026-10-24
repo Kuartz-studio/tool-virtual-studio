@@ -36,8 +36,10 @@ function Stat({ icon, value, label, hint }: { icon: ReactNode; value: ReactNode;
 export function CharacterSheet({ userId }: { userId: string }) {
   const selfId = useOfficeStore((state) => state.selfId);
   const mine = userId === selfId;
-  // Ce qui fait relire la fiche : sa propre XP, ou le niveau qu'on connaît de l'autre.
-  const version = useOfficeStore((state) => (mine ? (state.progress?.xp ?? 0) : (state.players[userId]?.level ?? -1)));
+  // Ce qui fait relire la fiche : pour soi, son XP, ses kuartzons ou les missions qu'elle a confiées ; pour un autre, le niveau qu'on lui connaît.
+  const version = useOfficeStore((state) =>
+    mine ? `${state.progress?.xp ?? 0}|${state.progress?.kuartzons ?? 0}|${state.given?.length ?? 0}` : `${state.players[userId]?.level ?? -1}`,
+  );
   const [stats, setStats] = useState<CharacterStats | null>(null);
   const [failed, setFailed] = useState(false);
 

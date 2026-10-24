@@ -163,9 +163,16 @@ export interface OfficeState {
   // Sa progression (XP, kuartzons, série de pointage, ce qu'elle possède de la boutique), telle que le serveur la dit (l'`init`, puis `progress:mine`), sans le gain
   // qui l'y amène (la connexion l'annonce) ; null avant le premier `init`. Son niveau s'en déduit (levelOf) ; celui des autres est dans leur PublicPlayer.
   progress: MyProgress | null;
+  // Combien de fois sa progression a changé ici (setProgress) : la réponse d'une route ne la remplace que si rien n'est arrivé pendant l'appel
+  // (setProgressSince). Le serveur envoie `progress:mine` avant de répondre : ce qui est arrivé entre-temps est au moins aussi récent.
+  progressSeq: number;
   // Sa liste de tâches (GET /api/me/tasks, lue à chaque connexion prête, puis tenue à jour : une mission reçue, une tâche cochée, une mission retirée) : les
-  // ouvertes, puis celles fermées depuis une semaine. null avant la lecture.
+  // ouvertes, puis celles fermées depuis une semaine. null avant la lecture : un changement qui arrive avant n'invente pas une liste incomplète.
   tasks: TaskView[] | null;
+  // Les derniers changements de sa liste (upsertTask, removeTask), numérotés (taskSeq : le dernier numéro) : une liste lue pendant qu'ils arrivaient
+  // les reprend par-dessus (setTasks avec `since`), au lieu de les effacer.
+  taskLog: TaskChange[];
+  taskSeq: number;
   // Les missions qu'elle a confiées (GET /api/me/missions, lues quand on parle à une administratrice, puis tenues à jour par `task:changed`) ; null avant.
   given: TaskView[] | null;
   // L'administratrice de l'accueil à qui l'on parle (sa clé : margot, ines, lucie) : la fenêtre de dialogue est ouverte. null : aucune.
@@ -258,10 +265,13 @@ export interface OfficeState {
   recordMoves(moves: ReadonlyArray<{ id: string } & PlayerPosition>): void;
   // Sa progression, telle que le serveur la dit (`progress:mine`, une route) : le gain qui l'accompagne n'est pas gardé.
   setProgress(progress: MyProgress): void;
+  // La progression qu'une route a rendue, si elle n'a pas changé depuis `seq` (le progressSeq d'avant l'appel) ; sinon, celle qu'on a est plus récente.
+  setProgressSince(progress: MyProgress, seq: number): void;
   // Le niveau d'un autre (ou de soi), que le serveur annonce à tout le bureau (`progress:level`).
   setLevel(id: string, level: number): void;
-  setTasks(tasks: TaskView[] | null): void;
-  // Une tâche de sa liste, nouvelle (en tête) ou changée (à sa place) ; ou retirée.
+  // Sa liste. Lue d'une route : `since`, le taskSeq d'avant la lecture ; les changements arrivés pendant la lecture sont repris par-dessus.
+  setTasks(tasks: TaskView[] | null, since?: number): void;
+  // Une tâche de sa liste, nouvelle (en tête) ou changée (à sa place) ; ou retirée. Avant la lecture de la liste, le changement est seulement noté.
   upsertTask(task: TaskView): void;
   removeTask(id: string): void;
   setGiven(given: TaskView[] | null): void;
@@ -309,7 +319,10 @@ type Data = Pick<
   | 'zoomPercent'
   | 'positions'
   | 'progress'
+  | 'progressSeq'
   | 'tasks'
+  | 'taskLog'
+  | 'taskSeq'
   | 'given'
   | 'clerk'
   | 'panelRequest'
@@ -351,7 +364,10 @@ const initialData = (): Data => ({
   zoomPercent: ZOOM_DEFAULT_PERCENT,
   positions: new Map(),
   progress: null,
+  progressSeq: 0,
   tasks: null,
+  taskLog: [],
+  taskSeq: 0,
   given: null,
   clerk: null,
   panelRequest: null,
@@ -443,6 +459,25 @@ function upsert(list: readonly TaskView[] | null, task: TaskView): TaskView[] {
   return known.some((t) => t.id === task.id) ? known.map((t) => (t.id === task.id ? task : t)) : [task, ...known];
 }
 
+// Un changement de sa liste : une tâche nouvelle ou changée, ou retirée (son identifiant).
+export type TaskChange = { seq: number } & ({ task: TaskView; removed?: undefined } | { task?: undefined; removed: string });
+// Combien de changements le magasin garde : bien plus qu'il n'en arrive pendant une lecture de la liste.
+const TASK_LOG_MAX = 100;
+
+function applyTaskChange(list: TaskView[], change: TaskChange): TaskView[] {
+  return change.task ? upsert(list, change.task) : list.filter((t) => t.id !== change.removed);
+}
+
+// La liste avec ce changement (gardée null tant qu'elle n'est pas lue), et le changement noté.
+function withTaskChange(state: Pick<OfficeState, 'tasks' | 'taskLog'>, change: TaskChange): Pick<OfficeState, 'tasks' | 'taskLog' | 'taskSeq'> {
+  return { tasks: state.tasks === null ? null : applyTaskChange(state.tasks, change), taskLog: [...state.taskLog, change].slice(-TASK_LOG_MAX), taskSeq: change.seq };
+}
+
+// Une liste lue, avec par-dessus les changements arrivés depuis `since`.
+function replayTasks(list: TaskView[], log: readonly TaskChange[], since: number): TaskView[] {
+  return log.filter((change) => change.seq > since).reduce(applyTaskChange, list);
+}
+
 // La place de la personne `userId`, ou undefined si elle n'en a pas.
 export function selectDeskOf(state: Pick<OfficeState, 'desks'>, userId: string | null): DeskInfo | undefined {
   return userId === null ? undefined : state.desks.find((desk) => desk.ownerId === userId);
@@ -496,6 +531,7 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           arenaCountdownEndsAt: performance.now() + (p.arena?.countdownMs ?? 0),
           // Sa progression du moment ; un init qui n'en dit rien (la base n'a pas répondu) garde celle qu'on connaissait.
           progress: p.progress ? withoutGain(p.progress) : state.progress,
+          progressSeq: p.progress ? state.progressSeq + 1 : state.progressSeq,
           gameInterrupted: interruptedGame(state.games, gamesOf(p.games), p.self.id) ?? state.gameInterrupted,
         }));
       },
@@ -649,11 +685,13 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
           return last === state.chatReadId ? state : { chatReadId: last };
         }),
 
-      setProgress: (progress) => set({ progress: withoutGain(progress) }),
+      setProgress: (progress) => set((state) => ({ progress: withoutGain(progress), progressSeq: state.progressSeq + 1 })),
+      setProgressSince: (progress, seq) =>
+        set((state) => (state.progressSeq === seq ? { progress: withoutGain(progress), progressSeq: state.progressSeq + 1 } : state)),
       setLevel: (id, level) => updatePlayer(id, (p) => ({ ...p, level })),
-      setTasks: (tasks) => set({ tasks }),
-      upsertTask: (task) => set((state) => ({ tasks: upsert(state.tasks, task) })),
-      removeTask: (id) => set((state) => (state.tasks?.some((t) => t.id === id) ? { tasks: state.tasks.filter((t) => t.id !== id) } : state)),
+      setTasks: (tasks, since) => set((state) => ({ tasks: tasks === null || since === undefined ? tasks : replayTasks(tasks, state.taskLog, since) })),
+      upsertTask: (task) => set((state) => withTaskChange(state, { seq: state.taskSeq + 1, task })),
+      removeTask: (id) => set((state) => withTaskChange(state, { seq: state.taskSeq + 1, removed: id })),
       setGiven: (given) => set({ given }),
       upsertGiven: (task) => set((state) => ({ given: upsert(state.given, task) })),
       openClerk: (clerk) => set({ clerk }),

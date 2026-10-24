@@ -98,6 +98,23 @@ describe('les missions', () => {
     expect((await service.tasksOf('bob'))[0]!.seen).toBe(true);
   });
 
+  test('un identifiant mal formé (venu d\'une URL) : introuvable, sans erreur de la base', async () => {
+    const { service } = await setup();
+    expect(await service.complete('bob', 'abc')).toBeNull();
+    expect(await service.decline('bob', 'abc')).toBeNull();
+    expect(await service.cancel('ana', 'abc')).toBeNull();
+    expect(await service.updateTodo('bob', 'abc', { title: 'x' })).toBeNull();
+    expect(await service.deleteTodo('bob', 'abc')).toBe(false);
+  });
+
+  test('la limite de la liste tient quand plusieurs missions arrivent en même temps', async () => {
+    const { db, service } = await setup();
+    await db.insert(task).values(Array.from({ length: MAX_OPEN_TASKS - 1 }, (_, i) => ({ ownerId: 'bob', kind: 'todo' as const, title: `t${i}`, xp: TODO_XP })));
+    const results = await Promise.all([1, 2, 3].map((n) => service.give('ana', { to: 'bob', title: `m${n}`, tier: 1 })));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok && r.error === 'limit')).toHaveLength(2);
+  });
+
   test('une mission se rend mais ne se supprime pas ; son intitulé ne se modifie pas', async () => {
     const { service } = await setup();
     const given = await service.give('ana', { to: 'bob', title: 'Mission', tier: 1 });
@@ -175,6 +192,19 @@ describe('le pointage', () => {
     expect(await service.checkIn('bob')).toBeNull();
   });
 
+  test('changer de fuseau ne refait pas pointer : le jour doit avancer', async () => {
+    const zones: Record<string, string> = { bob: 'Pacific/Kiritimati' };
+    const { clock, service } = await setup(zones);
+    clock.t = Date.parse('2026-10-22T12:00:00Z');   // vendredi 2 h à Kiritimati (UTC+14), jeudi 1 h aux Samoa américaines (UTC-11)
+    expect(await service.checkIn('bob')).not.toBeNull();
+    zones.bob = 'Pacific/Pago_Pago';
+    expect(await service.checkIn('bob')).toBeNull();
+    zones.bob = 'Pacific/Kiritimati';
+    expect(await service.checkIn('bob')).toBeNull();
+    clock.t += DAY;
+    expect(await service.checkIn('bob')).not.toBeNull();
+  });
+
   test('par défaut, le fuseau est celui du compte (user.timezone, réglé dans le menu « Moi »)', async () => {
     const { db, clock } = await setup();
     await db.update(user).set({ timezone: 'America/Montreal' }).where(eq(user.id, 'bob'));
@@ -210,7 +240,7 @@ describe('la boutique', () => {
   test('acheter un élément : ses kuartzons baissent du prix, il le possède, une fois pour toutes', async () => {
     const { db, service } = await setup();
     await grant(db, 'ana', 12_000, 1000);
-    expect(await service.buy('ana', 'statue-or')).toEqual({ ok: true, progress: { xp: 12_000, kuartzons: 200, streak: 0, owned: ['statue-or'] } });
+    expect(await service.buy('ana', 'statue-or')).toEqual({ ok: true, progress: { xp: 12_000, kuartzons: 200, streak: 0, todoXpLeft: TODO_DAILY_XP, owned: ['statue-or'] } });
     expect(await service.buy('ana', 'statue-or')).toEqual({ ok: false, error: 'owned' });
     expect(await service.buy('ana', 'tapis-rare')).toEqual({ ok: false, error: 'too_poor' });
     expect(await service.buy('ana', 'chaise-libre')).toEqual({ ok: false, error: 'unknown_item' });

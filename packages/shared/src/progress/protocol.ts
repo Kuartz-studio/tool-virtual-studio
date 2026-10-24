@@ -87,6 +87,8 @@ export interface MyProgress {
   xp: number;
   kuartzons: number;
   streak: number;
+  // Ce que ses propres tâches peuvent encore rapporter aujourd'hui (le jour de son fuseau), sous le plafond TODO_DAILY_XP : le serveur le compte.
+  todoXpLeft: number;
   owned: string[];
   gain?: XpGain;
 }

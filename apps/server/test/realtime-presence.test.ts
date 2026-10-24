@@ -147,7 +147,7 @@ describe('connexion', () => {
       timezone: 'Europe/Paris',   // le fuseau du compte : l'heure de Paris tant qu'il n'en a pas choisi d'autre
     });
     // Sa progression : rien encore.
-    expect(aInit.progress).toEqual({ xp: 0, kuartzons: 0, streak: 0, owned: [] });
+    expect(aInit.progress).toEqual({ xp: 0, kuartzons: 0, streak: 0, todoXpLeft: 100, owned: [] });
     expect(aInit.players).toEqual([]);
     expect(aInit.mapKey).toBe('dev-office');
     expect(aInit.chatHistory).toEqual([]);

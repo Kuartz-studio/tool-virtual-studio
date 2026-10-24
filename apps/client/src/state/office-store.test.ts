@@ -1,4 +1,4 @@
-import { CHAT_HISTORY_LIMIT, type ChatMessage, type GameId, type GameInvite, type GameMatchView, type GameTableView, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
+import { CHAT_HISTORY_LIMIT, type ChatMessage, type GameId, type GameInvite, type GameMatchView, type GameTableView, type InitPayload, type MyProgress, type PublicPlayer, type RoomMusic, type TaskView } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ZOOM_BUTTON_STEP, ZOOM_DEFAULT_PERCENT, ZOOM_MAX_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { createOfficeStore, selectChatUnread, selectDeskOf, useOfficeStore } from './office-store';
@@ -786,5 +786,53 @@ describe('les jeux', () => {
     store.getState().openGame('chess');
     store.getState().reset();
     expect(store.getState()).toMatchObject({ games: {}, gameInvites: [], gameOpen: null, gameInterrupted: null });
+  });
+});
+
+describe('la progression et la liste de tâches', () => {
+  const progress = (xp: number): MyProgress => ({ xp, kuartzons: 0, streak: 0, todoXpLeft: 100, owned: [] });
+  const todo = (id: string, over: Partial<TaskView> = {}): TaskView => ({
+    id,
+    kind: 'todo',
+    title: id,
+    notes: null,
+    tier: null,
+    xp: 20,
+    status: 'open',
+    createdAt: '2026-10-22T10:00:00.000Z',
+    doneAt: null,
+    owner: { id: 'moi', name: 'Moi' },
+    giver: null,
+    seen: true,
+    ...over,
+  });
+
+  test('une liste lue pendant qu\'une mission arrive et qu\'une tâche part : les deux changements restent', () => {
+    const since = store.getState().taskSeq;
+    store.getState().upsertTask(todo('m1', { kind: 'mission', seen: false }));
+    store.getState().removeTask('t2');
+    // Pas encore lue : le changement est noté, sans inventer une liste d'une seule tâche.
+    expect(store.getState().tasks).toBeNull();
+    store.getState().setTasks([todo('t1'), todo('t2')], since);
+    expect(store.getState().tasks?.map((t) => t.id)).toEqual(['m1', 't1']);
+  });
+
+  test('une liste lue avant un changement : il n\'est repris que s\'il est arrivé pendant la lecture', () => {
+    store.getState().setTasks([todo('t1')]);
+    store.getState().upsertTask(todo('t1', { status: 'done' }));
+    const since = store.getState().taskSeq;
+    store.getState().setTasks([todo('t1', { status: 'done' }), todo('t3')], since);
+    expect(store.getState().tasks?.map((t) => `${t.id}:${t.status}`)).toEqual(['t1:done', 't3:open']);
+  });
+
+  test('la réponse d\'une route ne remplace pas une progression arrivée pendant l\'appel', () => {
+    store.getState().setProgress(progress(100));
+    const seq = store.getState().progressSeq;
+    store.getState().setProgressSince(progress(150), seq);
+    expect(store.getState().progress?.xp).toBe(150);
+    const before = store.getState().progressSeq;
+    store.getState().setProgress(progress(300));
+    store.getState().setProgressSince(progress(200), before);
+    expect(store.getState().progress?.xp).toBe(300);
   });
 });

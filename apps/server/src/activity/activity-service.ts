@@ -2,6 +2,7 @@ import { ACTIVITY_ICONS, ACTIVITY_MAX_PER_USER, DEFAULT_MODES, type ActivityIcon
 import { and, asc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { activityState } from '../db/schema';
+import { isUuid } from '../uuid';
 
 export interface ActivityService {
   /** Les états d'activité de cette personne, dans l'ordre où elle les a créés. */
@@ -120,6 +121,3 @@ export function createActivityService(db: Db): ActivityService {
     },
   };
 }
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const isUuid = (value: string): boolean => UUID.test(value);

@@ -135,6 +135,8 @@ export function OfficeShell({
   const newMissions = useOfficeStore(selectNewMissions);
   // L'onglet du panneau Missions à l'ouverture, et la personne dont le panneau des caractéristiques montre la fiche.
   const [questTab, setQuestTab] = useState<QuestTab>('todo');
+  // Chaque demande d'ouverture du panneau Missions (même onglet que la précédente : il a pu en changer depuis).
+  const [questAsk, setQuestAsk] = useState(0);
   const [sheetOf, setSheetOf] = useState<string | null>(null);
   const sheetName = useOfficeStore((state) => (sheetOf === null ? '' : (state.players[sheetOf]?.name ?? '')));
 
@@ -163,11 +165,13 @@ export function OfficeShell({
   }, [ready]);
 
   // Sa liste de tâches, lue à chaque (re)connexion prête : la pastille du bouton Missions et le panneau en dépendent ; le temps réel la tient ensuite à jour.
+  // Ce qui arrive pendant la lecture (une mission reçue, une tâche cochée) est repris par-dessus la liste lue.
   useEffect(() => {
     if (!ready) return;
     let current = true;
+    const since = useOfficeStore.getState().taskSeq;
     listMyTasks().then(
-      (tasks) => current && useOfficeStore.getState().setTasks(tasks),
+      (tasks) => current && useOfficeStore.getState().setTasks(tasks, since),
       () => {
         // Illisible : le panneau le dira à l'ouverture (la liste reste celle d'avant, ou vide).
       },
@@ -184,13 +188,21 @@ export function OfficeShell({
   const panelRequest = useOfficeStore((state) => state.panelRequest);
   useEffect(() => {
     if (panelRequest === null) return;
-    if (panelRequest.panel === 'missions') setQuestTab(panelRequest.tab ?? 'todo');
+    if (panelRequest.panel === 'missions') {
+      setQuestTab(panelRequest.tab ?? 'todo');
+      setQuestAsk((n) => n + 1);
+    }
     if (panelRequest.panel === 'sheet') setSheetOf(panelRequest.userId ?? null);
     show(panelRequest.panel, null);
     useOfficeStore.getState().requestPanel(null);
     // Seulement quand une demande arrive : `show` change à chaque rendu.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelRequest]);
+
+  // Fermé, le panneau Missions oublie l'onglet qu'on lui avait demandé : rouvert depuis la barre, il revient à la liste.
+  useEffect(() => {
+    if (panel !== 'missions') setQuestTab('todo');
+  }, [panel]);
 
   // Un état d'activité où l'on n'est pas entendu coupe le micro : le serveur ne laisse rien publier (jeton sans micro), et le bouton ne
   // le rallume pas tant que l'état dure.
@@ -272,7 +284,7 @@ export function OfficeShell({
               onOpenSheet={(userId) => (userId === user.id ? useOfficeStore.getState().requestPanel({ panel: 'missions', tab: 'sheet' }) : useOfficeStore.getState().requestPanel({ panel: 'sheet', userId }))}
             />
           )}
-          {panel === 'missions' && <QuestPanel id={idOf('missions')} tab={questTab} onClose={close} />}
+          {panel === 'missions' && <QuestPanel id={idOf('missions')} tab={questTab} ask={questAsk} onClose={close} />}
           {panel === 'shop' && <ShopPanel id={idOf('shop')} onClose={close} />}
           {panel === 'sheet' && sheetOf !== null && <SheetPanel id={idOf('sheet')} userId={sheetOf} name={sheetName} onClose={close} />}
           {panel === 'character' && <CharacterBuilder id={idOf('character')} onClose={close} />}

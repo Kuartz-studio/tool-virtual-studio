@@ -1010,6 +1010,18 @@ describe('les états d\'activité', () => {
   });
 });
 
+describe('le panneau Missions', () => {
+  test('ouvert sur la fiche (par une administratrice, ou sa ligne dans Personnes), puis rouvert depuis la barre : il revient à la liste', async () => {
+    const user = userEvent.setup();
+    renderShell();
+    act(() => useOfficeStore.getState().requestPanel({ panel: 'missions', tab: 'sheet' }));
+    expect(screen.getByRole('tab', { name: fr.missions.sheet }).getAttribute('aria-selected')).toBe('true');
+    await user.click(screen.getByRole('button', { name: fr.ui.close }));
+    await user.click(within(bar()).getByRole('button', { name: fr.missions.toggle }));
+    expect(screen.getByRole('tab', { name: new RegExp(`^${fr.missions.todo}`) }).getAttribute('aria-selected')).toBe('true');
+  });
+});
+
 describe('ouvert dans un autre onglet', () => {
   test('l\'écran couvre le bureau, dont la couche est inerte ; « Utiliser ici » relance la connexion', async () => {
     const onUseHere = vi.fn();

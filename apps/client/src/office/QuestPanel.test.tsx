@@ -28,7 +28,7 @@ const task = (id: string, over: Partial<TaskView> = {}): TaskView => ({
 const mission = (id: string, over: Partial<TaskView> = {}): TaskView =>
   task(id, { kind: 'mission', title: `Mission ${id}`, tier: 5, xp: 500, giver: { id: 'ana', name: 'Ana' }, seen: false, ...over });
 
-const progress = (over: Partial<MyProgress> = {}): MyProgress => ({ xp: 12_340, kuartzons: 1450, streak: 3, owned: [], ...over });
+const progress = (over: Partial<MyProgress> = {}): MyProgress => ({ xp: 12_340, kuartzons: 1450, streak: 3, todoXpLeft: 100, owned: [], ...over });
 
 beforeEach(() => {
   useOfficeStore.getState().reset();
@@ -100,13 +100,33 @@ describe('le panneau Missions', () => {
     expect(useOfficeStore.getState().tasks).toEqual([]);
   });
 
-  test('le plafond du jour atteint : ses tâches ne rapportent plus rien aujourd\'hui, et le panneau le dit', () => {
-    const today = new Date().toISOString();
-    const doneToday = Array.from({ length: 5 }, (_, i) => task(`d${i}`, { status: 'done', doneAt: today }));
-    act(() => useOfficeStore.getState().setTasks([task('t1'), ...doneToday]));
+  test('le plafond du jour atteint (le serveur le compte, dans le fuseau de la personne) : ses tâches ne rapportent plus rien, et le panneau le dit', () => {
+    act(() => {
+      useOfficeStore.getState().setTasks([task('t1')]);
+      useOfficeStore.getState().setProgress(progress({ todoXpLeft: 0 }));
+    });
     render(<QuestPanel onClose={() => {}} />);
     expect(screen.getByText(fr.missions.todoCapped)).toBeTruthy();
     expect(document.querySelector('[data-task="t1"] .todo-xp')?.textContent).toBe('0 XP');
+  });
+
+  test('presque au plafond : une tâche rapporte ce qui reste (« +10 XP »)', () => {
+    act(() => {
+      useOfficeStore.getState().setTasks([task('t1')]);
+      useOfficeStore.getState().setProgress(progress({ todoXpLeft: 10 }));
+    });
+    render(<QuestPanel onClose={() => {}} />);
+    expect(screen.queryByText(fr.missions.todoCapped)).toBeNull();
+    expect(document.querySelector('[data-task="t1"] .todo-xp')?.textContent).toBe(t(fr.missions.todoXp, { xp: 10 }));
+  });
+
+  test('à l\'ouverture, sa progression relue ; une réponse arrivée après une plus récente (le temps réel) est ignorée', async () => {
+    let answer: (p: MyProgress) => void = () => {};
+    vi.mocked(progressApi.fetchMyProgress).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    render(<QuestPanel onClose={() => {}} />);
+    act(() => useOfficeStore.getState().setProgress(progress({ xp: 13_000 })));
+    await act(async () => answer(progress({ xp: 12_340 })));
+    expect(useOfficeStore.getState().progress?.xp).toBe(13_000);
   });
 
   test('l\'onglet « Caractéristiques » montre sa fiche', async () => {
