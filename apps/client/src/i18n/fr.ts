@@ -885,10 +885,12 @@ export const fr = {
     size: '{w} × {h} cases',
     sizeOne: '1 case',
     kinds: { object: 'au sol', floor: 'tapis', onTop: 'sur un meuble', wall: 'au mur' },
-    help: 'Choisis un élément puis clique dans la pièce pour le poser ; sur un autre élément, il le remplace après confirmation. Clique sur un élément posé pour le reprendre, clic droit pour le jeter.',
+    // L'aide, derrière l'icône « i » du pied du panneau (une infobulle) : tout ce qu'il faut savoir pour décorer.
+    helpLabel: 'Comment décorer',
+    help: 'Choisis un élément puis clique dans la pièce pour le poser (Maj enfoncée : aligné sur les cases) ; sur un autre élément, il le remplace après confirmation. Clique sur un élément posé pour le reprendre, clic droit pour le jeter ou le lâcher. Échap lâche l\'élément tenu.',
     tools: 'Outils',
     erase: 'Gomme',
-    eraseHelp: 'Gomme : clique sur un élément de la pièce pour l\'effacer. Échap pour reprendre la pose.',
+    eraseHelp: 'Gomme : clique sur un élément pour l\'effacer.',
     replace: {
       titleOne: 'Remplacer cet élément ?',
       titleMany: 'Remplacer ces éléments ?',
@@ -899,7 +901,7 @@ export const fr = {
       confirm: 'Remplacer',
       cancel: 'Annuler',
     },
-    held: 'En main : {name}. Clic dans la pièce pour le poser (Maj enfoncée : aligné sur les cases), clic droit pour le lâcher.',
+    held: 'En main : {name}',
     drop: 'Lâcher',
     floorTitle: 'Sol',
     wallTitle: 'Murs',
@@ -912,6 +914,8 @@ export const fr = {
     saving: 'Enregistrement…',
     saved: 'Déco enregistrée.',
     reset: 'Poste par défaut',
+    // Le même bouton, dans la rangée du pied du panneau (son nom pour les lecteurs d'écran reste « Poste par défaut »).
+    resetShort: 'Par défaut',
     clear: 'Tout vider',
     // Sa déco enregistrée ne tient plus dans la pièce (la carte a changé) : le poste par défaut est montré, la déco reste en base, mais l'enregistrement d'une nouvelle la remplace.
     unfit: 'Ta déco enregistrée ne tient plus dans cette pièce depuis le changement de carte : c\'est le poste par défaut qui est montré, et enregistrer remplacera ta déco.',

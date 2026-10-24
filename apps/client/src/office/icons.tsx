@@ -25,6 +25,7 @@ import {
   Headphones,
   History,
   Image as Picture,
+  Info,
   LampDesk,
   Library,
   Lightbulb,
@@ -293,6 +294,11 @@ export function HeadphonesIcon() {
 // Un chevron vers la gauche : revenir en arrière (de la liste des musiques à la fenêtre).
 export function ChevronLeftIcon() {
   return <ChevronLeft />;
+}
+
+// Un « i » : l'aide d'un panneau, dans son infobulle (le pied du panneau Décorer).
+export function InfoIcon() {
+  return <Info />;
 }
 
 // Un cadenas : ce qu'on ne peut pas changer ici (la musique du bureau d'un autre), la porte fermée d'un bureau, une conversation verrouillée.

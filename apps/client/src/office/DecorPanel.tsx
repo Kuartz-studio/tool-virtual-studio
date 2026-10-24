@@ -8,11 +8,12 @@ import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { BuyOffer } from './BuyOffer';
 import { roomOfDesk, sameDecor } from './decor-draft';
 import { DecorPicker } from './DecorPicker';
-import { CloseIcon, LockIcon } from './icons';
+import { CloseIcon, InfoIcon, LockIcon } from './icons';
 import { deskErrorText } from './desks';
 import { ReplaceDialog } from './ReplaceDialog';
 import { formatNumber } from './progress-format';
 import { FloorSwatch, WallSwatch } from './sprites';
+import { IconButton } from './ui/IconButton';
 
 // Le panneau Décorer mon bureau : la banque d'éléments (le sélecteur, DecorPicker), et les murs et le sol. Il pilote le
 // brouillon de l'éditeur (le magasin) que le jeu montre dans la pièce : on choisit un élément, on le pose en cliquant dans la pièce
@@ -202,42 +203,49 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
                 {fr.decor.unfit}
               </p>
             )}
-            <p className="desk-hint" role="status">
-              {held ? (
-                <>
-                  {t(fr.decor.held, { name: held.name })}{' '}
-                  <button type="button" className="decor-link" onClick={() => store().holdDecorItem(null)}>
-                    {fr.decor.drop}
-                  </button>
-                </>
-              ) : editor?.tool === 'erase' ? (
-                fr.decor.eraseHelp
-              ) : (
-                (refused ?? fr.decor.help)
-              )}
-            </p>
-            {held && refused && <p className="decor-refused">{refused}</p>}
-            {error && <Alert>{error}</Alert>}
-            {notice && !dirty && (
-              <p className="desk-hint" role="status">
-                {notice}
+            {/* Ce qui se passe, en une ligne courte : l'élément en main, la gomme, un refus. L'aide entière est derrière l'icône « i ». */}
+            {(held || editor?.tool === 'erase' || refused) && (
+              <p className="desk-hint decor-status" role="status">
+                {held ? (
+                  <>
+                    {t(fr.decor.held, { name: held.name })}
+                    {' · '}
+                    <button type="button" className="decor-link" onClick={() => store().holdDecorItem(null)}>
+                      {fr.decor.drop}
+                    </button>
+                  </>
+                ) : editor?.tool === 'erase' ? (
+                  fr.decor.eraseHelp
+                ) : (
+                  refused
+                )}
               </p>
             )}
-            <div className="decor-footer-row">
+            {held && refused && <p className="decor-refused">{refused}</p>}
+            {error && <Alert>{error}</Alert>}
+            <div className="decor-meta">
+              <IconButton className="decor-help" small label={fr.decor.helpLabel} hint={fr.decor.help}>
+                <InfoIcon />
+              </IconButton>
               <span className="desk-hint">{t(fr.decor.count, { count: editor?.draft.items.length ?? 0, max: MAX_DECOR_ITEMS })}</span>
-              {dirty && <span className="desk-hint decor-unsaved">{fr.decor.unsaved}</span>}
+              <span className="decor-state" data-unsaved={dirty || undefined} aria-live="polite">
+                {dirty ? fr.decor.unsaved : notice}
+              </span>
             </div>
-            <div className="decor-footer-row">
-              <button type="button" className="bar-button" disabled={busy || !ready || !dirty} onClick={() => void save()}>
-                {busy ? fr.decor.saving : fr.decor.save}
-              </button>
-            </div>
-            <div className="decor-footer-row">
-              <button type="button" className="bar-button" onClick={() => editor && store().setDecorDraft(defaultDeskDecor(roomOfDesk(store().officeMap, editor.deskKey)))}>
-                {fr.decor.reset}
+            <div className="decor-actions">
+              <button
+                type="button"
+                className="bar-button"
+                aria-label={fr.decor.reset}
+                onClick={() => editor && store().setDecorDraft(defaultDeskDecor(roomOfDesk(store().officeMap, editor.deskKey)))}
+              >
+                {fr.decor.resetShort}
               </button>
               <button type="button" className="bar-button" onClick={() => editor && store().setDecorDraft({ ...editor.draft, items: [] })}>
                 {fr.decor.clear}
+              </button>
+              <button type="button" className="bar-button is-primary" disabled={busy || !ready || !dirty} onClick={() => void save()}>
+                {busy ? fr.decor.saving : fr.decor.save}
               </button>
             </div>
             <p className="desk-hint credits">{fr.decor.credits}</p>

@@ -131,7 +131,18 @@ describe('avec un bureau', () => {
     expect(screen.getByRole('status').textContent).toContain(t(fr.decor.held, { name: 'Écran bleu (face)' }));
     await user.click(screen.getByRole('button', { name: 'Écran bleu (face)' }));
     expect(useOfficeStore.getState().decorEditor!.held).toBeNull();
-    expect(screen.getByRole('status').textContent).toBe(fr.decor.help);
+    // Rien en main : plus de ligne d'état ; l'aide reste derrière l'icône « i », dans son infobulle (sa description pour les lecteurs d'écran).
+    expect(screen.queryByRole('status')).toBeNull();
+    const help = screen.getByRole('button', { name: fr.decor.helpLabel });
+    expect(document.getElementById(help.getAttribute('aria-describedby')!)?.textContent).toBe(fr.decor.help);
+  });
+
+  test('le pied du panneau : les trois boutons sur une ligne, « Enregistrer » en dernier, l\'action principale', () => {
+    setup();
+    const row = screen.getByRole('button', { name: fr.decor.save }).parentElement!;
+    expect(within(row).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent)).toEqual([fr.decor.reset, fr.decor.clear, fr.decor.save]);
+    expect(screen.getByRole('button', { name: fr.decor.reset }).textContent).toBe(fr.decor.resetShort);
+    expect(screen.getByRole('button', { name: fr.decor.save }).className).toContain('is-primary');
   });
 
   test('une recherche porte sur toute la banque', async () => {

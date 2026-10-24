@@ -101,9 +101,10 @@ test('la déco du bureau : le sol et les murs se règlent, s\'enregistrent, et s
 
   const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
   await expect(panel).toBeVisible();
-  // La banque : un onglet à icône par catégorie (son nom pour les lecteurs d'écran), le poste de travail d'abord ; pas encore de récents.
+  // La banque : un onglet à icône par catégorie (son nom pour les lecteurs d'écran), le poste de travail d'abord, la collection à part (Boutique) en dernier ;
+  // pas encore de récents.
   const categories = panel.getByRole('group', { name: 'Catégories' }).getByRole('button');
-  expect(await categories.count()).toBeLessThanOrEqual(10);
+  expect(await categories.count()).toBeLessThanOrEqual(11);
   await expect(categories.first()).toHaveText('Écrans & informatique');
   const save = panel.getByRole('button', { name: 'Enregistrer' });
   await expect(save).toBeDisabled();
