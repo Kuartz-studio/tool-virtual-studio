@@ -39,7 +39,7 @@ describe('l\'image que montre une case (frameAt)', () => {
   });
 });
 
-describe('les sols et les murs qui bougent (TILE_ANIMATIONS)', () => {
+describe('les murs qui bougent (TILE_ANIMATIONS)', () => {
   const faces = [...WALL_THEMES, ...SHOP_WALL_THEMES];
 
   test('chaque ligne part d\'une tuile de thème, a une durée par image, et ses images sont dans le jeu de tuiles', () => {
@@ -72,10 +72,10 @@ describe('les sols et les murs qui bougent (TILE_ANIMATIONS)', () => {
     }
   });
 
-  test('la plupart des sols et des murs bougent, et tous les murs de la boutique', () => {
+  test('seuls les murs de la boutique bougent, tous : ni un mur libre ni un sol, que tout le monde a', () => {
     const moves = (wall: (typeof faces)[number]) => [wall.top, wall.bottom, wall.stem].some((gid) => tileAnimation(gid) !== undefined);
-    expect(FLOOR_THEMES.filter((floor) => tileAnimation(floor.gid)).length).toBeGreaterThanOrEqual(15);
-    expect(WALL_THEMES.filter(moves).length).toBeGreaterThanOrEqual(15);
     expect(SHOP_WALL_THEMES.every(moves)).toBe(true);
+    expect(WALL_THEMES.filter(moves)).toEqual([]);
+    expect(FLOOR_THEMES.filter((floor) => tileAnimation(floor.gid))).toEqual([]);
   });
 });

@@ -1,49 +1,15 @@
-// Quels sols et quels murs bougent, et comment (les effets : tile-motion.ts). Chacun selon sa matière : ce qui brille (carrelage, marbre, parquet vitrifié)
-// voit passer un reflet ; une peinture, un satiné doux qui glisse ; le sable et le granit pailletent ; l'eau de la mosaïque turquoise ondule. Les murs de la
-// boutique sont plus vivants : le velours ondule, les rayures seventies s'allument l'une après l'autre, les losanges scintillent, les bougies des citrouilles
-// vacillent, les dorures de la bibliothèque brillent (les six murs dessinés ont leur mouvement avec leur dessin : shop-walls.ts). Le béton, la brique, la
-// moquette et la pierre ne bougent pas.
+// Les murs de la boutique qui viennent du pack, et comment ils bougent (les effets : tile-motion.ts) : le velours ondule, un reflet court sur la cimaise du
+// lambris, les rayures seventies s'allument l'une après l'autre, les losanges scintillent, les bougies des citrouilles vacillent, les dorures de la
+// bibliothèque brillent. Les six murs dessinés ont leur mouvement avec leur dessin (shop-walls.ts). Les murs libres et les sols, ceux que tout le monde a,
+// ne bougent pas : l'animation est ce qu'on s'offre à la boutique.
 // Une face de mur se compte en pixels du dessin, son haut et son bas l'un sous l'autre : 16 × 32, le liseré (rangées 0 à 5), la surface (6 à 25), la plinthe
-// (26 à 30), le trait du bas (31). Un sol : 16 × 16.
+// (26 à 30), le trait du bas (31).
 import type { Rgba } from './image';
-import { mix, rgb, seeded, type Art } from './pixel-art';
-import { near, passingSweep, recolor, sparkle, type Motion, type MotionFrame, type Sweep } from './tile-motion';
+import { mix, rgb, type Art } from './pixel-art';
+import { near, passingSweep, recolor, sparkle, type Motion, type MotionFrame } from './tile-motion';
 
 const onPaper = (y: number) => y >= 6 && y <= 25;
 const onBaseboard = (y: number) => y >= 26 && y <= 30;
-
-// ---- Les murs -----------------------------------------------------------------------------------------------------------------------------------
-
-// Le satiné d'une peinture : une bande large, au bord tramé, qui glisse en travers du mur, un peu plus franche sur la plinthe.
-function satin(every: number, strength = 1): Motion {
-  const sweep: Sweep = {
-    lines: [
-      { at: 0, width: 2, strength: 0.07 * strength, dither: true },
-      { at: 2, width: 4, strength: 0.14 * strength },
-      { at: 6, width: 2, strength: 0.07 * strength, dither: true },
-    ],
-    slope: 0.5,
-    speed: 4,
-    ms: 70,
-    weight: (_x, y) => (onPaper(y) ? 1 : onBaseboard(y) ? 1.6 : 0),
-  };
-  return passingSweep(16, 32, sweep, every, 'x');
-}
-
-// Le reflet vif d'une surface qui brille (des carreaux, un bois verni) : un trait franc suivi d'un trait fin.
-function gloss(every: number, strength = 1): Motion {
-  const sweep: Sweep = {
-    lines: [
-      { at: 0, width: 3, strength: 0.42 * strength },
-      { at: 4, width: 1, strength: 0.3 * strength },
-    ],
-    slope: 0.5,
-    speed: 4,
-    ms: 50,
-    weight: (_x, y) => (onPaper(y) || onBaseboard(y) ? 1 : 0),
-  };
-  return passingSweep(16, 32, sweep, every, 'x');
-}
 
 // Le velours : la lumière glisse sur les plis, presque droite comme le tissu qui tombe ; les creux sombres des plis restent dans l'ombre.
 const VELVET_FOLD = rgb(103, 52, 46);
@@ -175,108 +141,12 @@ function glints(points: ReadonlyArray<readonly [number, number]>, color: Rgba, r
   ]);
 }
 
-// Les murs du pack qui bougent : la face (le haut et le bas ensemble). Les murs dessinés de la boutique ont leur mouvement dans shop-walls.ts. Sans entrée : le
-// mur ne bouge pas (la brique, le béton).
+// Les murs de la boutique venus du pack, par identifiant : leur face (le haut et le bas ensemble).
 export const WALL_MOTIONS: Readonly<Record<string, Motion>> = {
-  'gris-perle': satin(7400, 1.3),
-  creme: satin(8200, 1.5),
-  'sauge-pale': satin(7800, 1.3),
-  sable: satin(7000, 1.3),
-  peche: satin(7600, 1.2),
-  lin: satin(6600, 1.1),
-  anthracite: satin(7200, 1.2),
-  brun: satin(6800),
-  'bois-sombre': gloss(6400, 0.6),
-  'rose-raye': satin(7000, 1.1),
-  rouge: satin(6600),
-  bleu: satin(7000),
-  violet: satin(7400),
-  'bleu-ciel': satin(6800, 1.1),
-  turquoise: satin(7200),
-  'carreaux-bleus': gloss(5600),
-  menthe: satin(7800, 1.2),
-  'vert-gris': satin(7000, 1.1),
   'mur-velours': velvet,
   'mur-lambris': lambris,
   'mur-seventies': seventies,
   'mur-losanges': losanges(),
   'mur-citrouilles': citrouilles(),
   'mur-bibliotheque': bibliotheque,
-};
-
-// ---- Les sols -----------------------------------------------------------------------------------------------------------------------------------
-
-// Le reflet d'un sol qui brille : un trait franc et un trait fin, en diagonale, qui traversent la pièce de coin en coin.
-function shine(every: number, strength = 1): Motion {
-  const sweep: Sweep = {
-    lines: [
-      { at: 0, width: 2, strength: 0.36 * strength },
-      { at: 3, width: 1, strength: 0.24 * strength },
-    ],
-    slope: 1,
-    speed: 4,
-    ms: 50,
-  };
-  return passingSweep(16, 16, sweep, every, 'xy');
-}
-
-// Le vernis d'un parquet : un reflet plus large et plus doux, au bord tramé.
-function varnish(every: number, strength = 1): Motion {
-  const sweep: Sweep = {
-    lines: [
-      { at: 0, width: 1, strength: 0.12 * strength, dither: true },
-      { at: 1, width: 2, strength: 0.22 * strength },
-      { at: 3, width: 1, strength: 0.12 * strength, dither: true },
-    ],
-    slope: 1,
-    speed: 4,
-    ms: 60,
-  };
-  return passingSweep(16, 16, sweep, every, 'xy');
-}
-
-// Des paillettes : de petites étincelles, à des pixels tirés au hasard (figé), qui s'allument l'une après l'autre ; d'une case à l'autre, pas en même temps.
-function glitter(seed: number, count: number, color: Rgba, rest: number): Motion {
-  const random = seeded(seed);
-  const points = Array.from({ length: count }, () => [1 + Math.floor(random() * 14), 1 + Math.floor(random() * 14)] as const);
-  const frames: MotionFrame[] = points.flatMap(([x, y]) => [{ ms: rest }, ...[0, 1, 0].map((size) => ({ ms: 100, draw: (art: Art) => sparkle(art, x, y, size, color) }))]);
-  return { frames, phase: 'scatter', step: 0 };
-}
-
-// L'eau sur la mosaïque turquoise : des reflets clairs qui ondulent, faits de vagues qui reviennent d'une case à l'autre et d'une image à l'autre (toutes
-// les cases ensemble : le motif se raccorde).
-function water(): Motion {
-  const frames: MotionFrame[] = Array.from({ length: 8 }, (_, k) => ({
-    ms: 190,
-    draw: (art) =>
-      art.each((x, y, color) => {
-        const t = k / 8;
-        const wave =
-          Math.sin(2 * Math.PI * (x / 16 + t)) + Math.sin(2 * Math.PI * (y / 16 - t)) + Math.sin(2 * Math.PI * ((x + y) / 16 + 2 * t)) * 0.8;
-        if (wave > 1.55) art.set(x, y, mix(color, rgb(236, 255, 250), wave > 2.1 ? 0.42 : 0.22));
-      }),
-  }));
-  return { frames, phase: 'sync', step: 0 };
-}
-
-export const FLOOR_MOTIONS: Readonly<Record<string, Motion>> = {
-  sable: glitter(5, 3, rgb(255, 250, 230), 1500),
-  creme: shine(9200),
-  blanc: shine(8400, 1.1),
-  marbre: shine(8800),
-  gris: shine(9600, 0.9),
-  graphite: glitter(11, 4, rgb(235, 240, 255), 1100),
-  'parquet-clair': varnish(9000),
-  'parquet-brun': varnish(9400, 1.1),
-  noyer: varnish(8600, 1.2),
-  'parquet-rouge': varnish(9200, 1.1),
-  chevrons: varnish(8800, 1.1),
-  sauge: shine(9400, 0.8),
-  menthe: shine(9000, 0.9),
-  bleu: shine(8600, 0.9),
-  'bleu-clair': shine(9800, 0.9),
-  rose: shine(9200, 0.8),
-  damier: shine(8400, 0.8),
-  turquoise: water(),
-  losanges: shine(8000, 0.9),
 };

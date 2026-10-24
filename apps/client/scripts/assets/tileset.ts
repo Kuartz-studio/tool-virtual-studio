@@ -1,13 +1,14 @@
 // Le jeu de tuiles de la carte (public/assets/tiles/office.png) : les sols et les murs choisis dans le Room Builder de LimeZu, et les tuiles
 // de la piscine, dessinées ici (le pack n'a pas d'eau). Les sols et les murs sont aussi les thèmes qu'une personne choisit pour son bureau :
-// la liste (id, nom, numéro de tuile) est écrite dans packages/shared/src/decor/generated-themes.ts. Après eux, les images d'animation des sols et des murs
-// qui bougent (tile-motion.ts, theme-motions.ts) : une image identique à une autre de la même tuile n'est pas ajoutée deux fois.
+// la liste (id, nom, numéro de tuile) est écrite dans packages/shared/src/decor/generated-themes.ts. Après eux, les images d'animation des murs de la
+// boutique, qui bougent (tile-motion.ts, theme-motions.ts, shop-walls.ts) : une image identique à une autre de la même tuile n'est pas ajoutée deux fois. Les
+// murs libres et les sols ne bougent pas.
 import { join } from 'node:path';
 import type { TilePhase } from '@bureau/shared';
 import { Img, readImage, type Rgba } from './image';
 import { sameImage } from './pixel-art';
 import { SHOP_WALL_PICKS, drawShopWall, drawnWallMotion, isPackWall, type ShopWallTiles } from './shop-walls';
-import { FLOOR_MOTIONS, WALL_MOTIONS } from './theme-motions';
+import { WALL_MOTIONS } from './theme-motions';
 import { renderMotion, type Motion } from './tile-motion';
 
 const ROOM_BUILDER = 'moderninteriors-win/1_Interiors/32x32/Room_Bulder_subfiles_32x32';
@@ -93,7 +94,8 @@ export interface TilesetBuild {
   pool: Record<PoolName, number>;
   // Les murs de la boutique (shop-walls.ts), avec leur prix en kuartzons.
   shopWalls: Array<{ id: string; label: string; price: number; top: number; bottom: number; stem: number }>;
-  // Les tuiles qui bougent : pour une tuile de base, ses images (la base d'abord), leur durée, leur décalage (decor/tile-animations.ts).
+  // Les tuiles qui bougent (celles des murs de la boutique) : pour une tuile de base, ses images (la base d'abord), leur durée, leur décalage
+  // (decor/tile-animations.ts).
   animations: TileAnimationRow[];
   tileCount: number;
 }
@@ -191,13 +193,11 @@ export function buildTileset(source: string): TilesetBuild {
     return { id: wall.id, label: wall.label, price: wall.price, top: add(tiles.top), bottom: add(tiles.bottom), stem: add(tiles.stem) };
   });
 
-  // Les images d'animation, après toutes les tuiles de base : les sols, les murs libres, puis ceux de la boutique (leur face, puis leur pan).
+  // Les images d'animation des murs de la boutique, après toutes les tuiles de base : la face de chacun, puis son pan.
   const animations: TileAnimationRow[] = [];
   const animate = (gids: readonly number[], motion: Motion | undefined) => {
     if (motion) animations.push(...animationRows(gids, motion, tiles, add));
   };
-  for (const floor of floors) animate([floor.gid], FLOOR_MOTIONS[floor.id]);
-  for (const wall of walls) animate([wall.top, wall.bottom], WALL_MOTIONS[wall.id]);
   SHOP_WALL_PICKS.forEach((pick, index) => {
     const wall = shopWalls[index]!;
     const motion = isPackWall(pick) ? { face: WALL_MOTIONS[pick.id] } : drawnWallMotion(pick);
@@ -272,8 +272,8 @@ export const SHOP_WALL_THEMES = [
 ${shopWalls}
 ] as const;
 
-// Les tuiles qui bougent (apps/client/scripts/assets/tile-motion.ts) : pour une tuile de base, ses images (la base d'abord), la durée de chacune (ms), et
-// comment le mouvement se décale d'une case à l'autre (decor/tile-animations.ts).
+// Les tuiles qui bougent, celles des murs de la boutique (apps/client/scripts/assets/tile-motion.ts) : pour une tuile de base, ses images (la base d'abord),
+// la durée de chacune (ms), et comment le mouvement se décale d'une case à l'autre (decor/tile-animations.ts).
 export const TILE_ANIMATIONS: ReadonlyArray<{ gid: number; frames: readonly number[]; durations: readonly number[]; phase: 'x' | 'y' | 'xy' | 'scatter' | 'sync'; step: number }> = [
 ${animations}
 ];

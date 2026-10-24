@@ -3804,12 +3804,12 @@
       "columns": 16,
       "firstgid": 1,
       "image": "../tiles/office.png",
-      "imageheight": 1440,
+      "imageheight": 640,
       "imagewidth": 512,
       "margin": 0,
       "name": "office",
       "spacing": 0,
-      "tilecount": 716,
+      "tilecount": 318,
       "tileheight": 32,
       "tilewidth": 32
     }
