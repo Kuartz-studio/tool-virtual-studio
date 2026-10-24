@@ -28,8 +28,9 @@ import {
 const decor = (items: PlacedItem[], more: Partial<DeskDecor> = {}): DeskDecor => ({ ...DEFAULT_DESK_DECOR, items, ...more });
 
 describe('la banque d\'éléments', () => {
-  test('au plus 10 catégories, le poste de travail d\'abord, toutes remplies', () => {
-    expect(DECOR_CATEGORIES.length).toBeLessThanOrEqual(10);
+  test('au plus 11 catégories, le poste de travail d\'abord, la collection à part en dernier, toutes remplies', () => {
+    expect(DECOR_CATEGORIES.length).toBeLessThanOrEqual(11);
+    expect(DECOR_CATEGORIES.at(-1)?.id).toBe('boutique');
     expect(DECOR_CATEGORIES.slice(0, 3).map((c) => c.id)).toEqual(['ecrans', 'bureaux', 'sieges']);
     for (const { id } of DECOR_CATEGORIES) expect(decorItemsOf(id).length, id).toBeGreaterThan(0);
   });
@@ -43,6 +44,13 @@ describe('la banque d\'éléments', () => {
       expect(item.fx % 1 === 0 && item.fy % 1 === 0, item.id).toBe(true);
       if (item.kind === 'wall') expect(item.h, item.id).toBeLessThanOrEqual(2);
     }
+  });
+
+  test('seuls les éléments de la boutique ont un prix : un entier d\'au moins 1 pour chacun, aucun pour les autres', () => {
+    const shop = decorItemsOf('boutique');
+    expect(shop.length).toBeGreaterThan(0);
+    for (const item of shop) expect(Number.isInteger(item.price) && item.price! >= 1, item.name).toBe(true);
+    for (const item of DECOR_ITEMS.filter((i) => i.cat !== 'boutique')) expect(item.price, item.name).toBeUndefined();
   });
 
   test('une centaine d\'éléments au moins, des écrans aux plantes', () => {
@@ -69,6 +77,23 @@ describe('la banque d\'éléments', () => {
     expect(CHARACTER_PARTS.outfits.length).toBeGreaterThan(10);
     expect(CHARACTER_PARTS.hair.length).toBeGreaterThan(10);
     expect(CHARACTER_PARTS.accessories.length).toBeGreaterThan(5);
+  });
+});
+
+describe('la boutique tient dans une pièce de bureau', () => {
+  test('chaque élément se pose seul dans la pièce compacte (6 × 7) comme dans la standard (9 × 7), contre le mur du fond', () => {
+    for (const room of [DESK_ROOMS.compact, DESK_ROOMS.standard]) {
+      for (const item of decorItemsOf('boutique')) {
+        expect(checkDecor(decor([{ id: item.id, x: 0, y: 0 }]), room), `${item.name} (${room.width} × ${room.height})`).toEqual({ ok: true });
+      }
+    }
+  });
+
+  test('un élément mural fait deux cases de haut au plus, un meuble ne dépasse pas trois rangées au sol', () => {
+    for (const item of decorItemsOf('boutique')) {
+      if (item.kind === 'wall') expect(item.h, item.name).toBeLessThanOrEqual(2);
+      if (item.kind === 'object') expect(item.claim, item.name).toBeLessThanOrEqual(3);
+    }
   });
 });
 

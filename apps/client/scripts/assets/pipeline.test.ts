@@ -1,13 +1,28 @@
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { CHARACTER_PARTS, DECOR_CATEGORIES, DECOR_ITEMS, FLOOR_THEMES, POOL_TILES, TILESET, WALL_THEMES } from '@bureau/shared';
+import { CHARACTER_PARTS, DECOR_CATEGORIES, DECOR_ITEMS, FLOOR_THEMES, POOL_TILES, TILESET, WALL_THEMES, type DecorItem } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { Img, readImage } from './image';
 import { ATLAS_MARGIN, packImages } from './pack';
 import { extract, segmentSheet } from './segment';
 import { ASSETS_DIR } from './build-assets';
 import { mapFiles, MAPS_DIR } from './build-map';
-import { BIG_FOOTPRINT_CELLS, BIG_ITEM_TILES, MIN_FLOAT_PX, SOLID_CATEGORIES, Sheets, buildDecor, defaultsOf, fitOnFootprint, type ResolvedEntry } from './decor';
+import { BOUTIQUE_ENTRIES, RARITIES, rarityOf } from './curation/boutique';
+import {
+  BIG_FOOTPRINT_CELLS,
+  BIG_ITEM_TILES,
+  ENTRIES,
+  MIN_FLOAT_PX,
+  SOLID_CATEGORIES,
+  Sheets,
+  buildDecor,
+  checkPrice,
+  defaultsOf,
+  fitOnFootprint,
+  renderCatalogSource,
+  type ResolvedEntry,
+} from './decor';
 import { readFileSync } from 'node:fs';
 
 const solid = (w: number, h: number, a = 255): Img => {
@@ -72,7 +87,7 @@ describe('l\'atlas (pack.ts)', () => {
 // sont complets et cohérents avec les listes générées.
 describe('les assets rangés dans l\'appli', () => {
   test('un atlas par catégorie, et chaque élément est dans le sien', () => {
-    expect(DECOR_CATEGORIES.length).toBeLessThanOrEqual(10);
+    expect(DECOR_CATEGORIES.length).toBeLessThanOrEqual(11);
     for (const { id } of DECOR_CATEGORIES) {
       const path = join(ASSETS_DIR, 'decor', `${id}.png`);
       expect(existsSync(path), id).toBe(true);
@@ -134,9 +149,10 @@ describe('les planches Gym et Basement', () => {
   const inCategory = (cat: string) => DECOR_ITEMS.filter((item) => item.cat === cat);
   const named = (id: string) => DECOR_ITEMS.find((item) => item.id === id);
 
-  test('une catégorie « Sport & jeux », après les neuf premières', () => {
+  test('une catégorie « Sport & jeux », après les neuf premières (la collection à part vient encore après)', () => {
     expect(DECOR_CATEGORIES.map((c) => c.id)).toContain('sport');
-    expect(DECOR_CATEGORIES.at(-1)).toEqual({ id: 'sport', label: 'Sport & jeux' });
+    expect(DECOR_CATEGORIES.at(-2)).toEqual({ id: 'sport', label: 'Sport & jeux' });
+    expect(DECOR_CATEGORIES.at(-1)).toEqual({ id: 'boutique', label: 'Boutique' });
     expect(inCategory('sport').length).toBeGreaterThanOrEqual(20);
   });
 
@@ -378,3 +394,119 @@ describe('les meubles sont ramenés sur leur case', () => {
   });
 });
 
+describe('le prix d\'un élément (checkPrice, buildDecor, renderCatalogSource)', () => {
+  const entry = (cat: ResolvedEntry['cat'], more: Partial<ResolvedEntry> = {}): ResolvedEntry => ({ sheet: 'of', name: 'x', cat, rect: [0, 0, 1, 1], ...more });
+
+  test('un élément de la boutique a un prix entier d\'au moins 1, et lui seul', () => {
+    expect(() => checkPrice(entry('boutique', { price: 150 }), 'of-0-0')).not.toThrow();
+    for (const price of [undefined, 0, -5, 12.5, Number.NaN]) {
+      expect(() => checkPrice(entry('boutique', { price }), 'of-0-0'), String(price)).toThrow(/a un prix/);
+    }
+    expect(() => checkPrice(entry('sieges'), 'of-0-0')).not.toThrow();
+    expect(() => checkPrice(entry('sieges', { price: 100 }), 'of-0-0')).toThrow(/seuls les éléments de la boutique/);
+  });
+
+  test('buildDecor recopie le prix des éléments qui en ont un et laisse les autres comme avant, sans même une clé « price »', () => {
+    const picture = new Img(64, 32);
+    picture.fillRect(0, 0, 64, 32, { r: 200, g: 0, b: 0, a: 255 });
+    const base = { sheet: 'of', cat: 'sieges' as const };
+    const built = buildDecor(new OnePicture(picture), [
+      { ...base, name: 'Libre', rect: [0, 0, 1, 1] },
+      { ...base, cat: 'boutique', name: 'Payant', rect: [1, 0, 1, 1], price: 150 },
+    ]);
+    const [libre, payant] = built.items;
+    expect('price' in libre!).toBe(false);
+    expect(payant!.price).toBe(150);
+    expect(() => buildDecor(new OnePicture(picture), [{ ...base, cat: 'boutique', name: 'Sans prix', rect: [0, 0, 1, 1] }])).toThrow(/a un prix/);
+  });
+
+  test('la liste générée écrit le prix en fin de ligne, pour les éléments payants seulement', () => {
+    const libre: DecorItem = { id: 'of-0-0', cat: 'sieges', name: 'A', kind: 'object', w: 1, h: 1, claim: 1, solid: false, fx: 2, fy: 2 };
+    const source = renderCatalogSource([libre, { ...libre, id: 'mu-0-0', cat: 'boutique', name: 'B', price: 1500 }]);
+    expect(source).toContain('fx: 2, fy: 2 },');
+    expect(source).toContain('fx: 2, fy: 2, price: 1500 },');
+  });
+});
+
+describe('la collection à part (catégorie « boutique »)', () => {
+  const shop = DECOR_ITEMS.filter((item) => item.cat === 'boutique');
+  const free = DECOR_ITEMS.filter((item) => item.cat !== 'boutique');
+
+  test('45 à 60 éléments, tous après les éléments libres : les identifiants et l\'ordre des anciens ne bougent pas', () => {
+    expect(shop.length).toBeGreaterThanOrEqual(45);
+    expect(shop.length).toBeLessThanOrEqual(60);
+    expect(DECOR_ITEMS.slice(free.length).map((item) => item.cat)).toEqual(shop.map(() => 'boutique'));
+  });
+
+  test('chaque élément de la collection a un prix entier d\'au moins 1, aucun autre n\'en a', () => {
+    for (const item of shop) expect(Number.isInteger(item.price) && item.price! >= 1, item.name).toBe(true);
+    for (const item of free) expect('price' in item, item.name).toBe(false);
+  });
+
+  test('les prix suivent quatre raretés, du Commun au Légendaire dans l\'ordre du catalogue, dans la proportion de la grille (40, 30, 20 et 10 %)', () => {
+    expect(RARITIES.map((rarity) => [rarity.min, rarity.max])).toEqual([[100, 250], [300, 900], [1200, 3500], [5000, 15000]]);
+    const ranks = shop.map((item) => {
+      const rarity = rarityOf(item.price!);
+      expect(rarity, `${item.name} : ${item.price} écus tombe entre deux raretés`).toBeDefined();
+      return RARITIES.indexOf(rarity!);
+    });
+    expect(ranks, 'rangés du plus commun au plus rare').toEqual([...ranks].sort((a, b) => a - b));
+    [0.4, 0.3, 0.2, 0.1].forEach((target, rank) => {
+      const share = ranks.filter((r) => r === rank).length / shop.length;
+      expect(Math.abs(share - target), `${RARITIES[rank]!.label} : ${Math.round(share * 100)} %`).toBeLessThanOrEqual(0.08);
+    });
+  });
+
+  test('un mélange de sortes : des meubles, des éléments muraux, des tapis et des objets à poser sur un meuble', () => {
+    for (const kind of ['object', 'wall', 'floor', 'onTop'] as const) expect(shop.filter((item) => item.kind === kind).length, kind).toBeGreaterThanOrEqual(5);
+  });
+
+  test('tout tient dans une pièce de bureau : 6 cases de large au plus (la compacte), 3 rangées au sol au plus pour un meuble, 2 cases de haut au mur', () => {
+    for (const item of shop) {
+      expect(item.w, item.name).toBeLessThanOrEqual(6);
+      if (item.kind === 'object') expect(item.claim, item.name).toBeLessThanOrEqual(3);
+      if (item.kind === 'wall') expect(item.h, item.name).toBeLessThanOrEqual(2);
+    }
+  });
+
+  test('les sièges, les plantes et les pieds fins ne bloquent jamais ; ce qui bloque est un gros meuble', () => {
+    const traversable = /^(Tabouret|Pouf|Banc|Chaise|Fauteuil|Canapé|Plante|Palmier|Bonsaï|Cordon|Psyché|Projecteurs|Caméra)/;
+    for (const item of shop.filter((i) => traversable.test(i.name))) expect(item.solid, item.name).toBe(false);
+    for (const item of shop.filter((i) => i.solid)) {
+      expect(item.kind, item.name).toBe('object');
+      expect(item.w * item.claim >= BIG_FOOTPRINT_CELLS || item.w * item.h >= BIG_ITEM_TILES, item.name).toBe(true);
+    }
+  });
+
+  test('aucun élément n\'est la copie d\'un élément libre ni d\'un autre de la collection : image identique, ou retournée', () => {
+    const atlases = new Map<string, Img>();
+    // Ce que l'élément dessine, rogné de son vide : deux copies posées différemment dans leur rectangle se reconnaissent quand même.
+    const drawn = (item: DecorItem): Img => {
+      if (!atlases.has(item.cat)) atlases.set(item.cat, readImage(join(ASSETS_DIR, 'decor', `${item.cat}.png`)));
+      const sprite = atlases.get(item.cat)!.crop(item.fx, item.fy, item.w * 32, item.h * 32);
+      const box = sprite.contentBox()!;
+      return sprite.crop(box.left, box.top, box.right - box.left, box.bottom - box.top);
+    };
+    const digest = (image: Img): string => createHash('sha1').update(`${image.width}x${image.height}`).update(image.data).digest('hex');
+    const taken = new Map<string, string>(free.map((item) => [digest(drawn(item)), item.name]));
+    const copies: string[] = [];
+    for (const item of shop) {
+      const image = drawn(item);
+      for (const key of [digest(image), digest(image.mirrorX())]) {
+        if (taken.has(key)) copies.push(`« ${item.name} » (${item.id}) copie « ${taken.get(key)} »`);
+      }
+      taken.set(digest(image), item.name);
+    }
+    expect(copies).toEqual([]);
+  });
+
+  test('aucun nom n\'est celui d\'un élément libre', () => {
+    const names = new Set(free.map((item) => item.name));
+    expect(shop.filter((item) => names.has(item.name)).map((item) => item.name)).toEqual([]);
+  });
+
+  test('la liste générée suit la curation : mêmes éléments, même ordre, mêmes prix (sinon relancer gen:assets)', () => {
+    expect(shop.map((item) => [item.name, item.price])).toEqual(BOUTIQUE_ENTRIES.map((e) => [e.name, e.price]));
+    expect(ENTRIES.slice(-BOUTIQUE_ENTRIES.length)).toEqual(BOUTIQUE_ENTRIES);
+  });
+});

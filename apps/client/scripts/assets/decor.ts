@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { DECOR_CATEGORIES, type DecorCategoryId, type DecorItem, type DecorKind } from '@bureau/shared';
 import { ART_ENTRIES } from './curation/art';
 import { BASEMENT_ENTRIES } from './curation/basement';
+import { BOUTIQUE_ENTRIES } from './curation/boutique';
 import { FESTIVE_ENTRIES } from './curation/festive';
 import { GYM_ENTRIES } from './curation/gym';
 import { INTERIOR_ENTRIES } from './curation/interiors';
@@ -24,6 +25,8 @@ export const ENTRIES: Entry[] = [
   ...ART_ENTRIES,
   ...JAPANESE_ENTRIES,
   ...FESTIVE_ENTRIES,
+  // La collection à part en dernier : ses lignes viennent après toutes les autres dans la liste générée, aucune des existantes ne bouge.
+  ...BOUTIQUE_ENTRIES,
 ];
 
 type Rect = readonly [number, number, number, number];
@@ -34,9 +37,12 @@ export type ResolvedEntry = Entry & { rect: Rect };
 // plantes (même un palmier), ni les lampes, les écrans, les tapis, la déco, ni les objets posés sur un meuble. Un élément est donc solide s'il est
 // d'une de ces catégories ET gros : 2 cases au sol au moins, ou 3 cases d'image (largeur × hauteur). Une entrée de la curation peut toujours dire
 // `solid` elle-même, pour un élément qui sort de la règle (la cheminée, la borne tactile, un banc rangé avec les tables).
+// La collection à part (`boutique`) est un mélange : des pièces de musée, de grands meubles, mais aussi des tabourets, des cordons, des trépieds
+// et des vases sur leur socle. Elle suit la même règle (ses gros meubles et ses vitrines bloquent), et sa curation dit `solid: false` pour tout
+// ce qu'on traverse (sièges, cordons, trépieds, miroirs sur pied) : un test vérifie qu'aucun siège ni aucune plante n'y bloque.
 export const BIG_ITEM_TILES = 3;
 export const BIG_FOOTPRINT_CELLS = 2;
-export const SOLID_CATEGORIES: ReadonlySet<DecorCategoryId> = new Set<DecorCategoryId>(['bureaux', 'rangement', 'cafe', 'sport', 'detente']);
+export const SOLID_CATEGORIES: ReadonlySet<DecorCategoryId> = new Set<DecorCategoryId>(['bureaux', 'rangement', 'cafe', 'sport', 'detente', 'boutique']);
 
 // La taille de l'élément en cases : celle de son rectangle, ou de son découpage au pixel près (`crop`, multiple de 32 px) quand la curation en
 // donne un. `fit` : le résultat de fitOnFootprint (largeur et profondeur au sol ramenées à ce que le dessin couvre).
@@ -146,6 +152,16 @@ export function fitOnFootprint(image: Img, entry: ResolvedEntry, kind: DecorKind
   return { image: fitted, w: fitW, h };
 }
 
+// Un prix pour chaque élément de la boutique (un entier d'au moins 1), et pour lui seul : une faute de curation arrête la génération au lieu de
+// sortir un élément gratuit dans la boutique, ou payant ailleurs.
+export function checkPrice(entry: ResolvedEntry, id: string): void {
+  if (entry.cat === 'boutique') {
+    if (!Number.isInteger(entry.price) || entry.price! < 1) throw new Error(`« ${entry.name} » (${id}) : un élément de la boutique a un prix, un entier d'au moins 1.`);
+  } else if (entry.price !== undefined) {
+    throw new Error(`« ${entry.name} » (${id}) : seuls les éléments de la boutique ont un prix.`);
+  }
+}
+
 export function buildDecor(sheets: Sheets, entries: Entry[] = ENTRIES): BuiltDecor {
   const resolved = entries.map((entry) => sheets.resolve(entry));
   const sprites = new Map<string, Img>();
@@ -157,6 +173,7 @@ export function buildDecor(sheets: Sheets, entries: Entry[] = ENTRIES): BuiltDec
     const cut = sheets.image(entry.sheet).crop(px, py, pw, ph);
     const image = entry.flip ? cut.mirrorX() : cut;
     if (image.isEmpty()) throw new Error(`« ${entry.name} » (${id}) : le rectangle est vide.`);
+    checkPrice(entry, id);
     const fit = fitOnFootprint(image, entry, defaultsOf(entry).kind);
     fits.set(id, fit);
     sprites.set(id, fit.image);
@@ -173,7 +190,9 @@ export function buildDecor(sheets: Sheets, entries: Entry[] = ENTRIES): BuiltDec
       const frame = packed.frames.get(itemId(entry))!;
       const fit = fits.get(itemId(entry))!;
       const { kind, claim, solid } = defaultsOf(entry, fit);
-      items.push({ id: itemId(entry), cat, name: entry.name, kind, w: fit.w, h: fit.h, claim, solid, fx: frame.x, fy: frame.y });
+      // Le prix n'est écrit que pour les éléments qui en ont un : les autres gardent exactement les propriétés qu'ils avaient.
+      const price = entry.price === undefined ? {} : { price: entry.price };
+      items.push({ id: itemId(entry), cat, name: entry.name, kind, w: fit.w, h: fit.h, claim, solid, fx: frame.x, fy: frame.y, ...price });
     }
   }
   return { items, atlases, sprites };
@@ -183,7 +202,7 @@ export function buildDecor(sheets: Sheets, entries: Entry[] = ENTRIES): BuiltDec
 export function renderCatalogSource(items: DecorItem[]): string {
   const lines = items.map(
     (i) =>
-      `  { id: ${JSON.stringify(i.id)}, cat: ${JSON.stringify(i.cat)}, name: ${JSON.stringify(i.name)}, kind: ${JSON.stringify(i.kind)}, w: ${i.w}, h: ${i.h}, claim: ${i.claim}, solid: ${i.solid}, fx: ${i.fx}, fy: ${i.fy} },`,
+      `  { id: ${JSON.stringify(i.id)}, cat: ${JSON.stringify(i.cat)}, name: ${JSON.stringify(i.name)}, kind: ${JSON.stringify(i.kind)}, w: ${i.w}, h: ${i.h}, claim: ${i.claim}, solid: ${i.solid}, fx: ${i.fx}, fy: ${i.fy}${i.price === undefined ? '' : `, price: ${i.price}`} },`,
   );
   return `// Généré par \`pnpm --filter @bureau/client gen:assets\` (apps/client/scripts/assets) : ne pas modifier à la main.
 import type { DecorItem } from './types';
