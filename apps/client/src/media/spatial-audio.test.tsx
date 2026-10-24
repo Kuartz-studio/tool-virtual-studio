@@ -110,6 +110,22 @@ describe('useSpatialAudio', () => {
     expect([...hook.result.current]).toEqual(['bob']);
   });
 
+  test('mes pas comptent même hors conversation : rejoint à l\'arrêt là où j\'ai marché, le volume part de là, pas de mon arrivée', async () => {
+    const client = new FakeMediaClient();
+    act(() => {
+      useOfficeStore.getState().applyInit({ self: player('moi', corridor(4)), players: [player('bob', corridor(40))], mapKey: 'office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] });
+      useOfficeStore.getState().setOfficeMap(map);
+    });
+    const hook = renderHook(({ snapshot }: { snapshot: MediaSnapshot }) => useSpatialAudio(client, snapshot), { initialProps: { snapshot: client.getSnapshot() } });
+    // Hors conversation, je marche jusqu'à Bob, et je m'arrête.
+    act(() => EventBus.emit('local:move', { ...corridor(39), dir: 'right', moving: false }));
+    await act(() => client.join({ url: 'wss://livekit.test', room: 'r1', token: 't' }));
+    act(() => client.addRemote({ id: 'bob', name: 'bob', mic: true }));
+    hook.rerender({ snapshot: client.getSnapshot() });
+    expect(client.volumes).toEqual({ bob: 1 });
+    expect(hook.result.current.size).toBe(0);
+  });
+
   test('ses positions (le magasin) suivent aussi : Bob s\'éloigne', async () => {
     const { client } = await inRoom({ bob: corridor(8) });
     useOfficeStore.getState().positions.set('bob', { ...corridor(40), dir: 'down', moving: false });

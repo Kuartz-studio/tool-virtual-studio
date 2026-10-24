@@ -1,5 +1,5 @@
 import { gainBetween, type OfficeMap } from '@bureau/shared';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { EventBus } from '../game/EventBus';
 import { listenOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
@@ -45,19 +45,27 @@ export function useSpatialAudio(client: MediaClient, snapshot: MediaSnapshot): R
   // Un état d'activité où l'on n'entend pas les autres : plus aucune voix, où qu'ils soient.
   const deaf = useOfficeStore((state) => state.self?.activity?.hear === false);
 
+  // Ma position : celle que le jeu envoie à chaque pas (`local:move`), suivie dès l'ouverture du bureau, et non seulement en conversation : on
+  // y entre souvent à l'arrêt, là où l'on a marché avant (avant, le volume partait de la position de l'`init`, celle de l'arrivée au bureau,
+  // jusqu'au pas suivant : quelqu'un qui venait nous parler restait muet). Avant le premier pas, celle de l'`init`.
+  const walked = useRef<{ x: number; y: number } | null>(null);
+  useEffect(
+    () =>
+      listenOnBus(EventBus, 'local:move', (move) => {
+        walked.current = { x: move.x, y: move.y };
+      }),
+    [],
+  );
+
   useEffect(() => {
     if (!inRoom) {
       setInaudible((previous) => (previous.size === 0 ? previous : new Set()));
       return;
     }
-    // Ma position : celle de l'`init`, puis celle que le jeu envoie à chaque pas.
-    let self: { x: number; y: number } | null = useOfficeStore.getState().self;
-    const stopListening = listenOnBus(EventBus, 'local:move', (move) => {
-      self = { x: move.x, y: move.y };
-    });
     let lastSignature = '';
     const update = () => {
-      const { officeMap, positions, conversationLock } = useOfficeStore.getState();
+      const { officeMap, positions, conversationLock, self: arrival } = useOfficeStore.getState();
+      const self = walked.current ?? arrival;
       if (officeMap === null || self === null) return;
       const locked = new Set(conversationLock?.members ?? []);
       const volumes = volumesFor(officeMap, self, others.map((id) => ({ id })), (id) => positions.get(id), locked);
@@ -72,10 +80,7 @@ export function useSpatialAudio(client: MediaClient, snapshot: MediaSnapshot): R
     };
     update();
     const timer = setInterval(update, 1000 / SPATIAL_AUDIO_HZ);
-    return () => {
-      clearInterval(timer);
-      stopListening();
-    };
+    return () => clearInterval(timer);
     // `others` est relu à chaque changement de ses identifiants (othersSignature), pas à chaque rendu.
   }, [client, inRoom, othersSignature, deaf]);
 
