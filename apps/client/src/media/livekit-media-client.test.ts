@@ -811,6 +811,32 @@ describe('parquer et reprendre', () => {
     expect(media.getSnapshot()).toMatchObject({ room: 'r1', participants: [{ id: 'moi', mic: true }] });
   });
 
+  test('une sortie pendant la reprise (pendant la dépublication de ce que LiveKit croyait publié) : la room est fermée, rien ne reste ouvert', async () => {
+    const media = client({ mic: true, cam: false });
+    const joined = media.join(payload('r1'));
+    const room = lastRoom();
+    let publish!: () => void;
+    room.localParticipant.hold = new Promise((resolve) => (publish = resolve));
+    await flush();
+    await media.leave({ park: true });
+    room.localParticipant.hold = null;
+    publish();
+    await joined;
+    await flush();   // la publication du micro a fini dans la room parquée, sans que LiveKit le dise
+    let unpublished!: () => void;
+    room.localParticipant.unpublishTrack.mockImplementationOnce(() => new Promise<void>((resolve) => (unpublished = resolve)));
+    const back = media.join(resumeOf('r1', '1'));
+    room.serverResumes('1');
+    await flush();
+    const left = media.leave();
+    unpublished();
+    await back;
+    await left;
+    expect(room.disconnect).toHaveBeenCalledOnce();
+    expect(room.listenerCount()).toBe(0);
+    expect(media.getSnapshot()).toMatchObject({ room: null, participants: [] });
+  });
+
   test('une reprise que LiveKit ne confirme pas à temps : la parquée est fermée, une Room neuve se connecte avec le jeton, et y publie le micro gardé', async () => {
     fakeTimers();
     const media = client({ mic: true, cam: false });

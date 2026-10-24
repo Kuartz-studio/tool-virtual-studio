@@ -61,7 +61,7 @@ interface Attachment {
 // - en quittant la room, ou quand elle se termine sans nous, les écouteurs de la room et les éléments audio sont retirés, et les
 //   vidéos détachées : elles se rattacheront à la room suivante ;
 // - parquer (park) : la Room reste connectée, mise de côté. Plus rien d'elle n'arrive à MediaSession ni aux haut-parleurs ; le micro est
-//   dépublié sans être arrêté (gardé, `keptMic`), la caméra et le partage d'écran s'arrêtent. Le serveur, lui, lui retire tout droit d'y
+//   dépublié sans être arrêté (gardé, `kept`), la caméra et le partage d'écran s'arrêtent. Le serveur, lui, lui retire tout droit d'y
 //   recevoir ou d'y publier. La reprendre (resume) attend que LiveKit dise les droits rendus (l'attribut MEDIA_RESUME_ATTRIBUTE de la
 //   personne vaut le `resume` du join), puis la remet en cours : le son des autres revient de lui-même (LiveKit nous réabonne), et
 //   MediaSession republie le micro gardé, sans redemander l'accès au navigateur. Une autre connexion ferme la room parquée, mais garde le micro
@@ -172,13 +172,15 @@ export class LiveKitTransport implements MediaTransport {
     parked.off();
     this.parked = null;
     const room = parked.room;
-    // Ce que LiveKit croit encore publié (une publication qui a fini pendant le parcage, que le serveur avait déjà retirée) : dépublié, pour que
-    // MediaSession republie pour de bon (le micro, gardé, sans redemander l'accès).
-    await this.unpublishAll(room, parked.devices);
+    // La room est de nouveau la nôtre dès maintenant : une sortie pendant ce qui suit la ferme (disconnect), au lieu de l'oublier ouverte.
     this.room = room;
     this.roomName = parked.name;
     this.roomDevices = { ...parked.devices };
     this.released = new Promise<void>((resolve) => (this.markReleased = resolve));
+    // Ce que LiveKit croit encore publié (une publication qui a fini pendant le parcage, que le serveur avait déjà retirée) : dépublié, pour que
+    // MediaSession republie pour de bon (le micro, gardé, sans redemander l'accès).
+    await this.unpublishAll(room, parked.devices);
+    if (this.room !== room) return false;
     this.listen(room, events);
     // Ce que LiveKit nous a déjà rendu pendant l'attente (le réabonnement suit les droits de près) : joué comme une piste qui arrive.
     for (const participant of room.remoteParticipants.values()) {
