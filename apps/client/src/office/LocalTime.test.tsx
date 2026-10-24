@@ -91,6 +91,21 @@ describe('la carte de l\'heure locale', () => {
   });
 });
 
+describe('l\'onglet revient d\'arrière-plan', () => {
+  test('l\'heure est relue tout de suite, sans attendre la prochaine minute ronde', () => {
+    arrive();
+    render(<LocalTimeCard timezone="Europe/Paris" name="Moi" self />);
+    expect(screen.getByText('18:42')).toBeTruthy();
+    // Trois heures sans minuterie (le navigateur les gèle en arrière-plan), puis l'onglet revient.
+    act(() => {
+      vi.setSystemTime(NOW + 3 * 3600_000);
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(document.visibilityState).toBe('visible');
+    expect(screen.getByText('21:42')).toBeTruthy();
+  });
+});
+
 describe('où poser la carte', () => {
   const viewport = { width: 1280, height: 800 };
   const size = { width: 216, height: 110 };
