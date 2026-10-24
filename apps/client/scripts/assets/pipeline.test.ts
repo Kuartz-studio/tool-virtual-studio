@@ -447,7 +447,7 @@ describe('la collection à part (catégorie « boutique »)', () => {
     expect(RARITIES.map((rarity) => [rarity.min, rarity.max])).toEqual([[100, 250], [300, 900], [1200, 3500], [5000, 15000]]);
     const ranks = shop.map((item) => {
       const rarity = rarityOf(item.price!);
-      expect(rarity, `${item.name} : ${item.price} écus tombe entre deux raretés`).toBeDefined();
+      expect(rarity, `${item.name} : ${item.price} kuartzons tombe entre deux raretés`).toBeDefined();
       return RARITIES.indexOf(rarity!);
     });
     expect(ranks, 'rangés du plus commun au plus rare').toEqual([...ranks].sort((a, b) => a - b));

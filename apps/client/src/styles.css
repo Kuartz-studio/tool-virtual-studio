@@ -7066,7 +7066,7 @@ button.desk-place:disabled {
   color: var(--accent-ink);
 }
 
-.level-up-ecus {
+.level-up-kuartzons {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -7075,11 +7075,11 @@ button.desk-place:disabled {
   color: #b07d00;
 }
 
-.office-ui[data-theme='night'] .level-up-ecus {
+.office-ui[data-theme='night'] .level-up-kuartzons {
   color: #ffd54a;
 }
 
-.level-up-ecus svg.lucide {
+.level-up-kuartzons svg.lucide {
   width: 18px;
   height: 18px;
 }

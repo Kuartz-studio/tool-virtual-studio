@@ -29,5 +29,5 @@ export const cancelMission = (id: string): Promise<TaskView> => api<TaskView>(`/
 
 export const fetchStats = (userId: string): Promise<CharacterStats> => api<CharacterStats>(`/api/people/${encodeURIComponent(userId)}/stats`);
 
-// Acheter un élément de la boutique : sa progression du moment (écus baissés, l'élément possédé). Refus : ApiError `owned`, `too_poor` ou `unknown_item`.
+// Acheter un élément de la boutique : sa progression du moment (kuartzons baissés, l'élément possédé). Refus : ApiError `owned`, `too_poor` ou `unknown_item`.
 export const buyItem = (itemId: string): Promise<MyProgress> => api<MyProgress>('/api/shop/buy', { method: 'POST', body: JSON.stringify({ itemId }) });

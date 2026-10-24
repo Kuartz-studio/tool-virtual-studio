@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'vitest';
-import { ecusText, formatNumber, gradeLabel, shareText, tierLabel, xpText } from './progress-format';
+import { formatNumber, gradeLabel, kuartzonsText, shareText, tierLabel, xpText } from './progress-format';
 
 // Les espaces des milliers, en français, sont des espaces fines insécables : on les compare comme des espaces.
 const plain = (text: string) => text.replace(/ | /g, ' ');
 
 describe('les nombres de la progression', () => {
-  test('des milliers séparés, des XP et des écus (« 1 écu » au singulier)', () => {
+  test('des milliers séparés, des XP et des kuartzons (« 1 kuartzon » au singulier)', () => {
     expect(plain(formatNumber(12_340))).toBe('12 340');
     expect(plain(xpText(1250))).toBe('1 250 XP');
-    expect(ecusText(1)).toBe('1 écu');
-    expect(plain(ecusText(1450))).toBe('1 450 écus');
+    expect(kuartzonsText(1)).toBe('1 kuartzon');
+    expect(plain(kuartzonsText(1450))).toBe('1 450 kuartzons');
   });
 
   test('une XP en part de niveau : un pourcentage, la moitié, puis des niveaux (le singulier sous deux)', () => {

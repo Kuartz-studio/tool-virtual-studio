@@ -63,19 +63,19 @@ test('confier une mission à l\'accueil : elle arrive chez l\'autre, qui la term
   await expect(ana.locator(`[data-user="${bobId}"] .level-badge > [aria-hidden="true"]`)).toHaveText('1');
 });
 
-test('la boutique : un élément acheté avec ses écus est à soi, et la bourse baisse de son prix', async ({ browser }) => {
+test('la boutique : un élément acheté avec ses kuartzons est à soi, et la bourse baisse de son prix', async ({ browser }) => {
   test.slow();
   const ana = await arrive(browser, 'Apolline');
-  // De quoi acheter (le coup de pouce des tests : de l'XP et des écus d'un coup).
+  // De quoi acheter (le coup de pouce des tests : de l'XP et des kuartzons d'un coup).
   await ana.evaluate(() => window.__office!.xp(0, 500));
   await officeBar(ana).getByRole('button', { name: 'Plus' }).click();
   await ana.getByRole('menuitem', { name: 'Boutique' }).click();
   const shop = ana.getByRole('complementary', { name: 'Boutique' });
-  await expect(shop.locator('.shop-wallet-value')).toHaveText('500 écus');
-  await shop.getByRole('button', { name: 'Acheter « Papillon suspendu » pour 100 écus' }).click();
-  await shop.getByRole('button', { name: 'Confirmer l\'achat de « Papillon suspendu » pour 100 écus' }).click();
+  await expect(shop.locator('.shop-wallet-value')).toHaveText('500 kuartzons');
+  await shop.getByRole('button', { name: 'Acheter « Papillon suspendu » pour 100 kuartzons' }).click();
+  await shop.getByRole('button', { name: 'Confirmer l\'achat de « Papillon suspendu » pour 100 kuartzons' }).click();
   await expect(shop.locator('[data-item="mu-9-36"] .shop-owned')).toBeVisible();
-  await expect(shop.locator('.shop-wallet-value')).toHaveText('400 écus');
+  await expect(shop.locator('.shop-wallet-value')).toHaveText('400 kuartzons');
   await shop.getByRole('tab', { name: /^Mes achats/ }).click();
   await expect(shop.locator('.shop-card')).toHaveCount(1);
 });

@@ -160,7 +160,7 @@ export interface OfficeState {
   // Le zoom de la caméra : le pourcentage choisi (zoom.ts), 100 % au début. Le jeu le lit (la caméra y glisse), les boutons de zoom, la
   // molette et le clavier l'écrivent.
   zoomPercent: number;
-  // Sa progression (XP, écus, série de pointage, ce qu'elle possède de la boutique), telle que le serveur la dit (l'`init`, puis `progress:mine`), sans le gain
+  // Sa progression (XP, kuartzons, série de pointage, ce qu'elle possède de la boutique), telle que le serveur la dit (l'`init`, puis `progress:mine`), sans le gain
   // qui l'y amène (la connexion l'annonce) ; null avant le premier `init`. Son niveau s'en déduit (levelOf) ; celui des autres est dans leur PublicPlayer.
   progress: MyProgress | null;
   // Sa liste de tâches (GET /api/me/tasks, lue à chaque connexion prête, puis tenue à jour : une mission reçue, une tâche cochée, une mission retirée) : les

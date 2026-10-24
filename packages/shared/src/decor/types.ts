@@ -31,7 +31,7 @@ export type DecorKind = (typeof DECOR_KINDS)[number];
 
 // Un élément de la banque. `w` et `h` sont la taille de l'image en cases ; `claim`, le nombre de rangées du bas qu'il occupe au sol.
 // `fx`, `fy` disent où est l'image (en pixels) dans l'atlas de sa catégorie, ou dans `atlas` quand il en a un à lui : les horloges murales,
-// dessinées à part (decor/clocks.ts), ont le leur, que le pipeline des images du pack ne touche pas (decorAtlasOf). `price`, le prix en écus (un
+// dessinées à part (decor/clocks.ts), ont le leur, que le pipeline des images du pack ne touche pas (decorAtlasOf). `price`, le prix en kuartzons (un
 // entier d'au moins 1) : tous les éléments de la catégorie `boutique` en ont un, aucun autre n'en a (ils sont libres) ; le générateur et les tests le
 // vérifient.
 export interface DecorItem {

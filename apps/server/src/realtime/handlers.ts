@@ -423,11 +423,11 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
       d.world.setBoost(userId, boost.data.ms === 0 ? null : boost.data.ms);
       io.to(OFFICE_ROOM).emit('coffee:changed', { id: userId, ms: boost.data.ms });
     });
-    // De l'XP d'un coup (et des écus) : de quoi tester un passage de niveau ou un achat sans accomplir de missions.
+    // De l'XP d'un coup (et des kuartzons) : de quoi tester un passage de niveau ou un achat sans accomplir de missions.
     socket.on('debug:xp', (payload) => {
       const grant = debugXpSchema.safeParse(payload);
       if (!grant.success || !d.world.get(userId)) return;
-      d.progress.debugGrant(userId, grant.data.xp, grant.data.ecus ?? 0).then(
+      d.progress.debugGrant(userId, grant.data.xp, grant.data.kuartzons ?? 0).then(
         (progress) => d.onProgress(userId, progress),
         (err: unknown) => logServerError(d.logger, { err, userId }, 'XP de test impossible'),
       );

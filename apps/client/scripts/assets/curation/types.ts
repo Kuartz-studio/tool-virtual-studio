@@ -19,7 +19,7 @@ export interface Entry {
   // L'image retournée de gauche à droite : un fauteuil de profil que la planche ne dessine que dans un sens. L'identifiant prend alors le suffixe « -m »
   // (celui de l'original est inchangé).
   flip?: boolean;
-  // Le prix en écus, un entier d'au moins 1 : seuls les éléments de la catégorie `boutique` en ont un, et tous (buildDecor le vérifie). Il est recopié tel
+  // Le prix en kuartzons, un entier d'au moins 1 : seuls les éléments de la catégorie `boutique` en ont un, et tous (buildDecor le vérifie). Il est recopié tel
   // quel dans la liste générée, pour ces éléments seulement : les lignes des autres ne changent pas.
   price?: number;
 }

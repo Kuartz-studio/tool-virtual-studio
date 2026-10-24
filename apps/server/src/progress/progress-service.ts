@@ -44,7 +44,7 @@ export interface ProgressServiceOptions {
   /** Le fuseau de chaque personne : ses plafonds du jour et sa série de pointage s'y comptent. Par défaut, celui de son compte (`user.timezone`, Paris tant
    * qu'elle n'en a pas choisi d'autre). */
   timeZoneOf?: (userId: string) => Promise<string>;
-  /** Le prix d'un élément de la boutique, en écus (undefined : il n'y est pas). Par défaut, celui de la banque d'éléments (DecorItem.price). */
+  /** Le prix d'un élément de la boutique, en kuartzons (undefined : il n'y est pas). Par défaut, celui de la banque d'éléments (DecorItem.price). */
   priceOf?: (itemId: string) => number | undefined;
 }
 
@@ -90,11 +90,11 @@ function toView(row: { t: TaskRow; ownerName: string; giverName: string | null }
 // Des notes vides n'en sont pas.
 const notesOf = (notes: string | undefined): string | null => (notes === undefined || notes === '' ? null : notes);
 
-// La progression de chacun : sa liste de tâches, les missions qu'on lui confie, l'XP qu'il en tire (et ce qu'elle rapporte en montant de niveau : des écus), son
+// La progression de chacun : sa liste de tâches, les missions qu'on lui confie, l'XP qu'il en tire (et ce qu'elle rapporte en montant de niveau : des kuartzons), son
 // pointage du jour, ses parties de jeu, ses caractéristiques, et ce qu'il achète à la boutique.
 //
-// Tout ce qui change l'XP ou les écus d'une personne passe l'un après l'autre (une file par personne), dans une transaction qui verrouille sa ligne : deux tâches
-// cochées en même temps comptent l'une après l'autre, le plafond du jour aussi, et un achat ne dépense jamais deux fois les mêmes écus. Les règles (niveaux, paliers,
+// Tout ce qui change l'XP ou les kuartzons d'une personne passe l'un après l'autre (une file par personne), dans une transaction qui verrouille sa ligne : deux tâches
+// cochées en même temps comptent l'une après l'autre, le plafond du jour aussi, et un achat ne dépense jamais deux fois les mêmes kuartzons. Les règles (niveaux, paliers,
 // plafonds) sont celles de @bureau/shared (progress/rules.ts), les mêmes que le client affiche.
 export class ProgressService {
   private readonly serial = oneAtATimePerKey();
@@ -116,14 +116,14 @@ export class ProgressService {
     this.priceOf = options.priceOf ?? ((itemId) => decorItem(itemId)?.price);
   }
 
-  // Sa progression : XP, écus, série de pointage (celle qui court encore : une série qu'un jour ouvré manqué a cassée vaut 0) et ce qu'elle possède.
+  // Sa progression : XP, kuartzons, série de pointage (celle qui court encore : une série qu'un jour ouvré manqué a cassée vaut 0) et ce qu'elle possède.
   async mine(userId: string): Promise<MyProgress> {
     const [[row], owned, today] = await Promise.all([
       this.db.select().from(progress).where(eq(progress.userId, userId)),
       this.db.select({ itemId: shopPurchase.itemId }).from(shopPurchase).where(eq(shopPurchase.userId, userId)).orderBy(shopPurchase.boughtAt),
       this.today(userId),
     ]);
-    return { xp: row?.xp ?? 0, ecus: row?.ecus ?? 0, streak: currentStreak(row, today), owned: owned.map((o) => o.itemId) };
+    return { xp: row?.xp ?? 0, kuartzons: row?.kuartzons ?? 0, streak: currentStreak(row, today), owned: owned.map((o) => o.itemId) };
   }
 
   // Le niveau de chacune de ces personnes (0 pour qui n'a pas de ligne) : pour le monde, et la liste des membres.
@@ -308,7 +308,7 @@ export class ProgressService {
   }
 
   // Acheter un élément de la boutique (un élément de décor qui a un prix) : une fois pour toutes. `unknown_item` : pas un élément de la boutique ; `owned` : déjà à
-  // elle ; `too_poor` : pas assez d'écus.
+  // elle ; `too_poor` : pas assez de kuartzons.
   buy(userId: string, itemId: string): Promise<BuyResult> {
     const price = this.priceOf(itemId);
     if (price === undefined) return Promise.resolve({ ok: false, error: 'unknown_item' });
@@ -317,29 +317,29 @@ export class ProgressService {
         const row = await lockProgress(tx, userId);
         const [owned] = await tx.select({ itemId: shopPurchase.itemId }).from(shopPurchase).where(and(eq(shopPurchase.userId, userId), eq(shopPurchase.itemId, itemId)));
         if (owned) return 'owned' as const;
-        if (row.ecus < price) return 'too_poor' as const;
+        if (row.kuartzons < price) return 'too_poor' as const;
         await tx.insert(shopPurchase).values({ userId, itemId, price, boughtAt: new Date(this.clock()) });
-        await tx.update(progress).set({ ecus: sql`${progress.ecus} - ${price}`, updatedAt: new Date(this.clock()) }).where(eq(progress.userId, userId));
+        await tx.update(progress).set({ kuartzons: sql`${progress.kuartzons} - ${price}`, updatedAt: new Date(this.clock()) }).where(eq(progress.userId, userId));
         return null;
       });
       return refused === null ? { ok: true, progress: await this.mine(userId) } : { ok: false, error: refused };
     });
   }
 
-  // Réservé aux tests de bout en bout (`debug:xp`) : `xp` d'expérience d'un coup, comme une mission (ses niveaux rapportent leurs écus), plus `ecus` écus.
-  debugGrant(userId: string, xp: number, ecus: number): Promise<MyProgress> {
+  // Réservé aux tests de bout en bout (`debug:xp`) : `xp` d'expérience d'un coup, comme une mission (ses niveaux rapportent leurs kuartzons), plus `kuartzons` kuartzons.
+  debugGrant(userId: string, xp: number, kuartzons: number): Promise<MyProgress> {
     return this.serial(userId, async () => {
       const day = await this.today(userId);
       const gain = await this.db.transaction(async (tx) => {
         const gained = await this.award(tx, userId, { amount: xp, source: 'mission', label: 'Coup de pouce (test)', day });
-        if (ecus > 0) await tx.update(progress).set({ ecus: sql`${progress.ecus} + ${ecus}` }).where(eq(progress.userId, userId));
+        if (kuartzons > 0) await tx.update(progress).set({ kuartzons: sql`${progress.kuartzons} + ${kuartzons}` }).where(eq(progress.userId, userId));
         return gained;
       });
       return { ...(await this.mine(userId)), gain };
     });
   }
 
-  // Les caractéristiques de quelqu'un (un membre actif), telles que `viewerId` les voit : ses écus et son journal ne sont montrés qu'à elle. null : pas de tel
+  // Les caractéristiques de quelqu'un (un membre actif), telles que `viewerId` les voit : ses kuartzons et son journal ne sont montrés qu'à elle. null : pas de tel
   // membre.
   async stats(userId: string, viewerId: string): Promise<CharacterStats | null> {
     const [who] = await this.db
@@ -383,23 +383,23 @@ export class ProgressService {
       .where(eq(xpEvent.userId, userId))
       .orderBy(desc(xpEvent.createdAt))
       .limit(HISTORY_LISTED);
-    return { ...stats, ecus: row?.ecus ?? 0, history: history.map((entry): XpEntry => ({ ...entry, at: entry.at.toISOString() })) };
+    return { ...stats, kuartzons: row?.kuartzons ?? 0, history: history.map((entry): XpEntry => ({ ...entry, at: entry.at.toISOString() })) };
   }
 
-  // Ajoute l'XP à la personne (dans la transaction, sa ligne verrouillée par lockProgress), avec les écus des niveaux passés, et l'inscrit au journal. Rend le gain,
+  // Ajoute l'XP à la personne (dans la transaction, sa ligne verrouillée par lockProgress), avec les kuartzons des niveaux passés, et l'inscrit au journal. Rend le gain,
   // même nul (une tâche à soi au-delà du plafond : rien au journal, le niveau ne bouge pas).
   private async award(tx: Db, userId: string, g: { amount: number; source: XpSource; label: string; day: string; taskId?: string }): Promise<XpGain> {
     const row = await lockProgress(tx, userId);
-    const { levelBefore, levelAfter, ecus } = gainOf(row.xp, g.amount);
+    const { levelBefore, levelAfter, kuartzons } = gainOf(row.xp, g.amount);
     if (g.amount > 0) {
       const now = new Date(this.clock());
       await tx
         .update(progress)
-        .set({ xp: sql`${progress.xp} + ${g.amount}`, ecus: sql`${progress.ecus} + ${ecus}`, updatedAt: now })
+        .set({ xp: sql`${progress.xp} + ${g.amount}`, kuartzons: sql`${progress.kuartzons} + ${kuartzons}`, updatedAt: now })
         .where(eq(progress.userId, userId));
       await tx.insert(xpEvent).values({ userId, amount: g.amount, source: g.source, label: g.label, day: g.day, taskId: g.taskId ?? null, createdAt: now });
     }
-    return { amount: g.amount, source: g.source, label: g.label, levelBefore, levelAfter, ecus };
+    return { amount: g.amount, source: g.source, label: g.label, levelBefore, levelAfter, kuartzons };
   }
 
   private async today(userId: string): Promise<string> {

@@ -7,12 +7,12 @@ import { on } from './helpers';
 // Halloween, plus quelques tapis de la planche « Generic » que le thème n'avait pas gardés. Aucune n'est une copie d'un élément libre : même planche,
 // autre dessin, ou autre planche (un test compare les pixels de chaque pièce à ceux de toute la banque).
 //
-// Chaque élément a un prix en écus, et les prix suivent quatre raretés (RARITIES) : un Commun s'achète vite, un Légendaire est une pièce de
+// Chaque élément a un prix en kuartzons, et les prix suivent quatre raretés (RARITIES) : un Commun s'achète vite, un Légendaire est une pièce de
 // collection qu'on met des mois à réunir. Les entrées sont rangées par rareté puis par prix, ce qui est aussi leur ordre dans la liste générée.
 // Les règles de pose sont celles des autres éléments (decor.ts) : les gros meubles et les vitrines bloquent, jamais un siège ; un élément mural fait
 // deux cases de haut au plus ; une pièce de 5 cases tient dans la pièce compacte (6 × 7).
 
-// Les raretés et leurs prix, en écus. Rien n'est vendu entre deux raretés : un test vérifie que chaque prix tombe dans l'une d'elles.
+// Les raretés et leurs prix, en kuartzons. Rien n'est vendu entre deux raretés : un test vérifie que chaque prix tombe dans l'une d'elles.
 export const RARITIES = [
   { id: 'commun', label: 'Commun', min: 100, max: 250 },
   { id: 'rare', label: 'Rare', min: 300, max: 900 },
@@ -37,7 +37,7 @@ const be = on('be', 'boutique');
 const cs = on('cs', 'boutique');
 const hw = on('hw', 'boutique');
 
-// ---- Commun : 100 à 250 écus ---------------------------------------------------------------------------------------------
+// ---- Commun : 100 à 250 kuartzons ---------------------------------------------------------------------------------------------
 // De quoi poser une première touche : des trophées et des idoles à mettre sur un meuble, des médailles encadrées, des vases, des cordons de velours,
 // des tapis ronds, de petits éléments muraux, un chaudron. Les objets qui se posent sur un meuble (`onTop`) gardent le rectangle de la planche tel quel : leur
 // socle blanc ou leur ombre laisse un peu de vide en bas, sans conséquence pour un objet qu'on pose n'importe où sur un plateau.
@@ -68,7 +68,7 @@ const COMMUN: Entry[] = [
   hw('Chaudron de sorcière', [2, 8, 2, 2], { price: 250 }),
 ];
 
-// ---- Rare : 300 à 900 écus -----------------------------------------------------------------------------------------------
+// ---- Rare : 300 à 900 kuartzons -----------------------------------------------------------------------------------------------
 // Ce qui fait un coin : amphores sur socle, petites toiles, grands tapis, miroirs, mobilier laqué, matériel de plateau, premières vitrines. Les
 // trépieds et les miroirs sur pied sont traversables (`solid: false`) : ce sont des pieds fins, pas des meubles, même quand l'image fait trois cases.
 const RARE: Entry[] = [
@@ -92,7 +92,7 @@ const RARE: Entry[] = [
   mu('Vitrine au crâne de taureau', [12, 73, 2, 3], { price: 800 }),
 ];
 
-// ---- Épique : 1 200 à 3 500 écus ------------------------------------------------------------------------------------------
+// ---- Épique : 1 200 à 3 500 kuartzons ------------------------------------------------------------------------------------------
 // Les grandes pièces d'une pièce réussie : mobilier laqué, baignoire à pieds, pupitre de plateau, baie vitrée, vitrines de musée, statue, toiles de
 // maître et petit squelette de dinosaure. Les cadres des toiles sont à deux cases de haut, comme tout ce qui se pose sur le mur.
 const EPIQUE: Entry[] = [
@@ -109,7 +109,7 @@ const EPIQUE: Entry[] = [
   mu('Squelette de jeune tricératops', [0, 81, 5, 3], { claim: 2, price: 3400 }),
 ];
 
-// ---- Légendaire : 5 000 à 15 000 écus --------------------------------------------------------------------------------------
+// ---- Légendaire : 5 000 à 15 000 kuartzons --------------------------------------------------------------------------------------
 // Les pièces de collection : les dinosaures du musée, qui tiennent sur cinq cases de large (la pièce compacte en fait six) et dont le socle occupe
 // le bas de l'image (`claim`) pendant que le cou et la tête montent dans la bande de mur ; la colonnade de marbre ; et la toile la plus connue du
 // musée. La Joconde fait 70 px de haut dans la planche pour 64 permis au mur : le découpage (`crop`) en retire trois en haut et trois en bas, le

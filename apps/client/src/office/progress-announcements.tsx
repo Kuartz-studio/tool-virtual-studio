@@ -4,7 +4,7 @@ import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
 import { listenOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
-import { EcusIcon, LevelUpIcon, MissionsIcon, XpIcon } from './icons';
+import { KuartzonIcon, LevelUpIcon, MissionsIcon, XpIcon } from './icons';
 import { formatNumber, gradeLabel } from './progress-format';
 import { useToasts } from './Toasts';
 import { LevelBadge } from './ui/ProgressBits';
@@ -78,7 +78,7 @@ export function useProgressToasts(): void {
   }, []);
 }
 
-// Sa propre montée de niveau, en grand, au milieu de l'écran : la pastille du nouveau niveau, « Niveau 12 ! », le nouveau grade s'il change, et les écus gagnés.
+// Sa propre montée de niveau, en grand, au milieu de l'écran : la pastille du nouveau niveau, « Niveau 12 ! », le nouveau grade s'il change, et les kuartzons gagnés.
 // Elle s'efface seule (ou d'un clic) ; avec prefers-reduced-motion, sans rien qui bouge (styles.css). Annoncée aux lecteurs d'écran.
 export function LevelUpBanner() {
   const [gain, setGain] = useState<XpGain | null>(null);
@@ -107,10 +107,10 @@ export function LevelUpBanner() {
         <LevelBadge level={level} size="large" />
         <span className="level-up-title">{t(fr.progress.levelUpTitle, { level })}</span>
         {newGrade && <span className="level-up-grade">{t(fr.progress.levelUpGrade, { grade: gradeLabel(level) })}</span>}
-        {gain.ecus > 0 && (
-          <span className="level-up-ecus">
-            <EcusIcon />
-            {t(fr.progress.levelUpEcus, { count: formatNumber(gain.ecus) })}
+        {gain.kuartzons > 0 && (
+          <span className="level-up-kuartzons">
+            <KuartzonIcon />
+            {t(fr.progress.levelUpKuartzons, { count: formatNumber(gain.kuartzons) })}
           </span>
         )}
       </div>

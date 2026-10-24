@@ -6,8 +6,8 @@ import { ApiError } from '../lib/api';
 import { buyItem } from '../lib/progress-api';
 import { emitOnBus } from '../net/office-connection';
 import { useOfficeStore } from '../state/office-store';
-import { CheckIcon, EcusIcon } from './icons';
-import { ecusText, formatNumber } from './progress-format';
+import { CheckIcon, KuartzonIcon } from './icons';
+import { formatNumber, kuartzonsText } from './progress-format';
 import { DecorThumb } from './sprites';
 import { useToasts } from './Toasts';
 import { Drawer } from './ui/Drawer';
@@ -21,12 +21,12 @@ const CONFIRM_MS = 4000;
 // Les éléments de la boutique : ceux de la banque qui ont un prix, du moins cher au plus cher.
 export const SHOP_ITEMS: readonly DecorItem[] = DECOR_ITEMS.filter((item) => item.price !== undefined).sort((a, b) => a.price! - b.price! || a.name.localeCompare(b.name, 'fr'));
 
-// Acheter un élément : l'appel, puis sa progression au magasin, le bruit des écus et un toast. Rend vrai si c'est fait ; sinon le texte du refus.
+// Acheter un élément : l'appel, puis sa progression au magasin, le bruit des kuartzons et un toast. Rend vrai si c'est fait ; sinon le texte du refus.
 export async function purchase(item: DecorItem): Promise<true | string> {
   try {
     useOfficeStore.getState().setProgress(await buyItem(item.id));
     emitOnBus(EventBus, 'shop:bought', { itemId: item.id });
-    useToasts.getState().push({ icon: <EcusIcon />, text: t(fr.shop.success, { name: item.name }) });
+    useToasts.getState().push({ icon: <KuartzonIcon />, text: t(fr.shop.success, { name: item.name }) });
     return true;
   } catch (err) {
     const code = err instanceof ApiError ? err.error : '';
@@ -35,8 +35,8 @@ export async function purchase(item: DecorItem): Promise<true | string> {
 }
 
 // Une carte de la boutique : la vignette, le nom, la rareté (sa couleur), la taille, le prix, et « Acheter » — un premier clic propose « Confirmer » quelques
-// secondes ; il manque des écus : le bouton est éteint et dit combien. Acheté : « Acheté ».
-function ShopCard({ item, ecus, owned }: { item: DecorItem; ecus: number; owned: boolean }) {
+// secondes ; il manque des kuartzons : le bouton est éteint et dit combien. Acheté : « Acheté ».
+function ShopCard({ item, kuartzons, owned }: { item: DecorItem; kuartzons: number; owned: boolean }) {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,7 +62,7 @@ function ShopCard({ item, ecus, owned }: { item: DecorItem; ecus: number; owned:
     if (done !== true) setError(done);
   }
 
-  const missing = price - ecus;
+  const missing = price - kuartzons;
   return (
     <li className="shop-card" data-item={item.id} data-rarity={rarity} data-owned={owned || undefined}>
       <span className="shop-thumb">
@@ -89,7 +89,7 @@ function ShopCard({ item, ecus, owned }: { item: DecorItem; ecus: number; owned:
           data-sfx={confirming ? 'none' : undefined}
           onClick={() => void buy()}
         >
-          <EcusIcon />
+          <KuartzonIcon />
           {confirming ? fr.shop.confirm : formatNumber(price)}
         </button>
       )}
@@ -104,10 +104,10 @@ export function ShopPanel({ id, onClose }: { id?: string; onClose(): void }) {
   const progress = useOfficeStore((state) => state.progress);
   const [filter, setFilter] = useState<Filter>('all');
   const uid = useId();
-  const ecus = progress?.ecus ?? 0;
+  const kuartzons = progress?.kuartzons ?? 0;
   const owned = useMemo(() => new Set(progress?.owned ?? []), [progress?.owned]);
 
-  const shown = SHOP_ITEMS.filter((item) => (filter === 'owned' ? owned.has(item.id) : filter === 'affordable' ? !owned.has(item.id) && item.price! <= ecus : true));
+  const shown = SHOP_ITEMS.filter((item) => (filter === 'owned' ? owned.has(item.id) : filter === 'affordable' ? !owned.has(item.id) && item.price! <= kuartzons : true));
   const options: SegmentedOption<Filter>[] = [
     { id: 'all', label: fr.shop.all },
     { id: 'affordable', label: fr.shop.affordable },
@@ -117,10 +117,10 @@ export function ShopPanel({ id, onClose }: { id?: string; onClose(): void }) {
   return (
     <Drawer title={fr.shop.title} onClose={onClose} id={id} className="shop-panel">
       <div className="shop-wallet">
-        <EcusIcon />
+        <KuartzonIcon />
         <span>
           <span className="shop-wallet-label">{fr.shop.wallet}</span>
-          <span className="shop-wallet-value">{ecusText(ecus)}</span>
+          <span className="shop-wallet-value">{kuartzonsText(kuartzons)}</span>
         </span>
       </div>
       <p className="desk-hint">{fr.shop.intro}</p>
@@ -136,7 +136,7 @@ export function ShopPanel({ id, onClose }: { id?: string; onClose(): void }) {
               <h3>{fr.shop.rarities[rarity]}</h3>
               <ul className="shop-grid">
                 {items.map((item) => (
-                  <ShopCard key={item.id} item={item} ecus={ecus} owned={owned.has(item.id)} />
+                  <ShopCard key={item.id} item={item} kuartzons={kuartzons} owned={owned.has(item.id)} />
                 ))}
               </ul>
             </section>

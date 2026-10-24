@@ -3,7 +3,7 @@ import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } fro
 import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
 import { loadDecorRecents, rememberDecorItem, searchDecorItems } from './decor-picker';
-import { DecorCategoryIcon, EcusIcon, EraserIcon, LockIcon, RecentIcon, SearchIcon } from './icons';
+import { DecorCategoryIcon, EraserIcon, KuartzonIcon, LockIcon, RecentIcon, SearchIcon } from './icons';
 import { formatNumber } from './progress-format';
 import { purchase } from './ShopPanel';
 import { DecorThumb } from './sprites';
@@ -14,7 +14,7 @@ import { DecorThumb } from './sprites';
 // Un clic sur une vignette prend l'élément en main (un autre clic le lâche) ; on le pose ensuite dans la pièce (DecorEditorView).
 // La recherche porte sur toute la banque, sans tenir compte des accents ; Échap la vide avant de fermer le panneau.
 // Un élément de la boutique qu'on n'a pas acheté porte un cadenas et son prix : un clic ne le prend pas en main, il propose de l'acheter (sous la grille,
-// « Acheter pour 800 écus », éteint s'il manque des écus) ; acheté, il se prend en main comme les autres.
+// « Acheter pour 800 kuartzons », éteint s'il manque des kuartzons) ; acheté, il se prend en main comme les autres.
 type Shelf = DecorCategoryId | 'recent';
 
 export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hidden?: boolean }) {
@@ -192,12 +192,12 @@ export function DecorPicker({ idPrefix, hidden = false }: { idPrefix: string; hi
           <button
             type="button"
             className="bar-button is-primary"
-            disabled={buying || (progress?.ecus ?? 0) < offer.price!}
-            title={(progress?.ecus ?? 0) < offer.price! ? t(fr.shop.missing, { count: formatNumber(offer.price! - (progress?.ecus ?? 0)) }) : undefined}
+            disabled={buying || (progress?.kuartzons ?? 0) < offer.price!}
+            title={(progress?.kuartzons ?? 0) < offer.price! ? t(fr.shop.missing, { count: formatNumber(offer.price! - (progress?.kuartzons ?? 0)) }) : undefined}
             data-sfx="none"
             onClick={() => void buy(offer)}
           >
-            <EcusIcon />
+            <KuartzonIcon />
             {t(fr.shop.buyHere, { price: formatNumber(offer.price!) })}
           </button>
         </div>

@@ -6,8 +6,8 @@ import { completeTask, createTodo, declineMission, deleteTodo, markMissionsSeen,
 import { Alert } from '../pages/AuthLayout';
 import { selectNewMissions, useOfficeStore } from '../state/office-store';
 import { CharacterSheet } from './CharacterSheet';
-import { CheckIcon, ChevronRightIcon, EcusIcon, StreakIcon, TrashIcon } from './icons';
-import { ecusText, formatNumber, gradeLabel, shareText, tierLabel } from './progress-format';
+import { CheckIcon, ChevronRightIcon, KuartzonIcon, StreakIcon, TrashIcon } from './icons';
+import { formatNumber, gradeLabel, kuartzonsText, shareText, tierLabel } from './progress-format';
 import { AvatarPortrait } from './ui/AvatarPortrait';
 import { Drawer } from './ui/Drawer';
 import { LevelBadge, TierPips, XpBar } from './ui/ProgressBits';
@@ -18,7 +18,7 @@ export type QuestTab = 'todo' | 'sheet';
 // Le jour (« AAAA-MM-JJ ») d'une date, dans le fuseau du navigateur : de quoi savoir si une tâche cochée l'a été aujourd'hui.
 const dayOf = (date: Date): string => `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
 
-// Sa progression, en tête du panneau : la pastille du niveau, le grade, la barre de l'XP et ce qu'il reste avant le niveau suivant, puis ses écus et sa série.
+// Sa progression, en tête du panneau : la pastille du niveau, le grade, la barre de l'XP et ce qu'il reste avant le niveau suivant, puis ses kuartzons et sa série.
 function ProgressCard() {
   const progress = useOfficeStore((state) => state.progress);
   const xp = progress?.xp ?? 0;
@@ -36,8 +36,8 @@ function ProgressCard() {
       </div>
       <div className="quest-card-side">
         <span className="quest-chip" title={fr.shop.wallet}>
-          <EcusIcon />
-          {ecusText(progress?.ecus ?? 0)}
+          <KuartzonIcon />
+          {kuartzonsText(progress?.kuartzons ?? 0)}
         </span>
         {(progress?.streak ?? 0) > 0 && (
           <span className="quest-chip" title={fr.sheet.streak}>

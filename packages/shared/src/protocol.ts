@@ -91,8 +91,8 @@ export const lightsSetSchema = z.object({ on: z.boolean() });
 
 // Réservé aux tests de bout en bout (`debug:boost`, seulement avec E2E=1) : donne du café pendant `ms` ms (0 : le retire), comme la machine.
 export const debugBoostSchema = z.object({ ms: z.number().int().min(0).max(3_600_000) });
-// Réservé aux tests de bout en bout (`debug:xp`, seulement avec E2E=1) : donne `xp` d'expérience d'un coup (et ses niveaux, avec leurs écus), plus `ecus` écus.
-export const debugXpSchema = z.object({ xp: z.number().int().min(0).max(1_000_000), ecus: z.number().int().min(0).max(1_000_000).optional() });
+// Réservé aux tests de bout en bout (`debug:xp`, seulement avec E2E=1) : donne `xp` d'expérience d'un coup (et ses niveaux, avec leurs kuartzons), plus `kuartzons` kuartzons.
+export const debugXpSchema = z.object({ xp: z.number().int().min(0).max(1_000_000), kuartzons: z.number().int().min(0).max(1_000_000).optional() });
 
 // La demande de régler la musique d'une pièce (`music:set`) : la clé du lieu (celle de la carte : `game`, `desk:A1` pour un bureau) et l'état voulu, `on`
 // (allumée ou éteinte) et/ou `scene` (l'ambiance ; null : celle par défaut de la pièce). Ce qui n'est pas dit ne change pas. Un état voulu, non une
@@ -175,7 +175,7 @@ export interface InitPayload {
   gameInvites?: GameInvite[];
   // L'octogone : qui s'y bat, qui regarde, où en est le combat. Absent : la carte n'en a pas.
   arena?: ArenaState;
-  // Sa propre progression (XP, écus, série de pointage, ce qu'elle possède de la boutique). Absente : la base ne l'a pas donnée, la liste la relira.
+  // Sa propre progression (XP, kuartzons, série de pointage, ce qu'elle possède de la boutique). Absente : la base ne l'a pas donnée, la liste la relira.
   progress?: MyProgress;
 }
 // Les positions acceptées depuis le tick précédent, une par joueur. `tp` : le serveur l'a téléporté (un mode, une table de jeu…) : les autres
@@ -245,7 +245,7 @@ export interface ClientToServerEvents {
   'arena:do': (p: ArenaCommand, ack: (r: ArenaAck) => void) => void;   // une commande de l'octogone (rôle, start, coup, garde) ; `arena:state` dit ce qui a changé   // le classement d'un jeu : les meilleurs, et son rang
   'mission:give': (p: MissionGivePayload, ack: (r: MissionAck) => void) => void;   // confier une mission à quelqu'un, auprès d'une administratrice (à portée de l'une d'elles)
   'debug:teleport': (p: { x: number; y: number }) => void;   // accepté seulement si E2E=1
-  'debug:xp': (p: { xp: number; ecus?: number }) => void;   // accepté seulement si E2E=1 : donne de l'XP (et des écus) d'un coup
+  'debug:xp': (p: { xp: number; kuartzons?: number }) => void;   // accepté seulement si E2E=1 : donne de l'XP (et des kuartzons) d'un coup
   'debug:boost': (p: { ms: number }) => void;   // accepté seulement si E2E=1
   'debug:game': (p: DebugGamePayload) => void;   // accepté seulement si E2E=1 : remplace l'état de la partie en cours à une table
 }

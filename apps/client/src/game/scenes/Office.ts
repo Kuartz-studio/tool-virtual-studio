@@ -166,7 +166,7 @@ export class Office extends Scene {
       tables: () => (this.officeMap?.tables ?? []).map((table) => ({ game: table.game, ...table.rect, seats: table.seats.map((seat) => ({ x: seat.x, y: seat.y })) })),
       gameTable: (game) => useOfficeStore.getState().games[game as GameId] ?? null,
       debugGame: (game, state, rolls) => emitOnBus(EventBus, 'local:debug-game', { game: game as GameId, state, ...(rolls ? { rolls } : {}) }),
-      xp: (xp, ecus) => emitOnBus(EventBus, 'local:xp', { xp, ...(ecus !== undefined ? { ecus } : {}) }),
+      xp: (xp, kuartzons) => emitOnBus(EventBus, 'local:xp', { xp, ...(kuartzons !== undefined ? { kuartzons } : {}) }),
       effects: () => this.progressEffects?.count(clock()) ?? 0,
     };
     exposeDebug(this.debug);

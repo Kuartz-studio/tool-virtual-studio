@@ -28,7 +28,7 @@ const task = (id: string, over: Partial<TaskView> = {}): TaskView => ({
 const mission = (id: string, over: Partial<TaskView> = {}): TaskView =>
   task(id, { kind: 'mission', title: `Mission ${id}`, tier: 5, xp: 500, giver: { id: 'ana', name: 'Ana' }, seen: false, ...over });
 
-const progress = (over: Partial<MyProgress> = {}): MyProgress => ({ xp: 12_340, ecus: 1450, streak: 3, owned: [], ...over });
+const progress = (over: Partial<MyProgress> = {}): MyProgress => ({ xp: 12_340, kuartzons: 1450, streak: 3, owned: [], ...over });
 
 beforeEach(() => {
   useOfficeStore.getState().reset();
@@ -38,12 +38,12 @@ beforeEach(() => {
 });
 
 describe('le panneau Missions', () => {
-  test('en tête, sa progression : le niveau, le grade, ce qu\'il reste avant le suivant, ses écus et sa série', () => {
+  test('en tête, sa progression : le niveau, le grade, ce qu\'il reste avant le suivant, ses kuartzons et sa série', () => {
     render(<QuestPanel onClose={() => {}} />);
     const card = document.querySelector('.quest-card') as HTMLElement;
     expect(card.textContent).toContain('Niveau 12 · Stagiaire');
     expect(card.textContent).toContain('Encore 660 XP avant le niveau 13');
-    expect(card.textContent?.replace(/[\u202f\u00a0]/g, ' ')).toContain('1 450 écus');
+    expect(card.textContent?.replace(/[\u202f\u00a0]/g, ' ')).toContain('1 450 kuartzons');
     expect(card.textContent).toContain('3 jours');
   });
 
@@ -124,7 +124,7 @@ describe('le panneau Missions', () => {
       streak: 3,
       gamesPlayed: 5,
       gamesWon: 2,
-      ecus: 1450,
+      kuartzons: 1450,
       history: [{ at: '2026-10-24T08:00:00.000Z', amount: 500, source: 'mission', label: 'Refaire le logo' }],
     });
     const user = userEvent.setup();

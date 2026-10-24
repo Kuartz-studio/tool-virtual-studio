@@ -597,7 +597,7 @@ export const fr = {
   },
   // Le son : la musique (celle de la pièce où l'on est, ou la sienne) et les effets sonores (clics, arrivées, messages, toc toc…), que l'on coupe et règle
   // chacun de son côté, depuis le juke-box du dock du milieu. La voix des autres n'en fait pas partie : elle suit le micro et la sortie du système.
-  // La progression : le niveau, l'XP et ce qu'ils rapportent (des écus, de l'autorité, un grade), et ses annonces.
+  // La progression : le niveau, l'XP et ce qu'ils rapportent (des kuartzons, de l'autorité, un grade), et ses annonces.
   progress: {
     level: 'Niveau {level}',
     levelShort: 'Niv. {level}',
@@ -606,8 +606,8 @@ export const fr = {
     toNext: 'Encore {left} XP avant le niveau {next}',
     maxed: 'Niveau maximal : tu es une légende.',
     total: '{xp} XP au total',
-    ecus: '{count} écus',
-    ecu: '1 écu',
+    kuartzons: '{count} kuartzons',
+    kuartzon: '1 kuartzon',
     // Ce que représente une XP, en part de niveau (office/progress-format.ts).
     share: {
       percent: '{percent} % d\'un niveau',
@@ -646,7 +646,7 @@ export const fr = {
     gained: '+{xp} XP · {label}',
     levelUpTitle: 'Niveau {level} !',
     levelUpGrade: 'Nouveau grade : {grade}',
-    levelUpEcus: '+{count} écus',
+    levelUpKuartzons: '+{count} kuartzons',
     levelUpOther: '{name} passe au niveau {level} !',
     levelUpOtherGrade: '{name} passe au niveau {level} et devient {grade} !',
     close: 'Fermer',
@@ -702,7 +702,7 @@ export const fr = {
     level: 'Niveau',
     authority: 'Autorité',
     authorityHint: 'Elle grandit à chaque niveau, et de plus en plus vite. Elle ne donne encore aucun pouvoir : à suivre…',
-    ecus: 'Écus',
+    kuartzons: 'Kuartzons',
     missionsDone: 'Missions accomplies',
     missionsGiven: 'Missions confiées',
     todosDone: 'Tâches cochées',
@@ -771,7 +771,7 @@ export const fr = {
     },
     close: 'Fermer la conversation',
   },
-  // La boutique : des éléments de décor rares pour sa pièce, qu'on achète une fois avec ses écus (gagnés en montant de niveau).
+  // La boutique : des éléments de décor rares pour sa pièce, qu'on achète une fois avec ses kuartzons (gagnés en montant de niveau).
   shop: {
     toggle: 'Boutique',
     title: 'Boutique',
@@ -782,20 +782,20 @@ export const fr = {
     affordable: 'À ma portée',
     owned: 'Mes achats',
     rarities: { commun: 'Commun', rare: 'Rare', epique: 'Épique', legendaire: 'Légendaire' },
-    price: '{price} écus',
+    price: '{price} kuartzons',
     buy: 'Acheter',
-    buyLabel: 'Acheter « {name} » pour {price} écus',
+    buyLabel: 'Acheter « {name} » pour {price} kuartzons',
     confirm: 'Confirmer',
-    confirmLabel: 'Confirmer l\'achat de « {name} » pour {price} écus',
+    confirmLabel: 'Confirmer l\'achat de « {name} » pour {price} kuartzons',
     bought: 'Acheté',
-    missing: 'Il te manque {count} écus',
+    missing: 'Il te manque {count} kuartzons',
     empty: 'La boutique est vide pour l\'instant.',
     emptyFilter: 'Rien ici pour l\'instant.',
     success: 'Acheté : {name}, à poser depuis « Décorer mon bureau ».',
-    errors: { owned: 'Tu l\'as déjà.', too_poor: 'Pas assez d\'écus.', unknown_item: 'Cet élément n\'est plus en vente.', failed: 'L\'achat n\'a pas pu se faire. Réessaie dans un instant.' },
+    errors: { owned: 'Tu l\'as déjà.', too_poor: 'Pas assez de kuartzons.', unknown_item: 'Cet élément n\'est plus en vente.', failed: 'L\'achat n\'a pas pu se faire. Réessaie dans un instant.' },
     // Dans le sélecteur de la déco : un élément de la boutique qu'on n'a pas encore.
-    locked: 'À la boutique : {price} écus',
-    buyHere: 'Acheter pour {price} écus',
+    locked: 'À la boutique : {price} kuartzons',
+    buyHere: 'Acheter pour {price} kuartzons',
   },
   sound: {
     // Le bouton du dock (une note de musique) et sa fenêtre, le juke-box : le même nom, qui est aussi l'infobulle.

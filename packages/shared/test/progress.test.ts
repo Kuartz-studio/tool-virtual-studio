@@ -7,8 +7,8 @@ import {
   authorityOf,
   checkInXp,
   dayIn,
-  ecusBetween,
-  ecusForLevel,
+  kuartzonsBetween,
+  kuartzonsForLevel,
   gainOf,
   gradeOf,
   levelOf,
@@ -60,17 +60,17 @@ describe('le niveau', () => {
 });
 
 describe('ce que rapporte un niveau', () => {
-  test('des écus, de plus en plus : 25 au niveau 1, 70 au 10, 1 020 au 200 ; rien hors des niveaux', () => {
-    expect([1, 10, 100, 200].map(ecusForLevel)).toEqual([25, 70, 520, 1020]);
-    expect(ecusForLevel(0)).toBe(0);
-    expect(ecusForLevel(201)).toBe(0);
+  test('des kuartzons, de plus en plus : 25 au niveau 1, 70 au 10, 1 020 au 200 ; rien hors des niveaux', () => {
+    expect([1, 10, 100, 200].map(kuartzonsForLevel)).toEqual([25, 70, 520, 1020]);
+    expect(kuartzonsForLevel(0)).toBe(0);
+    expect(kuartzonsForLevel(201)).toBe(0);
   });
 
-  test('les écus cumulés : 475 au niveau 10, 1 450 au 20, 7 375 au 50, 104 500 au 200', () => {
-    expect([10, 20, 50, 200].map((level) => ecusBetween(0, level))).toEqual([475, 1450, 7375, 104_500]);
-    expect(ecusBetween(10, 12)).toBe(ecusForLevel(11) + ecusForLevel(12));
-    expect(ecusBetween(5, 5)).toBe(0);
-    expect(ecusBetween(199, 230)).toBe(ecusForLevel(200));
+  test('les kuartzons cumulés : 475 au niveau 10, 1 450 au 20, 7 375 au 50, 104 500 au 200', () => {
+    expect([10, 20, 50, 200].map((level) => kuartzonsBetween(0, level))).toEqual([475, 1450, 7375, 104_500]);
+    expect(kuartzonsBetween(10, 12)).toBe(kuartzonsForLevel(11) + kuartzonsForLevel(12));
+    expect(kuartzonsBetween(5, 5)).toBe(0);
+    expect(kuartzonsBetween(199, 230)).toBe(kuartzonsForLevel(200));
   });
 
   test('de l\'autorité, de plus en plus : 1 par niveau jusqu\'au 20, puis 2… jusqu\'à 10 par niveau à la fin', () => {
@@ -82,9 +82,9 @@ describe('ce que rapporte un niveau', () => {
     expect([0, 19, 20, 39, 40, 100, 180, 199, 200].map(gradeOf)).toEqual(['stagiaire', 'stagiaire', 'junior', 'junior', 'specialiste', 'mentor', 'sage', 'sage', 'legende']);
   });
 
-  test('un gain : le niveau avant et après, les écus des niveaux passés, et si le grade change', () => {
-    expect(gainOf(19_800, 500)).toEqual({ levelBefore: 19, levelAfter: 20, ecus: ecusForLevel(20), gradeChanged: true });
-    expect(gainOf(1200, 50)).toEqual({ levelBefore: 1, levelAfter: 1, ecus: 0, gradeChanged: false });
+  test('un gain : le niveau avant et après, les kuartzons des niveaux passés, et si le grade change', () => {
+    expect(gainOf(19_800, 500)).toEqual({ levelBefore: 19, levelAfter: 20, kuartzons: kuartzonsForLevel(20), gradeChanged: true });
+    expect(gainOf(1200, 50)).toEqual({ levelBefore: 1, levelAfter: 1, kuartzons: 0, gradeChanged: false });
   });
 });
 

@@ -76,10 +76,10 @@ export interface OfficeBusEvents {
   // Une mission vient d'arriver dans sa liste ; une mission (confiée ou reçue) vient de changer d'état : l'interface l'annonce, le son la joue. Le magasin l'a déjà.
   'task:assigned': (task: TaskView) => void;
   'task:changed': (task: TaskView) => void;
-  // L'interface : un achat à la boutique vient d'aboutir (le bruit des écus).
+  // L'interface : un achat à la boutique vient d'aboutir (le bruit des kuartzons).
   'shop:bought': (p: { itemId: string }) => void;
   // window.__office.xp (tests de bout en bout seulement) : `debug:xp`, que le serveur n'accepte qu'avec E2E=1.
-  'local:xp': (p: { xp: number; ecus?: number }) => void;
+  'local:xp': (p: { xp: number; kuartzons?: number }) => void;
   // Le jeu : la souris est sur l'avatar de cette personne (un autre que soi), dont le haut de la tête est en (x, y), en pixels de la page ; null : sur
   // aucun. Dit quand cela change. L'interface y pose la carte de l'heure qu'il est chez elle (AvatarTimeCard).
   'avatar:hover': (p: { id: string; x: number; y: number } | null) => void;

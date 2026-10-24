@@ -71,28 +71,28 @@ export interface XpEntry {
   label: string;
 }
 
-// Ce qu'une XP vient de rapporter, que le serveur dit à la personne pour l'annoncer : le gain, le niveau d'avant et d'après, et les écus gagnés en route.
+// Ce qu'une XP vient de rapporter, que le serveur dit à la personne pour l'annoncer : le gain, le niveau d'avant et d'après, et les kuartzons gagnés en route.
 export interface XpGain {
   amount: number;
   source: XpSource;
   label: string;
   levelBefore: number;
   levelAfter: number;
-  ecus: number;
+  kuartzons: number;
 }
 
-// Sa propre progression (GET /api/me/progress, et `progress:mine` à chaque changement) : son XP totale, ses écus, sa série de pointage, ce qu'elle possède
+// Sa propre progression (GET /api/me/progress, et `progress:mine` à chaque changement) : son XP totale, ses kuartzons, sa série de pointage, ce qu'elle possède
 // de la boutique (des identifiants d'éléments), et, quand il y en a un, le gain qui vient de l'amener là (pour l'annoncer).
 export interface MyProgress {
   xp: number;
-  ecus: number;
+  kuartzons: number;
   streak: number;
   owned: string[];
   gain?: XpGain;
 }
 
 // Les caractéristiques d'une personne (GET /api/people/:id/stats). Tout le monde voit celles de tout le monde, sauf deux lignes qui ne regardent qu'elle :
-// ses écus et son journal (`ecus` et `history`, absents pour les autres).
+// ses kuartzons et son journal (`kuartzons` et `history`, absents pour les autres).
 export interface CharacterStats {
   id: string;
   name: string;
@@ -109,7 +109,7 @@ export interface CharacterStats {
   streak: number;
   gamesPlayed: number;
   gamesWon: number;
-  ecus?: number;
+  kuartzons?: number;
   history?: XpEntry[];
 }
 

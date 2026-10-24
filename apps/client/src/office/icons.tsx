@@ -10,7 +10,6 @@ import {
   ChevronUp,
   ClipboardList,
   Coffee,
-  Coins,
   Crown,
   DoorClosed,
   DoorOpen,
@@ -76,6 +75,7 @@ import {
   Volume2,
   VolumeX,
   X,
+  createLucideIcon,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
@@ -333,7 +333,7 @@ export function RecentIcon() {
 
 // L'icône de chaque catégorie de la banque de déco (les onglets du sélecteur, DecorPicker). Une catégorie qui n'est pas ici (le catalogue
 // en a gagné une) prend des formes.
-// La progression : un parchemin, les missions ; une boutique ; des pièces, les écus ; des étincelles, l'XP ; une coupe, un niveau gagné ; une couronne,
+// La progression : un parchemin, les missions ; une boutique ; un cristal, les kuartzons ; des étincelles, l'XP ; une coupe, un niveau gagné ; une couronne,
 // l'autorité ; une flamme, la série de pointage ; une liste cochée, les tâches cochées ; un bloc-notes, les missions confiées ; une gemme, l'onglet de la boutique dans la déco.
 export function MissionsIcon() {
   return <ScrollText />;
@@ -343,8 +343,15 @@ export function ShopIcon() {
   return <Store />;
 }
 
-export function EcusIcon() {
-  return <Coins />;
+// Le kuartzon, la monnaie du bureau : un cristal de quartz (son nom vient de Kuartz), dessiné comme les icônes de Lucide (24 × 24, trait de 2).
+const Kuartzon = createLucideIcon('kuartzon', [
+  ['path', { d: 'M12 2l5 5.5v9L12 22l-5-5.5v-9z', key: 'outline' }],
+  ['path', { d: 'M7 7.5l5 3 5-3', key: 'top' }],
+  ['path', { d: 'M12 10.5V22', key: 'ridge' }],
+]);
+
+export function KuartzonIcon() {
+  return <Kuartzon />;
 }
 
 export function XpIcon() {

@@ -123,7 +123,7 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKe
       if (id === state().selfId) engine.playSfx('success');
     }),
     // La progression : un niveau gagné, sa fanfare ; un gain sans niveau, une gemme ramassée (pas pour le pointage de l'arrivée, qui a déjà son air). Une mission
-    // reçue, son air de mystère, et une mission qu'on a confiée accomplie, l'air du succès (des autres : pas en « Ne pas déranger »). Un achat, le bruit des écus.
+    // reçue, son air de mystère, et une mission qu'on a confiée accomplie, l'air du succès (des autres : pas en « Ne pas déranger »). Un achat, le bruit des kuartzons.
     listenOnBus(bus, 'progress:gain', ({ source, levelBefore, levelAfter }) => {
       if (levelAfter > levelBefore) engine.playSfx('level-up');
       else if (source !== 'checkin') engine.playSfx('xp');

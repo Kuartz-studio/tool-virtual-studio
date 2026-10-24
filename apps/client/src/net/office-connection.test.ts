@@ -675,11 +675,11 @@ describe('connectOffice', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.serverAccepts();
       socket.receive('init', init());
-      const gain = { amount: 500, source: 'mission' as const, label: 'Refaire le logo', levelBefore: 0, levelAfter: 0, ecus: 0 };
-      socket.receive('progress:mine', { xp: 520, ecus: 0, streak: 1, owned: [], gain });
-      expect(store.getState().progress).toEqual({ xp: 520, ecus: 0, streak: 1, owned: [] });
+      const gain = { amount: 500, source: 'mission' as const, label: 'Refaire le logo', levelBefore: 0, levelAfter: 0, kuartzons: 0 };
+      socket.receive('progress:mine', { xp: 520, kuartzons: 0, streak: 1, owned: [], gain });
+      expect(store.getState().progress).toEqual({ xp: 520, kuartzons: 0, streak: 1, owned: [] });
       expect(bus.emittedOf('progress:gain')).toEqual([gain]);
-      socket.receive('progress:mine', { xp: 520, ecus: 0, streak: 1, owned: ['statue'] });
+      socket.receive('progress:mine', { xp: 520, kuartzons: 0, streak: 1, owned: ['statue'] });
       expect(store.getState().progress?.owned).toEqual(['statue']);
       expect(bus.emittedOf('progress:gain')).toHaveLength(1);
     });
@@ -714,8 +714,8 @@ describe('connectOffice', () => {
       expect(socket.sentOf('debug:xp')).toEqual([]);
       socket.serverAccepts();
       socket.receive('init', init());
-      bus.emit('local:xp', { xp: 1000, ecus: 50 });
-      expect(socket.sentOf('debug:xp')).toEqual([{ xp: 1000, ecus: 50 }]);
+      bus.emit('local:xp', { xp: 1000, kuartzons: 50 });
+      expect(socket.sentOf('debug:xp')).toEqual([{ xp: 1000, kuartzons: 50 }]);
     });
   });
 

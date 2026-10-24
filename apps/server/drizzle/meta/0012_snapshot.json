@@ -1,5 +1,5 @@
 {
-  "id": "4d7944ea-5fe4-4120-a43c-21675c825bad",
+  "id": "b0341d01-3139-40df-a0d8-26de122d74fb",
   "prevId": "c6f59b24-ba82-4696-ab9d-aee3da00d6e3",
   "version": "7",
   "dialect": "postgresql",
@@ -668,8 +668,8 @@
           "notNull": true,
           "default": 0
         },
-        "ecus": {
-          "name": "ecus",
+        "kuartzons": {
+          "name": "kuartzons",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

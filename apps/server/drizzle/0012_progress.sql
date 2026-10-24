@@ -1,7 +1,7 @@
 CREATE TABLE "progress" (
 	"user_id" text PRIMARY KEY NOT NULL,
 	"xp" integer DEFAULT 0 NOT NULL,
-	"ecus" integer DEFAULT 0 NOT NULL,
+	"kuartzons" integer DEFAULT 0 NOT NULL,
 	"check_in_day" text,
 	"streak" integer DEFAULT 0 NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL

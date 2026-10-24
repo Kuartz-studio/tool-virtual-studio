@@ -1,18 +1,18 @@
 import { XP_PER_LEVEL, gradeOf, type MissionTier } from '@bureau/shared';
 import { fr, t } from '../i18n/fr';
 
-// Les nombres de la progression, écrits comme en français (« 12 340 XP », « 1 250 écus »), et ce qu'ils veulent dire.
+// Les nombres de la progression, écrits comme en français (« 12 340 XP », « 1 250 kuartzons »), et ce qu'ils veulent dire.
 
 const integer = new Intl.NumberFormat('fr-FR');
 const decimal = new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 2 });
 
-// L'espace des milliers : Intl met une espace fine insécable, que la police de l'interface (Instrument Sans) dessine presque sans largeur (« 4275 écus »).
+// L'espace des milliers : Intl met une espace fine insécable, que la police de l'interface (Instrument Sans) dessine presque sans largeur (« 4275 kuartzons »).
 // Une espace insécable ordinaire se voit, et ne coupe pas plus le nombre.
 export const formatNumber = (n: number): string => integer.format(n).replace(/\u202f/g, '\u00a0');
 
 export const xpText = (xp: number): string => t(fr.progress.xp, { xp: formatNumber(xp) });
 
-export const ecusText = (count: number): string => (count === 1 ? fr.progress.ecu : t(fr.progress.ecus, { count: formatNumber(count) }));
+export const kuartzonsText = (count: number): string => (count === 1 ? fr.progress.kuartzon : t(fr.progress.kuartzons, { count: formatNumber(count) }));
 
 export const gradeLabel = (level: number): string => fr.progress.grades[gradeOf(level)];
 

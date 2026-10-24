@@ -1,4 +1,4 @@
-import { CHECKIN_XP, DECOR_ITEMS, ecusBetween, missionXp, type MissionAck, type MissionGivePayload } from '@bureau/shared';
+import { CHECKIN_XP, DECOR_ITEMS, kuartzonsBetween, missionXp, type MissionAck, type MissionGivePayload } from '@bureau/shared';
 import request from 'supertest';
 import { describe, expect, test } from 'vitest';
 import { enter, nextEvent, record, sleep, startTestServer, type TestServer } from './helpers/realtime';
@@ -64,7 +64,7 @@ describe('mission:give', () => {
     const doneSeenByAna = nextEvent(ana.socket, 'task:changed');
     const res = await request(srv.app).post(`/api/me/tasks/${ack.task.id}/done`).set('Cookie', bob.cookie);
     expect(res.status).toBe(200);
-    expect(await mine).toMatchObject({ gain: { amount: missionXp(10), source: 'mission', levelBefore: 0, levelAfter: 5, ecus: ecusBetween(0, 5) } });
+    expect(await mine).toMatchObject({ gain: { amount: missionXp(10), source: 'mission', levelBefore: 0, levelAfter: 5, kuartzons: kuartzonsBetween(0, 5) } });
     expect(await levelSeenByAna).toEqual({ id: bob.id, level: 5 });
     expect(await doneSeenByAna).toMatchObject({ id: ack.task.id, status: 'done' });
     // Le monde le retient : qui arrive ensuite le voit au niveau 5.
@@ -92,7 +92,7 @@ describe('le pointage et l\'init', () => {
     const socket = srv.connect(cookie);
     const seen = record(socket);
     const init = await nextEvent(socket, 'init');
-    expect(init.progress).toMatchObject({ xp: 0, ecus: 0, owned: [] });
+    expect(init.progress).toMatchObject({ xp: 0, kuartzons: 0, owned: [] });
     // Le pointage part juste après l'init : il est peut-être déjà là.
     for (let waited = 0; seen.payloadsOf('progress:mine').length === 0 && waited < 2000; waited += 50) await sleep(50);
     expect(seen.payloadsOf('progress:mine')).toMatchObject([{ xp: CHECKIN_XP, gain: { source: 'checkin', amount: CHECKIN_XP } }]);
@@ -110,7 +110,7 @@ describe('debug:xp (E2E)', () => {
     const ana = await person(srv, 'ana@x.fr');
     const bob = await person(srv, 'bob@x.fr');
     const level = nextEvent(bob.socket, 'progress:level');
-    ana.socket.emit('debug:xp', { xp: 12_000, ecus: 500 });
+    ana.socket.emit('debug:xp', { xp: 12_000, kuartzons: 500 });
     expect(await level).toEqual({ id: ana.id, level: 12 });
   });
 });
@@ -126,7 +126,7 @@ describe.skipIf(!forSale)('la déco et la boutique', () => {
     const desk = ana.init.desks.find((d) => d.ownerId === ana.id)!;
     const save = () => new Promise((resolve) => ana.socket.emit('desk:do', { ...decor, floor: desk.floor, wall: desk.wall }, resolve));
     expect(await save()).toEqual({ ok: false, error: 'bad_decor', reason: 'not_owned' });
-    ana.socket.emit('debug:xp', { xp: 0, ecus: forSale!.price! });
+    ana.socket.emit('debug:xp', { xp: 0, kuartzons: forSale!.price! });
     await nextEvent(ana.socket, 'progress:mine');
     expect((await request(srv.app).post('/api/shop/buy').set('Cookie', ana.cookie).send({ itemId: forSale!.id })).status).toBe(200);
     expect(await save()).toEqual({ ok: true });

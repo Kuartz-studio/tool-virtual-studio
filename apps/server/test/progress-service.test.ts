@@ -1,4 +1,4 @@
-import { CHECKIN_XP, GAME_DAILY_XP, MAX_OPEN_TASKS, TODO_DAILY_XP, TODO_XP, ecusBetween, missionXp } from '@bureau/shared';
+import { CHECKIN_XP, GAME_DAILY_XP, MAX_OPEN_TASKS, TODO_DAILY_XP, TODO_XP, kuartzonsBetween, missionXp } from '@bureau/shared';
 import { eq } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
 import { progress, task, user, xpEvent } from '../src/db/schema';
@@ -25,9 +25,9 @@ async function setup(timeZones: Record<string, string> = {}) {
   return { db, clock, service };
 }
 
-// Donne de l'XP et des écus à quelqu'un, d'un coup, comme s'il les avait gagnés.
-async function grant(db: Awaited<ReturnType<typeof setup>>['db'], userId: string, xp: number, ecus: number) {
-  await db.insert(progress).values({ userId, xp, ecus }).onConflictDoUpdate({ target: progress.userId, set: { xp, ecus } });
+// Donne de l'XP et des kuartzons à quelqu'un, d'un coup, comme s'il les avait gagnés.
+async function grant(db: Awaited<ReturnType<typeof setup>>['db'], userId: string, xp: number, kuartzons: number) {
+  await db.insert(progress).values({ userId, xp, kuartzons }).onConflictDoUpdate({ target: progress.userId, set: { xp, kuartzons } });
 }
 
 describe('les missions', () => {
@@ -52,7 +52,7 @@ describe('les missions', () => {
     expect(await service.give('ana', { to: 'bob', title: 'x', tier: 1 })).toEqual({ ok: false, error: 'limit' });
   });
 
-  test('Bob la fait : son XP monte de celle de la mission, son niveau suit, et il gagne les écus des niveaux passés', async () => {
+  test('Bob la fait : son XP monte de celle de la mission, son niveau suit, et il gagne les kuartzons des niveaux passés', async () => {
     const { service } = await setup();
     await service.give('ana', { to: 'bob', title: 'Petit audit', tier: 3 });
     const big = await service.give('ana', { to: 'bob', title: 'Le grand projet', tier: 10 });
@@ -60,7 +60,7 @@ describe('les missions', () => {
     const done = await service.complete('bob', big.task.id);
     expect(done!.task).toMatchObject({ status: 'done', xp: missionXp(10) });
     expect(done!.task.doneAt).toBe(new Date(THURSDAY).toISOString());
-    expect(done!.progress).toMatchObject({ xp: 5000, ecus: ecusBetween(0, 5), gain: { amount: 5000, source: 'mission', label: 'Le grand projet', levelBefore: 0, levelAfter: 5, ecus: ecusBetween(0, 5) } });
+    expect(done!.progress).toMatchObject({ xp: 5000, kuartzons: kuartzonsBetween(0, 5), gain: { amount: 5000, source: 'mission', label: 'Le grand projet', levelBefore: 0, levelAfter: 5, kuartzons: kuartzonsBetween(0, 5) } });
     // Faite une fois : on ne la refait pas.
     expect(await service.complete('bob', big.task.id)).toBeNull();
     // Ana ne la coche pas pour lui.
@@ -207,27 +207,27 @@ describe('les parties de jeu', () => {
 });
 
 describe('la boutique', () => {
-  test('acheter un élément : ses écus baissent du prix, il le possède, une fois pour toutes', async () => {
+  test('acheter un élément : ses kuartzons baissent du prix, il le possède, une fois pour toutes', async () => {
     const { db, service } = await setup();
     await grant(db, 'ana', 12_000, 1000);
-    expect(await service.buy('ana', 'statue-or')).toEqual({ ok: true, progress: { xp: 12_000, ecus: 200, streak: 0, owned: ['statue-or'] } });
+    expect(await service.buy('ana', 'statue-or')).toEqual({ ok: true, progress: { xp: 12_000, kuartzons: 200, streak: 0, owned: ['statue-or'] } });
     expect(await service.buy('ana', 'statue-or')).toEqual({ ok: false, error: 'owned' });
     expect(await service.buy('ana', 'tapis-rare')).toEqual({ ok: false, error: 'too_poor' });
     expect(await service.buy('ana', 'chaise-libre')).toEqual({ ok: false, error: 'unknown_item' });
     expect(await service.ownedAmong('ana', ['statue-or', 'tapis-rare'])).toEqual(new Set(['statue-or']));
   });
 
-  test('deux achats en même temps ne dépensent pas deux fois les mêmes écus', async () => {
+  test('deux achats en même temps ne dépensent pas deux fois les mêmes kuartzons', async () => {
     const { db, service } = await setup();
     await grant(db, 'ana', 0, 900);
     const results = await Promise.all([service.buy('ana', 'statue-or'), service.buy('ana', 'tapis-rare')]);
     expect(results.map((r) => r.ok)).toEqual([true, false]);
-    expect((await service.mine('ana')).ecus).toBe(100);
+    expect((await service.mine('ana')).kuartzons).toBe(100);
   });
 });
 
 describe('les caractéristiques', () => {
-  test('ce que tout le monde voit, et ce qui ne regarde que soi (écus, journal)', async () => {
+  test('ce que tout le monde voit, et ce qui ne regarde que soi (kuartzons, journal)', async () => {
     const { clock, service } = await setup();
     // Une minute entre deux gestes : le journal se lit du plus récent au plus ancien.
     for (const tier of [5, 5, 10] as const) {
@@ -244,11 +244,11 @@ describe('les caractéristiques', () => {
     const seenByAna = await service.stats('bob', 'ana');
     expect(seenByAna).toMatchObject({ id: 'bob', name: 'Bob', timezone: 'Europe/Paris', xp: 6000 + TODO_XP + CHECKIN_XP, missionsDone: 3, missionsGiven: 1, todosDone: 1, streak: 1, gamesPlayed: 0, gamesWon: 0 });
     expect(seenByAna!.missionsByTier).toEqual([0, 0, 0, 0, 2, 0, 0, 0, 0, 1]);
-    expect(seenByAna).not.toHaveProperty('ecus');
+    expect(seenByAna).not.toHaveProperty('kuartzons');
     expect(seenByAna).not.toHaveProperty('history');
 
     const mine = await service.stats('bob', 'bob');
-    expect(mine!.ecus).toBe(ecusBetween(0, 6));
+    expect(mine!.kuartzons).toBe(kuartzonsBetween(0, 6));
     expect(mine!.history!.map((entry) => entry.source)).toEqual(['checkin', 'todo', 'mission', 'mission', 'mission']);
     expect(await service.stats('zoe', 'ana')).toBeNull();
   });

@@ -117,7 +117,7 @@ export interface RealtimeDeps {
   music?: MusicService;
   /** Les notes et les parties des jeux. Par défaut, celles de la base (LadderService) ; les tests peuvent en passer une réglée à leur main. */
   ladder?: LadderService;
-  /** La progression de chacun (XP, écus, tâches, missions, boutique). Par défaut, celle de la base (ProgressService) : la même instance que les routes REST, si on la leur donne. */
+  /** La progression de chacun (XP, kuartzons, tâches, missions, boutique). Par défaut, celle de la base (ProgressService) : la même instance que les routes REST, si on la leur donne. */
   progress?: ProgressService;
   /** Le pointage du jour à l'arrivée (de l'XP, la première fois de la journée) : oui par défaut. Le serveur des tests l'éteint, sauf pour ceux qui l'éprouvent. */
   checkIn?: boolean;

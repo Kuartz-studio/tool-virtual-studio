@@ -154,12 +154,12 @@ export const task = pgTable(
   (table) => [index('task_owner_status_idx').on(table.ownerId, table.status), index('task_giver_created_idx').on(table.giverId, table.createdAt)],
 );
 
-// La progression de chacun : son XP totale (le niveau s'en déduit : levelOf), ses écus (gagnés en montant de niveau, dépensés à la boutique) et son pointage (le
-// jour du dernier, « AAAA-MM-JJ » dans son fuseau, et la série de jours ouvrés). Sans ligne : 0 XP, 0 écu, jamais pointé. Elle part avec le compte.
+// La progression de chacun : son XP totale (le niveau s'en déduit : levelOf), ses kuartzons (gagnés en montant de niveau, dépensés à la boutique) et son pointage (le
+// jour du dernier, « AAAA-MM-JJ » dans son fuseau, et la série de jours ouvrés). Sans ligne : 0 XP, 0 kuartzon, jamais pointé. Elle part avec le compte.
 export const progress = pgTable('progress', {
   userId: text('user_id').primaryKey().references(() => user.id, { onDelete: 'cascade' }),
   xp: integer('xp').notNull().default(0),
-  ecus: integer('ecus').notNull().default(0),
+  kuartzons: integer('kuartzons').notNull().default(0),
   checkInDay: text('check_in_day'),
   streak: integer('streak').notNull().default(0),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -184,7 +184,7 @@ export const xpEvent = pgTable(
 );
 
 // Ce que chacun a acheté à la boutique : un élément de décor (son identifiant dans la banque), une fois pour toutes ; il le pose ensuite dans sa pièce autant qu'il
-// le veut. `price` : ce qu'il l'a payé, en écus. Il part avec le compte.
+// le veut. `price` : ce qu'il l'a payé, en kuartzons. Il part avec le compte.
 export const shopPurchase = pgTable(
   'shop_purchase',
   {

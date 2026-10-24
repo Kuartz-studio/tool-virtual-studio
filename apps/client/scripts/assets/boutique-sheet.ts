@@ -87,7 +87,7 @@ function cardsRow(cards: Card[]): Row {
 // Les cartes d'une rareté, rangées en lignes de la largeur de la page, sous un titre qui dit ses prix et ce qu'elle coûte en tout.
 function rowsFor(rarity: Rarity, cards: Card[]): Row[] {
   const total = cards.reduce((sum, card) => sum + card.item.price!, 0);
-  const title = `${rarity.label.toUpperCase()} · ${formatPrice(rarity.min)} à ${formatPrice(rarity.max)} écus · ${cards.length} éléments · ${formatPrice(total)} écus en tout`;
+  const title = `${rarity.label.toUpperCase()} · ${formatPrice(rarity.min)} à ${formatPrice(rarity.max)} kuartzons · ${cards.length} éléments · ${formatPrice(total)} kuartzons en tout`;
   const rows: Row[] = [titleRow(title, COLORS.rarity[rarity.id])];
   let line: Card[] = [];
   let used = 0;
@@ -115,7 +115,7 @@ function drawCard(page: Img, card: Card, x: number, y: number, row: Extract<Row,
     drawText(page, x + PADDING, textY, line, COLORS.text, TEXT_SCALE);
     textY += TEXT_LINE;
   }
-  drawText(page, x + PADDING, textY, `${formatPrice(card.item.price!)} écus`, COLORS.price, TEXT_SCALE);
+  drawText(page, x + PADDING, textY, `${formatPrice(card.item.price!)} kuartzons`, COLORS.price, TEXT_SCALE);
   drawText(page, x + PADDING, textY + TEXT_LINE + 2, card.meta, COLORS.small, SMALL_SCALE);
 }
 
@@ -124,7 +124,7 @@ export function renderSheet(items: readonly DecorItem[] = DECOR_ITEMS, atlas: Im
   const shop = items.filter((item) => item.cat === 'boutique' && item.price !== undefined);
   const everything = shop.reduce((sum, item) => sum + item.price!, 0);
 
-  const rows: Row[] = [titleRow(`BOUTIQUE · ${shop.length} éléments · ${formatPrice(everything)} écus pour tout avoir`, COLORS.text)];
+  const rows: Row[] = [titleRow(`BOUTIQUE · ${shop.length} éléments · ${formatPrice(everything)} kuartzons pour tout avoir`, COLORS.text)];
   for (const rarity of RARITIES) {
     const cards = shop.filter((item) => rarityOf(item.price!)?.id === rarity.id).map((item) => makeCard(item, rarity, atlas));
     if (cards.length > 0) rows.push(...rowsFor(rarity, cards));

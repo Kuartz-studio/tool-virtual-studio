@@ -4,7 +4,7 @@ import { fr, t } from '../i18n/fr';
 import { fetchStats } from '../lib/progress-api';
 import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
-import { AuthorityIcon, EcusIcon, GamepadIcon, GivenIcon, MissionsIcon, StreakIcon, TodosIcon, XpIcon } from './icons';
+import { AuthorityIcon, GamepadIcon, GivenIcon, KuartzonIcon, MissionsIcon, StreakIcon, TodosIcon, XpIcon } from './icons';
 import { LastSeen } from './LastSeen';
 import { LocalTimeCard } from './LocalTime';
 import { formatNumber, gradeLabel, tierLabel } from './progress-format';
@@ -28,7 +28,7 @@ function Stat({ icon, value, label, hint }: { icon: ReactNode; value: ReactNode;
 }
 
 // Les caractéristiques d'une personne (GET /api/people/:id/stats), à la manière d'une fiche de personnage : son portrait, son niveau, son grade et la barre
-// de son XP, puis une grille (niveau, autorité, écus pour soi, missions accomplies et confiées, tâches cochées, série de pointage, parties gagnées), ses missions
+// de son XP, puis une grille (niveau, autorité, kuartzons pour soi, missions accomplies et confiées, tâches cochées, série de pointage, parties gagnées), ses missions
 // par difficulté, l'heure qu'il est chez elle (son fuseau horaire), et, pour soi, son journal (les derniers gains d'XP).
 //
 // La fiche est relue quand sa progression change (pour soi : le magasin la tient ; pour un autre : son niveau annoncé), sans clignoter : la précédente reste
@@ -86,7 +86,7 @@ export function CharacterSheet({ userId }: { userId: string }) {
       <div className="sheet-grid">
         <Stat icon={<XpIcon />} value={`${level} / ${MAX_LEVEL}`} label={fr.sheet.level} />
         <Stat icon={<AuthorityIcon />} value={formatNumber(authorityOf(level))} label={fr.sheet.authority} hint={fr.sheet.authorityHint} />
-        {stats.ecus !== undefined && <Stat icon={<EcusIcon />} value={formatNumber(stats.ecus)} label={fr.sheet.ecus} />}
+        {stats.kuartzons !== undefined && <Stat icon={<KuartzonIcon />} value={formatNumber(stats.kuartzons)} label={fr.sheet.kuartzons} />}
         <Stat icon={<MissionsIcon />} value={formatNumber(stats.missionsDone)} label={fr.sheet.missionsDone} />
         <Stat icon={<GivenIcon />} value={formatNumber(stats.missionsGiven)} label={fr.sheet.missionsGiven} />
         <Stat icon={<TodosIcon />} value={formatNumber(stats.todosDone)} label={fr.sheet.todosDone} />

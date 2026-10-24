@@ -6,15 +6,15 @@ import type { ServerEvents } from '../server-events';
 import type { ProgressService } from './progress-service';
 
 // La progression de la personne connectée, ses tâches et la boutique, montées sous /api :
-// - GET /me/progress : son XP, ses écus, sa série de pointage, ce qu'elle possède ;
+// - GET /me/progress : son XP, ses kuartzons, sa série de pointage, ce qu'elle possède ;
 // - GET /me/tasks : sa liste (les tâches ouvertes, puis celles fermées depuis une semaine) ; POST /me/tasks : une tâche à soi (409 `limit` : liste pleine) ;
 //   PATCH et DELETE /me/tasks/:id : la modifier, la supprimer (une tâche à soi seulement) ; POST /me/tasks/:id/done : la cocher ; POST /me/tasks/:id/decline :
 //   rendre une mission ; POST /me/tasks/seen : ses missions nouvelles sont vues ;
 // - GET /me/missions : les missions qu'elle a confiées ; POST /me/missions/:id/cancel : en retirer une qui n'est pas faite ;
-// - GET /people/:id/stats : les caractéristiques de quelqu'un (ses écus et son journal, seulement pour soi) ;
+// - GET /people/:id/stats : les caractéristiques de quelqu'un (ses kuartzons et son journal, seulement pour soi) ;
 // - POST /shop/buy : acheter un élément de la boutique (404 `unknown_item`, 409 `owned` ou `too_poor`).
 // On ne touche jamais aux tâches d'un autre : un identifiant étranger répond 404, comme un inconnu. On confie une mission auprès d'une administratrice, par le temps
-// réel (`mission:give`), pas ici : il faut être à l'accueil. Ce qui change l'XP, les écus ou une mission confiée est dit au temps réel (progress:changed,
+// réel (`mission:give`), pas ici : il faut être à l'accueil. Ce qui change l'XP, les kuartzons ou une mission confiée est dit au temps réel (progress:changed,
 // task:changed), qui l'annonce à qui de droit.
 export function progressRoutes({ auth, progress, events }: { auth: Auth; progress: ProgressService; events: ServerEvents }): Router {
   const router = Router();

@@ -1,4 +1,4 @@
-// La progression de chacun : l'expérience (XP), le niveau qu'elle donne, et ce que chaque niveau rapporte (des écus, de l'autorité, un grade). Une seule
+// La progression de chacun : l'expérience (XP), le niveau qu'elle donne, et ce que chaque niveau rapporte (des kuartzons, de l'autorité, un grade). Une seule
 // source pour le client et le serveur : le serveur compte, le client affiche avec les mêmes règles.
 //
 // Les choix, et pourquoi :
@@ -6,7 +6,7 @@
 //   de difficulté 1 vaut 5 % d'un niveau, de difficulté 5 la moitié, de difficulté 10 environ cinq niveaux) : avec un niveau de taille fixe, cela reste vrai
 //   pour tout le monde, à tout niveau, et la même mission rapporte la même XP à chacun. Une courbe qui grandirait avec le niveau ferait mentir ces paliers
 //   pour les plus avancés, ou donnerait des XP différentes pour la même mission.
-// - Ce qui grandit avec le niveau, ce sont ses récompenses : chaque niveau atteint donne plus d'écus (ecusForLevel) et plus d'autorité (authorityForLevel)
+// - Ce qui grandit avec le niveau, ce sont ses récompenses : chaque niveau atteint donne plus de kuartzons (kuartzonsForLevel) et plus d'autorité (authorityForLevel)
 //   que le précédent. Plus on monte, plus on gagne.
 // - Le niveau s'arrête à MAX_LEVEL (200). L'XP continue de s'additionner au-delà (le total se lit dans les caractéristiques), sans rien rapporter de plus.
 
@@ -69,16 +69,16 @@ export function levelShare(xp: number): number {
   return xp / XP_PER_LEVEL;
 }
 
-// Les écus que rapporte le fait d'atteindre ce niveau (1 à MAX_LEVEL) : 25 au niveau 1, 70 au niveau 10, 520 au niveau 100, 1 020 au niveau 200.
-export function ecusForLevel(level: number): number {
+// Les kuartzons que rapporte le fait d'atteindre ce niveau (1 à MAX_LEVEL) : 25 au niveau 1, 70 au niveau 10, 520 au niveau 100, 1 020 au niveau 200.
+export function kuartzonsForLevel(level: number): number {
   return level >= 1 && level <= MAX_LEVEL ? 20 + 5 * level : 0;
 }
 
-// Les écus gagnés en passant du niveau `from` au niveau `to` (to > from) : la somme de ceux de chaque niveau atteint. 475 pour aller de 0 à 10, 7 375 de 0 à
+// Les kuartzons gagnés en passant du niveau `from` au niveau `to` (to > from) : la somme de ceux de chaque niveau atteint. 475 pour aller de 0 à 10, 7 375 de 0 à
 // 50, 104 500 de 0 à 200.
-export function ecusBetween(from: number, to: number): number {
+export function kuartzonsBetween(from: number, to: number): number {
   let total = 0;
-  for (let level = Math.max(1, from + 1); level <= Math.min(MAX_LEVEL, to); level++) total += ecusForLevel(level);
+  for (let level = Math.max(1, from + 1); level <= Math.min(MAX_LEVEL, to); level++) total += kuartzonsForLevel(level);
   return total;
 }
 
@@ -104,15 +104,15 @@ export function gradeOf(level: number): Grade {
   return GRADES[Math.min(GRADES.length - 2, Math.floor(Math.max(0, level) / 20))]!;
 }
 
-// Ce que rapporte une XP ajoutée à une autre : le niveau d'avant et d'après, les écus gagnés en route, et si le grade a changé. La même règle sert au serveur,
+// Ce que rapporte une XP ajoutée à une autre : le niveau d'avant et d'après, les kuartzons gagnés en route, et si le grade a changé. La même règle sert au serveur,
 // qui compte, et au client, qui annonce.
-export function gainOf(xpBefore: number, amount: number): { levelBefore: number; levelAfter: number; ecus: number; gradeChanged: boolean } {
+export function gainOf(xpBefore: number, amount: number): { levelBefore: number; levelAfter: number; kuartzons: number; gradeChanged: boolean } {
   const levelBefore = levelOf(xpBefore);
   const levelAfter = levelOf(xpBefore + Math.max(0, amount));
-  return { levelBefore, levelAfter, ecus: ecusBetween(levelBefore, levelAfter), gradeChanged: gradeOf(levelBefore) !== gradeOf(levelAfter) };
+  return { levelBefore, levelAfter, kuartzons: kuartzonsBetween(levelBefore, levelAfter), gradeChanged: gradeOf(levelBefore) !== gradeOf(levelAfter) };
 }
 
-// La rareté d'un élément de la boutique, d'après son prix en écus : de quoi le ranger et le colorer.
+// La rareté d'un élément de la boutique, d'après son prix en kuartzons : de quoi le ranger et le colorer.
 export const RARITIES = ['commun', 'rare', 'epique', 'legendaire'] as const;
 export type Rarity = (typeof RARITIES)[number];
 
