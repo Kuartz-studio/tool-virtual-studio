@@ -1,5 +1,6 @@
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { PGlite } from '@electric-sql/pglite';
 import type { Assume } from 'drizzle-orm';
 import type { PgDatabase, PgQueryResultHKT } from 'drizzle-orm/pg-core';
 import * as schema from './schema';
@@ -55,13 +56,19 @@ const POOL_TIMEOUTS = {
   idle_in_transaction_session_timeout: 30_000,
 };
 
+// La base Drizzle d'un client PGlite déjà ouvert : celui de createDb, ou, dans les tests, une copie d'une base déjà migrée.
+export async function pgliteDb(client: PGlite): Promise<Db> {
+  const { drizzle } = await import('drizzle-orm/pglite');
+  return withDriver(drizzle(client, { schema }), 'pglite');
+}
+
 // `memory://` : PGlite en mémoire (tests, e2e). `pglite://<dossier>` : PGlite enregistré dans ce dossier,
 // relatif au dossier de travail (développement local, sans Docker). Toute autre URL : pool node-postgres, avec ses délais
 // (POOL_TIMEOUTS), sauf `timeouts: false` : la commande de migration, dont une étape peut être longue. PGlite n'en a pas.
 // Les pilotes sont chargés à la demande, pour ne charger que celui dont on a besoin.
 export async function createDb(url: string, { timeouts = true }: { timeouts?: boolean } = {}): Promise<{ db: Db; close(): Promise<void> }> {
   if (isPgliteUrl(url)) {
-    const [{ PGlite }, { drizzle }] = await Promise.all([import('@electric-sql/pglite'), import('drizzle-orm/pglite')]);
+    const { PGlite } = await import('@electric-sql/pglite');
     let dataDir = MEMORY_PREFIX;
     if (url.startsWith(PGLITE_PREFIX)) {
       const folder = url.slice(PGLITE_PREFIX.length);
@@ -70,7 +77,7 @@ export async function createDb(url: string, { timeouts = true }: { timeouts?: bo
       mkdirSync(dataDir, { recursive: true });   // PGlite ne crée pas les dossiers parents
     }
     const client = await PGlite.create(dataDir);
-    return { db: withDriver(drizzle(client, { schema }), 'pglite'), close: () => client.close() };
+    return { db: await pgliteDb(client), close: () => client.close() };
   }
 
   const [{ default: pg }, { drizzle }] = await Promise.all([import('pg'), import('drizzle-orm/node-postgres')]);
