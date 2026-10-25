@@ -1,5 +1,5 @@
 # Image de production du Bureau virtuel : un seul processus Node qui sert l'API, le temps réel et le client compilé.
-# Railway la construit en ligne (railway.json) : aucun outil du dépôt n'exige Docker en local.
+# Railway la construit en ligne (.railway/railway.ts) : aucun outil du dépôt n'exige Docker en local.
 
 # ---- 1. Compilation -----------------------------------------------------------------------------------------------------
 FROM node:24-slim AS build
@@ -51,5 +51,5 @@ USER node
 
 # Les migrations, puis le serveur. `exec` fait de Node le processus principal du conteneur : c'est lui qui reçoit SIGTERM de
 # Railway, et comme processus 1 il ne s'arrête sur ce signal que parce qu'index.ts l'écoute (positions enregistrées, serveur et
-# base fermés, puis sortie avec le code 0). railway.json donne la même commande, que Railway préfère à celle-ci.
+# base fermés, puis sortie avec le code 0). .railway/railway.ts donne la même commande, que Railway préfère à celle-ci.
 CMD ["sh", "-c", "node apps/server/dist/migrate.js && exec node apps/server/dist/index.js"]

@@ -119,7 +119,7 @@ Pendant l'exécution du plan, certaines questions n'avaient pas de réponse dans
 | Les appels à l'API LiveKit abandonnent au bout de 3 s | Un retrait en retard pouvait éjecter quelqu'un qui venait de revenir | Sur LiveKit Cloud, la bascule automatique vers une autre région est désactivée : pendant une panne régionale, un retrait échoue (avec un avertissement dans les journaux) au lieu d'être retenté ailleurs |
 | La base PostgreSQL a des délais : 5 s pour se connecter, 10 s par requête (sauf pour les migrations) | Une base bloquée bloquait les arrivées et l'arrêt du serveur | Une requête légitime de plus de 10 s échouerait (aucune connue) |
 | Changer de statut ou couper le micro ou la caméra est limité à 10 fois par seconde | Chaque changement est diffusé à tout le bureau | Rien pour un usage normal |
-| Railway laisse 30 s au serveur pour s'arrêter (`drainingSeconds` dans `railway.json`, qui prime sur le tableau de bord) | Le temps d'enregistrer les positions | Un déploiement un peu plus lent |
+| Railway laisse 30 s au serveur pour s'arrêter (`drainingSeconds` dans `.railway/railway.ts`, que `railway config apply` écrit dans les réglages du service) | Le temps d'enregistrer les positions | Un déploiement un peu plus lent |
 | Les erreurs de base sont journalisées sans leurs valeurs (paramètres, et valeurs reprises dans le message) | Elles pouvaient contenir un jeton de session | Un diagnostic un peu moins précis dans les journaux |
 | Les 4 petits points laissés par la dernière relecture ne sont pas corrigés tout de suite (voir plus bas) | Pas de deuxième vague de corrections : ils sont rares ou optionnels | Voir chaque point ci-dessous |
 
@@ -601,6 +601,8 @@ Les administratrices du milieu du bureau prennent vie : on leur confie une missi
 | Les tests de bout en bout ne font pas partie de la CI | Ils demandent des navigateurs et un serveur, durent longtemps et ne se lancent qu'un à la fois | Une régression que seuls eux verraient peut partir en ligne |
 | La CI tourne sur Node 24, celui de l'image de production ; le développement reste sur Node 22 | C'est Node 24 qui tourne en ligne | Un test qui ne passerait que sur Node 22 bloquerait les déploiements jusqu'à sa correction |
 | Une poussée plus récente sur `main` annule la CI encore en cours | Seul le dernier commit compte, et il contient les précédents | Un commit intermédiaire n'est jamais mis en ligne seul |
+| Les réglages du service (Dockerfile, démarrage, `/api/health`, 30 s d'arrêt) passent de `railway.json`, supprimé, à `.railway/railway.ts`, écrit dans Railway à la main par `railway config apply` après `railway config plan` ; le redémarrage en cas d'échec (10 essais) n'y est pas, c'est celui de Railway par défaut | Railway ne lit plus `railway.json` à partir du 1er décembre 2026, et ne l'a jamais lu pour ce service, créé en octobre 2026 : en ligne, il n'y avait ni healthcheck ni délai d'arrêt (0 s) | Un changement du fichier ne part pas avec un `git push` : sans `apply`, Railway garde les anciens réglages |
+| `.railway/railway.ts` ne gère que ce service (`partial`), sans la base ni les variables | Les secrets restent dans Railway, et la base, absente du fichier, n'est pas supprimée | « Wait for CI », les réplicas et le domaine restent réglés dans le tableau de bord, hors du dépôt |
 
 ## Le menu d'une personne, la lumière tamisée et Bali (octobre 2026)
 

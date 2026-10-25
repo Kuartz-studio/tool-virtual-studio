@@ -12,6 +12,7 @@
 .git
 
 # Inutiles à la compilation.
+.railway
 .superpowers
 .worktrees
 docs
