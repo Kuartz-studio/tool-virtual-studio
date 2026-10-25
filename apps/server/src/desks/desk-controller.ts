@@ -225,8 +225,9 @@ export function createDeskController(d: DeskControllerDeps) {
     for (const [key, at] of [...lastInvite]) if (now - at >= DESK_INVITE_COOLDOWN_MS) lastInvite.delete(key);
   }
 
-  // Ce que l'invitée voit d'une invitation : ce qu'il lui reste à vivre plutôt que son échéance (les horloges du serveur et du navigateur ne sont pas les mêmes).
-  const viewOf = (pending: PendingInvite, now: number): DeskInvite => ({ id: pending.id, key: pending.key, from: pending.from, ttlMs: Math.max(0, pending.expiresAt - now) });
+  // Ce que l'invitée voit d'une invitation : ce qu'il lui reste à vivre plutôt que son échéance (les horloges du serveur et du navigateur ne sont pas les mêmes),
+  // en millisecondes entières : l'horloge du serveur (performance.now) a des décimales, et (now + 60000) - now peut donner 60000,00000000001.
+  const viewOf = (pending: PendingInvite, now: number): DeskInvite => ({ id: pending.id, key: pending.key, from: pending.from, ttlMs: Math.max(0, Math.round(pending.expiresAt - now)) });
 
   function tell(userId: string, notice: DeskInviteNotice): void {
     for (const socket of d.socketsOf(userId)) socket.emit('desk:notice', notice);

@@ -501,6 +501,9 @@ describe('la dernière connexion', () => {
     await renderAll();
     await offlineSection();
     expect(sub('bob')?.querySelector('time')?.textContent).toBe('Il y a 59 min');
+    // Le libellé est affiché, mais sur une machine lente React n'a pas encore branché l'horloge de LastSeen (ses effets passent après) :
+    // avancer d'une minute maintenant ne la ferait jamais sonner. On le laisse finir.
+    await act(async () => {});
     act(() => vi.advanceTimersByTime(60_000));
     expect(sub('bob')?.querySelector('time')?.textContent).toBe('Il y a 1 h');
   });
