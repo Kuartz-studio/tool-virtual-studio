@@ -99,7 +99,8 @@ test('une personne qui ne veut pas être dérangée n\'a pas de bouton « Invite
   test.slow();
   const alice = await arrive(browser, 'Alice');
   const dan = await arrive(browser, 'Dan');
-  await chooseStatus(dan, 'Ne pas déranger');
+  // Dan prend « Concentration », un mode qui ferme sa porte (« Ne pas déranger » ne se choisit plus dans le menu « Moi » depuis le 24 oct.) : on ne l'invite pas.
+  await chooseStatus(dan, 'Concentration');
   await seatAliceAt(alice, 'connect4');
   const panel = gamePanel(alice, 'connect4');
   await panel.getByRole('button', { name: 'Inviter quelqu\'un' }).click();

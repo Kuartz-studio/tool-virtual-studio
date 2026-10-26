@@ -1,6 +1,7 @@
-import { GROUP_DEBOUNCE_MS, GROUPS_TICK_MS, placeAt, zoneAt, type ActivityInput, type ActivityState, type WorldTick } from '@bureau/shared';
+import { GROUP_DEBOUNCE_MS, GROUPS_TICK_MS, TREADMILL_ID, placeAt, zoneAt, type ActivityInput, type ActivityState, type DeskAck, type PlacedItem, type WorldTick } from '@bureau/shared';
 import { describe, expect, test, vi } from 'vitest';
 import { createActivityService } from '../src/activity/activity-service';
+import { CUSTOM_DECOR } from './helpers/decor';
 import { enter, nextEvent, record, sleep, startTestServer, type TestServer } from './helpers/realtime';
 
 const focus: ActivityInput = { label: 'En focus', color: '#6d28d9', allowEntry: false, hear: true, heard: false };
@@ -373,5 +374,107 @@ describe('les modes par défaut et leur emplacement', () => {
     const spotB = await second;
     expect(inRoom(srv, 'gym', spotB)).toBe(true);
     expect(Math.hypot(spotA.x - spotB.x, spotA.y - spotB.y)).toBeGreaterThanOrEqual(2 * srv.map.tileSize);
+  });
+});
+
+// Le mode Sport sur son tapis de course : un tapis posé dans sa pièce (A1, la première qu'on attribue), en (1, 2), et « Sport » pris dessus. Ses pieds sur la bande,
+// et la case libre devant lui : mode-travel.test.ts en fait le calcul.
+describe('le mode Sport sur son tapis de course', () => {
+  const treadmill = { desk: 'A1', x: 1, y: 2 };
+  const belt = { x: 352, y: 167 };
+  const inFront = { x: 336, y: 208 };
+
+  type Person = Awaited<ReturnType<typeof person>>;
+  const saveDecor = (a: Person, items: PlacedItem[]) =>
+    new Promise<DeskAck>((resolve) => a.socket.emit('desk:do', { type: 'decor', floor: CUSTOM_DECOR.floor, wall: CUSTOM_DECOR.wall, items }, resolve));
+
+  // Pose le tapis dans sa pièce (`desk:do`, comme l'éditeur l'enregistre), puis prend « Sport » dessus : rend le `move:correct` qui l'y pose.
+  async function onTreadmill(srv: TestServer, a: Person) {
+    expect(await saveDecor(a, [{ id: TREADMILL_ID, x: 1, y: 2 }])).toEqual({ ok: true });
+    const moved = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', { id: (await defaultMode(srv, a.id, 'Sport')).id, treadmill: true });
+    return moved;
+  }
+
+  test('« Sport » sur son tapis : posée sur la bande, d\'un voyage ; tout le bureau apprend qu\'elle y court, et qui arrive le lit dans l\'init', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    const running = nextEvent(b.socket, 'treadmill:changed');
+    expect(await onTreadmill(srv, a)).toEqual({ ...belt, reason: 'teleport' });
+    expect(await running).toEqual({ id: a.id, treadmill });
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ ...belt, dir: 'up', treadmill, activity: { label: 'Sport' } });
+    const c = await person(srv, 'c@x.fr');
+    expect(c.init.players.find((p) => p.id === a.id)?.treadmill).toEqual(treadmill);
+  });
+
+  test('sans tapis dans sa pièce, la même demande conduit à la salle de sport', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const moved = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', { id: (await defaultMode(srv, a.id, 'Sport')).id, treadmill: true });
+    expect(placeAt(srv.map, (await moved).x, (await moved).y)?.key).toBe('gym');
+    expect(srv.realtime.world.get(a.id)?.treadmill).toBeUndefined();
+  });
+
+  test('un pas hors du tapis : elle n\'y court plus, et le bureau l\'apprend juste après le tick qui porte ce pas (qui n\'est pas perdu) ; le mode reste', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    const b = await person(srv, 'b@x.fr');
+    await onTreadmill(srv, a);
+    // Le saut jusqu'au tapis est parti avec un tick : on part d'un monde où plus rien n'attend.
+    await sleep(250);
+    const seen = record(b.socket);
+    a.socket.emit('move', { ...inFront, dir: 'down', moving: true });
+    const at = (find: (r: { event: string; args: unknown[] }) => boolean) => seen.received.findIndex(find);
+    const stepped = (r: { event: string; args: unknown[] }) =>
+      r.event === 'world:tick' && (r.args[0] as WorldTick).moves.some((m) => m.id === a.id && m.x === inFront.x && m.y === inFront.y);
+    await vi.waitFor(() => expect(seen.payloadsOf('treadmill:changed')).toEqual([{ id: a.id, treadmill: null }]));
+    expect(at(stepped)).toBeGreaterThanOrEqual(0);
+    expect(at(stepped)).toBeLessThan(at((r) => r.event === 'treadmill:changed'));
+    expect(srv.realtime.world.get(a.id)).toMatchObject({ ...inFront, activity: { label: 'Sport' } });
+    expect(srv.realtime.world.get(a.id)?.treadmill).toBeUndefined();
+  });
+
+  test('en sortir (« Disponible ») : elle descend devant le tapis, d\'un pas (une simple correction)', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    await onTreadmill(srv, a);
+    const down = nextEvent(a.socket, 'move:correct');
+    a.socket.emit('state:set', null);
+    expect(await down).toEqual(inFront);
+    expect(srv.realtime.world.get(a.id)?.treadmill).toBeUndefined();
+  });
+
+  test('le tapis retiré de sa pièce pendant qu\'elle court : posée devant sa place d\'avant', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');
+    await onTreadmill(srv, a);
+    const down = nextEvent(a.socket, 'move:correct');
+    expect(await saveDecor(a, [])).toEqual({ ok: true });
+    expect(await down).toEqual(inFront);
+    expect(srv.realtime.world.get(a.id)?.treadmill).toBeUndefined();
+  });
+
+  test('un redémarrage du serveur, ou un retour après le délai de grâce : elle revient devant le tapis, jamais dedans', async () => {
+    const srv = await startOffice();
+    const cookie = await srv.inviteAndLogin('a@x.fr');
+    const a = await enter(srv, cookie);
+    await onTreadmill(srv, a);
+    // Un déploiement : le serveur s'arrête (sa position, sur la bande, est enregistrée), le suivant la relit.
+    const reinit = nextEvent(a.socket, 'init', 5000);
+    await srv.restart();
+    const { self } = await reinit;
+    expect(self).toMatchObject(inFront);
+    expect(self.treadmill).toBeUndefined();
+
+    // De nouveau sur son tapis, elle part au-delà du délai de grâce : elle revient en mode, devant lui.
+    await onTreadmill(srv, a);
+    a.socket.disconnect();
+    await sleep(500);
+    expect(srv.realtime.world.get(a.id)).toBeUndefined();
+    const again = await enter(srv, cookie);
+    expect(again.init.self).toMatchObject({ ...inFront, activity: { label: 'Sport' } });
+    expect(again.init.self.treadmill).toBeUndefined();
   });
 });

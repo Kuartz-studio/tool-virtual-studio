@@ -253,8 +253,9 @@ export function buildOffice(): OfficeBuild {
 }
 
 // Le mobilier de la carte : des éléments de la banque (packages/shared/src/decor) et des objets animés (packages/shared/src/props), posés par la case de
-// leur coin haut-gauche. Les bureaux n'en ont pas ici : leur déco est celle de leur occupant (DeskInfo), dessinée par le client. Un élément mural se
-// pose à la case de la pièce qu'il surplombe (un panneau d'un carreau, une rangée plus haut : à la rangée de mur où il doit être).
+// leur coin haut-gauche. Les bureaux n'en ont pas ici, ni la rangée de la rue devant eux (leur dehors) : leur déco est celle de leur occupant (DeskInfo),
+// dessinée par le client. Un élément mural se pose à la case de la pièce qu'il surplombe (un panneau d'un carreau, une rangée plus haut : à la rangée de
+// mur où il doit être).
 //
 // Les règles de l'agencement, pour que chaque pièce soit logique :
 // - un siège regarde ce qu'il sert : une chaise du côté nord d'une table est « de face », du côté sud « de dos » ; aux bouts, « vers la droite » à
@@ -291,17 +292,21 @@ function furnish(c: MapCanvas): void {
 
   // Les rues : des arbustes entre les portes (jamais dans l'axe d'une porte ou d'une arche : ils la masqueraient), des fontaines à eau, deux bancs, et sur
   // le connecteur est des casiers et de grandes plantes. Un panneau de sortie, vert, à chaque bout des deux rues (il éclaire la nuit).
+  // La rangée de la rue juste sous le mur sud d'un bureau, sur la largeur de sa pièce (y 11 devant A5, A1 et A2, y 26 devant A6, A3 et A4), n'est pas à la
+  // carte : c'est le dehors du bureau, que son occupant décore (ce qu'elle y posait est devenu son dehors par défaut, defaultDeskDecor). Sur la face de ce
+  // mur, la carte ne garde que le panneau de sortie et l'interrupteur de la lumière, que la déco ne recouvre pas.
   at([
-    // La rue nord (y 11 à 14) : les portes du nord sont en x 3-4, 12-13, 23-24, 57-58 et 72-73 ; celles du sud en x 3-4, 12-13, 23-24 et 68-70.
-    ['lr-12-0', 9, 11], ['lr-12-0', 19, 11], ['lr-12-0', 27, 11],
+    // La rue nord (y 11 à 14) : les portes du nord sont en x 3-4, 12-13, 23-24, 57-58 et 72-73 ; celles du sud en x 3-4, 12-13, 23-24 et 68-70. Entre A5 et
+    // A1, sur les deux pans de mur, un banc (deux rangées de profondeur : il ne tiendrait pas dans le dehors d'un bureau).
+    ['lr-12-0', 19, 11],
     ['lr-12-0', 53, 11], ['lr-12-0', 68, 11],
-    ['of-12-15', 10, 11], ['of-12-15', 29, 11], ['of-12-15', 63, 11],
+    ['of-12-15', 29, 11], ['of-12-15', 63, 11],
     ['lr-12-0', 1, 14], ['lr-12-0', 9, 14], ['lr-12-0', 18, 14], ['lr-12-0', 28, 14],
     ['lr-12-0', 52, 14], ['lr-12-0', 63, 14], ['lr-12-0', 74, 14],
-    ['ge-0-15', 15, 11], ['ge-2-15', 60, 11],
+    ['ge-0-15', 7, 11], ['ge-2-15', 60, 11],
     // La rue sud (y 26 à 29) : au nord, les portes ne s'ouvrent pas sur elle ; au sud, les arches des salles (x 6-7, 23-26, 44-47, 66-69).
-    ['lr-12-0', 9, 26], ['lr-12-0', 20, 26], ['lr-12-0', 29, 26], ['lr-12-0', 52, 26], ['lr-12-0', 62, 26],
-    ['of-12-15', 15, 26], ['of-12-15', 56, 26],
+    ['lr-12-0', 29, 26], ['lr-12-0', 52, 26], ['lr-12-0', 62, 26],
+    ['of-12-15', 56, 26],
     ['lr-12-0', 1, 29], ['lr-12-0', 10, 29], ['lr-12-0', 18, 29], ['lr-12-0', 30, 29], ['lr-12-0', 40, 29], ['lr-12-0', 49, 29], ['lr-12-0', 58, 29], ['lr-12-0', 72, 29],
     // Le connecteur est : deux distributeurs contre le mur du nord (de part et d'autre du panneau de sortie), des plantes. Rien contre les murs de côté : un
     // meuble qui regarde le sud n'a pas sa place contre un mur qui regarde l'ouest.

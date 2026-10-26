@@ -119,6 +119,8 @@ test('Alice s\'assoit et invite Bastien : il accepte, arrive près de la table, 
   for (let n = 1; n <= 7; n++) await expect(column(alice, n)).toHaveAttribute('aria-disabled', 'true');
 
   await panel(alice).getByRole('button', { name: 'Inviter quelqu\'un' }).click();
+  // Le Bastien du spec d'avant (les échecs) reste dans le bureau 10 s après son départ (DISCONNECT_GRACE_MS) : on attend qu'il n'y en ait plus qu'un.
+  await expect(panel(alice).getByRole('button', { name: 'Inviter Bastien', exact: true })).toHaveCount(1, { timeout: 15_000 });
   await panel(alice).getByRole('button', { name: 'Inviter Bastien', exact: true }).click();
   const invitation = bastien.locator('.toast', { hasText: 'Alice t\'invite au Puissance 4' });
   await expect(invitation).toBeVisible();
@@ -179,6 +181,9 @@ test('une partie jouée à la souris jusqu\'à la victoire : quatre jetons l\'un
     await expect(board(page).locator('.game-connect4-token[data-dim]')).toHaveCount(3);
     await expect(board(page).locator('.game-connect4-token[data-last]')).toHaveCount(1);
     for (let n = 1; n <= 7; n++) await expect(column(page, n)).toHaveAttribute('aria-disabled', 'true');
+    // La phrase de fin et « Revanche » se voient sans faire défiler le panneau à la main : sous le plateau, elles étaient sous le pli. Le panneau défile de lui-même.
+    await expect(statusLine(page)).toBeInViewport({ ratio: 1 });
+    await expect(readyButton(page, 'connect4')).toBeInViewport({ ratio: 1 });
   }
   const view = (await gameTable(alice, 'connect4'))!;
   expect(view.match!.status).toBe('ended');

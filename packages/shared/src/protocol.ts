@@ -4,6 +4,7 @@ import type { AvatarKey } from './avatars';
 import { ACTIVITY_LABEL_MAX_LENGTH, CHAT_MAX_LENGTH, DESK_NAME_MAX_LENGTH, DISPLAY_NAME_MAX_LENGTH } from './constants';
 import type { DecorError } from './decor/placement';
 import { MAX_DECOR_ITEMS } from './decor/placement';
+import type { TreadmillRef } from './decor/treadmill';
 import type { PlacedItem } from './decor/types';
 import type { DebugGamePayload, GameAck, GameCommand, GameInvite, GameNotice, GameTableView, LadderAck } from './games/protocol';
 import type { GameId } from './games/types';
@@ -91,6 +92,10 @@ export const activityInputSchema = z.object({
 });
 // L'identifiant d'un état d'activité à prendre (`state:set`), ou null pour revenir à un statut ordinaire.
 export const activityIdSchema = z.string().min(1).max(64).nullable();
+// Ce que `state:set` reçoit : cet identifiant (ou null), ou `{ id, treadmill: true }` : prendre ce mode sur son tapis de course plutôt qu'à la salle de sport
+// (decor/treadmill.ts). Le serveur vérifie que le mode y conduit et que la pièce de la personne a un tapis ; sinon, c'est le voyage de toujours.
+export const stateSetSchema = z.union([activityIdSchema, z.object({ id: z.string().min(1).max(64), treadmill: z.literal(true) })]);
+export type StateSetPayload = z.infer<typeof stateSetSchema>;
 
 // Les trois états de la lumière du bureau : allumée (`on`, le jour), tamisée (`dim` : plus faible, entre le jour et la nuit) et
 // éteinte (`off`, la nuit). L'interrupteur passe de l'un au suivant, dans cet ordre, puis revient au premier.
@@ -137,7 +142,8 @@ export interface ActivityState extends ActivityInput { id: string }
 // de couleur et le texte. `speaking` : elle parle en ce moment (absent : non), pour la bulle au-dessus de son avatar. `boost` : ce qu'il lui reste
 // de café, en ms (absent : pas de café), pour ceux qui arrivent pendant qu'elle en a un. `level` : son niveau (absent : 0). `timezone` : son fuseau
 // horaire (un nom IANA, timezone.ts), que le serveur donne toujours ; absent (un joueur fabriqué par un test), c'est l'heure de Paris (timezoneOrDefault).
-export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean; boost?: number; level?: number; timezone?: string }
+// `treadmill` : elle court sur ce tapis de course (un mode l'y a posée, ses pieds sur la bande), jusqu'à ce qu'elle en descende ; absent : non.
+export interface PublicPlayer { id: string; name: string; avatarKey: AvatarKey | null; x: number; y: number; dir: Direction; moving: boolean; status: Status; media: MediaState; activity?: ActivityState | null; speaking?: boolean; boost?: number; level?: number; timezone?: string; treadmill?: TreadmillRef }
 // Le profil d'une personne tel que PATCH /api/me le rend et que `profile:changed` le diffuse : tout ce qu'elle règle d'elle-même, ensemble (le client
 // remplace le tout).
 export interface PublicProfile { id: string; name: string; avatarKey: AvatarKey | null; timezone: string }
@@ -291,6 +297,7 @@ export interface ServerToClientEvents {
   'player:left': (p: { id: string }) => void;
   'status:changed': (p: { id: string; status: Status }) => void;
   'activity:changed': (p: { id: string; activity: ActivityState | null }) => void;
+  'treadmill:changed': (p: { id: string; treadmill: TreadmillRef | null }) => void;   // à tout le bureau : quelqu'un se met à courir sur ce tapis, ou en descend (null)
   'media:changed': (p: { id: string; media: MediaState }) => void;
   'speaking:changed': (p: { id: string; speaking: boolean }) => void;   // à tout le bureau : quelqu'un se met à parler, ou se tait (la bulle au-dessus de lui)
   'profile:changed': (p: PublicProfile) => void;          // à tout le bureau : quelqu'un a changé son nom, son personnage ou son fuseau horaire (le profil entier)
@@ -325,7 +332,7 @@ export interface ServerToClientEvents {
 export interface ClientToServerEvents {
   move: (p: MovePayload) => void;
   'status:set': (s: Status) => void;
-  'state:set': (activityId: string | null) => void;   // prendre un de ses états d'activité, ou null : un statut ordinaire
+  'state:set': (p: StateSetPayload) => void;   // prendre un de ses états d'activité (sur son tapis de course : { id, treadmill: true }), ou null : un statut ordinaire
   'media:state': (m: MediaState) => void;
   'speaking:set': (speaking: boolean) => void;   // « je parle » / « je me tais » ; redit toutes les SPEAKING_HEARTBEAT_MS tant qu'on parle ; ignoré micro coupé, ou sans être entendu
   'chat:send': (p: ChatSendPayload, ack: (r: ChatAck) => void) => void;

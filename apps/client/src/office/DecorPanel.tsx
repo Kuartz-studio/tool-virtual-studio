@@ -1,4 +1,4 @@
-import { FLOOR_THEMES, MAX_DECOR_ITEMS, SHOP_WALL_THEMES, WALL_THEMES, decorItem, defaultDeskDecor, type DeskDecor } from '@bureau/shared';
+import { MAX_DECOR_ITEMS, decorItem, defaultDeskDecor, type DeskDecor } from '@bureau/shared';
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { EventBus } from '../game/EventBus';
 import { fr, t } from '../i18n/fr';
@@ -11,15 +11,15 @@ import { cartTotal, unpaidIn, withoutLine, withoutUnpaid, type CartLine } from '
 import { DecorCheckout } from './DecorCheckout';
 import { roomOfDesk, sameDecor } from './decor-draft';
 import { DecorPicker } from './DecorPicker';
-import { CloseIcon, InfoIcon, KuartzonIcon, LockIcon } from './icons';
+import { DecorThemes } from './DecorThemes';
+import { CloseIcon, InfoIcon, KuartzonIcon } from './icons';
 import { deskErrorText } from './desks';
 import { ReplaceDialog } from './ReplaceDialog';
 import { formatNumber } from './progress-format';
-import { FloorSwatch, WallSwatch } from './sprites';
 import { useToasts } from './Toasts';
 import { IconButton } from './ui/IconButton';
 
-// Le panneau Décorer mon bureau : la banque d'éléments (le sélecteur, DecorPicker), et les murs et le sol. Il pilote le
+// Le panneau Décorer mon bureau : la banque d'éléments (le sélecteur, DecorPicker), et les murs et le sol (DecorThemes). Il pilote le
 // brouillon de l'éditeur (le magasin) que le jeu montre dans la pièce : on choisit un élément, on le pose en cliquant dans la pièce
 // (DecorEditorView). « Enregistrer » envoie toute la déco d'un bloc ; le serveur la valide à son tour et la diffuse à tout le bureau.
 // Ouvrir le panneau ouvre l'éditeur sur son bureau ; le fermer le ferme. La gomme efface d'un clic l'élément qu'on vise ; poser sur un autre
@@ -149,69 +149,7 @@ export function DecorPanel({ id, socket, onClose }: { id?: string; socket: Offic
           <div className="people-lists decor-body">
             {/* Le sélecteur reste monté sous « Murs et sol » : on y retrouve sa catégorie et sa recherche. */}
             <DecorPicker idPrefix={titleId} hidden={tab !== 'items'} />
-            {tab === 'themes' && (
-              <>
-                <h3 className="desk-subtitle">{fr.decor.floorTitle}</h3>
-                <div className="swatch-grid" role="group" aria-label={fr.decor.floorTitle}>
-                  {FLOOR_THEMES.map((theme) => (
-                    <button
-                      key={theme.id}
-                      type="button"
-                      className="swatch"
-                      aria-pressed={editor?.draft.floor === theme.id}
-                      title={theme.label}
-                      aria-label={theme.label}
-                      onClick={() => store().patchDecorTheme({ floor: theme.id })}
-                    >
-                      <FloorSwatch gid={theme.gid} />
-                    </button>
-                  ))}
-                </div>
-                <h3 className="desk-subtitle">{fr.decor.wallTitle}</h3>
-                <div className="swatch-grid" role="group" aria-label={fr.decor.wallTitle}>
-                  {WALL_THEMES.map((theme) => (
-                    <button
-                      key={theme.id}
-                      type="button"
-                      className="swatch"
-                      aria-pressed={editor?.draft.wall === theme.id}
-                      title={theme.label}
-                      aria-label={theme.label}
-                      onClick={() => store().patchDecorTheme({ wall: theme.id })}
-                    >
-                      <WallSwatch top={theme.top} bottom={theme.bottom} />
-                    </button>
-                  ))}
-                </div>
-                <h3 className="desk-subtitle">{fr.decor.shopWallsTitle}</h3>
-                <div className="swatch-grid" role="group" aria-label={fr.decor.shopWallsTitle}>
-                  {SHOP_WALL_THEMES.map((theme) => {
-                    const locked = !owned.has(theme.id);
-                    const label = locked ? t(fr.decor.lockedWall, { name: theme.label, price: formatNumber(theme.price) }) : theme.label;
-                    return (
-                      <button
-                        key={theme.id}
-                        type="button"
-                        className="swatch"
-                        data-locked={locked || undefined}
-                        aria-pressed={editor?.draft.wall === theme.id}
-                        title={label}
-                        aria-label={label}
-                        onClick={() => store().patchDecorTheme({ wall: theme.id })}
-                      >
-                        <WallSwatch top={theme.top} bottom={theme.bottom} />
-                        {locked && (
-                          <span className="decor-tile-price">
-                            <LockIcon />
-                            {formatNumber(theme.price)}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
+            {tab === 'themes' && <DecorThemes owned={owned} />}
           </div>
 
           <footer className="decor-footer">

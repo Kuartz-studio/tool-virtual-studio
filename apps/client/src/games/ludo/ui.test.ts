@@ -122,12 +122,13 @@ describe('rules : l\'aide « Règles » du panneau', () => {
     }
   });
 
-  test('elles disent les règles qui surprennent : le 6, la prise, le compte exact, le troisième 6', () => {
+  test('elles disent les règles qui surprennent : le 6, la prise, le compte exact, le troisième 6, et le 6 plus fréquent sans cheval en jeu', () => {
     const all = ludoRules.join(' ');
     expect(all).toMatch(/6/);
     expect(all).toMatch(/renvoie|prend/);
     expect(all).toMatch(/exact/);
     expect(all).toMatch(/trois 6|troisième 6|3e 6/i);
+    expect(all).toMatch(/Sans cheval en jeu, [^.]*6[^.]*deux fois sur six\./);
   });
 });
 

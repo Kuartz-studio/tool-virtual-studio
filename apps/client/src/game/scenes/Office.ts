@@ -14,6 +14,7 @@ import {
   type PublicPlayer,
   type Status,
   type TiledMapJson,
+  type TreadmillRef,
   type WorldTick,
   type Zone,
 } from '@bureau/shared';
@@ -49,12 +50,13 @@ import { addMapSigns } from '../map-signs';
 import { MoveSender } from '../move-sender';
 import { speakerPlaying, speakerSprites, speakerTarget } from '../speakers';
 import { TeleportEffect } from '../teleport-effect';
+import { runningAt, spinningTreadmills, stepOffSpot, treadmillRun, type TreadmillRun } from '../treadmill';
 import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingBubbles } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
 import { prefersReducedMotion } from '../reduced-motion';
-import { cameraBounds, cameraZoom, easeZoom, ZOOM_BUTTON_STEP } from '../zoom';
+import { CAMERA_MARGIN_TILES, cameraBounds, cameraZoom, easeZoom, ZOOM_BUTTON_STEP } from '../zoom';
 import { SimDrag } from '../../sim/sim-drag';
 
 // La largeur du panneau de déco (à droite de l'écran), en pixels de l'écran : la pièce se centre dans le reste.
@@ -83,7 +85,9 @@ const clock = () => performance.now();
 // bureau » (`local:walk-to-desk`) fait marcher l'avatar tout seul jusqu'à sa place (AutoWalk), comme le ferait le clavier ; une touche de
 // déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à l'interface s'il marche. « Suivre » quelqu'un (`local:follow`, du menu
 // d'une personne) le fait marcher derrière elle, à une case (Follow), jusqu'à une touche de déplacement, son départ ou son saut ailleurs. Un clic droit sur un
-// avatar ouvre le menu de sa personne (le magasin : `personMenu`), à la place de celui du navigateur.
+// avatar ouvre le menu de sa personne (le magasin : `personMenu`), à la place de celui du navigateur. Le serveur dit qui court sur son tapis de course
+// (`net:treadmill`, un mode pris sur son tapis) : chacun y court sur place, et le tapis tourne sous lui (treadmill.ts) ; une touche de déplacement, « Aller à mon
+// bureau » ou « Suivre » font descendre l'avatar local devant le tapis, d'où il repart.
 export class Office extends Scene {
   private officeMap: OfficeMap;
   private tilemap: Phaser.Tilemaps.Tilemap;
@@ -142,6 +146,8 @@ export class Office extends Scene {
   // L'avatar que la souris survole (`avatar:hover`), et si elle est sur le jeu (pas sur l'interface, ni hors de la page).
   private hoveredAvatar: string | null = null;
   private pointerInGame = false;
+  // Le tapis de course où le serveur dit qu'on court (null : aucun) : l'avatar local y court sur place tant que ses pieds sont sur la bande (runningNow).
+  private selfRun: TreadmillRun | null = null;
 
   constructor(private readonly mapKey: string) {
     super('Office');
@@ -179,6 +185,7 @@ export class Office extends Scene {
       debugGame: (game, state, rolls) => emitOnBus(EventBus, 'local:debug-game', { game: game as GameId, state, ...(rolls ? { rolls } : {}) }),
       xp: (xp, kuartzons) => emitOnBus(EventBus, 'local:xp', { xp, ...(kuartzons !== undefined ? { kuartzons } : {}) }),
       effects: () => this.progressEffects?.count(clock()) ?? 0,
+      treadmills: () => this.decorLayer?.spinningTreadmills() ?? [],
     };
     exposeDebug(this.debug);
 
@@ -206,6 +213,7 @@ export class Office extends Scene {
     const me = self ?? { id: '', name: '', avatarKey: null, x: spawn.x, y: spawn.y, dir: 'down' as const, status: 'available' as const };
     this.selfId = me.id;
     this.player = new LocalPlayer(this, me, this.cameras.main.zoom);
+    this.selfRun = treadmillRun(this.officeMap, self?.treadmill);
     this.physics.add.collider(this.player, collisions);
     this.debug.self = { id: me.id, ...this.feet() };
     this.moveSender = new MoveSender();
@@ -275,6 +283,8 @@ export class Office extends Scene {
     this.autoWalk = new AutoWalk((walking) => emitOnBus(EventBus, 'walk:state', { walking }));
     const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
     const unbindFollowKeys = this.directions.onPress(() => this.stopFollowing());
+    // Elle fait aussi descendre de son tapis de course, même relâchée aussitôt (update ne verrait pas cette touche-là).
+    const unbindTreadmillKeys = this.directions.onPress(() => this.stepOffTreadmill());
 
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
     // pas prendre pour le zoom de la page), et les touches + - 0. Le pourcentage est au magasin ; la caméra y glisse (glideZoom).
@@ -316,6 +326,7 @@ export class Office extends Scene {
       listenOnBus(EventBus, 'net:correct', ({ x, y, reason }) => this.onCorrect(x, y, reason)),
       listenOnBus(EventBus, 'net:status', ({ id, status }) => this.onStatus(id, status)),
       listenOnBus(EventBus, 'net:activity', ({ id, activity }) => this.onActivity(id, activity)),
+      listenOnBus(EventBus, 'net:treadmill', ({ id, treadmill }) => this.onTreadmill(id, treadmill)),
       listenOnBus(EventBus, 'net:profile', (p) => this.onProfile(p)),
       listenOnBus(EventBus, 'media:speaking', (ids) => this.bubbles.updateMedia(ids)),
       // La parole des autres, d'après le serveur. La sienne vient de la room (media:speaking), tout de suite : l'écho du serveur la ferait durer.
@@ -391,6 +402,7 @@ export class Office extends Scene {
       this.stopFollowing();
       unbindWalkKeys();
       unbindFollowKeys();
+      unbindTreadmillKeys();
       unbindKeyboard();
       unbindUse();
       unbindArena();
@@ -436,14 +448,21 @@ export class Office extends Scene {
   //
   // « Aller à mon bureau » prend la place du clavier tant que la marche dure : elle donne la direction, toujours à la vitesse de la marche (jamais
   // en courant). L'avatar l'applique comme celle du clavier : murs, meubles, animations et positions envoyées sont les mêmes.
+  //
+  // Sur son tapis de course, l'avatar y court sur place ; une touche de déplacement enfoncée l'en fait descendre, devant le tapis, d'où il repart à cette image
+  // même.
   update() {
     const now = clock();
+    if (this.directions.current() !== null) this.stepOffTreadmill();
+    const run = this.runningNow();
     const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
     const followStep = autoDirection === null ? this.followStep(now) : null;
     // Pendant le compte à rebours, les combattants attendent dans leur coin : le clavier ne les déplace pas.
     // La carte avait été glissée ailleurs : l'avatar se remet en marche, la caméra revient à lui.
     if (this.cameraFree && (autoDirection !== null || followStep !== null || this.directions.current() !== null)) this.recenterCamera();
-    if (this.arenaRole() === 'waiting') this.player.step(null);
+    this.player.setRunning(run?.depth ?? null);
+    if (run !== null) this.player.run();
+    else if (this.arenaRole() === 'waiting') this.player.step(null);
     else if (autoDirection !== null) this.player.step(autoDirection);
     else if (followStep !== null) this.player.step(followStep.dir, followStep.sprint);
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
@@ -464,14 +483,43 @@ export class Office extends Scene {
       }
       this.simDrag?.arrived(remote.id, drawn);
     }
+    // Le tapis tourne sous qui y court : soi, et les autres tels qu'on les dessine à cette image.
+    this.decorLayer.spinTreadmills(spinningTreadmills([run, ...[...this.remotes.values()].map((remote) => remote.runningOn())]));
     // Les portes s'ouvrent devant qui s'en approche, avec les positions de cette image.
     this.deskLayer.tick();
     this.hoverAvatars();
   }
 
+  // Le tapis de course où l'avatar local court en ce moment : celui que le serveur dit, tant que ses pieds sont sur la bande ; null sinon (il n'y court pas,
+  // ou il en est déjà descendu, avant que le serveur ne le dise).
+  private runningNow(): TreadmillRun | null {
+    return runningAt(this.selfRun, this.feet());
+  }
+
+  // Descendre de son tapis de course, si l'on y court (une touche, « Aller à mon bureau », « Suivre ») : l'avatar va tout de suite à la case libre devant lui
+  // (stepOffSpot), et le serveur l'apprend par le `move` qui part aussitôt : un pas qui la pose hors du tapis, qu'il accepte tel quel, et qui la fait descendre
+  // chez lui aussi (il le dit ensuite : `net:treadmill`). Un refus du serveur la remet sur la bande, où elle court de nouveau. Sans case (son bureau n'est plus
+  // sur la carte), l'avatar cesse de courir et repart d'où il est : le serveur, qui reçoit un pas sur le tapis, le pose devant.
+  private stepOffTreadmill(): void {
+    const run = this.runningNow();
+    if (run === null) return;
+    const { desks, positions } = useOfficeStore.getState();
+    const spot = stepOffSpot(this.officeMap, run.ref, desks, [...positions.values()]);
+    this.player.setRunning(null);
+    if (spot === null) {
+      this.selfRun = null;
+      return;
+    }
+    this.player.placeAt(spot.x, spot.y);
+    this.moveSender.reset();
+    this.sendLocalState(clock());
+  }
+
   // Suivre cette personne (`local:follow`) : la marche vers son bureau s'arrête, et le magasin dit qui l'on suit. Soi-même, ou quelqu'un qu'on ne voit pas : rien.
+  // Sur son tapis de course, l'avatar en descend d'abord : la marche part de devant le tapis.
   private startFollowing(id: string): void {
     if (id === this.selfId || !this.remotes.has(id)) return;
+    this.stepOffTreadmill();
     this.autoWalk.cancel();
     this.follow.start(id);
     this.followName = useOfficeStore.getState().players[id]?.name ?? '';
@@ -505,8 +553,8 @@ export class Office extends Scene {
     return step;
   }
 
-  // La carte de la marche de qui suit : celle du jeu, plus les meubles des bureaux et les portes qui nous sont fermées (followWalkMap) ; refaite seulement quand les
-  // bureaux ou ces portes changent.
+  // La carte de la marche de qui suit (et d'« Aller à mon bureau ») : celle du jeu, plus les meubles des bureaux, dedans comme devant eux, et les portes qui
+  // nous sont fermées (followWalkMap) ; refaite seulement quand les bureaux ou ces portes changent.
   private followWalkMap(): OfficeMap {
     const { desks, closedDesks } = useOfficeStore.getState();
     if (this.followMap?.desks !== desks || this.followMap.closed !== closedDesks) {
@@ -650,9 +698,10 @@ export class Office extends Scene {
     camera.pan(...this.roomFocus(room, camera.zoom), 450, 'Sine.easeInOut', true);
   }
 
-  // Le point de la carte où la caméra se centre pour montrer cette pièce dans la partie libre de l'écran, à ce zoom.
+  // Le point de la carte où la caméra se centre pour montrer cette pièce dans la partie libre de l'écran, à ce zoom : de la bande de mur du nord (deux
+  // cases au-dessus de la pièce) jusqu'à son dehors, qui se décore aussi (la bande du sud et la rangée de la rue, trois cases sous elle), d'où la demi-case.
   private roomFocus(room: Zone, zoom: number): [x: number, y: number] {
-    return [room.x + room.width / 2 + EDITOR_PANEL_WIDTH_PX / 2 / zoom, room.y + room.height / 2];
+    return [room.x + room.width / 2 + EDITOR_PANEL_WIDTH_PX / 2 / zoom, room.y + room.height / 2 + this.officeMap.tileSize / 2];
   }
 
   // Un double-clic, ou l'avatar qui se remet en marche, après avoir glissé la carte : la caméra revient à l'avatar.
@@ -724,15 +773,18 @@ export class Office extends Scene {
     emitOnBus(EventBus, 'local:lights', { level: nextLightLevel(useOfficeStore.getState().lights.level) });
   }
 
-  // « Aller à mon bureau » (`local:walk-to-desk`) : l'avatar marche tout seul jusqu'à sa place, par le plus court chemin (auto-walk.ts). Mon bureau est
-  // celui que le magasin donne à mon identifiant. Sans bureau ou sans chemin, il ne bouge pas, et le jeu le dit (`walk:state` faux).
+  // « Aller à mon bureau » (`local:walk-to-desk`) : l'avatar marche tout seul jusqu'à sa place, par le plus court chemin (auto-walk.ts), autour des meubles
+  // de tous les bureaux (ceux qu'on a posés devant sa pièce sont dans la rue) et des portes qui nous sont fermées : la carte de la marche de « Suivre ». Mon
+  // bureau est celui que le magasin donne à mon identifiant. Sans bureau ou sans chemin, il ne bouge pas, et le jeu le dit (`walk:state` faux). Sur son tapis
+  // de course, il en descend d'abord : le chemin part de devant le tapis, et non du meuble.
   private walkToDesk(): void {
     this.stopFollowing();
+    this.stepOffTreadmill();
     const { desks, selfId } = useOfficeStore.getState();
     const desk = selectDeskOf({ desks }, selfId);
     const room = desk ? this.officeMap.zones.find((zone) => zone.type === 'desk' && deskKey(zone) === desk.key) : undefined;
     const feet = { x: this.player.x, y: this.player.y };
-    this.autoWalk.start(desk && room ? planDeskWalk(this.officeMap, room, desk.items, feet) : null, feet, clock());
+    this.autoWalk.start(desk && room ? planDeskWalk(this.followWalkMap(), room, desk.items, feet) : null, feet, clock());
   }
 
   // L'avatar bute contre la porte fermée d'un bureau : on dit à qui il appartient, et comment toquer (ou qu'on n'y est plus le bienvenu).
@@ -765,6 +817,7 @@ export class Office extends Scene {
     this.player.setDisplayedName(p.self.name);
     this.player.setStatus(p.self.status);
     this.player.setActivity(p.self.activity ?? null);
+    this.selfRun = treadmillRun(this.officeMap, p.self.treadmill);
     this.moveSender.reset();
 
     const present = new Set(p.players.map((player) => player.id));
@@ -841,6 +894,14 @@ export class Office extends Scene {
     else this.remotes.get(id)?.setActivity(activity);
   }
 
+  // Quelqu'un se met à courir sur ce tapis de course, ou en descend (null), d'après le serveur. Il y court dès que ses pieds y sont (le saut qui l'y pose arrive
+  // juste avant) ; descendu, il ne court déjà plus.
+  private onTreadmill(id: string, ref: TreadmillRef | null): void {
+    const run = treadmillRun(this.officeMap, ref);
+    if (id === this.selfId) this.selfRun = run;
+    else this.remotes.get(id)?.setRunning(run);
+  }
+
   private onProfile(p: { id: string; name: string; avatarKey: string | null }): void {
     if (p.id === this.selfId) {
       this.player.setDisplayedName(p.name);
@@ -860,6 +921,7 @@ export class Office extends Scene {
     const existing = this.remotes.get(p.id);
     if (existing) {
       existing.reset(p, now);
+      existing.setRunning(treadmillRun(this.officeMap, p.treadmill));
       const entry = this.debug.players[p.id];
       if (entry) entry.avatarKey = existing.avatarKey;
       return;
@@ -874,6 +936,7 @@ export class Office extends Scene {
     if (isSimBot(p.id)) this.simDrag?.attach(remote);
     remote.setSpeaking(this.bubbles.isSpeaking(p.id));
     remote.setCoffeeUntil(useOfficeStore.getState().coffee[p.id] ?? 0);
+    remote.setRunning(treadmillRun(this.officeMap, p.treadmill));
     this.remotes.set(p.id, remote);
     this.lighting.track(p.id, () => remote.lightPoint());
     this.debug.players[p.id] = { x: p.x, y: p.y, avatarKey: remote.avatarKey };
@@ -1022,7 +1085,8 @@ export class Office extends Scene {
   // à un autre zoom).
   private applyZoom(zoom: number): void {
     const { width, height } = this.scale.gameSize;
-    const bounds = cameraBounds({ width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels }, { width, height }, zoom);
+    const map = { width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels };
+    const bounds = cameraBounds(map, { width, height }, zoom, CAMERA_MARGIN_TILES * this.tilemap.tileWidth);
     const camera = this.cameras.main;
     camera.setZoom(zoom);
     camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);

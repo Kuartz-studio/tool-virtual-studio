@@ -1,11 +1,16 @@
 import { refusesGameInvites, roomOfTable, type AnyGameDefinition, type GameId, type GameTableView } from '@bureau/shared';
-import { useId, useMemo, useState } from 'react';
+import { useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { prefersReducedMotion } from '../game/reduced-motion';
 import { fr, t } from '../i18n/fr';
 import { sendGameCommand } from '../net/game-commands';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
+import { SmallCheckIcon } from '../office/icons';
 import { AvatarPortrait } from '../office/ui/AvatarPortrait';
-import { chairOf } from './table-view';
+import { chairOf, rematchLine } from './table-view';
+
+// La marge que garde la barre de la revanche au bord du corps du panneau quand il défile pour la montrer.
+const REVEAL_MARGIN_PX = 12;
 
 export interface GameLobbyProps {
   game: GameId;
@@ -14,22 +19,15 @@ export interface GameLobbyProps {
   def: AnyGameDefinition | null;
   selfId: string | null;
   socket: OfficeSocket | null;
-  // La partie d'avant est finie : « Prêt » devient « Revanche ».
+  // La partie d'avant est finie : « Prêt » devient « Revanche », dans la barre de la revanche (RematchBar), sous la phrase de fin.
   rematch: boolean;
   // Un refus (ou un message) à montrer au-dessus du plateau ; null l'efface.
   onMessage(text: string | null): void;
 }
 
-// La salle d'attente d'une table : les chaises (qui est assis, qui est prêt, qui est déconnecté), « S'asseoir » et « Se lever », « Prêt » (ou « Revanche »), et, assis, l'invitation
-// d'une personne du bureau. Chaque geste est une commande de jeu (`game:do`) : la table ne change qu'à l'annonce du serveur (`game:table`). Une commande refusée dit pourquoi.
-export function GameLobby({ game, table, def, selfId, socket, rematch, onMessage }: GameLobbyProps) {
-  const titleId = useId();
-  const mine = chairOf(table, selfId);
-  const seated = table.chairs.flatMap((chair) => (chair ? [chair] : []));
-  const waiting = seated.filter((chair) => !chair.ready).map((chair) => chair.name);
-
-  // Une commande : si le serveur la refuse, on dit pourquoi (un coup trop tardif, double clic ou état dépassé, se tait).
-  async function send(command: Parameters<typeof sendGameCommand>[1]): Promise<boolean> {
+// Envoie une commande de jeu : si le serveur la refuse, on dit pourquoi (un coup trop tardif, double clic ou état dépassé, se tait) ; acceptée, le message s'efface.
+function commandSender(socket: OfficeSocket | null, onMessage: (text: string | null) => void) {
+  return async (command: Parameters<typeof sendGameCommand>[1]): Promise<boolean> => {
     const ack = await sendGameCommand(socket, command);
     if (ack.ok) {
       onMessage(null);
@@ -37,10 +35,23 @@ export function GameLobby({ game, table, def, selfId, socket, rematch, onMessage
     }
     if (ack.error !== 'stale') onMessage(fr.games.errors[ack.error]);
     return false;
-  }
+  };
+}
 
-  let hint: string;
+// La salle d'attente d'une table : les chaises (qui est assis, qui est prêt, qui est déconnecté), « S'asseoir » et « Se lever », « Prêt », et, assis, l'invitation d'une personne
+// du bureau. Après une partie, « Prêt » est le bouton « Revanche » de la barre de la revanche, plus haut, qui dit aussi qui on attend ; les chaises disent qui l'a acceptée.
+// Chaque geste est une commande de jeu (`game:do`) : la table ne change qu'à l'annonce du serveur (`game:table`). Une commande refusée dit pourquoi.
+export function GameLobby({ game, table, def, selfId, socket, rematch, onMessage }: GameLobbyProps) {
+  const titleId = useId();
+  const mine = chairOf(table, selfId);
+  const seated = table.chairs.flatMap((chair) => (chair ? [chair] : []));
+  const waiting = seated.filter((chair) => !chair.ready).map((chair) => chair.name);
+  const send = commandSender(socket, onMessage);
+
+  // Après une partie, assis, la barre de la revanche dit déjà où l'on en est : pas de seconde phrase.
+  let hint: string | null;
   if (mine === null) hint = fr.games.lobby.sitHint;
+  else if (rematch) hint = null;
   else if (def && seated.length < def.minPlayers) hint = t(fr.games.lobby.needMore, { count: def.minPlayers });
   else if (waiting.length > 0) hint = t(fr.games.lobby.waitingFor, { names: waiting.join(', ') });
   else hint = fr.games.lobby.allReady;
@@ -74,17 +85,21 @@ export function GameLobby({ game, table, def, selfId, socket, rematch, onMessage
                     {chair.name}
                     {isMine && <span className="game-you"> ({fr.games.you})</span>}
                   </span>
-                  <span className="game-chair-state">{!chair.connected ? fr.games.lobby.disconnected : chair.ready ? fr.games.lobby.ready.toLowerCase() : ''}</span>
+                  <span className="game-chair-state">
+                    {!chair.connected ? fr.games.lobby.disconnected : chair.ready ? (rematch ? fr.games.rematch.accepted : fr.games.lobby.ready.toLowerCase()) : ''}
+                  </span>
                   {isMine && (
                     <span className="game-chair-actions">
-                      <button
-                        type="button"
-                        className="bar-button game-ready"
-                        aria-pressed={chair.ready}
-                        onClick={() => void send({ type: 'ready', game, ready: !chair.ready })}
-                      >
-                        {rematch ? fr.games.actions.rematch : fr.games.lobby.ready}
-                      </button>
+                      {!rematch && (
+                        <button
+                          type="button"
+                          className="bar-button game-ready"
+                          aria-pressed={chair.ready}
+                          onClick={() => void send({ type: 'ready', game, ready: !chair.ready })}
+                        >
+                          {fr.games.lobby.ready}
+                        </button>
+                      )}
                       <button type="button" className="bar-button" onClick={() => void send({ type: 'stand', game })}>
                         {fr.games.lobby.stand}
                       </button>
@@ -96,10 +111,74 @@ export function GameLobby({ game, table, def, selfId, socket, rematch, onMessage
           );
         })}
       </ul>
-      <p className="desk-hint game-lobby-hint">{hint}</p>
+      {hint !== null && <p className="desk-hint game-lobby-hint">{hint}</p>}
       {mine !== null && <InvitePicker game={game} table={table} send={send} onMessage={onMessage} />}
     </section>
   );
+}
+
+export interface RematchBarProps {
+  game: GameId;
+  table: GameTableView;
+  // Le nombre de joueurs qu'il faut au jeu, quand son module est là.
+  minPlayers: number | null;
+  selfId: string | null;
+  socket: OfficeSocket | null;
+  // Le plateau est dessiné (le module du jeu est chargé, ou ne viendra pas) : la barre est à sa place, on peut la montrer.
+  settled: boolean;
+  onMessage(text: string | null): void;
+}
+
+// La revanche, juste sous la phrase de fin, pour une personne assise : le bouton « Revanche » (c'est « prêt » ; enfoncé, la revanche est demandée, et un second clic l'annule) et
+// la phrase qui dit qui l'a déjà acceptée et qui on attend. La partie suivante commence dès que toutes les personnes assises l'ont acceptée (le serveur en décide). À la fin d'une
+// partie, ou quand le panneau s'ouvre sur une partie finie, le corps du panneau défile juste ce qu'il faut pour la montrer : sous un grand plateau, elle serait sous le pli.
+export function RematchBar({ game, table, minPlayers, selfId, socket, settled, onMessage }: RematchBarProps) {
+  const root = useRef<HTMLDivElement>(null);
+  const matchId = table.match?.id ?? null;
+  useLayoutEffect(() => {
+    if (!settled) return undefined;
+    // Une image plus tard : un plateau qui se mesure à son arrivée (sa largeur, puis sa hauteur) a pris sa taille.
+    const frame = requestAnimationFrame(() => {
+      if (root.current) revealInPanel(root.current);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [matchId, settled]);
+
+  const mine = table.chairs.find((chair) => chair?.userId === selfId) ?? null;
+  if (mine === null) return null;
+  const send = commandSender(socket, onMessage);
+  return (
+    <div ref={root} className="game-rematch">
+      <button
+        type="button"
+        className="bar-button is-primary game-ready game-rematch-button"
+        aria-pressed={mine.ready}
+        title={mine.ready ? fr.games.rematch.cancelTip : undefined}
+        onClick={() => void send({ type: 'ready', game, ready: !mine.ready })}
+      >
+        {mine.ready && <SmallCheckIcon />}
+        {fr.games.actions.rematch}
+      </button>
+      <p className="game-rematch-line" role="status">
+        {rematchLine(table, selfId, minPlayers)}
+      </p>
+    </div>
+  );
+}
+
+// Fait défiler le corps du panneau qui contient cet élément juste ce qu'il faut pour qu'il s'y voie en entier, avec ce qui est juste au-dessus de lui (la phrase de fin) et une
+// petite marge ; rien s'il s'y voit déjà. En douceur, sauf en mouvement réduit.
+function revealInPanel(element: HTMLElement): void {
+  const body = element.closest<HTMLElement>('.drawer-body');
+  if (!body) return;
+  const box = element.getBoundingClientRect();
+  const top = Math.min(box.top, element.previousElementSibling?.getBoundingClientRect().top ?? box.top);
+  const view = body.getBoundingClientRect();
+  let delta = 0;
+  if (box.bottom + REVEAL_MARGIN_PX > view.bottom) delta = box.bottom + REVEAL_MARGIN_PX - view.bottom;
+  else if (top - REVEAL_MARGIN_PX < view.top) delta = top - REVEAL_MARGIN_PX - view.top;
+  if (delta === 0) return;
+  body.scrollTo({ top: body.scrollTop + delta, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
 }
 
 // L'invitation d'une personne du bureau à la table : la liste de ceux qui sont en ligne et ne sont pas assis ici, chacun avec son bouton. Qui ne veut pas être dérangé (« Ne pas

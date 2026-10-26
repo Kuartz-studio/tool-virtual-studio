@@ -25,16 +25,18 @@ function SelfHero() {
 }
 
 // Une mission reçue : qui la confie, son intitulé et ses précisions, sa difficulté (les crans, son nom, son XP et ce qu'elle représente), et deux gestes :
-// la terminer, ou la rendre (après confirmation).
+// la terminer, ou la rendre (après confirmation). Celle qu'on s'est donnée ne se rend à personne : on l'abandonne.
 function MissionCard({ task, onFinish, onGiveBack, busy }: { task: TaskView; onFinish(): void; onGiveBack(): void; busy: boolean }) {
   const players = useOfficeStore((state) => state.players);
+  const selfAvatar = useOfficeStore((state) => state.self?.avatarKey ?? null);
   const [confirming, setConfirming] = useState(false);
   const giver = task.giver;
+  const own = giver !== null && giver.id === task.owner.id;
   return (
-    <li className="mission" data-task={task.id} data-new={task.seen ? undefined : true}>
+    <li className="mission" data-task={task.id} data-new={task.seen ? undefined : true} data-own={own || undefined}>
       <div className="mission-from">
-        {giver && <AvatarPortrait avatarKey={players[giver.id]?.avatarKey ?? null} name={giver.name} size={22} />}
-        <span>{giver ? t(fr.missions.from, { name: giver.name }) : fr.missions.fromGone}</span>
+        {giver && <AvatarPortrait avatarKey={own ? selfAvatar : (players[giver.id]?.avatarKey ?? null)} name={giver.name} size={22} />}
+        <span>{own ? fr.missions.fromSelf : giver ? t(fr.missions.from, { name: giver.name }) : fr.missions.fromGone}</span>
         {!task.seen && <span className="mission-new">{fr.missions.new}</span>}
       </div>
       <p className="mission-title">{task.title}</p>
@@ -50,18 +52,18 @@ function MissionCard({ task, onFinish, onGiveBack, busy }: { task: TaskView; onF
       )}
       {confirming ? (
         <div className="mission-actions">
-          <span className="mission-confirm">{t(fr.missions.giveBackConfirm, { name: giver?.name ?? '' })}</span>
+          <span className="mission-confirm">{own ? fr.missions.giveUpConfirm : t(fr.missions.giveBackConfirm, { name: giver?.name ?? '' })}</span>
           <button type="button" className="bar-button" data-sfx="cancel" onClick={() => setConfirming(false)}>
             {fr.missions.keep}
           </button>
           <button type="button" className="bar-button is-danger" disabled={busy} onClick={onGiveBack}>
-            {fr.missions.giveBackYes}
+            {own ? fr.missions.giveUpYes : fr.missions.giveBackYes}
           </button>
         </div>
       ) : (
         <div className="mission-actions">
           <button type="button" className="bar-button" disabled={busy} onClick={() => setConfirming(true)}>
-            {fr.missions.giveBack}
+            {own ? fr.missions.giveUp : fr.missions.giveBack}
           </button>
           <button type="button" className="bar-button is-primary" disabled={busy} aria-label={t(fr.missions.finishLabel, { title: task.title })} data-sfx="none" onClick={onFinish}>
             <CheckIcon />
@@ -114,10 +116,10 @@ function TodoRow({ task, xp, busy, onCheck, onRename, onRemove }: { task: TaskVi
   );
 }
 
-// Une tâche fermée (faite, rendue, retirée) : son intitulé, et ce qu'elle a donné.
+// Une tâche fermée (faite, rendue ou abandonnée, retirée) : son intitulé, et ce qu'elle a donné.
 function ClosedRow({ task }: { task: TaskView }) {
-  const status =
-    task.status === 'done' ? (task.xp > 0 ? `+${formatNumber(task.xp)} XP` : fr.missions.statusDone) : task.status === 'declined' ? fr.missions.statusDeclined : fr.missions.statusCancelled;
+  const declined = task.giver?.id === task.owner.id ? fr.missions.statusGivenUp : fr.missions.statusDeclined;
+  const status = task.status === 'done' ? (task.xp > 0 ? `+${formatNumber(task.xp)} XP` : fr.missions.statusDone) : task.status === 'declined' ? declined : fr.missions.statusCancelled;
   return (
     <li className="todo is-closed" data-task={task.id} data-status={task.status}>
       <span className="todo-done-mark" aria-hidden="true">

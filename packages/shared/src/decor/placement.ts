@@ -1,4 +1,6 @@
-import { deskKey, type OfficeMap } from '../map/parse-map';
+import { deskKey, type OfficeMap, type Zone } from '../map/parse-map';
+import type { Rect } from '../map/places';
+import { isWalkableTile } from '../map/queries';
 import { decorItem } from './catalog';
 import { DEFAULT_FLOOR_THEME, DEFAULT_WALL_THEME, isFloorTheme, isWallTheme } from './themes';
 import type { DecorItem, PlacedItem } from './types';
@@ -6,14 +8,26 @@ import type { DecorItem, PlacedItem } from './types';
 // La pièce d'un bureau : sa taille en cases, et sa porte : de quel côté (au nord ou au sud de la pièce), à quelle colonne elle commence, et sa
 // largeur. Les cases de la pièce juste derrière la porte sont son entrée (doorEntryCells). La déco suit son occupant d'un bureau à l'autre :
 // celle d'une pièce standard ne tient pas dans une compacte (checkDecor la refuse, la pièce montre alors son poste par défaut).
+//
+// `outside` : le dehors de la pièce, quand la carte lui en donne un (deskRoomSpecOf) : son côté sud, celui que l'on voit de la rue. C'est la face de sa
+// bande de mur sud et la rangée de la rue juste dessous, sur la largeur de la pièce (ni les pans, ni rien chez le voisin), dans les mêmes coordonnées que
+// la pièce : la bande occupe les rangées `height` et `height + 1`, la rangée du dehors est `height + 2` (outsideRow). `fixtures` : ce que la carte
+// accroche déjà à cette face (l'interrupteur de la lumière, un panneau de sortie…), en cases de la pièce ; un élément mural du dehors ne les recouvre pas.
 export interface DeskRoomSpec {
   width: number;
   height: number;
   door: { side: 'north' | 'south'; x: number; width: number };
+  outside?: { fixtures: readonly Footprint[] };
+}
+
+// La rangée du dehors, en cases de la pièce : sous ses `height` rangées, les deux de sa bande de mur sud, puis la rue.
+export function outsideRow(room: Pick<DeskRoomSpec, 'height'>): number {
+  return room.height + 2;
 }
 
 // Les deux tailles de bureau de la carte : la standard (9 × 7, porte au sud sur les colonnes 3 et 4) et la compacte (6 × 7, colonnes 2 et 3). Une
-// porte au nord se dit par `{ ...spec, door: { ...spec.door, side: 'north' } }` : deskRoomSpecOf lit le côté sur la carte.
+// porte au nord se dit par `{ ...spec, door: { ...spec.door, side: 'north' } }` : deskRoomSpecOf lit le côté sur la carte, et le dehors, que ces
+// pièces-ci n'ont pas (il dépend de ce que la carte pose autour).
 export const DESK_ROOMS = {
   standard: { width: 9, height: 7, door: { side: 'south', x: 3, width: 2 } },
   compact: { width: 6, height: 7, door: { side: 'south', x: 2, width: 2 } },
@@ -35,18 +49,41 @@ export function snapToDecorStep(value: number): number {
   return Math.round(value * DECOR_STEPS) / DECOR_STEPS;
 }
 
-// La pièce d'une place de la carte : la taille de sa zone `desk` et le côté de sa zone `door` (au nord si elle est au-dessus de la pièce), en cases ;
-// undefined si la place n'existe pas, ou n'a pas de porte (les bureaux de la petite carte de développement n'ont pas de pièce décorée).
+// La pièce d'une place de la carte : la taille de sa zone `desk` et le côté de sa zone `door` (au nord si elle est au-dessus de la pièce), en cases, et
+// son dehors si elle en a un (outsideOf) ; undefined si la place n'existe pas, ou n'a pas de porte (les bureaux de la petite carte de développement n'ont pas
+// de pièce décorée).
 export function deskRoomSpecOf(map: OfficeMap, key: string): DeskRoomSpec | undefined {
   const desk = map.zones.find((zone) => zone.type === 'desk' && deskKey(zone) === key);
   const door = map.zones.find((zone) => zone.type === 'door' && zone.name === key);
   if (!desk || !door) return undefined;
   const size = map.tileSize;
-  return {
+  const room: DeskRoomSpec = {
     width: Math.round(desk.width / size),
     height: Math.round(desk.height / size),
     door: { side: door.y < desk.y ? 'north' : 'south', x: Math.round((door.x - desk.x) / size), width: Math.round(door.width / size) },
   };
+  const outside = outsideOf(map, desk, room);
+  return outside ? { ...room, outside } : room;
+}
+
+const overlaps = (a: Rect, b: Rect): boolean => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+
+// Le dehors d'une pièce, si la carte lui en donne un : sous la pièce, sa bande de mur sud (deux rangées de mur, que la porte perce quand elle est au sud),
+// puis une rangée de rue où l'on marche, sur toute la largeur de la pièce. Ses obstacles sont ce que la carte accroche déjà à la face de cette bande :
+// l'interrupteur de la lumière (zone `switch`) et les éléments muraux du calque `objets` (les panneaux de sortie : OfficeMap.wallItems). undefined : la
+// carte n'a pas de rue sous ce mur (une autre pièce, le bord de la carte, un meuble de la carte sur la rangée).
+function outsideOf(map: OfficeMap, desk: Zone, room: DeskRoomSpec): DeskRoomSpec['outside'] {
+  const size = map.tileSize;
+  const [left, top] = [Math.round(desk.x / size), Math.round(desk.y / size)];
+  const inDoor = (x: number) => room.door.side === 'south' && x >= room.door.x && x < room.door.x + room.door.width;
+  for (let x = 0; x < room.width; x++) {
+    for (const y of [room.height, room.height + 1]) if (isWalkableTile(map, left + x, top + y) !== inDoor(x)) return undefined;
+    if (!isWalkableTile(map, left + x, top + outsideRow(room))) return undefined;
+  }
+  const band: Rect = { x: desk.x, y: desk.y + desk.height, width: desk.width, height: 2 * size };
+  const hung: Rect[] = [...map.zones.filter((zone) => zone.type === 'switch'), ...(map.wallItems ?? [])];
+  const fixtures = hung.filter((rect) => overlaps(rect, band)).map((rect) => ({ x: (rect.x - desk.x) / size, y: (rect.y - desk.y) / size, w: rect.width / size, h: rect.height / size }));
+  return { fixtures };
 }
 
 // Ce qu'une personne règle pour sa pièce : le sol, les murs, et ce qu'elle y a posé.
@@ -72,7 +109,8 @@ export interface Footprint {
 }
 
 // Ce qu'un élément occupe, en cases (au dixième près, comme sa position) : sa largeur sur les `claim` rangées du bas de son image. Un élément
-// mural n'occupe que sa place sur le mur (une rangée : celle de la première case de la pièce, que le mur surplombe).
+// mural n'occupe que sa place sur le mur (une rangée : celle de la première case de la pièce, que le mur surplombe ; dehors, celle de la rue, sous le
+// mur du dehors).
 export function footprintOf(item: DecorItem, at: { x: number; y: number }): Footprint {
   return { x: at.x, y: at.y, w: item.w, h: item.kind === 'wall' ? 1 : item.claim };
 }
@@ -98,8 +136,8 @@ export function overlappingItems(items: readonly PlacedItem[], id: string, at: {
 }
 
 // Les cases de la pièce que les meubles solides touchent, même d'un dixième (numéro de case = y × largeur + x ; rien hors de la largeur ni
-// au-dessus de la pièce). La règle de passage compte en cases entières, comme la marche automatique : un meuble à cheval sur deux cases les prend
-// toutes les deux, et ce qui reste libre est toujours une case où l'avatar tient.
+// au-dessus de la pièce ; ceux du dehors sur la rangée outsideRow). La règle de passage compte en cases entières, comme la marche automatique : un
+// meuble à cheval sur deux cases les prend toutes les deux, et ce qui reste libre est toujours une case où l'avatar tient.
 export function blockedCells(items: readonly PlacedItem[], width: number = DESK_ROOMS.standard.width): Set<number> {
   const blocked = new Set<number>();
   for (const placed of items) {
@@ -114,8 +152,9 @@ export function blockedCells(items: readonly PlacedItem[], width: number = DESK_
 }
 
 // Les cases de la carte que bloquent les meubles solides posés dans les bureaux (`desks` : la clé de chaque place et ses éléments), en numéros de case de la
-// carte (y × largeur + x) : la même règle de passage que blockedCells, dans chaque pièce que la carte décrit avec une porte (ailleurs, pas de décor). Pour
-// chercher où poser quelqu'un sans le mettre dans un meuble (spotNear), ou le chemin de qui en suit un autre.
+// carte (y × largeur + x) : la même règle de passage que blockedCells, dans chaque pièce que la carte décrit avec une porte (ailleurs, pas de décor), et sur
+// la rangée de son dehors, dans la rue : ceux-là arrêtent tout le monde. Pour chercher où poser quelqu'un sans le mettre dans un meuble (spotNear), ou le
+// chemin de qui marche tout seul (« Suivre », « Aller à mon bureau »).
 export function furnitureTiles(map: OfficeMap, desks: ReadonlyArray<{ key: string; items: readonly PlacedItem[] }>): Set<number> {
   const tiles = new Set<number>();
   const itemsOf = new Map(desks.map((desk) => [desk.key, desk.items] as const));
@@ -124,11 +163,12 @@ export function furnitureTiles(map: OfficeMap, desks: ReadonlyArray<{ key: strin
     if (zone.type !== 'desk') continue;
     const key = deskKey(zone);
     const items = itemsOf.get(key);
-    if (!items || deskRoomSpecOf(map, key) === undefined) continue;
-    const [left, top, width, height] = [Math.round(zone.x / size), Math.round(zone.y / size), Math.round(zone.width / size), Math.round(zone.height / size)];
-    for (const cell of blockedCells(items, width)) {
-      const [x, y] = [cell % width, Math.floor(cell / width)];
-      if (y < height) tiles.add((top + y) * map.widthTiles + left + x);
+    const room = items && deskRoomSpecOf(map, key);
+    if (!items || !room) continue;
+    const [left, top] = [Math.round(zone.x / size), Math.round(zone.y / size)];
+    for (const cell of blockedCells(items, room.width)) {
+      const [x, y] = [cell % room.width, Math.floor(cell / room.width)];
+      if (y < room.height || (room.outside && y === outsideRow(room))) tiles.add((top + y) * map.widthTiles + left + x);
     }
   }
   return tiles;
@@ -143,24 +183,34 @@ export function doorEntryCells(room: DeskRoomSpec): Array<{ x: number; y: number
 
 // Une déco est valable dans cette pièce (la standard par défaut) : voir DecorError. Une porte au nord a aussi son mur : un élément mural ne la
 // surplombe pas (`blocks_door`, avec le rang de l'élément).
+//
+// Le dehors (room.outside) suit ses propres règles : un élément y est quand il est posé pile sur la rangée du dehors (outsideRow), et il n'y tient que sur
+// la largeur de la pièce et sur une case de profondeur (`claim` d'au plus 1 ; plus profond, ou entre deux rangées : `out_of_room`). Un élément mural du
+// dehors se dessine sur la face du mur sud, comme celui de la rangée 0 sur le mur du nord : il ne recouvre pas la porte d'une pièce dont la porte est au
+// sud (`blocks_door`), et rien de solide ne se pose dans la rue juste devant cette porte (`blocks_door`) ; rien du dehors ne cache ce que la carte
+// accroche déjà à ce mur (`overlap`).
 export function checkDecor(decor: DeskDecor, room: DeskRoomSpec = DESK_ROOMS.standard): DecorCheck {
   if (!isFloorTheme(decor.floor) || !isWallTheme(decor.wall)) return { ok: false, error: 'unknown_theme' };
   if (decor.items.length > MAX_DECOR_ITEMS) return { ok: false, error: 'too_many' };
 
   // Les empreintes, en dixièmes de case (inSteps), comme la pièce et sa porte.
-  const placed: Array<{ item: DecorItem; at: Footprint; index: number }> = [];
+  const placed: Array<{ item: DecorItem; at: Footprint; index: number; outside: boolean }> = [];
   const [roomW, roomH] = [room.width * DECOR_STEPS, room.height * DECOR_STEPS];
+  const outsideY = room.outside ? outsideRow(room) * DECOR_STEPS : null;
   for (const [index, entry] of decor.items.entries()) {
     const item = decorItem(entry.id);
     if (!item) return { ok: false, error: 'unknown_item', index };
     if (!isDecorStep(entry.x) || !isDecorStep(entry.y)) return { ok: false, error: 'bad_position', index };
-    if (item.kind === 'wall' && (entry.y !== 0 || item.h > 2)) return { ok: false, error: 'bad_position', index };
     const at = inSteps(footprintOf(item, entry));
-    if (at.x < 0 || at.y < 0 || at.x + at.w > roomW || at.y + at.h > roomH) return { ok: false, error: 'out_of_room', index };
-    placed.push({ item, at, index });
+    const outside = at.y === outsideY;
+    if (item.kind === 'wall' && ((entry.y !== 0 && !outside) || item.h > 2)) return { ok: false, error: 'bad_position', index };
+    const fits = outside ? at.h <= DECOR_STEPS : at.y >= 0 && at.y + at.h <= roomH;
+    if (at.x < 0 || at.x + at.w > roomW || !fits) return { ok: false, error: 'out_of_room', index };
+    placed.push({ item, at, index, outside });
   }
 
-  // Deux éléments de la même sorte (meubles, tapis, objets posés, éléments muraux) ne se chevauchent jamais ; ils peuvent se toucher.
+  // Deux éléments de la même sorte (meubles, tapis, objets posés, éléments muraux) ne se chevauchent jamais ; ils peuvent se toucher. Ceux du dehors sont
+  // sur une autre rangée que ceux de la pièce : ils ne se gênent pas.
   for (let i = 0; i < placed.length; i++) {
     for (let j = i + 1; j < placed.length; j++) {
       const [a, b] = [placed[i]!, placed[j]!];
@@ -168,17 +218,27 @@ export function checkDecor(decor: DeskDecor, room: DeskRoomSpec = DESK_ROOMS.sta
     }
   }
 
-  // Une porte au nord perce le mur où se posent les éléments muraux : aucun ne la surplombe.
-  if (room.door.side === 'north') {
-    const [doorX0, doorX1] = [room.door.x * DECOR_STEPS, (room.door.x + room.door.width) * DECOR_STEPS];
-    for (const { item, at, index } of placed) {
-      if (item.kind === 'wall' && at.x < doorX1 && at.x + at.w > doorX0) return { ok: false, error: 'blocks_door', index };
-    }
+  // La porte perce un mur où se posent des éléments muraux : celui du nord (dedans) quand elle est au nord, celui du dehors quand elle est au sud. Aucun ne
+  // la recouvre ; et quand elle donne sur le dehors, aucun meuble solide n'y touche la rue devant elle, même d'un dixième.
+  const [doorX0, doorX1] = [room.door.x * DECOR_STEPS, (room.door.x + room.door.width) * DECOR_STEPS];
+  for (const { item, at, index, outside } of placed) {
+    if (outside !== (room.door.side === 'south') || at.x >= doorX1 || at.x + at.w <= doorX0) continue;
+    if (item.kind === 'wall' || (outside && item.solid)) return { ok: false, error: 'blocks_door', index };
+  }
+
+  // Ce que la carte accroche au mur du dehors reste visible : rien du dehors ne le recouvre, ni un élément mural (son image monte de sa hauteur au-dessus
+  // de la rangée du dehors), ni l'image d'un objet posé devant (elle monte de sa hauteur au-dessus du bas de son empreinte).
+  const fixtures = (room.outside?.fixtures ?? []).map(inSteps);
+  for (const { item, at, index, outside } of placed) {
+    if (!outside) continue;
+    const bottom = item.kind === 'wall' ? at.y : at.y + at.h;
+    const image = { x: at.x, y: bottom - item.h * DECOR_STEPS, w: at.w, h: item.h * DECOR_STEPS };
+    if (fixtures.some((fixture) => !apart(fixture, image))) return { ok: false, error: 'overlap', index };
   }
 
   // La porte n'est pas murée, et ce qui reste de libre se rejoint à pied depuis l'entrée, de case libre en case libre (blockedCells : une case
-  // qu'un meuble touche, même d'un dixième, n'est pas libre).
-  const blocked = blockedCells(decor.items, room.width);
+  // qu'un meuble touche, même d'un dixième, n'est pas libre). Seulement dans la pièce : le dehors est la rue, qui se rejoint par ailleurs.
+  const blocked = new Set([...blockedCells(decor.items, room.width)].filter((cell) => cell < room.width * room.height));
   const entries = doorEntryCells(room).filter(({ x, y }) => !blocked.has(y * room.width + x));
   if (entries.length === 0) return { ok: false, error: 'blocks_door' };
   const seen = new Set<number>(entries.map(({ x, y }) => y * room.width + x));
@@ -199,9 +259,10 @@ export function checkDecor(decor: DeskDecor, room: DeskRoomSpec = DESK_ROOMS.sta
 }
 
 // Ce que montre une pièce dont la personne n'a rien réglé : un poste de travail prêt à l'emploi (bureau, écran, clavier, lampe, chaise), des
-// plantes et quelques éléments au mur. Elle peut tout changer, tout enlever. Il y en a un par pièce : la standard et la compacte, porte au sud ou
-// au nord (l'entrée et le mur de la porte restent libres : le poste est à l'autre bout, ou de côté). Les cases du poste standard à porte au sud
-// sont celles de toujours.
+// plantes et quelques éléments au mur, et devant elle son dehors par défaut (STANDARD_OUTSIDE). Elle peut tout changer, tout enlever. Il y en a un
+// par pièce : la standard et la compacte, porte au sud ou au nord (l'entrée et le mur de la porte restent libres : le poste est à l'autre bout, ou de
+// côté). Les cases du poste standard à porte au sud sont celles de toujours. Une déco enregistrée avant qu'on décore le dehors n'a rien dehors : elle
+// garde un dehors vide.
 export const DEFAULT_DESK_ITEMS: readonly PlacedItem[] = [
   { id: 'of-15-0', x: 0, y: 0 },
   { id: 'of-9-12', x: 3, y: 0 },
@@ -257,19 +318,32 @@ const COMPACT_NORTH_ITEMS: readonly PlacedItem[] = [
   { id: 'lr-13-21', x: 0, y: 4 },
 ];
 
-// Le poste par défaut qui va à cette pièce (taille et colonne de la porte), ou aucun pour une pièce d'une autre forme.
-function layoutFor(room: DeskRoomSpec): readonly PlacedItem[] | null {
+// Le dehors par défaut, sur la rangée du dehors : ce que la carte posait dans la rue devant les bureaux (des arbustes, une fontaine à eau), le même pour toutes
+// les pièces d'une taille, que leur porte soit au nord ou au sud (rien de solide dans l'axe de la porte). Devant une standard, un arbuste et la fontaine à
+// l'ouest de la porte, un arbuste à l'est ; devant une compacte, un arbuste à l'est (à l'ouest, le mur des pièces du bout de la rangée porte le panneau de
+// sortie, que la plante cacherait). Chaque pièce libre a ainsi au moins une plante devant elle.
+const STANDARD_OUTSIDE: ReadonlyArray<{ id: string; x: number }> = [
+  { id: 'lr-12-0', x: 0 },
+  { id: 'of-12-15', x: 1 },
+  { id: 'lr-12-0', x: 7 },
+];
+const COMPACT_OUTSIDE: ReadonlyArray<{ id: string; x: number }> = [{ id: 'lr-12-0', x: 5 }];
+
+// Le poste par défaut qui va à cette pièce (taille et colonne de la porte), et son dehors, ou aucun pour une pièce d'une autre forme.
+function layoutFor(room: DeskRoomSpec): { inside: readonly PlacedItem[]; outside: ReadonlyArray<{ id: string; x: number }> } | null {
   const matches = (base: DeskRoomSpec) => room.width === base.width && room.height === base.height && room.door.x === base.door.x && room.door.width === base.door.width;
   const north = room.door.side === 'north';
-  if (matches(DESK_ROOMS.standard)) return north ? STANDARD_NORTH_ITEMS : DEFAULT_DESK_ITEMS;
-  if (matches(DESK_ROOMS.compact)) return north ? COMPACT_NORTH_ITEMS : COMPACT_SOUTH_ITEMS;
+  if (matches(DESK_ROOMS.standard)) return { inside: north ? STANDARD_NORTH_ITEMS : DEFAULT_DESK_ITEMS, outside: STANDARD_OUTSIDE };
+  if (matches(DESK_ROOMS.compact)) return { inside: north ? COMPACT_NORTH_ITEMS : COMPACT_SOUTH_ITEMS, outside: COMPACT_OUTSIDE };
   return null;
 }
 
-// La pièce par défaut de cette pièce : son poste de travail, valable pour elle (checkDecor). Une pièce d'une autre forme est vide. Une copie à chaque appel.
+// La pièce par défaut de cette pièce : son poste de travail, et devant elle son dehors par défaut si la carte lui en donne un, valable pour elle
+// (checkDecor). Une pièce d'une autre forme est vide. Une copie à chaque appel.
 export function defaultDeskDecor(room: DeskRoomSpec): DeskDecor {
-  const layout = layoutFor(room) ?? [];
-  return { floor: DEFAULT_FLOOR_THEME, wall: DEFAULT_WALL_THEME, items: layout.map((item) => ({ ...item })) };
+  const layout = layoutFor(room);
+  const outside = room.outside ? (layout?.outside ?? []).map(({ id, x }) => ({ id, x, y: outsideRow(room) })) : [];
+  return { floor: DEFAULT_FLOOR_THEME, wall: DEFAULT_WALL_THEME, items: [...(layout?.inside ?? []).map((item) => ({ ...item })), ...outside] };
 }
 
 export const DEFAULT_DESK_DECOR: DeskDecor = defaultDeskDecor(DESK_ROOMS.standard);

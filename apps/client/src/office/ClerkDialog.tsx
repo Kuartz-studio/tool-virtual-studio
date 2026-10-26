@@ -83,8 +83,8 @@ function Line({ text, children }: { text: string; children?: ReactNode }) {
 
 // La conversation avec une administratrice de l'accueil (la touche E devant elle, ou un clic) : une boîte de dialogue en bas de l'écran, à la manière d'un jeu de
 // rôle — son portrait, son nom, ce qu'elle dit lettre après lettre, et les réponses possibles :
-// - « Confier une mission » : à qui (la liste des membres, une recherche), quoi (un intitulé, des précisions), quelle difficulté (de 1 à 10 : son nom, son ordre de
-//   grandeur, son XP et ce qu'elle représente), un récapitulatif, puis l'envoi (`mission:give` : le serveur vérifie qu'on est encore au comptoir) ;
+// - « Confier une mission » : à qui (soi en tête, « Moi », puis les membres, une recherche), quoi (un intitulé, des précisions), quelle difficulté (de 1 à 10 : son
+//   nom, son ordre de grandeur, son XP et ce qu'elle représente), un récapitulatif, puis l'envoi (`mission:give` : le serveur vérifie qu'on est encore au comptoir) ;
 // - « Les missions que j'ai confiées » : celles de la semaine, leur état, et « Retirer » pour celles qui ne sont pas faites ;
 // - « La boutique » et « Mes caractéristiques » ouvrent leur panneau (la conversation se ferme) ;
 // - « Au revoir », Échap, ou s'éloigner du comptoir (le jeu le dit au magasin) la ferment.
@@ -98,6 +98,7 @@ export function ClerkDialog({ socket, onOpenPanel }: { socket: OfficeSocket | nu
 
 function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string; selfName: string; socket: OfficeSocket | null; onOpenPanel(panel: 'shop' | 'missions'): void }) {
   const selfId = useOfficeStore((state) => state.selfId);
+  const self = useOfficeStore((state) => state.self);
   const players = useOfficeStore((state) => state.players);
   const given = useOfficeStore((state) => state.given);
   const name = fr.clerks.names[clerk as keyof typeof fr.clerks.names] ?? clerk;
@@ -149,14 +150,23 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
     };
   }, [step]);
 
-  // Ceux à qui l'on peut confier une mission : tous les membres sauf soi, ceux qui sont là d'abord, puis par nom ; filtrés par la recherche (sans accents).
+  // Ceux à qui l'on peut confier une mission : soi d'abord (« Moi » : on peut se donner une mission), puis les autres membres, ceux qui sont là d'abord, puis par
+  // nom ; filtrés par la recherche (sans accents ; « moi » trouve soi).
   const candidates = useMemo(() => {
     const fold = (text: string) => text.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase();
     const query = fold(search.trim());
+    const matches = (member: Member) => query === '' || fold(member.name).includes(query) || (member.id === selfId && fold(fr.clerks.me).includes(query));
     return (members ?? [])
-      .filter((member) => member.id !== selfId && (query === '' || fold(member.name).includes(query)))
-      .sort((a, b) => Number(Object.hasOwn(players, b.id)) - Number(Object.hasOwn(players, a.id)) || a.name.localeCompare(b.name, 'fr'));
+      .filter(matches)
+      .sort(
+        (a, b) =>
+          Number(b.id === selfId) - Number(a.id === selfId) ||
+          Number(Object.hasOwn(players, b.id)) - Number(Object.hasOwn(players, a.id)) ||
+          a.name.localeCompare(b.name, 'fr'),
+      );
   }, [members, search, selfId, players]);
+  // La mission est pour soi : la conversation le dit autrement.
+  const forSelf = target !== null && target.id === selfId;
 
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'Escape' || event.nativeEvent.isComposing) return;
@@ -184,10 +194,11 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
     const ack: MissionAck = await sendMission(socket, { to: target.id, title: title.trim(), ...(notes.trim() ? { notes: notes.trim() } : {}), tier });
     setSending(false);
     if (!ack.ok) {
-      setError(fr.clerks.errors[ack.error]);
+      setError(ack.error === 'limit' && forSelf ? fr.clerks.limitSelf : fr.clerks.errors[ack.error]);
       return;
     }
-    useOfficeStore.getState().upsertGiven(ack.task);
+    // Une mission qu'on se donne arrive dans sa liste (`task:assigned`) ; elle n'est pas de celles qu'on a confiées aux autres.
+    if (!forSelf) useOfficeStore.getState().upsertGiven(ack.task);
     setStep('sent');
   }
 
@@ -257,15 +268,20 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
           {members === null && <p className="clerk-note">{membersFailed ? fr.clerks.whoFailed : fr.clerks.whoLoading}</p>}
           {members !== null && candidates.length === 0 && <p className="clerk-note">{fr.clerks.whoEmpty}</p>}
           <ul className="clerk-people">
-            {candidates.map((member) => (
-              <li key={member.id}>
-                <button type="button" onClick={() => pick(member)} data-user={member.id}>
-                  <AvatarPortrait avatarKey={member.avatarKey} name={member.name} size={28} status={players[member.id]?.status ?? null} />
-                  <span className="clerk-person-name">{member.name}</span>
-                  <LevelBadge level={players[member.id]?.level ?? member.level ?? 0} />
-                </button>
-              </li>
-            ))}
+            {candidates.map((member) => {
+              const me = member.id === selfId;
+              // Soi n'est pas parmi les autres présents (`players`) : son statut et son niveau sont les siens.
+              const here = me ? self : players[member.id];
+              return (
+                <li key={member.id}>
+                  <button type="button" onClick={() => pick(member)} data-user={member.id} data-self={me || undefined}>
+                    <AvatarPortrait avatarKey={member.avatarKey} name={member.name} size={28} status={here?.status ?? null} />
+                    <span className="clerk-person-name">{me ? fr.clerks.me : member.name}</span>
+                    <LevelBadge level={here?.level ?? member.level ?? 0} />
+                  </button>
+                </li>
+              );
+            })}
           </ul>
           <div className="clerk-actions">{back('menu')}</div>
         </Line>
@@ -273,7 +289,7 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
       break;
     case 'what':
       content = (
-        <Line text={t(fr.clerks.what, { name: target?.name ?? '' })}>
+        <Line text={forSelf ? fr.clerks.whatSelf : t(fr.clerks.what, { name: target?.name ?? '' })}>
           <form className="clerk-form" onSubmit={toTier}>
             <label htmlFor={`${uid}-title`}>{fr.clerks.titleLabel}</label>
             <input id={`${uid}-title`} value={title} maxLength={TASK_TITLE_MAX_LENGTH} placeholder={fr.clerks.titlePlaceholder} autoComplete="off" onChange={(event) => setTitle(event.target.value)} />
@@ -327,7 +343,14 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
     case 'confirm':
       content = (
         <Line
-          text={t(fr.clerks.recap, { name: target?.name ?? '', title: title.trim(), tier, label: tierLabel(tier), xp: formatNumber(missionXp(tier)), share: shareText(missionXp(tier)) })}
+          text={t(forSelf ? fr.clerks.recapSelf : fr.clerks.recap, {
+            name: target?.name ?? '',
+            title: title.trim(),
+            tier,
+            label: tierLabel(tier),
+            xp: formatNumber(missionXp(tier)),
+            share: shareText(missionXp(tier)),
+          })}
         >
           <div className="clerk-actions">
             <button type="button" className="bar-button" data-sfx="cancel" onClick={() => setStep('what')}>
@@ -342,7 +365,7 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
       break;
     case 'sent':
       content = (
-        <Line text={t(fr.clerks.sent, { name: target?.name ?? '' })}>
+        <Line text={forSelf ? fr.clerks.sentSelf : t(fr.clerks.sent, { name: target?.name ?? '' })}>
           <div className="clerk-options">
             <button type="button" onClick={another}>
               {fr.clerks.another}

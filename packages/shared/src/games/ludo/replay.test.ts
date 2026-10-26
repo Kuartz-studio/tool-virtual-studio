@@ -8,11 +8,13 @@ import deux from './fixtures/deux-joueurs.json';
 import quatre from './fixtures/quatre-joueurs.json';
 import troisDeuxSorties from './fixtures/trois-joueurs-deux-sorties.json';
 import trois from './fixtures/trois-joueurs.json';
-import { ludo, type LudoEvent, type LudoMove, type LudoState } from './index';
+import { ludo, rollLudoDie, type LudoEvent, type LudoMove, type LudoState } from './index';
 
 // Les parties enregistrées : cinq journaux de parties complètes (`MatchLogEntry[]`, dés compris : chaque lancer garde la valeur que le générateur a rendue), rejoués à l'identique.
 // Elles ont été jouées par un joueur qui tire au hasard un coup légal à chaque pas, avec la graine dite dans leur `description` ; deux sortent des sièges à des moments où ils ont
-// le trait et à d'autres où ils ne l'ont pas. Si une règle change, ces journaux cessent d'être rejouables : c'est exactement ce qu'ils sont là pour dire.
+// le trait et à d'autres où ils ne l'ont pas. Si une règle change, ces journaux cessent d'être rejouables : c'est exactement ce qu'ils sont là pour dire. Le dé qui fait 6 deux fois
+// sur six sans cheval en jeu (26 octobre 2026) les a fait réenregistrer, aux mêmes graines : le premier joueur et chaque coup tirés de seededRng(graine × 2654435761), les dés du
+// pas n de seededRng(graine × 1 000 003 + n) comme dans le harnais de conformité, `at` à n × 2,5 s, chaque sortie posée à un pas donné.
 
 interface Fixture {
   description: string;
@@ -36,13 +38,13 @@ const EXPECTED: Array<{
   {
     name: 'deux joueurs, jusqu\'au bout',
     fixture: deux as unknown as Fixture,
-    first: 0,
-    entries: 354,
-    moves: 161,
+    first: 1,
+    entries: 288,
+    moves: 137,
     out: [],
     reason: 'finished',
     ranking: [[1], [0]],
-    scores: [165, 228],
+    scores: [138, 228],
   },
   {
     name: 'deux joueurs, un abandon',
@@ -53,40 +55,40 @@ const EXPECTED: Array<{
     out: [{ seat: 0, reason: 'timeout' }],
     reason: 'timeout',
     ranking: [[1], [0]],
-    scores: [0, 37],
+    scores: [0, 59],
   },
   {
     name: 'trois joueurs, une sortie',
     fixture: trois as unknown as Fixture,
     first: 1,
-    entries: 344,
-    moves: 161,
-    out: [{ seat: 0, reason: 'timeout' }],
+    entries: 312,
+    moves: 152,
+    out: [{ seat: 2, reason: 'timeout' }],
     reason: 'finished',
-    ranking: [[2], [1], [0]],
-    scores: [0, 205, 228],
+    ranking: [[1], [0], [2]],
+    scores: [183, 228, 0],
   },
   {
     name: 'trois joueurs, deux sorties',
     fixture: troisDeuxSorties as unknown as Fixture,
-    first: 2,
+    first: 0,
     entries: 182,
-    moves: 85,
-    out: [{ seat: 2, reason: 'disconnect' }, { seat: 1, reason: 'timeout' }],
+    moves: 83,
+    out: [{ seat: 0, reason: 'disconnect' }, { seat: 1, reason: 'timeout' }],
     reason: 'timeout',
-    ranking: [[0], [1], [2]],
-    scores: [54, 0, 0],
+    ranking: [[2], [1], [0]],
+    scores: [0, 0, 21],
   },
   {
     name: 'quatre joueurs, deux sorties',
     fixture: quatre as unknown as Fixture,
     first: 2,
-    entries: 488,
+    entries: 485,
     moves: 230,
-    out: [{ seat: 0, reason: 'resign' }, { seat: 1, reason: 'timeout' }],
+    out: [{ seat: 2, reason: 'resign' }, { seat: 0, reason: 'timeout' }],
     reason: 'finished',
-    ranking: [[2], [3], [1], [0]],
-    scores: [0, 0, 228, 181],
+    ranking: [[1], [3], [0], [2]],
+    scores: [0, 228, 0, 192],
   },
 ];
 
@@ -149,10 +151,11 @@ describe('petits chevaux : parties enregistrées, rejouées', () => {
     expect(shorter).not.toStrictEqual(fixture.final);
 
     // Le premier lancer du journal sort un 6 s'il n'en était pas un, et un 1 s'il en était un : un 6 de plus ou de moins change toujours la partie (le 6 sort un cheval et fait
-    // rejouer), alors qu'un 2 changé en 5, sans cheval en jeu, aurait donné le même tour perdu. Le coup qui suit n'a plus de sens, ou la partie diverge.
+    // rejouer), alors qu'un 2 changé en 5, sans cheval en jeu, aurait donné le même tour perdu. Le coup qui suit n'a plus de sens, ou la partie diverge. Au premier lancer, aucun
+    // cheval n'est en jeu : c'est le dé de l'écurie qui dit si c'était un 6.
     const firstRoll = fixture.log.findIndex((entry) => entry.kind === 'move' && entry.rng.length > 0);
     const entry = fixture.log[firstRoll] as Extract<MatchLogEntry, { kind: 'move' }>;
-    const wasSix = entry.rng[0]! >= 5 / 6;
+    const wasSix = rollLudoDie(() => entry.rng[0]!, false) === 6;
     const tampered = fixture.log.map((other, index) => (index === firstRoll ? { ...entry, rng: [wasSix ? 0.01 : 0.99] } : other));
     let diverged = false;
     try {

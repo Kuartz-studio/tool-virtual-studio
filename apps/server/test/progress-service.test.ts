@@ -43,9 +43,23 @@ describe('les missions', () => {
     expect(await service.tasksOf('ana')).toEqual([]);
   });
 
-  test('refusée à soi-même, à un membre désactivé ou inconnu, et à une liste pleine', async () => {
+  test('Ana se confie une mission : elle arrive dans sa propre liste, déjà vue, et n\'est pas de celles qu\'elle a confiées', async () => {
+    const { service } = await setup();
+    const given = await service.give('ana', { to: 'ana', title: 'Ranger mes fichiers', tier: 4 });
+    expect(given).toMatchObject({ ok: true, task: { kind: 'mission', title: 'Ranger mes fichiers', tier: 4, xp: missionXp(4), status: 'open', seen: true } });
+    if (!given.ok) return;
+    expect(given.task.owner).toEqual({ id: 'ana', name: 'Ana' });
+    expect(given.task.giver).toEqual({ id: 'ana', name: 'Ana' });
+    expect((await service.tasksOf('ana')).map((t) => t.id)).toEqual([given.task.id]);
+    expect(await service.givenBy('ana')).toEqual([]);
+    // Faite, elle rapporte l'XP de sa difficulté, comme une mission confiée ; elle compte parmi les missions faites, pas parmi les confiées.
+    const done = await service.complete('ana', given.task.id);
+    expect(done!.progress.gain).toMatchObject({ amount: missionXp(4), source: 'mission' });
+    expect(await service.stats('ana', 'ana')).toMatchObject({ missionsDone: 1, missionsGiven: 0 });
+  });
+
+  test('refusée à un membre désactivé ou inconnu, et à une liste pleine', async () => {
     const { db, service } = await setup();
-    expect(await service.give('ana', { to: 'ana', title: 'x', tier: 1 })).toEqual({ ok: false, error: 'self' });
     expect(await service.give('ana', { to: 'zoe', title: 'x', tier: 1 })).toEqual({ ok: false, error: 'unknown_member' });
     expect(await service.give('ana', { to: 'personne', title: 'x', tier: 1 })).toEqual({ ok: false, error: 'unknown_member' });
     await db.insert(task).values(Array.from({ length: MAX_OPEN_TASKS }, (_, i) => ({ ownerId: 'bob', kind: 'todo' as const, title: `t${i}`, xp: TODO_XP })));

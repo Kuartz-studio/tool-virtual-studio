@@ -30,6 +30,9 @@ export const LUDO_REROLL_DIE = 6;
 export const LUDO_MAX_SIXES = 3;
 // Sans cheval en jeu, le joueur a jusqu'à ce nombre de lancers dans son tour pour faire un 6.
 export const LUDO_MAX_TRIES = 3;
+// Sans cheval en jeu (la même condition que les trois essais), le dé fait 6 deux fois sur six au lieu d'une : on sort plus vite de l'écurie, et la partie ne traîne pas.
+// Les cinq autres faces se partagent le reste à parts égales (4/30 chacune). Avec un cheval en jeu, le dé est juste.
+export const LUDO_STABLE_SIX_CHANCE = 2 / 6;
 
 // La case de la piste commune où se trouve un cheval de cette couleur à cette avancée ; null s'il n'est pas sur la piste (écurie, allée, arrivée), donc ni pris ni preneur.
 // C'est le seul passage de l'avancée à la case : deux chevaux ne se rencontrent que sur la piste, par cette case.

@@ -18,6 +18,7 @@ import {
 } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
 import { AutoWalk, REACH_PX, STUCK_MS, cancelOnMoveKey, deskTarget, deskWalkMap, planDeskWalk, planWalk } from './auto-walk';
+import { followWalkMap } from './follow';
 import { bindKeyboard, DirectionInput } from './input';
 
 const cell = (tx: number, ty: number): Point => ({ x: tx * TILE_SIZE + TILE_SIZE / 2, y: ty * TILE_SIZE + TILE_SIZE / 2 });
@@ -428,6 +429,32 @@ describe('planDeskWalk : de là où l\'on est jusqu\'à son bureau', () => {
     expect(walkable(map, inRoom(zone, 4, 1))).toBe(false);
     expect(walkable(map, inRoom(zone, 4, 3))).toBe(true);
     expect(walkable(office, inRoom(zone, 4, 1))).toBe(true);
+  });
+
+  test('les meubles solides de son dehors, dans la rue, sont des murs pour le trajet : on contourne la rangée de fontaines jusqu\'à sa porte', () => {
+    const zone = room('A1');
+    // Des fontaines sur toute la rangée du dehors (y 11 de la carte), sauf devant la porte (colonnes 3 et 4 de la pièce) : on arrive par la rue, plus bas.
+    const items = [...DEFAULT_DESK_ITEMS, ...[0, 1, 2, 5, 6, 7, 8].map((x) => ({ id: 'of-12-15', x, y: 9 }))];
+    const map = deskWalkMap(office, zone, items);
+    expect(isWalkableTile(map, 9, 11)).toBe(false);
+    expect(isWalkableTile(map, 12, 11)).toBe(true);
+    expect(isWalkableTile(office, 9, 11)).toBe(true);
+    const route = planDeskWalk(office, zone, items, cell(10, 13))!;
+    expect(route.at(-1)).toEqual(deskTarget(office, zone, items));
+    expectStraightAndFree(map, route);
+  });
+
+  test('ceux qu\'un autre a posés devant sa pièce aussi : la scène part de la carte de la marche de « Suivre », où sont les meubles de tous les bureaux', () => {
+    // Devant A2 (x 20 à 28, y 11), deux fontaines à l'ouest (x 20 et 21) ; on part de la case voisine, x 22, pour aller à son bureau, A1, à l'ouest.
+    const fountains = [0, 1].map((x) => ({ id: 'of-12-15', x, y: 9 }));
+    const base = followWalkMap(office, [{ key: 'A1', items: [...DEFAULT_DESK_ITEMS] }, { key: 'A2', items: fountains }], []);
+    const throughFountains = (route: Point[]) => walkedTiles(route).some(({ tx, ty }) => ty === 11 && (tx === 20 || tx === 21));
+    // Sans elles, le plus court chemin longe le mur, sur la rangée 11.
+    expect(throughFountains(planDeskWalk(office, room('A1'), DEFAULT_DESK_ITEMS, cell(22, 11))!)).toBe(true);
+    const route = planDeskWalk(base, room('A1'), DEFAULT_DESK_ITEMS, cell(22, 11))!;
+    expect(route.at(-1)).toEqual(deskTarget(office, room('A1'), DEFAULT_DESK_ITEMS));
+    expectStraightAndFree(deskWalkMap(base, room('A1'), DEFAULT_DESK_ITEMS), route);
+    expect(throughFountains(route)).toBe(false);
   });
 
   test('l\'entrée murée par les meubles : introuvable', () => {

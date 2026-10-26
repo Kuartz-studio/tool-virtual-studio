@@ -8,7 +8,7 @@ import { session, user } from '../src/db/schema';
 import { createRateLimiter } from '../src/rate-limit';
 import { loadOfficeMap } from '../src/realtime/io';
 import { loadPosition, savePositions } from '../src/realtime/positions';
-import { DEFAULT_SETUP } from './helpers/decor';
+import { DEV_DEFAULT_SETUP } from './helpers/decor';
 import { captureLogs } from './helpers/logs';
 import {
   TEST_GRACE_MS,
@@ -154,9 +154,9 @@ describe('connexion', () => {
     // Les trois bureaux de la carte de développement (clés : les numéros de leurs zones) : le premier est à A, qui n'a pas à y accéder. Aucun
     // n'a été décoré : tous montrent le poste de travail par défaut.
     expect(aInit.desks).toEqual([
-      { key: '2', ownerId: aInit.self.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
-      { key: '3', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
-      { key: '4', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEFAULT_SETUP },
+      { key: '2', ownerId: aInit.self.id, ownerName: 'a', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEV_DEFAULT_SETUP },
+      { key: '3', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEV_DEFAULT_SETUP },
+      { key: '4', ownerId: null, ownerName: null, name: null, locked: false, closedByState: false, ...DEV_DEFAULT_SETUP },
     ]);
     expect(aInit.closedDesks).toEqual([]);
     expect(aInit.deskBans).toEqual([]);
@@ -175,7 +175,7 @@ describe('connexion', () => {
     expect(bEvents.names()).toEqual(['init']);
     // A apprend aussi que B a pris la place suivante : avant son arrivée (le bureau d'abord).
     expect(aEvents.received).toEqual([
-      { event: 'desk:changed', args: [{ key: '3', ownerId: bInit.self.id, ownerName: 'b', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEFAULT_SETUP }] },
+      { event: 'desk:changed', args: [{ key: '3', ownerId: bInit.self.id, ownerName: 'b', ownerTimezone: 'Europe/Paris', name: null, locked: false, closedByState: false, ...DEV_DEFAULT_SETUP }] },
       { event: 'player:joined', args: [bInit.self] },
     ]);
     expect(srv.realtime.socketsOf(aInit.self.id)).toEqual([a.id]);

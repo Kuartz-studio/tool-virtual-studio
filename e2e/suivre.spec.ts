@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { buildOfficeTiledMap, parseOfficeMap, zoneAt } from '../packages/shared/src/index';
-import { joinOffice, openDeskPanel, openPanel, selfAt } from './helpers';
+import { giveDeskBack, joinOffice, openDeskPanel, openPanel, selfAt } from './helpers';
 
 // Le menu d'une personne, sur la vraie carte (le second serveur des tests : playwright.config.ts) : un clic droit sur son avatar l'ouvre à la place de celui du
 // navigateur. À moins de 5 cases, « Suivre » fait marcher derrière elle, à une case ; plus loin, « Rejoindre » pose à côté d'elle ; dans son bureau, porte fermée,
@@ -21,11 +21,14 @@ test.afterEach(async () => {
   await Promise.all(contexts.splice(0).map((context) => context.close()));
 });
 
-async function arrive(browser: Browser, name: string): Promise<Page> {
+// Chacun reçoit un bureau à son arrivée, s'il en reste un des six : qui n'a pas besoin du sien le rend tout de suite, pour Alice, qui en a besoin
+// au second test, et pour les specs qui passent après sur ce serveur.
+async function arrive(browser: Browser, name: string, desk: 'needed' | 'given back' = 'given back'): Promise<Page> {
   const context = await browser.newContext();
   contexts.push(context);
   const page = await context.newPage();
   await joinOffice(page, name);
+  if (desk === 'given back') await giveDeskBack(page);
   return page;
 }
 
@@ -56,6 +59,8 @@ test('clic droit sur un avatar : à quatre cases, Suivre fait marcher derrière 
   const aliceId = (await selfAt(alice)).id;
   await teleport(alice, ALICE);
   await teleport(bruno, NEAR);
+  // Son saut arrive chez Bruno par le monde, un peu après le sien : avant, il la voit encore à l'accueil, hors de son écran.
+  await expect.poll(() => seenAt(bruno, aliceId)).toMatchObject(ALICE);
 
   // Le menu, à la place de celui du navigateur : Profil et Suivre (elle est à moins de 5 cases).
   await rightClickAvatar(bruno, aliceId);
@@ -95,7 +100,7 @@ test('clic droit sur un avatar : à quatre cases, Suivre fait marcher derrière 
 
 test('dans son bureau, porte fermée : inviter quelqu\'un depuis le panneau Personnes ; il accepte, et arrive dans la pièce', async ({ browser }) => {
   test.slow();
-  const alice = await arrive(browser, 'Alice');
+  const alice = await arrive(browser, 'Alice', 'needed');
   const bruno = await arrive(browser, 'Bruno');
   const brunoId = (await selfAt(bruno)).id;
   await teleport(bruno, FAR);

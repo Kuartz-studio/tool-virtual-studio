@@ -29,6 +29,7 @@ const debug = (): OfficeDebug => ({
   debugGame: () => {},
   xp: () => {},
   effects: () => 0,
+  treadmills: () => [],
 });
 
 afterEach(() => {

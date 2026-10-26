@@ -2,9 +2,10 @@
 // de la piscine, dessinées ici (le pack n'a pas d'eau). Les sols et les murs sont aussi les thèmes qu'une personne choisit pour son bureau :
 // la liste (id, nom, numéro de tuile) est écrite dans packages/shared/src/decor/generated-themes.ts. Après eux, les images d'animation des murs de la
 // boutique, qui bougent (tile-motion.ts, theme-motions.ts, shop-walls.ts) : une image identique à une autre de la même tuile n'est pas ajoutée deux fois. Les
-// murs libres et les sols ne bougent pas.
+// murs libres et les sols ne bougent pas. En dernier, les sols et les murs noirs, tirés des matières du pack (black-themes.ts).
 import { join } from 'node:path';
 import type { TilePhase } from '@bureau/shared';
+import { BLACK_FLOOR_PICKS, BLACK_WALL_PICKS, blacken, isWallFrame } from './black-themes';
 import { Img, readImage, type Rgba } from './image';
 import { sameImage } from './pixel-art';
 import { SHOP_WALL_PICKS, drawShopWall, drawnWallMotion, isPackWall, type ShopWallTiles } from './shop-walls';
@@ -108,6 +109,11 @@ export interface TileAnimationRow {
   step: number;
 }
 
+// La tuile d'un sol du Room Builder : la case du milieu en bas de son bloc.
+function packFloorTile(sheet: Img, column: number, row: number): Img {
+  return sheet.crop(column * 128 + 32, 64 + row * 64 + 32, TILE, TILE);
+}
+
 // Les trois tuiles d'un mur du Room Builder : la face (deux cases) et le pan vertical.
 function packWallTiles(sheet: Img, column: number, row: number): ShopWallTiles {
   const x0 = WALL_COLUMN_X[column]!;
@@ -162,11 +168,7 @@ export function buildTileset(source: string): TilesetBuild {
   const tiles: Img[] = [];
   const add = (tile: Img): number => tiles.push(tile);   // le numéro de tuile de Tiled : le premier est 1
 
-  const floors = FLOOR_PICKS.map(({ id, label, column, row }) => ({
-    id,
-    label,
-    gid: add(floorsSheet.crop(column * 128 + 32, 64 + row * 64 + 32, TILE, TILE)),
-  }));
+  const floors = FLOOR_PICKS.map(({ id, label, column, row }) => ({ id, label, gid: add(packFloorTile(floorsSheet, column, row)) }));
 
   const walls = WALL_PICKS.map(({ id, label, column, row }) => {
     const tiles = packWallTiles(wallsSheet, column, row);
@@ -204,6 +206,17 @@ export function buildTileset(source: string): TilesetBuild {
     animate([wall.top, wall.bottom], motion.face);
     animate([wall.stem], motion.stem);
   });
+
+  // Les sols et les murs noirs, à la fin : ils s'ajoutent aux listes à choisir sans décaler aucune tuile (celles de la carte, les images des murs qui bougent).
+  for (const { id, label, column, row, tone } of BLACK_FLOOR_PICKS) {
+    const [tile] = blacken([packFloorTile(floorsSheet, column, row)], tone);
+    floors.push({ id, label, gid: add(tile!) });
+  }
+  for (const { id, label, column, row, tone } of BLACK_WALL_PICKS) {
+    const pack = packWallTiles(wallsSheet, column, row);
+    const [top, bottom, stem] = blacken([pack.top, pack.bottom, pack.stem], tone, isWallFrame);
+    walls.push({ id, label, top: add(top!), bottom: add(bottom!), stem: add(stem!) });
+  }
 
   const rows = Math.ceil(tiles.length / TILESET_COLUMNS);
   const image = new Img(TILESET_COLUMNS * TILE, rows * TILE);

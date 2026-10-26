@@ -42,6 +42,8 @@ export function useProgressToasts(): void {
         });
       }),
       listenOnBus(EventBus, 'task:assigned', (task) => {
+        // Une mission qu'on vient de se donner ne s'annonce pas : on sait ce qu'on y a mis.
+        if (task.giver?.id === useOfficeStore.getState().selfId) return;
         const name = task.giver?.name ?? '';
         push({
           key: `mission:${task.id}`,

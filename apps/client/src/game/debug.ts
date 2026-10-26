@@ -71,6 +71,8 @@ export interface OfficeDebug {
   xp(xp: number, kuartzons?: number): void;
   // Combien d'effets de la progression (un « +XP » qui monte, une gerbe d'étoiles) sont en vie à l'écran en ce moment.
   effects(): number;
+  // Les tapis de course qui tournent en ce moment (quelqu'un y court, tel qu'on le dessine) : `bureau:x:y`, sa place dans la pièce en dixièmes de case.
+  treadmills(): string[];
 }
 
 // Ce que les tests de bout en bout lisent du son : window.__audio, dans le même build. Le son démarre avant le jeu (dès la page de connexion) :

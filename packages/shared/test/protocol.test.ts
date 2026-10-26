@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { ACTIVITY_ICONS, activityInputSchema, moveSchema, chatSendSchema, statusSchema, displayNameSchema, isAvatarKey, lightsSetSchema, LIGHT_LEVELS, LIGHTS_RATE_MS, LIGHT_SWITCH_REACH_TILES } from '../src';
+import { ACTIVITY_ICONS, activityInputSchema, moveSchema, chatSendSchema, statusSchema, stateSetSchema, displayNameSchema, isAvatarKey, lightsSetSchema, LIGHT_LEVELS, LIGHTS_RATE_MS, LIGHT_SWITCH_REACH_TILES } from '../src';
 
 test('move : entiers et direction connue', () => {
   expect(moveSchema.safeParse({ x: 10, y: 20, dir: 'down', moving: true }).success).toBe(true);
@@ -59,4 +59,15 @@ describe('états d\'activité : l\'icône', () => {
     expect(parsed).toEqual({ label: 'Pause', color: '#f59e0b', allowEntry: true, hear: true, heard: true });
     expect('icon' in parsed).toBe(false);
   });
+});
+
+test('state:set : l\'identifiant d\'un mode, ou null, comme avant ; ou { id, treadmill: true } pour le prendre sur son tapis de course, rien d\'autre', () => {
+  const id = '1400f289-b65d-4321-8596-f0f3b7baedf9';
+  expect(stateSetSchema.parse(id)).toBe(id);
+  expect(stateSetSchema.parse(null)).toBeNull();
+  expect(stateSetSchema.parse({ id, treadmill: true })).toEqual({ id, treadmill: true });
+  expect(stateSetSchema.parse({ id, treadmill: true, x: 3 })).toEqual({ id, treadmill: true });   // un champ en trop est écarté
+  for (const refused of [{ id }, { id, treadmill: false }, { id, treadmill: 'oui' }, { id: '', treadmill: true }, { id: 'a'.repeat(65), treadmill: true }, '', 'a'.repeat(65), 3, undefined]) {
+    expect(stateSetSchema.safeParse(refused).success, JSON.stringify(refused)).toBe(false);
+  }
 });

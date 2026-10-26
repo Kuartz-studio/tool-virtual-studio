@@ -42,13 +42,30 @@ describe('mission:give', () => {
     expect(await assigned).toMatchObject({ title: 'Refaire le logo', seen: false });
   });
 
-  test('refusée : charge invalide, à soi-même, à un inconnu', async () => {
+  test('refusée : charge invalide, à un inconnu', async () => {
     const srv = await office();
     const ana = await person(srv, 'ana@x.fr');
     await teleport(ana, AT_DESK);
     expect(await give(ana, { to: 'x', title: 'x', tier: 11 })).toEqual({ ok: false, error: 'invalid' });
-    expect(await give(ana, { to: ana.id, title: 'x', tier: 1 })).toEqual({ ok: false, error: 'self' });
     expect(await give(ana, { to: 'personne', title: 'x', tier: 1 })).toEqual({ ok: false, error: 'unknown_member' });
+  });
+
+  test('à soi-même : la mission arrive dans sa liste, déjà vue ; la faire rapporte son XP, sans avis « elle est faite » à soi-même', async () => {
+    const srv = await office();
+    const ana = await person(srv, 'ana@x.fr');
+    await teleport(ana, AT_DESK);
+    const assigned = nextEvent(ana.socket, 'task:assigned');
+    const ack = await give(ana, { to: ana.id, title: 'Ranger mes fichiers', tier: 3 });
+    expect(ack).toMatchObject({ ok: true, task: { owner: { id: ana.id }, giver: { id: ana.id }, xp: missionXp(3), seen: true } });
+    if (!ack.ok) throw new Error(ack.error);
+    expect(await assigned).toMatchObject({ id: ack.task.id, seen: true });
+
+    const seen = record(ana.socket);
+    const mine = nextEvent(ana.socket, 'progress:mine');
+    expect((await request(srv.app).post(`/api/me/tasks/${ack.task.id}/done`).set('Cookie', ana.cookie)).status).toBe(200);
+    expect(await mine).toMatchObject({ gain: { amount: missionXp(3), source: 'mission' } });
+    await sleep(100);
+    expect(seen.payloadsOf('task:changed')).toEqual([]);
   });
 
   test('la faire : son XP lui revient (`progress:mine`, avec le gain), tout le bureau voit son niveau monter, et Ana apprend qu\'elle est faite', async () => {

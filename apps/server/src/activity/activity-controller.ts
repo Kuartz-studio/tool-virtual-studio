@@ -32,7 +32,8 @@ export function createActivityController(d: ActivityControllerDeps) {
 
   return {
     // Prendre cet état (un identifiant d'elle), ou null : plus d'état d'activité. Un identifiant qu'elle n'a pas (étranger, supprimé, ou qui n'est pas un uuid) est ignoré.
-    async choose(userId: string, activityId: string | null): Promise<void> {
+    // `treadmill` : le prendre sur son tapis de course, s'il conduit à la salle de sport (ModeTravel).
+    async choose(userId: string, activityId: string | null, options: { treadmill?: boolean } = {}): Promise<void> {
       try {
         if (activityId === null) return this.clear(userId);
         const state = await d.activities.get(userId, activityId);
@@ -41,7 +42,7 @@ export function createActivityController(d: ActivityControllerDeps) {
         const previous = d.world.get(userId)?.activity ?? null;
         d.world.setActivity(userId, state);
         announce(userId, state);
-        d.travel.change(userId, previous, state);
+        d.travel.change(userId, previous, state, options);
       } catch (err) {
         logServerError(d.logger, { err, userId }, 'Changement d\'état d\'activité impossible');
       }

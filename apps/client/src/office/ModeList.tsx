@@ -1,9 +1,9 @@
 import { ACTIVITY_MAX_PER_USER, type ActivityState, type OfficeMap, type Status } from '@bureau/shared';
-import type { CSSProperties, ReactNode } from 'react';
+import { Fragment, type CSSProperties, type ReactNode } from 'react';
 import { fr, t } from '../i18n/fr';
 import { statusCssColor } from '../lib/status';
 import { ActivityMark } from './ActivityMark';
-import { CheckIcon, PencilIcon, PlaceIcon, PlusIcon } from './icons';
+import { CheckIcon, PencilIcon, PlaceIcon, PlusIcon, SubChoiceIcon } from './icons';
 import { StatusDot } from './StatusDot';
 
 export interface ModeListProps {
@@ -18,6 +18,12 @@ export interface ModeListProps {
   enabled: boolean;
   onStatus(status: Status): void;
   onMode(state: ActivityState): void;
+  // Prendre un mode sur son tapis de course plutôt qu'à la salle de sport : sous un mode que `treadmillFor` désigne (il conduit à la salle de sport, et sa pièce
+  // a un tapis : offersTreadmill), la ligne « Mon tapis de course » (onTreadmill). `running` : elle court sur son tapis en ce moment, d'après le serveur ; avec
+  // ce mode, c'est alors la ligne du tapis qui est cochée, et non la sienne.
+  treadmillFor(state: ActivityState): boolean;
+  running: boolean;
+  onTreadmill(state: ActivityState): void;
   // Ouvrir l'éditeur, dans le menu même : pour ce mode, ou pour un nouveau.
   onEdit(state: ActivityState): void;
   onCreate(): void;
@@ -66,11 +72,35 @@ function Row({ id, label, color, mark, place, checked, enabled, onPick, onEdit }
   );
 }
 
+// La ligne « Mon tapis de course », sous celle d'un mode qui conduit à la salle de sport : prendre ce mode sur son tapis. Un bouton radio du menu, comme la ligne
+// du mode, nommé « Sport sur mon tapis de course » (un lecteur d'écran sait de quel mode il s'agit) ; plus basse, une flèche y descend de la marque du mode.
+function TreadmillRow({ state, checked, enabled, onPick }: { state: ActivityState; checked: boolean; enabled: boolean; onPick(): void }) {
+  const label = t(fr.modes.onTreadmill, { label: state.label });
+  return (
+    <div className="mode-row mode-sub" data-mode={`${state.id}:treadmill`} data-checked={checked ? '' : undefined}>
+      <button type="button" role="menuitemradio" aria-checked={checked} aria-label={label} tabIndex={-1} className="mode-pick" disabled={!enabled} onClick={onPick}>
+        <span className="mode-sub-mark">
+          <SubChoiceIcon />
+        </span>
+        <span className="mode-name" title={label}>
+          {fr.modes.treadmill}
+        </span>
+        {checked && (
+          <span className="mode-check">
+            <CheckIcon />
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
 // Les modes du menu « Moi », en une seule liste : d'abord Disponible, l'état normal (aucun mode), qui ne se modifie pas, puis ses modes (Manger, Sport,
 // Concentration, que le compte a reçus, et ceux qu'il a créés : tous se modifient et se suppriment, au crayon), et « Nouveau mode ». Occupé, Absent et Ne pas
 // déranger ne s'y choisissent plus : un statut laissé par une version d'avant se lit encore (sur la puce, au-dessus de la tête) et Disponible le quitte. Une seule
-// ligne est cochée : le mode pris, sinon Disponible quand c'est le statut. Prendre Disponible quitte le mode (le serveur l'efface).
-export function ModeList({ status, activity, myStates, map, enabled, onStatus, onMode, onEdit, onCreate }: ModeListProps) {
+// ligne est cochée : le mode pris (ou, pris sur son tapis de course, la ligne du tapis), sinon Disponible quand c'est le statut. Prendre Disponible quitte le mode
+// (le serveur l'efface).
+export function ModeList({ status, activity, myStates, map, enabled, onStatus, onMode, treadmillFor, running, onTreadmill, onEdit, onCreate }: ModeListProps) {
   // Le nom de la pièce où ce mode conduit : une destination de cette carte, sinon rien (il ne conduit nulle part ici).
   const placeOf = (state: ActivityState) => (state.place === undefined ? undefined : map?.places.find((place) => place.key === state.place && place.destination)?.label);
   const full = myStates.length >= ACTIVITY_MAX_PER_USER;
@@ -85,20 +115,26 @@ export function ModeList({ status, activity, myStates, map, enabled, onStatus, o
         enabled={enabled}
         onPick={() => onStatus('available')}
       />
-      {myStates.map((state) => (
-        <Row
-          key={state.id}
-          id={state.id}
-          label={state.label}
-          color={state.color}
-          mark={<ActivityMark activity={state} />}
-          place={placeOf(state)}
-          checked={activity?.id === state.id}
-          enabled={enabled}
-          onPick={() => onMode(state)}
-          onEdit={() => onEdit(state)}
-        />
-      ))}
+      {myStates.map((state) => {
+        const taken = activity?.id === state.id;
+        const treadmill = treadmillFor(state);
+        return (
+          <Fragment key={state.id}>
+            <Row
+              id={state.id}
+              label={state.label}
+              color={state.color}
+              mark={<ActivityMark activity={state} />}
+              place={placeOf(state)}
+              checked={taken && !(treadmill && running)}
+              enabled={enabled}
+              onPick={() => onMode(state)}
+              onEdit={() => onEdit(state)}
+            />
+            {treadmill && <TreadmillRow state={state} checked={taken && running} enabled={enabled} onPick={() => onTreadmill(state)} />}
+          </Fragment>
+        );
+      })}
       <button
         type="button"
         role="menuitem"

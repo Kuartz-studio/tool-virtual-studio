@@ -49,6 +49,8 @@ export interface DeskControllerDeps {
   buyAll?: (userId: string, itemIds: string[]) => Promise<{ ok: true } | { ok: false; error: 'unknown_item' | 'too_poor' }>;
   /** L'identifiant d'une nouvelle invitation : un uuid par défaut (les tests en passent de lisibles). */
   newId?: () => string;
+  /** Des places viennent de changer (et d'être dites à tout le bureau) : qui court sur un tapis de course qu'on vient de retirer en descend (ModeTravel.desksChanged). */
+  onChanged?: (changed: DeskInfo[]) => void;
   logger: Logger;
 }
 
@@ -125,6 +127,7 @@ export function createDeskController(d: DeskControllerDeps) {
   function applied(result: DeskResult, ...owners: string[]): DeskAck {
     if (!result.ok) return result;
     broadcast(result.changed);
+    if (result.changed.length > 0) d.onChanged?.(result.changed);
     if (result.access) pushAccess();
     for (const owner of owners) pushBans(owner);
     return { ok: true };

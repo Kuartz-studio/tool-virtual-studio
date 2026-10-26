@@ -2,6 +2,7 @@ import {
   DEFAULT_TIMEZONE,
   OFFICE_DESK_SLOTS,
   TILE_SIZE,
+  TREADMILL_ID,
   decorAtlasOf,
   defaultDeskDecor,
   deskKey,
@@ -21,7 +22,10 @@ import type { GameObjects, Tilemaps } from 'phaser';
 import { decorTextureKey } from './decor-textures';
 import { layoutDecor, placedFromObjects, type Drawn } from './decor-layout';
 import { snapToPixels } from './pixel-snap';
+import { propAnimationKey, propTextureKey } from './prop-textures';
+import { prefersReducedMotion } from './reduced-motion';
 import { TileAnimator } from './tile-animator';
+import { TREADMILL_SHEET_OFFSET_Y, treadmillKey } from './treadmill';
 import { WallClocks } from './wall-clocks';
 
 // Ce que le jeu dessine des éléments posés : les meubles de la carte (calque `objets`), et dans chaque bureau le sol, les murs et les éléments
@@ -31,6 +35,7 @@ import { WallClocks } from './wall-clocks';
 // Les horloges murales donnent l'heure en direct (WallClocks) : celle du fuseau de l'occupant du bureau (DeskInfo.ownerTimezone), celle de Paris pour
 // une place libre et pour les horloges de la carte ; la scène les fait avancer à chaque image (tickClocks). Les sols et les murs des bureaux bougent
 // (TileAnimator : un reflet qui passe, des étincelles, le néon qui pulse), ceux des espaces communs non ; la scène les fait avancer aussi (tickTiles).
+// Le tapis de course sous qui y court tourne (spinTreadmills, que la scène appelle à chaque image) ; les autres gardent l'image fixe du décor.
 
 interface Room {
   key: string;
@@ -46,6 +51,8 @@ interface Room {
   bodies: GameObjects.Zone[];
   colliders: Phaser.Physics.Arcade.Collider[];
   drawn: Drawn[];
+  // Les tapis de course qui tournent (par treadmillKey) : la planche animée du pack, posée sur l'image du décor, qu'elle cache.
+  spinning: Map<string, GameObjects.Sprite>;
 }
 
 // Les images des éléments posés (celles de la carte ne changent pas : elles sont dessinées une fois). Une horloge murale montre sa texture vivante, à
@@ -89,7 +96,20 @@ export class DecorLayer {
       const key = deskKey(zone);
       const spec = deskRoomSpecOf(map, key);
       if (!spec) continue;
-      this.rooms.set(key, { key, zone, spec, fallback: defaultDeskDecor(spec), slot: OFFICE_DESK_SLOTS.find((s) => s.key === key) ?? null, signature: '', sprites: [], clocks: [], bodies: [], colliders: [], drawn: [] });
+      this.rooms.set(key, {
+        key,
+        zone,
+        spec,
+        fallback: defaultDeskDecor(spec),
+        slot: OFFICE_DESK_SLOTS.find((s) => s.key === key) ?? null,
+        signature: '',
+        sprites: [],
+        clocks: [],
+        bodies: [],
+        colliders: [],
+        drawn: [],
+        spinning: new Map(),
+      });
     }
   }
 
@@ -135,6 +155,38 @@ export class DecorLayer {
   // Combien de cases des bureaux bougent (pour les tests de bout en bout).
   animatedTiles(): number {
     return this.tiles.size;
+  }
+
+  // Les tapis de course où quelqu'un court (leurs treadmillKey) tournent : la planche animée du pack recouvre l'image du décor, posée TREADMILL_SHEET_OFFSET_Y plus
+  // bas (son tapis est plus haut dans sa case), à la même profondeur ; les autres reviennent à l'image fixe. En mouvement réduit, ou sans planche (le fichier n'a pas
+  // chargé), aucun ne tourne. Appelé à chaque image : rien ne change tant que ce sont les mêmes.
+  spinTreadmills(keys: ReadonlySet<string>): void {
+    const can = !prefersReducedMotion() && this.scene.textures.exists(propTextureKey('treadmill')) && this.scene.anims.exists(propAnimationKey('treadmill'));
+    for (const room of this.rooms.values()) {
+      const [roomX, roomY] = [Math.round(room.zone.x / TILE_SIZE), Math.round(room.zone.y / TILE_SIZE)];
+      room.drawn.forEach((drawn, index) => {
+        if (drawn.item.id !== TREADMILL_ID) return;
+        const key = treadmillKey({ desk: room.key, x: drawn.placed.x - roomX, y: drawn.placed.y - roomY });
+        const sprite = room.spinning.get(key);
+        const spin = can && keys.has(key);
+        if (spin === (sprite !== undefined)) return;
+        if (sprite) {
+          sprite.destroy();
+          room.spinning.delete(key);
+          room.sprites[index]?.setVisible(true);
+          return;
+        }
+        const belt = snapToPixels(this.scene.add.sprite(drawn.left, drawn.bottom + TREADMILL_SHEET_OFFSET_Y, propTextureKey('treadmill'), 0).setOrigin(0, 1).setDepth(drawn.depth));
+        belt.play(propAnimationKey('treadmill'));
+        room.spinning.set(key, belt);
+        room.sprites[index]?.setVisible(false);
+      });
+    }
+  }
+
+  // Les tapis qui tournent en ce moment (leurs treadmillKey), pour les tests de bout en bout.
+  spinningTreadmills(): string[] {
+    return [...this.rooms.values()].flatMap((room) => [...room.spinning.keys()]);
   }
 
   // La pièce de ce bureau (taille et porte), pour que l'éditeur sache où l'on peut poser.
@@ -218,6 +270,9 @@ export class DecorLayer {
     for (const collider of room.colliders) collider.destroy();
     for (const sprite of room.sprites) sprite.destroy();
     for (const body of room.bodies) body.destroy();
+    // Les tapis qui tournaient : la scène les refait tourner à l'image suivante, s'ils sont encore là et qu'on y court encore.
+    for (const sprite of room.spinning.values()) sprite.destroy();
+    room.spinning.clear();
     // Les images détruites d'abord : une texture d'horloge que plus rien ne montre peut partir.
     for (const key of room.clocks) this.clocks.release(key);
     room.clocks = [];

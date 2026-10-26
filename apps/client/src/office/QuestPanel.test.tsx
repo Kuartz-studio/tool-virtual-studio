@@ -67,6 +67,21 @@ describe('le panneau Missions', () => {
     expect(useOfficeStore.getState().tasks!.find((t_) => t_.id === 'm1')!.seen).toBe(true);
   });
 
+  test('une mission qu\'on s\'est donnée : « Ta propre mission », et on l\'abandonne au lieu de la rendre', async () => {
+    const own = mission('m1', { giver: { id: 'bob', name: 'Bob' }, seen: true });
+    vi.mocked(progressApi.declineMission).mockResolvedValueOnce({ ...own, status: 'declined', doneAt: '2026-10-24T09:00:00.000Z' });
+    act(() => useOfficeStore.getState().setTasks([own]));
+    const user = userEvent.setup();
+    render(<QuestPanel onClose={() => {}} />);
+    const received = screen.getByRole('region', { name: fr.missions.received });
+    expect(within(received).getByText(fr.missions.fromSelf)).toBeTruthy();
+    expect(within(received).queryByText(fr.missions.new)).toBeNull();
+    await user.click(within(received).getByRole('button', { name: fr.missions.giveUp }));
+    expect(received.textContent).toContain(fr.missions.giveUpConfirm);
+    await user.click(within(received).getByRole('button', { name: fr.missions.giveUpYes }));
+    expect(progressApi.declineMission).toHaveBeenCalledWith('m1');
+  });
+
   test('terminer une mission : la tâche faite et la progression du serveur vont au magasin', async () => {
     const done = { task: mission('m1', { status: 'done', doneAt: '2026-10-24T09:00:00.000Z', seen: true }), progress: progress({ xp: 12_840 }) };
     vi.mocked(progressApi.completeTask).mockResolvedValueOnce(done);

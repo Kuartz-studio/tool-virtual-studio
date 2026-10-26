@@ -1,4 +1,4 @@
-import { DEFAULT_DESK_DECOR, DESK_ROOMS, buildTiledMap, parseOfficeMap, type DeskInfo } from '@bureau/shared';
+import { DEFAULT_DESK_DECOR, DESK_ROOMS, buildOfficeTiledMap, buildTiledMap, parseOfficeMap, type DeskInfo } from '@bureau/shared';
 import { beforeEach, describe, expect, test } from 'vitest';
 import { createOfficeStore } from './office-store';
 
@@ -249,5 +249,33 @@ describe('l\'éditeur de déco, dans une pièce de la carte qui n\'est pas la st
     s.placeHeld({ x: 4, y: 0 });
     expect(store.getState().decorEditor!.error).toBeNull();
     expect(store.getState().decorEditor!.draft.items).toEqual([{ id: 'of-15-0', x: 4, y: 0 }]);
+  });
+});
+
+describe('l\'éditeur de déco, devant la pièce', () => {
+  // La grande carte : la rangée du dehors de A1 est la 9 (en cases de la pièce), sous la bande de son mur sud (rangées 7 et 8) ; sa porte, colonnes 3 et 4.
+  const office = parseOfficeMap(buildOfficeTiledMap());
+
+  test('un clic sur la rue sous sa pièce y pose le pot tenu ; un clic sur le mur sud y accroche l\'horloge', () => {
+    const s = store.getState();
+    s.setOfficeMap(office);
+    s.openDecorEditor({ ...desk, key: 'A1' });
+    s.holdDecorItem('of-6-10');
+    s.placeHeld({ x: 6.5, y: 9.5 });
+    s.holdDecorItem('horloge-ronde');
+    s.placeHeld({ x: 6.5, y: 7.6 });
+    expect(store.getState().decorEditor).toMatchObject({ error: null, draft: { items: [{ id: 'of-6-10', x: 6, y: 9 }, { id: 'horloge-ronde', x: 6, y: 9 }] } });
+  });
+
+  test('devant la porte, rien de solide : la fontaine est refusée avec la raison, le pot passe', () => {
+    const s = store.getState();
+    s.setOfficeMap(office);
+    s.openDecorEditor({ ...desk, key: 'A1' });
+    s.holdDecorItem('of-12-15');
+    s.placeHeld({ x: 3.5, y: 9.5 });
+    expect(store.getState().decorEditor).toMatchObject({ error: 'blocks_door', draft: { items: [] } });
+    s.holdDecorItem('of-6-10');
+    s.placeHeld({ x: 3.5, y: 9.5 });
+    expect(store.getState().decorEditor).toMatchObject({ error: null, draft: { items: [{ id: 'of-6-10', x: 3, y: 9 }] } });
   });
 });

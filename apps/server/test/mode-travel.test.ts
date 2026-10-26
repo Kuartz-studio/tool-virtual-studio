@@ -1,18 +1,24 @@
 import {
   DEFAULT_MODES,
+  TREADMILL_ID,
   buildOfficeTiledMap,
   freeSpotIn,
   isWalkablePoint,
   parseOfficeMap,
   placeAt,
   placeByKey,
+  treadmillBelt,
   zoneAt,
   type ActivityState,
+  type PlacedItem,
   type PublicPlayer,
+  type TreadmillRef,
 } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { deskSlots } from '../src/desks/desk-service';
 import { createModeTravel } from '../src/modes/mode-travel';
+import { World } from '../src/realtime/world';
+import { createTeleport } from '../src/teleport';
 
 // La grande carte, comme le serveur la lit : la salle de sport et la salle de jeu sont des destinations, avec leurs places libres.
 const map = parseOfficeMap(buildOfficeTiledMap());
@@ -27,6 +33,17 @@ const toCafe: ActivityState = { id: 'u-cafe', label: 'Café', color: '#f59e0b', 
 const middleOf = (place: ReturnType<typeof placeByKey>) => ({ x: place!.rects[0]!.x + place!.rects[0]!.width / 2, y: place!.rects[0]!.y + place!.rects[0]!.height / 2 });
 const inside = (key: string, at: { x: number; y: number }) => placeAt(map, at.x, at.y)?.key === key;
 
+// Les bureaux, de poche : chaque place de la carte, qui l'occupe (`owners` : la place de chacun) et ce qui y est posé (`items`, par place ; rien par défaut).
+function deskBook(owners: Record<string, string>, items: Record<string, PlacedItem[]> = {}) {
+  const info = (key: string) => ({ key, ownerId: Object.entries(owners).find(([, desk]) => desk === key)?.[0] ?? null, items: items[key] ?? [] });
+  return {
+    deskOf: (id: string) => (owners[id] ? info(owners[id]) : undefined),
+    get: (key: string) => (slots.some((slot) => slot.key === key) ? info(key) : undefined),
+    list: () => slots.map((slot) => info(slot.key)),
+    slot: (key: string) => slots.find((slot) => slot.key === key),
+  };
+}
+
 // Un monde de poche : des joueurs à leur position, un bureau pour qui en a un, et ce que `teleport` a reçu.
 function setup(players: Record<string, { x: number; y: number }>, desks: Record<string, string> = {}) {
   const calls: Array<{ id: string; at: { x: number; y: number }; reason?: 'teleport' }> = [];
@@ -34,14 +51,16 @@ function setup(players: Record<string, { x: number; y: number }>, desks: Record<
     world: {
       get: (id: string) => (players[id] ? ({ id, ...players[id] } as PublicPlayer) : undefined),
       list: () => Object.entries(players).map(([id, at]) => ({ id, ...at }) as PublicPlayer),
+      setTreadmill: () => false,
     },
     map,
-    desks: { deskOf: (id: string) => (desks[id] ? { key: desks[id] } : undefined), slot: (key: string) => slots.find((slot) => slot.key === key) },
+    desks: deskBook(desks),
     teleport: (id, at, reason) => {
       calls.push({ id, at, ...(reason ? { reason } : {}) });
       if (players[id]) players[id] = { x: at.x, y: at.y };
       return true;
     },
+    announceTreadmill: () => {},
   });
   return { travel, calls, players };
 }
@@ -163,15 +182,226 @@ describe('en sortir', () => {
     const players = { ana: middleOf(gym) };
     const calls: Array<{ x: number; y: number }> = [];
     const travel = createModeTravel({
-      world: { get: (id: string) => ({ id, ...players.ana }) as PublicPlayer, list: () => [] },
+      world: { get: (id: string) => ({ id, ...players.ana }) as PublicPlayer, list: () => [], setTreadmill: () => false },
       map,
-      desks: { deskOf: () => ({ key: slot.key }), slot: () => blocked },
+      desks: { ...deskBook({ ana: slot.key }), slot: () => blocked },
       teleport: (_id, at) => {
         calls.push(at);
         return true;
       },
+      announceTreadmill: () => {},
     });
     travel.change('ana', sport, null);
     expect(calls).toEqual([slot.exit]);
+  });
+});
+
+// ---- Sur son tapis de course -------------------------------------------------------------------------------------------------
+
+// Le bureau A1 (la pièce standard, porte au sud : ses cases vont de (9, 2) à (17, 8) sur la carte) et un tapis de course posé en (1, 2) de sa pièce : son empreinte
+// couvre les cases (10, 4) à (11, 5) de la carte ; la rangée juste au sud est la 6.
+const treadmillAt = (x: number, y: number): PlacedItem => ({ id: TREADMILL_ID, x, y });
+const ref = (x: number, y: number, desk = 'A1'): TreadmillRef => ({ desk, x, y });
+const belt = treadmillBelt(map, ref(1, 2))!;
+// La case (10, 6), sous le tapis : la première de la rangée du sud (à égalité avec sa voisine, la plus à gauche).
+const inFront = { x: 336, y: 208 };
+
+// Le vrai monde (ses positions, et qui court) et des bureaux de poche : Ana a A1, où est posé `placed` (que le test peut changer : `items.A1`). `calls` : ce que teleport a
+// reçu ; `announced` : qui s'est mis à courir (qu'on en descend, le monde le dit lui-même : drainTreadmillStops).
+function onTreadmills(placed: PlacedItem[], owners: Record<string, string> = { ana: 'A1' }) {
+  const world = new World(map, () => 0);
+  const items: Record<string, PlacedItem[]> = { A1: placed };
+  const desks = deskBook(owners, items);
+  const calls: Array<{ id: string; at: { x: number; y: number }; reason?: 'teleport' }> = [];
+  const announced: Array<{ id: string; treadmill: TreadmillRef }> = [];
+  const inWorld = createTeleport({ world, socketsOf: () => [] });
+  const travel = createModeTravel({
+    world,
+    map,
+    desks,
+    teleport: (id, at, reason) => {
+      calls.push({ id, at, ...(reason ? { reason } : {}) });
+      return inWorld(id, at, reason);
+    },
+    announceTreadmill: (id, treadmill) => announced.push({ id, treadmill }),
+  });
+  const join = (id: string, at: { x: number; y: number }) => world.join({ id, name: id, avatarKey: null, ...at, dir: 'down', status: 'available' });
+  // Ana court sur son tapis, comme après « Sport » sur le tapis ; on oublie ce que ce départ a dit.
+  const running = () => {
+    travel.change('ana', null, sport, { treadmill: true });
+    calls.length = 0;
+    announced.length = 0;
+  };
+  return { world, travel, calls, announced, items, desks, join, running };
+}
+
+describe('prendre un mode sur son tapis de course', () => {
+  test('« Sport » sur le tapis : posée sur la bande, d\'un voyage (son anneau), tournée vers la console ; le bureau l\'apprend, et le monde la dit courir', () => {
+    const { world, travel, calls, announced, join } = onTreadmills([treadmillAt(1, 2)]);
+    join('ana', reception);
+    travel.change('ana', null, sport, { treadmill: true });
+    expect(belt).toEqual({ x: 352, y: 167 });
+    expect(isWalkablePoint(map, belt.x, belt.y)).toBe(true);
+    expect(calls).toEqual([{ id: 'ana', at: belt, reason: 'teleport' }]);
+    expect(world.get('ana')).toMatchObject({ ...belt, dir: 'up', treadmill: ref(1, 2) });
+    expect(announced).toEqual([{ id: 'ana', treadmill: ref(1, 2) }]);
+    expect(world.drainTreadmillStops()).toEqual([]);
+  });
+
+  test('sa pièce n\'a pas de tapis, ou elle n\'a pas de bureau : la salle de sport, comme toujours', () => {
+    for (const { placed, owners } of [{ placed: [], owners: { ana: 'A1' } }, { placed: [treadmillAt(1, 2)], owners: {} }]) {
+      const { world, travel, calls, announced, join } = onTreadmills(placed, owners);
+      join('ana', reception);
+      travel.change('ana', null, sport, { treadmill: true });
+      expect(calls).toHaveLength(1);
+      expect(inside('gym', calls[0]!.at)).toBe(true);
+      expect(world.get('ana')?.treadmill).toBeUndefined();
+      expect(announced).toEqual([]);
+    }
+  });
+
+  test('sans le choix du tapis, « Sport » conduit à la salle de sport, tapis ou non ; et le tapis n\'est proposé qu\'aux modes de la salle de sport', () => {
+    const { world, travel, calls, join } = onTreadmills([treadmillAt(1, 2)]);
+    join('ana', reception);
+    travel.change('ana', null, sport);
+    expect(inside('gym', calls[0]!.at)).toBe(true);
+    travel.change('ana', sport, toGame, { treadmill: true });
+    expect(inside('game', calls[1]!.at)).toBe(true);
+    expect(world.get('ana')?.treadmill).toBeUndefined();
+  });
+
+  test('plusieurs tapis : le premier de la déco où personne ne court', () => {
+    const { world, travel, join } = onTreadmills([treadmillAt(1, 2), treadmillAt(5, 2)]);
+    join('ana', reception);
+    join('bob', treadmillBelt(map, ref(1, 2))!);
+    world.setTreadmill('bob', ref(1, 2));
+    travel.change('ana', null, sport, { treadmill: true });
+    expect(world.get('ana')).toMatchObject({ ...treadmillBelt(map, ref(5, 2)), treadmill: ref(5, 2) });
+  });
+
+  test('déjà sur son tapis : le reprendre ne bouge rien, et ne se redit pas', () => {
+    const { travel, calls, announced, join, running } = onTreadmills([treadmillAt(1, 2)]);
+    join('ana', reception);
+    running();
+    travel.change('ana', sport, sport, { treadmill: true });
+    expect(calls).toEqual([]);
+    expect(announced).toEqual([]);
+  });
+});
+
+describe('descendre de son tapis de course', () => {
+  test('en sortir (« Disponible », ou un mode sans emplacement) : elle descend sur la case libre devant le tapis, d\'un pas (sans anneau), et ne court plus', () => {
+    for (const next of [null, focus]) {
+      const { world, travel, calls, join, running } = onTreadmills([treadmillAt(1, 2)]);
+      join('ana', reception);
+      running();
+      travel.change('ana', sport, next);
+      expect(calls).toEqual([{ id: 'ana', at: inFront }]);
+      expect(world.get('ana')).toMatchObject(inFront);
+      expect(world.get('ana')?.treadmill).toBeUndefined();
+      expect(world.drainTreadmillStops()).toEqual(['ana']);
+    }
+  });
+
+  test('un mode qui conduit ailleurs, ou « Sport » à la salle de sport : directement au lieu (le voyage), et elle ne court plus', () => {
+    for (const [next, place] of [[toGame, 'game'], [sport, 'gym']] as const) {
+      const { world, travel, calls, join, running } = onTreadmills([treadmillAt(1, 2)]);
+      join('ana', reception);
+      running();
+      travel.change('ana', sport, next);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ id: 'ana', reason: 'teleport' });
+      expect(inside(place, calls[0]!.at)).toBe(true);
+      expect(world.get('ana')?.treadmill).toBeUndefined();
+    }
+  });
+
+  test('la case devant est prise : sa voisine sous le tapis, puis le côté (la rangée de la bande d\'abord)', () => {
+    const { travel, calls, join, running } = onTreadmills([treadmillAt(1, 2)]);
+    join('ana', reception);
+    join('bob', inFront);
+    running();
+    travel.change('ana', sport, null);
+    expect(calls[0]!.at).toEqual({ x: 368, y: 208 });
+
+    const crowded = onTreadmills([treadmillAt(1, 2)]);
+    crowded.join('ana', reception);
+    crowded.join('bob', inFront);
+    crowded.join('carl', { x: 368, y: 208 });
+    crowded.running();
+    crowded.travel.change('ana', sport, null);
+    // Les deux côtés sont à égalité : celui de gauche, la case (9, 5).
+    expect(crowded.calls[0]!.at).toEqual({ x: 304, y: 176 });
+  });
+
+  test('un tapis contre le mur du bas (sa rangée du sud est hors de la pièce) : on descend à côté', () => {
+    const { world, travel, calls, join } = onTreadmills([treadmillAt(0, 5)]);
+    join('ana', reception);
+    travel.change('ana', null, sport, { treadmill: true });
+    expect(world.get('ana')?.treadmill).toEqual(ref(0, 5));
+    travel.change('ana', sport, null);
+    expect(calls.at(-1)).toEqual({ id: 'ana', at: { x: 368, y: 272 } });
+  });
+
+  test('un pas de qui court : hors du tapis (son navigateur l\'a fait descendre), il passe comme un autre ; resté sur le tapis, le serveur la pose devant', () => {
+    const { world, travel, calls, join, running } = onTreadmills([treadmillAt(1, 2)]);
+    join('ana', reception);
+    running();
+    // Sa direction, à l'arrêt, sur la bande : ce n'est pas un pas, elle court toujours.
+    expect(travel.move('ana', { ...belt, dir: 'up', moving: false })).toBe(false);
+    expect(world.applyMove('ana', { ...belt, dir: 'up', moving: false })).toEqual({ ok: true });
+    expect(world.get('ana')?.treadmill).toEqual(ref(1, 2));
+
+    // Le pas de son navigateur, qui l'a posée devant : le monde l'applique, et la voit descendre.
+    const step = { ...inFront, dir: 'left' as const, moving: true };
+    expect(travel.move('ana', step)).toBe(false);
+    expect(world.applyMove('ana', step)).toEqual({ ok: true });
+    expect(world.get('ana')?.treadmill).toBeUndefined();
+    expect(world.drainTreadmillStops()).toEqual(['ana']);
+    expect(calls).toEqual([]);
+
+    // Un pas qui la laisse sur le tapis (un vieux navigateur), ou qui marche sur place : le serveur la pose devant.
+    for (const stuck of [{ x: belt.x - 6, y: belt.y, dir: 'left' as const, moving: true }, { ...belt, dir: 'up' as const, moving: true }]) {
+      running();
+      expect(travel.move('ana', stuck)).toBe(true);
+      expect(calls).toEqual([{ id: 'ana', at: inFront }]);
+      expect(world.get('ana')).toMatchObject(inFront);
+      expect(world.get('ana')?.treadmill).toBeUndefined();
+    }
+    // Qui ne court pas : rien à voir.
+    expect(travel.move('ana', { x: 300, y: 300, dir: 'down', moving: true })).toBe(false);
+  });
+
+  test('le tapis retiré de sa pièce, ou déplacé, ou la pièce rendue : elle en descend, devant sa place d\'avant ; un autre bureau qui change ne la touche pas', () => {
+    const { world, travel, calls, items, desks, join, running } = onTreadmills([treadmillAt(1, 2)]);
+    join('ana', reception);
+    running();
+    travel.desksChanged([desks.get('A2')!]);
+    expect(world.get('ana')?.treadmill).toEqual(ref(1, 2));
+
+    items.A1 = [];
+    travel.desksChanged([desks.get('A1')!]);
+    expect(calls).toEqual([{ id: 'ana', at: inFront }]);
+    expect(world.get('ana')?.treadmill).toBeUndefined();
+
+    items.A1 = [treadmillAt(1, 2)];
+    running();
+    items.A1 = [treadmillAt(5, 2)];
+    travel.desksChanged([desks.get('A1')!]);
+    expect(calls).toEqual([{ id: 'ana', at: inFront }]);
+    expect(world.get('ana')?.treadmill).toBeUndefined();
+
+    items.A1 = [treadmillAt(1, 2)];
+    running();
+    travel.desksChanged([{ key: 'A1', ownerId: null, items: [treadmillAt(1, 2)] }]);
+    expect(world.get('ana')?.treadmill).toBeUndefined();
+  });
+
+  test('qui arrive sur la bande d\'un tapis (elle y courait en partant, ou quand le serveur s\'est arrêté) est posée devant lui ; ailleurs, là où on l\'attend', () => {
+    const { travel } = onTreadmills([treadmillAt(1, 2)]);
+    expect(travel.arrival('ana', belt)).toEqual(inFront);
+    expect(travel.arrival('ana', { x: belt.x - 20, y: belt.y - 30 })).toEqual(inFront);
+    expect(travel.arrival('ana', reception)).toEqual(reception);
+    expect(travel.arrival('ana', inFront)).toEqual(inFront);
   });
 });

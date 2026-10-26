@@ -105,7 +105,7 @@ export async function sitAt(page: Page, game: GameId, chair: number): Promise<vo
   await waitForTable(page, game, (view) => view.chairs[chair] !== null);
 }
 
-// « Prêt » (ou « Revanche »), le bouton à bascule de sa chaise.
+// « Prêt », le bouton à bascule de sa chaise ; après une partie, « Revanche », sous la phrase de fin.
 export function readyButton(page: Page, game: GameId): Locator {
   return gamePanel(page, game).getByRole('button', { name: /^(Prêt|Revanche)$/ });
 }

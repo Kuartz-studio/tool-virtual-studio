@@ -53,6 +53,35 @@ describe('layoutDecor', () => {
   });
 });
 
+describe('layoutDecor devant un bureau', () => {
+  // A1 commence en (9, 2) : sa bande de mur sud occupe les rangées 9 et 10 de la carte, la rangée de son dehors est la 11 (9 en cases de la pièce, comme le
+  // pose DecorLayer : la position de la pièce plus celle de l'élément).
+  const [roomX, roomY] = [9, 2];
+  const placed = (id: string, x: number, y: number) => ({ id, x: roomX + x, y: roomY + y });
+
+  test('une horloge du dehors se dessine sur la face du mur sud : le bas de son image est le haut de la rangée de la rue, au-dessus des murs', () => {
+    const [clock, board] = layoutDecor([placed('horloge-ronde', 6, 9), placed(BOARD, 2, 9)]);
+    expect(clock).toMatchObject({ left: 15 * 32, bottom: 11 * 32, depth: DECOR_DEPTH.wall });
+    // Un tableau de deux cases de haut couvre toute la bande (rangées 9 et 10).
+    expect(board!.bottom - board!.item.h * 32).toBe(9 * 32);
+  });
+
+  test('un pot du dehors se trie par le bas de sa case de rue : l\'avatar qui passe plus bas est devant lui, celui qui est sur sa rangée, derrière', () => {
+    const [pot] = layoutDecor([placed('of-6-10', 6, 9)]);
+    expect(pot).toMatchObject({ left: 15 * 32, bottom: 12 * 32, depth: 12 * 32 });
+    // Un avatar a pour profondeur le y de ses pieds.
+    expect(12 * 32 + 16).toBeGreaterThan(pot!.depth);
+    expect(11 * 32 + 16).toBeLessThan(pot!.depth);
+    // Et il est devant le mur sur lequel son image monte.
+    expect(pot!.depth).toBeGreaterThan(DECOR_DEPTH.wall);
+  });
+
+  test('une natte du dehors est à plat, sous tout le monde, comme un tapis dedans', () => {
+    const [mat] = layoutDecor([placed('jp-5-2', 0, 9)]);
+    expect(mat).toMatchObject({ bottom: 12 * 32, depth: DECOR_DEPTH.floor });
+  });
+});
+
 describe('layoutDecor au dixième de case', () => {
   test('l\'image se pose sur le pixel le plus proche (un dixième fait 3,2 px), et se trie toujours par le bas de son empreinte', () => {
     const [desk] = layoutDecor([{ id: DESK, x: 2.3, y: 1.1 }]);

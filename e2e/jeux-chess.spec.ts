@@ -270,6 +270,11 @@ test('les fins proches : une promotion par le choix, un mat en un coup, une null
     for (const page of pages) await expect(status(page)).toHaveText(`Échec et mat : ${['Alice', 'Bastien'][white]!} gagne.`);
     await expect(squareButton(pages[1 - white]!, 'h8')).toHaveAttribute('aria-label', 'h8, roi noir, en échec');
     await expect(readyButton(pages[0]!, 'chess')).toHaveText('Revanche');
+    // La phrase de fin et « Revanche » se voient sans faire défiler le panneau à la main : sous le grand plateau, elles étaient sous le pli. Le panneau défile de lui-même.
+    for (const page of pages) {
+      await expect(status(page)).toBeInViewport({ ratio: 1 });
+      await expect(readyButton(page, 'chess')).toBeInViewport({ ratio: 1 });
+    }
   });
 
   await test.step('la revanche, puis une nulle : proposée par l\'un, acceptée par l\'autre', async () => {

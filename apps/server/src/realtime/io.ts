@@ -273,11 +273,19 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       if (bought.ok) d.events.emit('progress:changed', { userId, progress: bought.progress });
       return bought;
     },
+    // Un tapis de course retiré (ou une pièce qui change de main) : qui y courait en descend.
+    onChanged: (changed) => modeTravel.desksChanged(changed),
     logger,
   });
 
-  // Un mode qui a un emplacement conduit à ce lieu (la salle de sport), et en sortir ramène au bureau.
-  const modeTravel = createModeTravel({ world, map: d.map, desks, teleport });
+  // Un mode qui a un emplacement conduit à ce lieu (la salle de sport, ou son tapis de course), et en sortir ramène au bureau.
+  const modeTravel = createModeTravel({
+    world,
+    map: d.map,
+    desks,
+    teleport,
+    announceTreadmill: (userId, treadmill) => io.to(OFFICE_ROOM).emit('treadmill:changed', { id: userId, treadmill }),
+  });
   const activityController = createActivityController({
     io,
     world,
@@ -366,6 +374,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
     arena,
     progress,
     conversations: { lockOf: (userId) => groups.lockOf(userId) },
+    offTreadmill: (userId, point) => modeTravel.arrival(userId, point),
     onWelcome: (socket) => {
       resyncMedia(socket);
       games.onWelcome(socket.data.userId);
@@ -434,6 +443,7 @@ export function attachRealtime(server: HttpServer, d: RealtimeDeps): Realtime {
       socketsOf: enteredSockets,
       desks: deskController,
       activity: activityController,
+      travel: modeTravel,
       join,
       joinLimiter,
       lights,

@@ -4,6 +4,7 @@ import { animKey, avatarObjectName, feetBody, resolveAvatarKey, type AvatarSpec 
 import { feetPayload } from '../move-sender';
 import { snapToPixels } from '../pixel-snap';
 import { stepAnimationScale } from '../step-animation';
+import { RUN_IN_PLACE_SCALE } from '../treadmill';
 import { AvatarSkin, avatarLibraryOf } from './avatar-skin';
 import { DustTrail } from './DustTrail';
 import { NameTag } from './NameTag';
@@ -27,6 +28,7 @@ const STILL = { x: 0, y: 0 };
 //   direction demandée.
 // - Sa profondeur est le y de ses pieds : plus il est bas dans la carte, plus il est devant. Son ombre est juste derrière, son
 //   étiquette (nom et statut) au-dessus de sa tête, avec une tasse de café fumante tant qu'il en a un, et de la poussière derrière lui quand il court.
+// - Sur son tapis de course (setRunning), il ne bouge pas : il court sur place, tourné vers la console (run, à chaque image), devant le tapis.
 export class LocalPlayer extends Physics.Arcade.Sprite {
   private spec: AvatarSpec;
   private readonly skin: AvatarSkin;
@@ -39,6 +41,8 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
   private facing: Direction;
   // Une touche de déplacement est enfoncée. Contre un mur, l'avatar marche donc sur place : sa demande est de marcher.
   private moving = false;
+  // Sa profondeur tant qu'il court sur son tapis (juste devant le tapis : treadmillRun) ; null : il n'y court pas, sa profondeur est le y de ses pieds.
+  private runDepth: number | null = null;
 
   // `p` : soi-même, tel que le serveur l'a placé (init) ; `zoom` : celui de la caméra, pour l'étiquette.
   constructor(scene: Scene, p: Pick<PublicPlayer, 'id' | 'x' | 'y' | 'dir' | 'avatarKey' | 'name' | 'status' | 'activity'>, zoom: number) {
@@ -87,6 +91,24 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
     // `true` : une animation déjà en cours n'est pas relancée à chaque image.
     this.play(animKey(this.spec.key, this.moving ? 'walk' : 'idle', this.facing), true);
     this.anims.timeScale = this.moving ? stepAnimationScale(speed) : 1;
+  }
+
+  // Il court sur son tapis de course, à cette profondeur (devant le tapis), tourné vers la console ; null : il n'y court plus. La scène le redit à chaque
+  // image : rien ne change tant que c'est le même.
+  setRunning(depth: number | null): void {
+    if (depth === this.runDepth) return;
+    this.runDepth = depth;
+    if (depth !== null) this.facing = 'up';
+    this.followFeet();
+  }
+
+  // Une image sur le tapis : il ne bouge pas, il court sur place (la marche vers le haut, à la cadence de la course).
+  run(): void {
+    this.moving = false;
+    this.facing = 'up';
+    this.arcadeBody().setVelocity(0, 0);
+    this.play(animKey(this.spec.key, 'walk', 'up'), true);
+    this.anims.timeScale = RUN_IN_PLACE_SCALE;
   }
 
   // La vitesse que la physique donne à l'avatar en ce moment, en px/s (0 à l'arrêt).
@@ -186,8 +208,9 @@ export class LocalPlayer extends Physics.Arcade.Sprite {
   }
 
   private followFeet(): void {
-    this.setDepth(this.y);
-    placeShadow(this.shadow, this.x, this.y);
+    const depth = this.runDepth ?? this.y;
+    this.setDepth(depth);
+    placeShadow(this.shadow, this.x, this.y, depth);
     this.tag.placeAbove(this.x, this.y - this.spec.height);
   }
 }

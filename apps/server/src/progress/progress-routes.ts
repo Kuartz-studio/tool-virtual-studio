@@ -78,8 +78,8 @@ export function progressRoutes({ auth, progress, events }: { auth: Auth; progres
       return;
     }
     events.emit('progress:changed', { userId, progress: done.progress });
-    // Celle qui l'a confiée apprend qu'elle est faite.
-    if (done.task.giver) events.emit('task:changed', { task: done.task, notify: [done.task.giver.id] });
+    // Celle qui l'a confiée apprend qu'elle est faite (pas quand c'est elle-même : une mission qu'on s'est donnée).
+    if (done.task.giver && done.task.giver.id !== userId) events.emit('task:changed', { task: done.task, notify: [done.task.giver.id] });
     res.json(done);
   });
 
@@ -89,7 +89,7 @@ export function progressRoutes({ auth, progress, events }: { auth: Auth; progres
       res.status(404).json({ error: 'not_found' });
       return;
     }
-    if (declined.giver) events.emit('task:changed', { task: declined, notify: [declined.giver.id] });
+    if (declined.giver && declined.giver.id !== declined.owner.id) events.emit('task:changed', { task: declined, notify: [declined.giver.id] });
     res.json(declined);
   });
 

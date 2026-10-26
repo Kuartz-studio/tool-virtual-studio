@@ -11,11 +11,13 @@ import {
   buildOfficeTiledMap,
   buildTiledMap,
   decorItem,
+  defaultDeskDecor,
   deskKey,
   deskRoomSpecOf,
   footprintOf,
   freeSpotIn,
   isWalkableTile,
+  outsideRow,
   parseOfficeMap,
   placeAt,
   placeByKey,
@@ -380,6 +382,71 @@ describe('les meubles et les objets animés', () => {
       }
     }
   });
+
+  test('ni sur la rangée de la rue devant un bureau, sur la largeur de sa pièce : c\'est son dehors ; seuls les éléments muraux s\'y accrochent, à la face du mur', () => {
+    for (const slot of OFFICE_DESK_SLOTS) {
+      const front = { x: slot.room.x, y: slot.room.y + slot.room.h + 2, w: slot.room.w, h: 1 };
+      for (const object of objets) {
+        const item = decorItem(object.name)!;
+        if (item.kind === 'wall') continue;
+        const f = footprintOf(item, { x: object.x / tile, y: object.y / tile });
+        const touches = f.x < front.x + front.w && front.x < f.x + f.w && f.y < front.y + front.h && front.y < f.y + f.h;
+        expect(touches, `${object.name} en ${f.x}, ${f.y}, devant ${slot.key}`).toBe(false);
+      }
+      for (const object of props) expect(inside(front, object.x / tile, object.y / tile), `${object.name} devant ${slot.key}`).toBe(false);
+    }
+  });
+});
+
+describe('le dehors des bureaux', () => {
+  const specOf = (key: string) => deskRoomSpecOf(map, key)!;
+
+  test('chacun des six en a un : la face de son mur sud et la rangée de la rue dessous (y 11 en haut, y 26 en bas), libre sur toute sa largeur', () => {
+    for (const slot of OFFICE_DESK_SLOTS) {
+      const spec = specOf(slot.key);
+      expect(spec.outside, slot.key).toBeDefined();
+      const row = slot.room.y + outsideRow(spec);
+      expect(row, slot.key).toBe(slot.doorSide === 'south' ? 11 : 26);
+      for (let x = slot.room.x; x < slot.room.x + slot.room.w; x++) expect(walkable(x, row), `${slot.key} : ${x}, ${row}`).toBe(true);
+      expect(placeAt(map, centre(slot.room.x), centre(row))?.kind, slot.key).toBe('street');
+    }
+  });
+
+  test('ce que la carte accroche à ces murs : l\'interrupteur devant A2, le panneau de sortie devant A5 et devant A6, rien devant les autres', () => {
+    const fixtures = Object.fromEntries(OFFICE_DESK_SLOTS.map((slot) => [slot.key, specOf(slot.key).outside!.fixtures]));
+    expect(fixtures).toEqual({
+      A1: [],
+      A2: [{ x: 8, y: 8, w: 1, h: 1 }],
+      A3: [],
+      A4: [],
+      A5: [{ x: 0, y: 8, w: 1, h: 1 }],
+      A6: [{ x: 0, y: 8, w: 1, h: 1 }],
+    });
+  });
+
+  test('la face du mur sud prend la couleur que l\'occupant choisit : ses deux rangées sont des murs de la pièce, sauf la porte', () => {
+    for (const slot of OFFICE_DESK_SLOTS) {
+      const band = slot.room.y + slot.room.h;
+      const painted = new Set(slot.walls.map((cell) => `${cell.x},${cell.y}`));
+      for (let x = slot.room.x; x < slot.room.x + slot.room.w; x++) {
+        const door = slot.doorSide === 'south' && x >= slot.door.x && x < slot.door.x + slot.door.w;
+        for (const y of [band, band + 1]) expect(painted.has(`${x},${y}`), `${slot.key} : ${x}, ${y}`).toBe(!door);
+      }
+    }
+  });
+
+  test('libre, chaque bureau garde au moins une plante devant lui (son dehors par défaut), et rien de solide dans l\'axe de sa porte', () => {
+    for (const slot of OFFICE_DESK_SLOTS) {
+      const spec = specOf(slot.key);
+      const front = defaultDeskDecor(spec).items.filter((placed) => placed.y === outsideRow(spec));
+      expect(front.some((placed) => decorItem(placed.id)!.cat === 'plantes'), slot.key).toBe(true);
+      for (const placed of front) {
+        const item = decorItem(placed.id)!;
+        const inDoorAxis = placed.x < spec.door.x + spec.door.width && spec.door.x < placed.x + item.w;
+        expect(item.solid && inDoorAxis, `${item.name} devant ${slot.key}`).toBe(false);
+      }
+    }
+  });
 });
 
 describe('les portes et les bureaux dans parseOfficeMap', () => {
@@ -452,13 +519,14 @@ describe('les fontaines à eau', () => {
     }
   });
 
-  test('sur la première rangée de la rue nord, un arbuste se traverse et la fontaine qui le suit arrête : (27, 11) et (29, 11), que vise la marche de bout en bout', () => {
-    const shrub = placed.find((d) => d.x === 27 && d.y === 11 && d.item.cat === 'plantes');
-    const fountain = placed.find((d) => d.x === 29 && d.y === 11 && d.item.name === 'Fontaine à eau');
+  // Loin des bureaux : devant eux, la rangée est leur dehors, que leur occupant décore (la marche y dépendrait de qui l'occupe).
+  test('sur la première rangée de la rue nord, un arbuste se traverse et la fontaine qui le suit arrête : (68, 11) et (63, 11), que vise la marche de bout en bout', () => {
+    const shrub = placed.find((d) => d.x === 68 && d.y === 11 && d.item.cat === 'plantes');
+    const fountain = placed.find((d) => d.x === 63 && d.y === 11 && d.item.name === 'Fontaine à eau');
     expect(shrub?.item.solid, 'l\'arbuste').toBe(false);
     expect(fountain?.item.solid, 'la fontaine').toBe(true);
-    for (const x of [25, 26, 27, 28]) expect(walkable(x, 11), `libre en ${x}, 11`).toBe(true);
-    expect(walkable(29, 11), 'la fontaine arrête').toBe(false);
+    for (const x of [64, 65, 66, 67, 68, 69, 70]) expect(walkable(x, 11), `libre en ${x}, 11`).toBe(true);
+    expect(walkable(63, 11), 'la fontaine arrête').toBe(false);
   });
 });
 

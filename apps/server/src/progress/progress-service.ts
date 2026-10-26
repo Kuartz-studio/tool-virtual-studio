@@ -56,7 +56,7 @@ export interface Completed {
   progress: MyProgress;
 }
 
-export type GiveResult = { ok: true; task: TaskView } | { ok: false; error: 'unknown_member' | 'self' | 'limit' };
+export type GiveResult = { ok: true; task: TaskView } | { ok: false; error: 'unknown_member' | 'limit' };
 export type BuyResult = { ok: true; progress: MyProgress } | { ok: false; error: 'unknown_item' | 'owned' | 'too_poor' };
 // Un achat de plusieurs éléments d'un coup (buyMany) : ce qu'on a déjà ne se rachète pas, donc jamais `owned`.
 export type BuyManyResult = { ok: true; progress: MyProgress } | { ok: false; error: 'unknown_item' | 'too_poor' };
@@ -174,12 +174,14 @@ export class ProgressService {
     return [...open, ...closed];
   }
 
-  // Les missions qu'elle a confiées : celles en cours, puis celles fermées depuis une semaine.
+  // Les missions qu'elle a confiées aux autres : celles en cours, puis celles fermées depuis une semaine. Celles qu'elle s'est données n'y sont pas : elles sont
+  // déjà dans sa liste.
   async givenBy(userId: string): Promise<TaskView[]> {
     const since = new Date(this.clock() - CLOSED_KEPT_MS);
+    const toOthers = and(eq(task.giverId, userId), ne(task.ownerId, userId));
     const [open, closed] = await Promise.all([
-      this.select(and(eq(task.giverId, userId), eq(task.status, 'open'))!, [desc(task.createdAt)], MAX_OPEN_TASKS),
-      this.select(and(eq(task.giverId, userId), ne(task.status, 'open'), gte(task.doneAt, since))!, [desc(task.doneAt)], CLOSED_LISTED),
+      this.select(and(toOthers, eq(task.status, 'open'))!, [desc(task.createdAt)], MAX_OPEN_TASKS),
+      this.select(and(toOthers, ne(task.status, 'open'), gte(task.doneAt, since))!, [desc(task.doneAt)], CLOSED_LISTED),
     ]);
     return [...open, ...closed];
   }
@@ -261,15 +263,15 @@ export class ProgressService {
       .where(and(eq(task.ownerId, userId), eq(task.kind, 'mission'), isNull(task.seenAt)));
   }
 
-  // Confier une mission à quelqu'un : elle arrive dans sa liste, nouvelle, avec l'XP de sa difficulté. Refusée à soi-même (`self`), à qui n'est pas un membre actif
-  // (`unknown_member`), ou à qui a déjà MAX_OPEN_TASKS tâches ouvertes (`limit`).
+  // Confier une mission à quelqu'un, ou à soi-même : elle arrive dans sa liste avec l'XP de sa difficulté, nouvelle (celle qu'on se donne est déjà vue : on sait ce
+  // qu'on vient d'y mettre). Refusée à qui n'est pas un membre actif (`unknown_member`), ou à qui a déjà MAX_OPEN_TASKS tâches ouvertes (`limit`).
   async give(giverId: string, mission: MissionGivePayload): Promise<GiveResult> {
-    if (mission.to === giverId) return { ok: false, error: 'self' };
     const [target] = await this.db.select({ id: user.id }).from(user).where(and(eq(user.id, mission.to), isNull(user.disabledAt)));
     if (!target) return { ok: false, error: 'unknown_member' };
     // Compter puis ajouter dans la file de qui la reçoit : deux missions confiées en même temps ne dépassent pas sa limite.
     return this.serial(mission.to, async () => {
       if ((await this.openCount(mission.to)) >= MAX_OPEN_TASKS) return { ok: false, error: 'limit' } as const;
+      const now = new Date(this.clock());
       const [row] = await this.db
         .insert(task)
         .values({
@@ -280,7 +282,8 @@ export class ProgressService {
           notes: notesOf(mission.notes),
           tier: mission.tier,
           xp: missionXp(mission.tier),
-          createdAt: new Date(this.clock()),
+          seenAt: mission.to === giverId ? now : null,
+          createdAt: now,
         })
         .returning({ id: task.id });
       return { ok: true, task: (await this.view(row!.id))! } as const;
@@ -401,7 +404,8 @@ export class ProgressService {
         .from(task)
         .where(and(eq(task.ownerId, userId), eq(task.kind, 'mission'), eq(task.status, 'done')))
         .groupBy(task.tier),
-      this.db.select({ n: count() }).from(task).where(and(eq(task.giverId, userId), eq(task.kind, 'mission'))),
+      // Les missions confiées aux autres : celles qu'on s'est données comptent parmi les missions faites, pas ici.
+      this.db.select({ n: count() }).from(task).where(and(eq(task.giverId, userId), ne(task.ownerId, userId), eq(task.kind, 'mission'))),
       this.db.select({ n: count() }).from(task).where(and(eq(task.ownerId, userId), eq(task.kind, 'todo'), eq(task.status, 'done'))),
       this.db.select({ played: sum(gameRating.games), won: sum(gameRating.wins) }).from(gameRating).where(eq(gameRating.userId, userId)),
       this.today(userId),

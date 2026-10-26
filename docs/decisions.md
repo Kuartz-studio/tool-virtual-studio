@@ -626,3 +626,89 @@ Les administratrices du milieu du bureau prennent vie : on leur confie une missi
 | **Tamisée = une exposition plus courte** : la couche de la nuit, plus légère (`DIM_LEVEL` 0,56, une obscurité à 49 %) et **presque noire, à peine chaude** (`DIM_COLOR`) : tout s'assombrit d'un peu moins de moitié en gardant ses couleurs. **La chaleur vient des lampes** : leur flaque reste claire, leur teinte à 60 % de la nuit (`DIM_TINT`) ; le halo des personnes n'est qu'un reflet (25 %, `DIM_PERSON`). L'interface reste celle du jour | « Plus faible et plus chaude, toujours avec les filtres », puis, sur la première version, ambrée : « c'est juste un filtre jaune. Joue plus sur l'exposition, très peu de jaune, ça doit être plus crédible ». Mesuré sur une capture : l'ambre ne retirait que 20 à 30 % de clarté et teintait le blanc de 30 % ; le presque-noir en retire 46 %, et le blanc reste neutre à 5 % près | `DIM_LEVEL`, `DIM_COLOR`, `DIM_TINT`, `DIM_PERSON` (`game/lighting.ts`) |
 | En base, **une colonne de plus** (`office_lights.dim`, migration additive `0013_lights_dim.sql`) plutôt qu'un état en texte | Additive : rien à recopier, un serveur d'avant lit encore `on` ; la base de développement a été copiée avant (`.data/dev-avant-tamise-2026-10-24`) | Une colonne `level` : une migration qui recopie `on` |
 | **Bali : `Asia/Makassar`**, « Denpasar (Bali) », Indonésie, avec Ubud, Kuta, Canggu, Seminyak, Sanur, Lombok, Makassar en mots de recherche ; la liste passe à 90 fuseaux | Bali est à UTC+8 (WITA), pas à l'heure de Jakarta (UTC+7) | — |
+
+## Se confier une mission à soi-même (octobre 2026)
+
+« Avoir la possibilité de s'auto-attribuer des tâches, que ce ne soit pas forcément que quelqu'un qui puisse attribuer une tâche […] c'est comme maintenant, c'est juste que tu débloques le fait de se mettre soi-même dans la mission. » Le plan et le suivi : `docs/superpowers/plans/2026-10-26-six-chantiers.md`.
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **« Moi » en tête de la liste** des personnes, dans le même dialogue de l'administratrice ; « moi » le trouve dans la recherche | « Comme maintenant » : seul le choix de la personne change | — |
+| Le serveur **n'a plus de refus `self`** (`MissionAck`, `GiveResult`) | Il n'y a plus rien à refuser | — |
+| Elle arrive **déjà vue** : ni pastille « nouvelle », ni toast, ni son ; et la faire (ou l'abandonner) **n'envoie pas d'avis à soi-même** | On sait ce qu'on vient de se donner | `seenAt` dans `ProgressService.give` ; les filtres de `progress-announcements.tsx` et `sfx-events.ts` |
+| Elle rapporte **la même XP** qu'une mission confiée, sans plafond | « C'est comme maintenant » ; on peut donc monter de niveau seule — la question du plafond des missions, déjà ouverte, reste à trancher | Un plafond par jour pour les missions qu'on se donne, comme `TODO_DAILY_XP` |
+| Elle **n'est pas de celles qu'on a confiées** : absente de « Les missions que j'ai confiées » (`givenBy`) et de « missions confiées » de la fiche ; elle compte dans les missions faites | Elle est déjà dans sa liste ; « confiées » parle des autres | — |
+| Elle ne se rend pas, elle **s'abandonne** (« Ta propre mission », « Abandonner », « Abandonnée ») | On ne la rend à personne | — |
+
+## La caméra au bord de la carte (octobre 2026)
+
+« Pouvoir déplacer la caméra à 10 cases en dehors […] lorsque je suis tout en haut de la map, la caméra ne va pas continuer à monter et je vais avoir la UI qui va se superposer avec là où mon personnage est. »
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **10 cases de débord** de chaque côté (`CAMERA_MARGIN_TILES`), sur un axe où la carte est plus grande que la vue ; au-delà, le fond du jeu | La demande ; l'avatar reste au milieu de l'écran jusqu'au bord du monde | `CAMERA_MARGIN_TILES` (`game/zoom.ts`) |
+| Sur un axe où **la carte tient tout entière à l'écran**, elle reste **centrée**, sans débord | Toute la carte est déjà visible : la faire glisser avec l'avatar n'apporterait rien et cacherait un bord | Élargir aussi ce cas dans `cameraBounds` |
+| Le débord passe par **les bornes de la caméra** (`cameraBounds`, `camera.setBounds`) : le suivi, le glisser à la souris, le zoom et la caméra de l'éditeur en profitent tous | Un seul endroit, aucun cas à part | — |
+
+## Décorer devant sa pièce (octobre 2026)
+
+« J'aimerais pouvoir mettre des éléments sur le mur extérieur de ma room […] uniquement sur mon mur, mais à l'extérieur et sur la première case devant ma room, que ce soit pour celle du bas que celle du haut. Par exemple, je veux pouvoir mettre l'horloge devant ma room, je veux pouvoir mettre un pot de fleurs différent devant ma room. »
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **« Devant », c'est le côté sud de la pièce**, pour les six bureaux : la face extérieure de sa bande de mur sud, et la rangée de la rue juste dessous, sur la largeur de la pièce | C'est le côté qu'on voit de la rue. En haut, c'est le côté de la porte ; en bas, du côté de la porte, la face du mur est l'intérieur de la pièce, qui se décore déjà de l'intérieur | Le côté porte des bureaux du bas : seule la rangée de la rue y serait possible, sans mur |
+| Le dehors est **la rangée `y = hauteur + 2` des coordonnées de la pièce** (`outsideRow`) : un élément mural posé là est dessiné sur la face de la bande sud, un objet ou un tapis occupe la rangée de la rue ; **une seule liste**, la limite de 80 pour le tout ; **aucune migration** | Le dessin, la profondeur, les collisions, les lumières de nuit et la gomme suivaient déjà, sans rien changer | Une liste à part pour le dehors, avec une migration |
+| Le dehors existe **quand la carte le donne** (`DeskRoomSpec.outside`), avec ce qu'elle accroche à cette face (l'interrupteur, les panneaux de sortie), lu sur la carte et jamais écrit dans la règle | Une carte qui change déplace aussi ses obstacles | — |
+| Sur la rangée, seulement ce qui tient **sur une case de profondeur**, pile sur la rangée ; rien sur la porte, l'interrupteur ou un panneau de sortie, pas même l'image d'un objet posé devant ; **rien de solide devant une porte du haut**, même d'un dixième | C'est la rue : tout le monde y passe. Un pot, qui ne bloque pas, y reste permis | `checkDecor` (`out_of_room`, `blocks_door`, `overlap`) |
+| Les meubles solides du dehors **bloquent la rue pour tout le monde** : téléportations, « Rejoindre », « Suivre » et marche automatique les contournent | Ils sont dans la rue, que tout le monde traverse | `furnitureTiles` |
+| **Les arbustes et les fontaines que la carte posait devant les bureaux deviennent la déco du dehors par défaut** ; une déco déjà enregistrée commence avec un dehors vide ; le banc devant `A1`, trop profond, passe entre `A5` et `A1` | Posés par la carte, ils auraient occupé le dehors sans qu'on puisse les changer ; une place libre garde ses plantes | `defaultDeskDecor` |
+| Le dehors **suit l'occupant** comme le dedans : s'il ne tient plus dans la nouvelle place, la déco est gardée de côté (`decorUnfit`) | Une seule règle pour toute la déco | — |
+| La plaque du bureau (« Libre » ou le nom) n'est pas sur ce mur : elle est dans la pièce, en haut | Rien à protéger devant | — |
+
+## Sols et murs noirs, rangés par couleur (octobre 2026)
+
+« J'aimerais que tu débloques plusieurs nouveaux skins de sol et de mur […] de manière gratuite avec aucune animation, mais c'est des murs noirs et un sol noir uni, mais avec différentes textures. Ça veut dire par exemple un bois noir, un sol type tapis noir, et un sol type carrelage noir, et un sol uni mat noir. […] le ranger un petit peu mieux pour les murs et le sol, […] plutôt par couleur. […] un petit sélecteur de texture pour voir tous les différents items possibles. »
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **Quatre sols noirs** (Bois noir, Moquette noire, Carrelage noir, Noir mat) **et quatre murs noirs** (Noir mat, Lambris noir, Brique noire, Carrelage noir), gratuits et fixes | La demande, et des murs noirs aussi pour aller avec | Retirer les murs de `WALL_THEMES` |
+| **Tirés des tuiles du pack**, dessin gardé pixel pour pixel, couleurs portées vers le noir : la couleur la plus présente devient un noir choisi, les autres gardent leur écart de luminosité, jamais sous une luminosité de 8 | Le pack n'a ni sol ni mur noir ; un aplat noir perdrait la matière (le grain, les joints) | Le noir et le contraste de chaque thème (`BLACK_FLOOR_PICKS`, `BLACK_WALL_PICKS`, `scripts/assets/black-themes.ts`) |
+| Ajoutés **à la fin du jeu de tuiles** (318 → 334) | Aucune tuile ne change de numéro : la carte et les murs animés restent justes (vérifié pixel par pixel) | — |
+| **Chaque sol et chaque mur a une couleur et une matière**, ceux de la boutique compris, typés par thème (un thème oublié ne compile pas) ; 13 couleurs (pas de jaune : aucun thème jaune) et 9 matières (dont « tissu », pour le seul velours rouge) | Ranger par couleur demande de connaître la couleur de chacun | `theme-looks.ts` |
+| Les cas tranchés : un sol à joints est du carrelage (Sauge, Menthe, Bleu, Rose poudré, Turquoise) ; un motif ou des rayures, « motif » ; plusieurs couleurs vives, « multicolore » ; le Néon est noir et brique, la Bibliothèque brune et bois, la Galaxie et le Kuartz violets | Au plus près de ce qu'on voit | `FLOOR_LOOKS`, `WALL_LOOKS` |
+| L'onglet « Murs et sol » **range chaque liste par couleur**, et **le sélecteur de matière** (Toutes, puis celles qui existent) **filtre les deux listes** ; une couleur sans rien de cette matière disparaît ; les murs de la boutique sont à leur couleur, avec cadenas et prix | La demande ; voir d'un coup tout ce qui existe dans une matière | — |
+
+## La revanche, et le 6 aux petits chevaux (octobre 2026)
+
+« J'ai l'impression que quand une partie est terminée, ça ne se relance pas directement. Je parle par exemple des petits chevaux, les échecs, puissance 4, etc. Juste vérifie bien ça. J'ai l'impression que ça galère un peu. Et augmente dans les petits chevaux, augmente très légèrement le taux de chance de tomber sur un 6 lorsque je n'ai aucun cheval sur la map. […] Si j'ai une chance sur 6, là tu vas faire en sorte que j'ai deux chances sur 6 de tomber sur le numéro 6. Ça permet d'éviter d'avoir des parties qui traînent en longueur. »
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **La règle de la revanche ne change pas** : la partie suivante commence quand toutes les personnes assises l'ont acceptée | Le serveur relançait déjà les quatre jeux à l'instant (vérifié à deux navigateurs, et par un test avec les vraies règles) ; personne n'est relancé sans le vouloir | Une revanche automatique, ou acceptée par un seul, serait un autre choix (`startIfAllReady`) |
+| **Ce qui coinçait était à l'écran** : « Revanche » sous le pli, sous le plateau ; qui attend qui peu clair ; l'état enfoncé presque invisible ; rien panneau fermé | Mesuré : le bouton à 740-992 px pour un panneau qui s'arrête vers 710 px ; les e2e ne le voyaient pas (Playwright fait défiler avant de cliquer) | — |
+| **Une barre « Revanche » juste sous la phrase de fin**, et le panneau qui défile juste ce qu'il faut pour la montrer, à la fin et quand il s'ouvre sur une partie finie | Le bouton se voit sans chercher ; le plateau garde sa taille | `RematchBar`, `revealInPanel` (`GameLobby.tsx`) |
+| **Une phrase du point de vue de qui la lit** (« Bastien veut la revanche : on n'attend plus que toi. », « Revanche demandée : on attend Bastien. ») ; les chaises disent « veut la revanche » | Savoir d'un coup d'œil qui attend qui | `rematchLine` (`table-view.ts`), `fr.games.rematch` |
+| **Le bouton reste un interrupteur** : demandée, il est pâle avec une coche, et son infobulle dit qu'un second clic l'annule | On peut changer d'avis avant que l'autre l'accepte ; il fallait seulement que l'état se voie | Un bouton à un seul clic, avec « Annuler » à part |
+| **Panneau fermé, un toast** « Bastien veut la revanche aux échecs » (« Revanche », « Plus tard »), une fois par partie, 60 s au plus | Sinon on ne l'apprenait qu'en rouvrant le panneau | `useGameToasts` (`InviteToast.tsx`) |
+| **Petits chevaux : sans cheval en jeu, le 6 sort deux fois sur six** (les cinq autres faces 4/30 chacune) ; avec un cheval en jeu, le dé est juste ; « en jeu » est la condition des trois essais (les chevaux arrivés ne comptent pas) | La demande : sortir plus vite de l'écurie, des parties moins longues | `LUDO_STABLE_SIX_CHANCE` (`board.ts`) |
+| **Une seule valeur du générateur par lancer** : la fin de la part de chaque autre face est cédée au 6 ; le milieu de chaque part donne toujours sa face | Une partie se rejoue toujours depuis son journal ; les dés imposés des tests et du débogage (`rngFromDice`) restent justes, sans toucher au serveur | `rollLudoDie` (`rules.ts`) |
+| Les cinq parties enregistrées des petits chevaux sont **réenregistrées** avec le nouveau dé (mêmes graines) ; les parties déjà en base ne se rejoueraient plus à l'identique | Elles servent à prouver qu'une partie se rejoue ; rien ne rejoue les parties en base | — |
+
+## Le mode Sport sur son tapis de course (octobre 2026)
+
+« Si par exemple je mets un outil de sport dans ma room, ça débloque le fait que si par exemple je me mets en mode sport, je peux choisir non pas de me téléporter dans la salle de sport, mais directement sur le tapis par exemple de course. Si par exemple j'ai un tapis de course, ça va me mettre dessus et on va me voir courir par exemple avec le tapis qui tourne. Ça ne marche [que] pour le tapis de course. Rien d'autre. »
+
+| Décision | Pourquoi | Si c'est faux |
+|---|---|---|
+| **Seulement le « Tapis de course » du décor** (`gy-10-30`), **dans sa propre pièce** ; ni le tapis « vue de dessus », ni les autres appareils | C'est le seul dont le pack a l'animation ; « rien d'autre » | `TREADMILL_ID` ; un autre appareil demanderait sa propre animation |
+| Le choix est **une ligne de plus, sous celle du mode** (« ↳ Mon tapis de course ») ; la ligne du mode garde son nom et dit « Salle de sport » | Les deux choix demandés, sans renommer « Sport » ; la ligne du tapis n'apparaît qu'avec un tapis | Deux sous-lignes « Salle de sport » / « Mon tapis de course » sous un en-tête « Sport » |
+| **Une seule ligne cochée** : sur son tapis, celle du tapis ; à la salle de sport ou descendue, celle du mode. La ligne du mode prise pendant qu'on court emmène à la salle de sport | Ce que le serveur dit (`treadmill:changed`), comme le reste du menu | — |
+| `state:set` accepte `{ id, treadmill: true }` en plus de l'identifiant (union zod) | Un seul message ; l'ancien format est inchangé | Un second argument au message |
+| **Le serveur fait foi** : il vérifie le tapis de sa pièce, la pose sur la bande du premier tapis libre, garde la course dans le monde (`PublicPlayer.treadmill`, redit à l'`init`) et l'arrête dès qu'une position quitte la bande | Tout le monde voit la même chose, et une reconnexion la retrouve | — |
+| **On court sur place** : la marche vers le haut, à la cadence de la course (Maj) | Le pack n'a pas d'animation de course ; la marche plus vive se lit comme une course | `RUN_IN_PLACE_SCALE` |
+| **Le tapis tourne** : la planche animée posée sur l'image du décor, qui en est la première image 14 px plus bas (vérifié au pixel) ; à l'arrêt, l'image fixe ; rien en mouvement réduit | Une seule image fixe pour la banque et l'éditeur ; l'animation seulement quand quelqu'un court | `TREADMILL_SHEET_OFFSET_Y` |
+| **Descendre** à une touche (même brève), « Aller à mon bureau », « Suivre », « Disponible » ou un mode sans emplacement, **sur la case libre au sud du tapis** (sinon à côté, sinon ailleurs dans la pièce) ; **le mode reste** quand on bouge | « Comme quand on sort à pied de la salle de sport » ; on descend à reculons, devant la console | `treadmillStepOff` |
+| Le navigateur fait descendre l'avatar lui-même (la case que le serveur choisirait), et le serveur accepte ce pas ; un pas qui resterait sur le tapis est remplacé par la descente du serveur | Pas d'aller-retour : la touche fait descendre et repartir dans la même image ; le serveur reste maître de ce qui est permis | Laisser le serveur seul : l'avatar avancerait d'abord dans le meuble, puis sauterait devant, le temps d'un aller-retour |
+| Descendre n'est pas un voyage (ni anneau ni son) ; monter sur le tapis en est un | Descendre est un pas ; monter traverse la carte | — |
+| **Jamais dans le meuble** : le serveur, qui ne connaît pas les meubles des bureaux, fait descendre qui court sur un tapis retiré ou déplacé, ou dans une pièce rendue, et pose devant le tapis qui arrive sur sa bande (reconnexion, redémarrage) | Le navigateur seul ne peut pas garantir qu'on n'est pas « dans » le meuble chez les autres | — |
+| Un serveur redémarré qui a oublié le mode le reçoit de nouveau **avec le tapis** si c'est là qu'on l'avait pris, même descendue depuis | Comme la salle de sport, où il renvoie aussi ; près de son bureau plutôt qu'à l'autre bout de la carte | Oublier le tapis à la descente : le serveur la conduirait à la salle de sport |

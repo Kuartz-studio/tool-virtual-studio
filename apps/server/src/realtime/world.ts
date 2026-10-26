@@ -15,6 +15,7 @@ import {
   type ProximityPlayer,
   type PublicPlayer,
   type Status,
+  type TreadmillRef,
   type WorldTick,
 } from '@bureau/shared';
 
@@ -27,6 +28,8 @@ interface Entry {
   at: number;
   // Jusqu'à quelle heure (ms, horloge du monde) sa parole tient sans nouveau « je parle » : le serveur éteint la bulle ensuite (expireSpeaking).
   speakingUntil?: number;
+  // Ses pieds sur la bande, tant qu'elle court sur un tapis (player.treadmill) : en partir, d'un pas ou d'un saut, la fait descendre.
+  belt?: { x: number; y: number };
 }
 
 // Ce joueur peut-il se trouver là ? Décide de l'entrée d'un lieu fermé (un bureau dont la porte lui est fermée) : appelé pour chaque
@@ -38,7 +41,12 @@ const noMedia = (): MediaState => ({ mic: false, cam: false, screen: false });
 
 // Ce que World donne à ses appelants : une copie, pour qu'un objet gardé (envoyé plus tard, comparé dans un test) ne change pas
 // quand le joueur bouge, et qu'on ne puisse pas modifier le monde de l'extérieur.
-const copy = (p: PublicPlayer): PublicPlayer => ({ ...p, media: { ...p.media }, activity: p.activity ? { ...p.activity } : null });
+const copy = (p: PublicPlayer): PublicPlayer => ({
+  ...p,
+  media: { ...p.media },
+  activity: p.activity ? { ...p.activity } : null,
+  ...(p.treadmill ? { treadmill: { ...p.treadmill } } : {}),
+});
 
 // L'état du monde, en mémoire (une seule instance de serveur) : qui est là, où, avec quel statut, quels médias. Rien de réseau ni de
 // base de données ; la présence (tâche 13), les mouvements et les statuts (tâche 14) et les groupes (tâche 17) s'y appuient.
@@ -56,6 +64,8 @@ export class World {
   // Jusqu'à quelle heure (ms, horloge du monde) chaque personne a un café : sa limite de vitesse est alors celle du café (maxSpeedOf). `announced` :
   // sa fin a déjà été rendue par expireBoosts (la ligne reste MOVE_JITTER_MS de plus, pour la limite de vitesse).
   private readonly boosts = new Map<string, { until: number; announced: boolean }>();
+  // Ceux qui viennent de descendre de leur tapis de course : le prochain tick le dit (drainTreadmillStops), avec la position qui les en a fait descendre.
+  private readonly treadmillStops = new Set<string>();
   private entryGuard: EntryGuard = () => true;
   private readonly extraGuards: EntryGuard[] = [];
 
@@ -108,6 +118,7 @@ export class World {
     this.entries.delete(id);
     this.pendingMoves.delete(id);
     this.boosts.delete(id);
+    this.treadmillStops.delete(id);
     return copy(entry.player);
   }
 
@@ -181,6 +192,7 @@ export class World {
     // mais l'avatar n'a pas glissé jusqu'à sa nouvelle place.
     const teleported = this.pendingMoves.get(id)?.tp === true;
     this.pendingMoves.set(id, { id, x: m.x, y: m.y, dir: m.dir, moving: m.moving, ...(teleported ? { tp: true as const } : {}) });
+    this.leaveBelt(id, entry);
     return { ok: true };
   }
 
@@ -196,7 +208,51 @@ export class World {
     p.moving = false;
     entry.at = this.now();
     this.pendingMoves.set(id, { id, x, y, dir: p.dir, moving: false, tp: true });
+    this.leaveBelt(id, entry);
     return true;
+  }
+
+  // Elle court sur ce tapis de course (TreadmillRef), les pieds en `belt` (elle doit y être déjà : un voyage l'y a posée), tournée vers sa console (le nord) ;
+  // null : elle n'y court plus. Rend vrai si cela change. Qu'elle se mette à courir, c'est à l'appelant de le dire (`treadmill:changed`) ; qu'elle s'arrête, le
+  // prochain tick le dit (drainTreadmillStops). Une position qui quitte `belt` (un pas accepté, une téléportation) la fait descendre d'elle-même. Un identifiant
+  // qui n'est pas dans le monde est ignoré.
+  setTreadmill(id: string, treadmill: TreadmillRef | null, belt?: { x: number; y: number }): boolean {
+    const entry = this.entries.get(id);
+    if (!entry) return false;
+    if (treadmill === null) {
+      if (!entry.player.treadmill) return false;
+      this.stopRunning(id, entry);
+      return true;
+    }
+    const p = entry.player;
+    const same = p.treadmill?.desk === treadmill.desk && p.treadmill.x === treadmill.x && p.treadmill.y === treadmill.y;
+    p.treadmill = { ...treadmill };
+    p.dir = 'up';
+    entry.belt = { x: belt?.x ?? p.x, y: belt?.y ?? p.y };
+    // Une descente pas encore dite ne l'est plus : elle court de nouveau.
+    this.treadmillStops.delete(id);
+    const pending = this.pendingMoves.get(id);
+    if (pending) pending.dir = 'up';
+    return !same;
+  }
+
+  // Ceux qui viennent de descendre de leur tapis de course (à diffuser, une fois chacun, avec le tick qui porte leur pas). Vide la liste.
+  drainTreadmillStops(): string[] {
+    const stopped = [...this.treadmillStops];
+    this.treadmillStops.clear();
+    return stopped;
+  }
+
+  // Après un pas ou une téléportation : ses pieds ont quitté la bande, elle ne court plus.
+  private leaveBelt(id: string, entry: Entry): void {
+    const { belt } = entry;
+    if (belt && (entry.player.x !== belt.x || entry.player.y !== belt.y)) this.stopRunning(id, entry);
+  }
+
+  private stopRunning(id: string, entry: Entry): void {
+    delete entry.player.treadmill;
+    delete entry.belt;
+    this.treadmillStops.add(id);
   }
 
   // Donne `ms` de café à une personne présente, à partir de maintenant (un nouveau café remet le compte à zéro) ; null le retire tout de suite. Un

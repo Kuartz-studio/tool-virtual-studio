@@ -488,23 +488,65 @@ const SMALL_MAP = smallMap();
 
 describe('des pièces de tailles différentes', () => {
   test('chaque place lit sa pièce sur la carte : sa taille et le côté de sa porte', () => {
+    // Les pièces de la petite carte n'ont pas de mur sous elles : pas de dehors.
     const rooms = Object.fromEntries(deskSlots(SMALL_MAP).map((slot) => [slot.key, slot.room]));
     expect(rooms).toEqual({
       A1: { width: 9, height: 7, door: { side: 'south', x: 3, width: 2 } },
       A5: { width: 6, height: 7, door: { side: 'south', x: 2, width: 2 } },
       A6: { width: 6, height: 7, door: { side: 'north', x: 2, width: 2 } },
     });
-    // Les places de la grande carte : quatre standard (A3 et A4 ont leur porte au nord), deux compactes (A6 a sa porte au nord).
+    // Les places de la grande carte : quatre standard (A3 et A4 ont leur porte au nord), deux compactes (A6 a sa porte au nord), chacune avec son dehors ;
+    // devant A2, l'interrupteur de la lumière est sur la face du mur (la carte de ce test n'a pas de calque d'objets : pas de panneau de sortie devant A5, A6).
     const standardNorth = { ...DESK_ROOMS.standard, door: { ...DESK_ROOMS.standard.door, side: 'north' as const } };
     const compactNorth = { ...DESK_ROOMS.compact, door: { ...DESK_ROOMS.compact.door, side: 'north' as const } };
+    const outside = { fixtures: [] };
     expect(Object.fromEntries(deskSlots(map).map((slot) => [slot.key, slot.room]))).toEqual({
-      A1: DESK_ROOMS.standard,
-      A2: DESK_ROOMS.standard,
-      A3: standardNorth,
-      A4: standardNorth,
-      A5: DESK_ROOMS.compact,
-      A6: compactNorth,
+      A1: { ...DESK_ROOMS.standard, outside },
+      A2: { ...DESK_ROOMS.standard, outside: { fixtures: [{ x: 8, y: 8, w: 1, h: 1 }] } },
+      A3: { ...standardNorth, outside },
+      A4: { ...standardNorth, outside },
+      A5: { ...DESK_ROOMS.compact, outside },
+      A6: { ...compactNorth, outside },
     });
+  });
+
+  test('le dehors : une horloge sur la face du mur sud et un pot dans la rue, acceptés, enregistrés, montrés à tous', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    const outside = { ...CUSTOM_DECOR, items: [...CUSTOM_DECOR.items, { id: 'horloge-ronde', x: 6, y: 9 }, { id: 'of-6-10', x: 6, y: 9 }] };
+    expect(await service.setDecor('ana', outside)).toMatchObject({ ok: true, changed: [expect.objectContaining({ key: 'A1', ...outside })] });
+    expect(service.list().find((info) => info.key === 'A1')).toMatchObject(outside);
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...outside }]);
+    // Une déco enregistrée sans rien dehors (celles d'avant) garde un dehors vide : la place ne lui ajoute pas celui par défaut.
+    await service.setDecor('ana', CUSTOM_DECOR);
+    expect(service.get('A1')?.items.filter((item) => item.y === 9)).toEqual([]);
+  });
+
+  test('le dehors refusé : un meuble solide devant sa porte, une horloge sur l\'interrupteur, un bureau trop profond pour la rangée', async () => {
+    const { service } = await setup();
+    await service.claim('ana', 'Ana', 'A1');
+    await service.claim('bob', 'Bob', 'A2');
+    const front = (id: string, x: number) => ({ ...CUSTOM_DECOR, items: [{ id, x, y: 9 }] });
+    expect(await service.setDecor('ana', front('of-12-15', 3))).toEqual({ ok: false, error: 'bad_decor', reason: 'blocks_door' });
+    expect(await service.setDecor('bob', front('horloge-ronde', 8))).toEqual({ ok: false, error: 'bad_decor', reason: 'overlap' });
+    expect(await service.setDecor('ana', front('of-7-28', 5))).toEqual({ ok: false, error: 'bad_decor', reason: 'out_of_room' });
+    // L'horloge à côté de l'interrupteur, la fontaine à côté de la porte : permis.
+    expect(await service.setDecor('bob', front('horloge-ronde', 7))).toMatchObject({ ok: true });
+    expect(await service.setDecor('ana', front('of-12-15', 2))).toMatchObject({ ok: true });
+  });
+
+  test('un dehors qui ne tient plus dans le bureau de l\'autre rangée (sa porte y donne sur la rue) : le poste par défaut, decorUnfit, rien d\'effacé', async () => {
+    const { db, service } = await setup();
+    await service.claim('ana', 'Ana', 'A3');
+    // En bas, la porte est au nord : une fontaine dans l'axe de la colonne 3, côté rue sud, ne gêne rien.
+    const below: DeskDecor = { ...CUSTOM_DECOR, items: [...CUSTOM_DECOR.items, { id: 'of-12-15', x: 3, y: 9 }] };
+    expect(await service.setDecor('ana', below)).toMatchObject({ ok: true });
+    await service.claim('ana', 'Ana', 'A1');
+    expect(service.get('A1')).toMatchObject({ ownerId: 'ana', ...defaultSetupOf('A1'), decorUnfit: true });
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...below }]);
+    await service.claim('ana', 'Ana', 'A4');
+    expect(service.get('A4')).toMatchObject(below);
+    expect(service.get('A4')?.decorUnfit).toBeUndefined();
   });
 
   test('une place sans porte (la petite carte de développement) garde la pièce standard', () => {

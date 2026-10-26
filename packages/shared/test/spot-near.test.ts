@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildTiledMap, furnitureTiles, parseOfficeMap, spotNear, type ZoneInput } from '../src';
+import { buildOfficeTiledMap, buildTiledMap, furnitureTiles, parseOfficeMap, spotNear, type ZoneInput } from '../src';
 
 // Une carte de 20 × 10 cases : une pièce fermée (l'intérieur de la colonne 9 à 13, des rangées 4 et 5), dont la porte est un trou dans son mur du bas, en (11, 6).
 const ascii = [
@@ -69,5 +69,27 @@ describe('furnitureTiles', () => {
   test('une pièce sans porte (pas de décor), ou une place dont on ne dit rien : aucune case', () => {
     expect(furnitureTiles(office, [{ key: 'B1', items: [fridge] }]).size).toBe(0);
     expect(furnitureTiles(office, []).size).toBe(0);
+  });
+});
+
+describe('le dehors des bureaux, dans la rue', () => {
+  // La grande carte : la rangée du dehors de A1 est la rue nord (y 11), celle de A3 la rue sud (y 26) ; leurs pièces commencent en x 9.
+  const big = parseOfficeMap(buildOfficeTiledMap());
+  const index = (tx: number, ty: number) => ty * big.widthTiles + tx;
+  const fountain = { id: 'of-12-15', x: 6, y: 9 };
+  const pot = { id: 'of-6-10', x: 7, y: 9 };
+
+  test('un meuble solide du dehors bloque sa case de la rue, devant un bureau du haut comme devant un bureau du bas ; un pot non', () => {
+    expect([...furnitureTiles(big, [{ key: 'A1', items: [fountain, pot] }])]).toEqual([index(15, 11)]);
+    expect([...furnitureTiles(big, [{ key: 'A3', items: [fountain, pot] }])]).toEqual([index(15, 26)]);
+  });
+
+  test('une téléportation, un « Rejoindre » le contournent : spotNear ne pose personne dans la fontaine, mais juste à côté', () => {
+    const furniture = furnitureTiles(big, [{ key: 'A1', items: [fountain] }]);
+    const blocked = (tx: number, ty: number) => furniture.has(index(tx, ty));
+    expect(spotNear(big, at(15, 11), { includeStart: true })).toEqual(at(15, 11));
+    const spot = spotNear(big, at(15, 11), { blocked, includeStart: true })!;
+    expect(spot).not.toEqual(at(15, 11));
+    expect(Math.abs(spot.x - at(15, 11).x) + Math.abs(spot.y - at(15, 11).y)).toBe(32);
   });
 });

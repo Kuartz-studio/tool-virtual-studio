@@ -3,6 +3,7 @@ import {
   checkDecor,
   decorItem,
   deskRoomSpecOf,
+  outsideRow,
   overlappingItems,
   snapToDecorStep,
   type DecorError,
@@ -16,8 +17,8 @@ import {
 // souris sur la pièce) et le panneau (les boutons) partagent. Chaque geste dit dans quelle pièce il a lieu : les bureaux de la carte n'ont pas
 // tous la même taille ni la porte du même côté.
 
-// La pièce de cette place, telle que la carte la décrit (sa taille, le côté de sa porte) ; la pièce standard tant que la carte n'est pas là, ou si
-// la place n'a pas de porte : c'est ce que le serveur suppose aussi.
+// La pièce de cette place, telle que la carte la décrit (sa taille, le côté de sa porte, son dehors) ; la pièce standard tant que la carte n'est pas
+// là, ou si la place n'a pas de porte : c'est ce que le serveur suppose aussi.
 export function roomOfDesk(map: OfficeMap | null, key: string): DeskRoomSpec {
   return (map ? deskRoomSpecOf(map, key) : undefined) ?? DESK_ROOMS.standard;
 }
@@ -37,12 +38,15 @@ export function handleOf(id: string, at: { x: number; y: number }): { x: number;
 // l'empreinte (handleOf), arrondi au dixième ou à la case selon `snap`, et un élément mural suit le pointeur, collé au mur. L'élément ne sort pas
 // de la pièce : il est ramené contre le bord. À la case près, un pointeur dans une case pose un élément de largeur impaire de part et d'autre de
 // cette case, comme avant le placement libre.
+// Sous une pièce qui a un dehors (room.outside), on pose dehors, sur la rangée du dehors (outsideRow) : un élément mural dès qu'on vise sous la pièce (il
+// va sur la face de son mur sud), un autre élément dès qu'on vise la moitié basse de ce mur ou la rue (plus haut, il reste dans la pièce, contre le mur).
 export function anchorFor(id: string, point: { x: number; y: number }, room: DeskRoomSpec, snap: DecorSnap): { x: number; y: number } | null {
   const item = decorItem(id);
   if (!item) return null;
   const round = snap === 'cell' ? Math.round : snapToDecorStep;
   const clamp = (value: number, max: number) => Math.min(Math.max(round(value), 0), max);
   const x = clamp(point.x - item.w / 2, room.width - item.w);
+  if (room.outside && point.y >= room.height + (item.kind === 'wall' ? 0 : 1)) return { x, y: outsideRow(room) };
   if (item.kind === 'wall') return { x, y: 0 };
   return { x, y: clamp(point.y - item.claim + 0.5, room.height - item.claim) };
 }

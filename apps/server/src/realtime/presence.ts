@@ -42,6 +42,8 @@ export interface PresenceDeps {
   progress?: Pick<ProgressService, 'mine'>;
   /** Les conversations verrouillées : chaque init dit celle de la personne (qui revient d'une coupure, ou ouvre un autre onglet). */
   conversations?: { lockOf(userId: string): ConversationLock | null };
+  /** Qui arrive sur la bande d'un tapis de course (il y courait en partant) est posé devant lui, jamais dans le meuble (ModeTravel.arrival). Absent : là où chooseSpawn le pose. */
+  offTreadmill?: (userId: string, point: { x: number; y: number }) => { x: number; y: number };
   /** Juste après chaque init (arrivée, retour pendant le délai de grâce, nouvel onglet) : ce que la socket doit encore apprendre. Ne lève pas. */
   onWelcome?: (socket: TypedSocket) => void;
 }
@@ -182,7 +184,8 @@ export function createPresence(d: PresenceDeps) {
         // Un bureau d'abord, s'il lui en faut un : son avatar peut apparaître dedans, et les autres le voient dans l'init.
         await d.desks.assign(userId, name, timezone);
         if (halted || !socket.connected) return;
-        const spot = chooseSpawn(d.map, saved, d.busyZones(), (x, y) => d.desks.canStandAt(userId, x, y));
+        const chosen = chooseSpawn(d.map, saved, d.busyZones(), (x, y) => d.desks.canStandAt(userId, x, y));
+        const spot = d.offTreadmill?.(userId, chosen) ?? chosen;
         const dir = saved && spot.x === saved.x && spot.y === saved.y ? saved.dir : DEFAULT_DIR;
         d.world.join({ id: userId, name, avatarKey, x: spot.x, y: spot.y, dir, status: d.world.rememberedStatus(userId), level: levelOf(progress?.xp ?? 0), timezone });
       }

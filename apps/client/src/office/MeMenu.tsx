@@ -1,10 +1,11 @@
 import { timezoneOrDefault, type ActivityState, type Status } from '@bureau/shared';
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type RefObject } from 'react';
+import { offersTreadmill } from '../game/treadmill';
 import { fr, t } from '../i18n/fr';
 import { useMinute } from '../lib/use-clock';
 import { formatClock, wallTime } from '../lib/zoned-time';
 import type { OfficeSocket } from '../net/socket';
-import { useOfficeStore } from '../state/office-store';
+import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { GlobeIcon, LogOutIcon, PencilIcon, ShirtIcon } from './icons';
 import { ModeEditor } from './ModeEditor';
 import { ModeList } from './ModeList';
@@ -40,8 +41,9 @@ export interface MeMenuProps {
 //   à la place de la liste, comme l'éditeur d'un mode) ;
 // - « Mode » : une seule liste (ModeList), Disponible d'abord (l'état normal ; Occupé, Absent et Ne pas déranger ne s'y choisissent plus), puis tes modes (Manger,
 //   Sport, Concentration, que ton compte a reçus, et ceux que tu as créés), et « Nouveau mode ». Une seule ligne est cochée ; ce que le serveur confirme
-//   (`status:changed`, `activity:changed`) est ce que la puce et le menu affichent. Le crayon d'un mode, et « Nouveau mode », ouvrent son éditeur (ModeEditor)
-//   dans le menu même, à la place de la liste : le menu devient alors une petite fenêtre (dialog), et la liste revient quand l'éditeur se ferme ;
+//   (`status:changed`, `activity:changed`, `treadmill:changed`) est ce que la puce et le menu affichent. Le crayon d'un mode, et « Nouveau mode », ouvrent son
+//   éditeur (ModeEditor) dans le menu même, à la place de la liste : le menu devient alors une petite fenêtre (dialog), et la liste revient quand l'éditeur se
+//   ferme. Quand ta pièce a un tapis de course, un mode qui conduit à la salle de sport a, sous lui, la ligne « Mon tapis de course » : le prendre sur ton tapis ;
 // - « Fuseau horaire » : la ville de ton fuseau et l'heure qu'il est chez toi, à la minute ; la ligne ouvre son choix (TimezoneEditor) dans le menu même,
 //   à la place de la liste, comme « Changer de nom » ;
 // - Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu. Le bureau et le son sont dans le dock du
@@ -52,9 +54,9 @@ export interface MeMenuProps {
 // Celles que le menu prend ne vont pas plus loin : le clavier de l'avatar (game/input.ts) ignore une touche déjà traitée, et ↓ ↑ dans le menu ne font pas
 // marcher l'avatar.
 //
-// Un mode passe avant le statut : pris, il est coché seul. Le prendre retient le choix de cet onglet (chosenActivityId) et oublie le statut choisi ; un statut,
-// au contraire, prend la place du mode, même quand c'est le même statut (le serveur efface le mode) : Disponible, le premier, est ainsi « aucun mode ». Ces
-// choix sont aussi retenus au magasin : la connexion les redit à un serveur redémarré, qui les a oubliés.
+// Un mode passe avant le statut : pris, il est coché seul. Le prendre retient le choix de cet onglet (chosenActivityId, et chosenTreadmill s'il l'a été sur son
+// tapis de course) et oublie le statut choisi ; un statut, au contraire, prend la place du mode, même quand c'est le même statut (le serveur efface le mode) :
+// Disponible, le premier, est ainsi « aucun mode ». Ces choix sont aussi retenus au magasin : la connexion les redit à un serveur redémarré, qui les a oubliés.
 //
 // Rien ne part au serveur tant qu'il ne prendrait pas le message (pas de socket, pas encore d'`init`, connexion coupée, ou revenue mais pas
 // encore replacée par son `init`) : les statuts, les modes et l'apparence sont alors inactifs. La déconnexion, elle, ne dépend pas du serveur : on doit
@@ -65,6 +67,9 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
   const activity = useOfficeStore((state) => state.self?.activity ?? null);
   const myStates = useOfficeStore((state) => state.myStates);
   const map = useOfficeStore((state) => state.officeMap);
+  // Sa place (la déco de sa pièce dit si elle a un tapis de course), et si elle y court, d'après le serveur.
+  const desk = useOfficeStore((state) => selectDeskOf(state, state.selfId));
+  const running = useOfficeStore((state) => state.self?.treadmill !== undefined);
   const ready = useOfficeStore((state) => state.ready);
   const timezone = timezoneOrDefault(useOfficeStore((state) => state.self?.timezone));
   const enabled = socket !== null && ready && current !== null;
@@ -128,13 +133,26 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
     if (status !== current || activity !== null) socket?.emit('status:set', status);
   }
 
-  // Un mode : le prendre (le serveur le confirme, et conduit l'avatar là où le mode mène).
+  // Un mode : le prendre (le serveur le confirme, et conduit l'avatar là où le mode mène). Pris pendant qu'elle court sur son tapis de course, il est redit : il
+  // la conduit à son lieu (la salle de sport).
   function chooseMode(state: ActivityState) {
     finish();
     const store = useOfficeStore.getState();
     store.setChosenActivity(state.id);
+    store.setChosenTreadmill(false);
     store.setChosenStatus(null);
-    if (activity?.id !== state.id) socket?.emit('state:set', state.id);
+    if (activity?.id !== state.id || running) socket?.emit('state:set', state.id);
+  }
+
+  // Un mode sur son tapis de course (la ligne « Mon tapis de course ») : le serveur l'y pose. Déjà pris, mais à la salle de sport ou descendue de son tapis, il est
+  // redit, avec le tapis.
+  function chooseTreadmill(state: ActivityState) {
+    finish();
+    const store = useOfficeStore.getState();
+    store.setChosenActivity(state.id);
+    store.setChosenTreadmill(true);
+    store.setChosenStatus(null);
+    if (activity?.id !== state.id || !running) socket?.emit('state:set', { id: state.id, treadmill: true });
   }
 
   function closeEditor(focusId: string | null) {
@@ -263,6 +281,9 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
             enabled={enabled}
             onStatus={chooseStatus}
             onMode={chooseMode}
+            treadmillFor={(state) => offersTreadmill(state, map, desk)}
+            running={running}
+            onTreadmill={chooseTreadmill}
             onEdit={(state) => setEditing(state)}
             onCreate={() => setEditing(null)}
           />

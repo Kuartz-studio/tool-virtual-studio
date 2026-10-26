@@ -1,4 +1,4 @@
-import { STATUSES, type ActivityState, type OfficeMap, type PublicPlayer, type Status } from '@bureau/shared';
+import { STATUSES, TREADMILL_ID, type ActivityState, type OfficeMap, type PlacedItem, type PublicPlayer, type Status } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -359,6 +359,93 @@ describe('les modes, dans la même liste', () => {
     expect(useOfficeStore.getState().chosenActivityId).toBeNull();
     expect(useOfficeStore.getState().chosenStatus).toBe('available');
     expect(screen.queryByRole('menu')).toBeNull();
+  });
+});
+
+// Le mode Sport sur son tapis de course : sous un mode qui conduit à la salle de sport, la ligne « Mon tapis de course », quand sa propre pièce en a un.
+describe('le tapis de course', () => {
+  const sport: ActivityState = { id: 's3', label: 'Sport', color: '#f97316', icon: 'dumbbell', allowEntry: true, hear: false, heard: false, place: 'gym' };
+  const tapis = { desk: 'A1', x: 1, y: 2 };
+  const onTreadmill = () => screen.getByRole('menuitemradio', { name: 'Sport sur mon tapis de course' });
+  // La carte réduite à ce que la liste lit (ses pièces), et la place A1 (à soi par défaut), avec ce qu'on y a posé.
+  function setScene(items: PlacedItem[], ownerId = 'moi') {
+    act(() => {
+      useOfficeStore.getState().setOfficeMap({ places: [{ key: 'gym', label: 'Salle de sport', destination: true }] } as unknown as OfficeMap);
+      useOfficeStore.getState().setDesk({ key: 'A1', ownerId, ownerName: ownerId.toUpperCase(), name: null, locked: false, closedByState: false, floor: 'parquet-clair', wall: 'creme', items });
+    });
+  }
+
+  test('sa pièce a un tapis de course : sous « Sport », la ligne « Mon tapis de course » ; « Sport » garde son nom et dit la salle de sport', async () => {
+    const user = userEvent.setup();
+    renderChip({ states: [sport, focus] });
+    setScene([{ id: 'of-6-10', x: 0, y: 0 }, { id: TREADMILL_ID, x: 1, y: 2 }]);
+    await user.click(trigger());
+    expect(linesOf(group(fr.me.mode))).toEqual([
+      'Disponible',
+      'Sport',
+      t(fr.modes.edit, { label: 'Sport' }),
+      'Sport sur mon tapis de course',
+      'En focus',
+      t(fr.modes.edit, { label: 'En focus' }),
+      fr.modes.create,
+    ]);
+    expect(onTreadmill().textContent).toBe('Mon tapis de course');
+    expect(onTreadmill().getAttribute('aria-checked')).toBe('false');
+    expect(mode('Sport').querySelector('.mode-place')?.textContent).toBe('Salle de sport');
+  });
+
+  test('sans tapis de course dans sa pièce, ou avec un tapis dans la pièce d\'un autre : rien ne change', async () => {
+    const user = userEvent.setup();
+    const { view } = renderChip({ states: [sport] });
+    setScene([{ id: 'of-6-10', x: 0, y: 0 }]);
+    await user.click(trigger());
+    expect(linesOf(group(fr.me.mode))).toEqual(['Disponible', 'Sport', t(fr.modes.edit, { label: 'Sport' }), fr.modes.create]);
+    view.unmount();
+
+    renderChip({ states: [sport] });
+    setScene([{ id: TREADMILL_ID, x: 1, y: 2 }], 'autre');
+    await user.click(trigger());
+    expect(screen.queryByRole('menuitemradio', { name: 'Sport sur mon tapis de course' })).toBeNull();
+  });
+
+  test('« Mon tapis de course » : state:set avec le tapis, retenu comme choix de l\'onglet ; le menu se ferme', async () => {
+    const user = userEvent.setup();
+    const socket = renderChip({ states: [sport] });
+    setScene([{ id: TREADMILL_ID, x: 1, y: 2 }]);
+    useOfficeStore.getState().setChosenStatus('available');
+    await user.click(trigger());
+    await user.click(onTreadmill());
+    expect(socket.sentOf('state:set')).toEqual([{ id: 's3', treadmill: true }]);
+    expect(useOfficeStore.getState()).toMatchObject({ chosenActivityId: 's3', chosenTreadmill: true, chosenStatus: null });
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(trigger());
+  });
+
+  test('elle y court (le serveur le dit) : la ligne du tapis est seule cochée, et prend le focus ; la reprendre n\'envoie rien, « Sport » l\'envoie à la salle de sport', async () => {
+    const user = userEvent.setup();
+    const socket = renderChip({ activity: sport, states: [sport] });
+    setScene([{ id: TREADMILL_ID, x: 1, y: 2 }]);
+    act(() => useOfficeStore.getState().setTreadmill('moi', tapis));
+    await user.click(trigger());
+    expect(within(group(fr.me.mode)).getAllByRole('menuitemradio', { checked: true })).toEqual([onTreadmill()]);
+    expect(document.activeElement).toBe(onTreadmill());
+    await user.click(onTreadmill());
+    expect(socket.sentOf('state:set')).toEqual([]);
+
+    await user.click(trigger());
+    await user.click(mode('Sport'));
+    expect(socket.sentOf('state:set')).toEqual(['s3']);
+    expect(useOfficeStore.getState()).toMatchObject({ chosenActivityId: 's3', chosenTreadmill: false });
+  });
+
+  test('à la salle de sport, ou descendue de son tapis (le mode reste) : « Sport » est coché ; « Mon tapis de course » l\'y remet', async () => {
+    const user = userEvent.setup();
+    const socket = renderChip({ activity: sport, states: [sport] });
+    setScene([{ id: TREADMILL_ID, x: 1, y: 2 }]);
+    await user.click(trigger());
+    expect(within(group(fr.me.mode)).getAllByRole('menuitemradio', { checked: true })).toEqual([mode('Sport')]);
+    await user.click(onTreadmill());
+    expect(socket.sentOf('state:set')).toEqual([{ id: 's3', treadmill: true }]);
   });
 });
 

@@ -255,6 +255,30 @@ describe('la fin d\'une partie', () => {
     await vi.waitFor(() => expect(vi.mocked(audioEngine.playSfx).mock.calls.map(([id]) => id)).toEqual(['piece', 'win']), { timeout: 3000 });
   });
 
+  test('la revanche est juste sous la phrase de fin, seule : la salle d\'attente garde « Se lever » ; Bastien l\'accepte, la phrase et sa chaise le disent ; la partie suivante remplace tout', async () => {
+    open(playing([0, 3, 1, 4], 11));
+    await screen.findByRole('grid', { name: 'Plateau de morpion' });
+    update(ended([0, 3, 1, 4, 2], 12, { result: { ranking: [[0], [1]], reason: 'line' }, ranked: true, events: [{ type: 'placed', seat: 0, cell: 2 }] }));
+    const bar = (await screen.findByRole('button', { name: fr.games.actions.rematch })).closest('.game-rematch')!;
+    expect(bar.previousElementSibling?.classList.contains('game-status')).toBe(true);
+    expect(screen.getAllByRole('button', { name: fr.games.actions.rematch })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: fr.games.lobby.stand })).toBeTruthy();
+    expect(bar.textContent).toContain(fr.games.rematch.open);
+
+    // Bastien l'accepte : la phrase me le dit, et sa chaise aussi.
+    update({ ...ended([0, 3, 1, 4, 2], 13, { result: { ranking: [[0], [1]], reason: 'line' }, ranked: true }), chairs: [chair(SELF), chair(BASTIEN, { ready: true })] });
+    expect(await screen.findByText(t(fr.games.rematch.askedBy, { names: 'Bastien' }))).toBeTruthy();
+    expect(screen.getByText(fr.games.rematch.accepted)).toBeTruthy();
+
+    // J'accepte : le serveur commence la partie suivante, qui remplace la fin, la barre et la salle d'attente.
+    await userEvent.click(screen.getByRole('button', { name: fr.games.actions.rematch }));
+    expect(sentCommands().at(-1)).toEqual({ type: 'ready', game: 'connect4', ready: true });
+    update(table('connect4', 14, { chairs: [chair(SELF), chair(BASTIEN)], match: match([SELF, BASTIEN], morpion([], 1), { id: 'm2', first: 1 }) }));
+    await vi.waitFor(() => expect(screen.queryByRole('button', { name: fr.games.actions.rematch })).toBeNull());
+    expect(screen.queryByRole('region', { name: fr.games.lobby.title })).toBeNull();
+    expect(screen.getByText(t(fr.games.status.turnOf, { name: 'Bastien' }))).toBeTruthy();
+  });
+
   test('une défaite : pas de son de victoire', async () => {
     open(playing([0, 3, 1, 4, 8], 11));
     await screen.findByRole('grid', { name: 'Plateau de morpion' });

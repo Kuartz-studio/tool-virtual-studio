@@ -1,4 +1,4 @@
-import type { ActivityState, ArenaAction, ArenaCommand, ConversationLockNotice, DebugGamePayload, DeskInviteNotice, GameNotice, InitPayload, LightLevel, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, TaskView, WorldTick, XpGain } from '@bureau/shared';
+import type { ActivityState, ArenaAction, ArenaCommand, ConversationLockNotice, DebugGamePayload, DeskInviteNotice, GameNotice, InitPayload, LightLevel, LightsState, MovePayload, MusicSetPayload, PublicPlayer, ServerToClientEvents, Status, TaskView, TreadmillRef, WorldTick, XpGain } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import type { OfficeState } from '../state/office-store';
 import { fr, t } from '../i18n/fr';
@@ -20,6 +20,8 @@ export interface OfficeBusEvents {
   'net:correct': (p: { x: number; y: number; reason?: 'teleport' }) => void;
   'net:status': (p: { id: string; status: Status }) => void;
   'net:activity': (p: { id: string; activity: ActivityState | null }) => void;
+  // Quelqu'un (soi compris) se met à courir sur ce tapis de course, ou en descend (null), d'après le serveur (`treadmill:changed`). Le magasin le dit déjà à jour.
+  'net:treadmill': (p: { id: string; treadmill: TreadmillRef | null }) => void;
   'net:profile': (p: { id: string; name: string; avatarKey: string | null }) => void;
   // Quelqu'un se met à parler, ou se tait, d'après le serveur (`speaking:changed`) : la bulle au-dessus de son avatar, même loin de soi et hors de
   // sa conversation. Le magasin le dit déjà à jour (pour ceux qu'il connaît) quand l'événement part.
@@ -150,12 +152,12 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
     init: (p) => {
       state().applyInit(p);
       // Un état d'activité que cet onglet n'a pas pris (rechargement, « Utiliser ici ») : le serveur l'a gardé, donc c'est celui de la
-      // personne. Pris dans cet onglet, il est redit à un serveur redémarré qui l'a oublié ; il passe avant le statut, que le serveur
-      // efface quand une personne en prend un ordinaire.
+      // personne. Pris dans cet onglet, il est redit à un serveur redémarré qui l'a oublié (sur son tapis de course, si c'est là qu'elle l'a pris) ; il passe
+      // avant le statut, que le serveur efface quand une personne en prend un ordinaire.
       if (state().chosenActivityId === null && p.self.activity) state().setChosenActivity(p.self.activity.id);
-      const { chosenActivityId } = state();
+      const { chosenActivityId, chosenTreadmill } = state();
       if (chosenActivityId !== null) {
-        if (p.self.activity?.id !== chosenActivityId) socket.emit('state:set', chosenActivityId);
+        if (p.self.activity?.id !== chosenActivityId) socket.emit('state:set', chosenTreadmill ? { id: chosenActivityId, treadmill: true } : chosenActivityId);
       } else {
         // Un statut autre que « Disponible » que cet onglet n'a pas choisi (rechargement, « Utiliser ici ») : le serveur l'a gardé, donc c'est
         // celui de la personne. Seul le menu fixe un statut côté serveur, et « Disponible » est le statut par défaut.
@@ -189,6 +191,10 @@ export function connectOffice(socket: OfficeSocket, store: StoreApi<OfficeState>
       // Le sien, d'où qu'il vienne (un autre onglet, un état supprimé, un statut ordinaire pris) : le choix de cet onglet le suit.
       if (p.id === state().selfId) state().setChosenActivity(p.activity?.id ?? null);
       emitOnBus(bus, 'net:activity', p);
+    },
+    'treadmill:changed': (p) => {
+      state().setTreadmill(p.id, p.treadmill);
+      emitOnBus(bus, 'net:treadmill', p);
     },
     'media:changed': (p) => state().setMedia(p.id, p.media),
     'speaking:changed': (p) => {

@@ -1,10 +1,10 @@
 import {
-  blockedCells,
   decorItem,
   deskKey,
   deskRoomSpecOf,
   findPath,
   footprintOf,
+  furnitureTiles,
   isWalkableTile,
   type Direction,
   type Footprint,
@@ -140,17 +140,14 @@ function roomTiles(map: OfficeMap, room: Zone): { tx: number; ty: number; width:
   };
 }
 
-// La carte comme la marche la voit : celle du jeu, plus les meubles solides que l'occupant a posés dans sa pièce (des obstacles pour l'avatar, mais
-// pas dans la carte, où chacun règle la sienne). Les sièges, tapis et éléments muraux ne bloquent rien. Un meuble posé au dixième de case bloque
-// toutes les cases qu'il touche (blockedCells, la règle de passage de la déco) : le chemin passe par des cases entièrement libres.
+// La carte comme la marche la voit : celle du jeu, plus les meubles solides que l'occupant a posés dans sa pièce et devant elle, dans la rue (des
+// obstacles pour l'avatar, mais pas dans la carte, où chacun règle la sienne). Les sièges, tapis et éléments muraux ne bloquent rien. Un meuble posé
+// au dixième de case bloque toutes les cases qu'il touche (furnitureTiles, la règle de passage de la déco) : le chemin passe par des cases entièrement
+// libres. Ceux des autres bureaux, la scène les a déjà mis dans `map` (la carte de la marche de « Suivre »).
 export function deskWalkMap(map: OfficeMap, room: Zone, items: readonly PlacedItem[]): OfficeMap {
-  const rect = roomTiles(map, room);
-  if (!rect.decorated) return map;
+  if (!roomTiles(map, room).decorated) return map;
   const blocked = Uint8Array.from(map.blocked);
-  for (const cell of blockedCells(items, rect.width)) {
-    const [x, y] = [cell % rect.width, Math.floor(cell / rect.width)];
-    if (y < rect.height) blocked[(rect.ty + y) * map.widthTiles + rect.tx + x] = 1;
-  }
+  for (const index of furnitureTiles(map, [{ key: deskKey(room), items }])) blocked[index] = 1;
   return { ...map, blocked };
 }
 

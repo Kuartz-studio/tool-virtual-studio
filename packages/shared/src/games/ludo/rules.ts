@@ -1,4 +1,3 @@
-import { rollDie } from '../rng';
 import type { ApplyResult, ForfeitReason, GameResult, GameSetup, Rng } from '../types';
 import {
   horseScore,
@@ -12,6 +11,7 @@ import {
   LUDO_MAX_TRIES,
   LUDO_REROLL_DIE,
   LUDO_STABLE,
+  LUDO_STABLE_SIX_CHANCE,
   trackCell,
 } from './board';
 import type { LudoEvent, LudoLast, LudoMove, LudoState } from './model';
@@ -59,6 +59,18 @@ export function createLudo(setup: GameSetup): LudoStep {
 // Un cheval est « en jeu » sur la piste ou dans son allée : ni à l'écurie, ni arrivé. C'est ce qui décide des essais : sans cheval en jeu, on a trois lancers pour sortir.
 export function isInPlay(advance: number): boolean {
   return advance >= LUDO_ENTRY && advance < LUDO_HOME;
+}
+
+// Le dé d'un lancer, tiré d'une seule valeur du générateur, comme rollDie (R3 : le même journal redonne le même dé). Avec un cheval en jeu, c'est le dé juste : la valeur tombe
+// dans la part d'une face, un sixième de [0, 1). Sans cheval en jeu, le 6 sort deux fois sur six (LUDO_STABLE_SIX_CHANCE) : chacune des cinq autres faces garde le début de sa
+// part (les quatre cinquièmes : 4/30) et cède la fin au 6, qui passe de 5/30 à 10/30. Le milieu de la part d'une face (rngFromDice : les dés imposés des tests et du débogage)
+// donne toujours cette face, avec ou sans cheval en jeu.
+export function rollLudoDie(rng: Rng, inPlay: boolean): number {
+  const value = rng();
+  const die = Math.min(LUDO_DIE_SIDES, Math.max(1, 1 + Math.floor(value * LUDO_DIE_SIDES)));
+  if (inPlay || die === LUDO_EXIT_DIE) return die;
+  const kept = ((1 - LUDO_STABLE_SIX_CHANCE) / (LUDO_DIE_SIDES - 1)) * LUDO_DIE_SIDES;
+  return value * LUDO_DIE_SIDES - (die - 1) < kept ? die : LUDO_EXIT_DIE;
 }
 
 // Les chevaux de ce joueur qu'un dé peut jouer, dans l'ordre 0 à 3.
@@ -148,19 +160,20 @@ function finish(state: LudoState, winner: number, reason: string, events: LudoEv
   return { state: { ...state, turn: winner, phase: 'over', die: null, sixes: 0, tries: 0, result }, events: [...events, { type: 'end', ranking }] };
 }
 
-// Le lancer : un seul tirage du générateur, dans tous les cas (R3 : le nombre de tirages ne dépend que de l'état et du coup). Le troisième 6 de suite est perdu ; sinon on joue
-// si un cheval le peut ; sinon un 6 fait rejouer quand même, un joueur sans cheval en jeu a ses trois essais, et le reste passe le tour.
+// Le lancer : un seul tirage du générateur, dans tous les cas (R3 : le nombre de tirages ne dépend que de l'état et du coup), avec le dé que donne l'état (sans cheval en jeu,
+// le 6 sort plus souvent : rollLudoDie). Le troisième 6 de suite est perdu ; sinon on joue si un cheval le peut ; sinon un 6 fait rejouer quand même, un joueur sans cheval en
+// jeu a ses trois essais, et le reste passe le tour.
 function rollDice(state: LudoState, rng: Rng): LudoStep {
   const seat = state.turn;
   const row = state.horses[seat]!;
-  const die = rollDie(rng, LUDO_DIE_SIDES);
+  const inPlay = row.some(isInPlay);
+  const die = rollLudoDie(rng, inPlay);
   const events: LudoEvent[] = [{ type: 'dice', seat, value: die }];
   const sixes = die === LUDO_REROLL_DIE ? state.sixes + 1 : state.sixes;
   if (sixes >= LUDO_MAX_SIXES) {
     events.push({ type: 'pass', seat, reason: 'third-six' });
     return passTurn(state, events);
   }
-  const inPlay = row.some(isInPlay);
   // Le plafond ne sert qu'à un état fabriqué (trois essais déjà faits, aucun cheval en jeu) : le moteur lui-même n'y arrive jamais, mais l'état rendu doit rester légal (R10).
   const tries = inPlay ? state.tries : Math.min(state.tries + 1, LUDO_MAX_TRIES);
   if (playableHorses(row, die).length > 0) return { state: { ...state, phase: 'move', die, sixes, tries }, events };

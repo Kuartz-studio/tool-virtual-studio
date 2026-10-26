@@ -3357,6 +3357,58 @@ svg.lucide.icon-s {
   display: inline-flex;
 }
 
+/* L'onglet « Murs et sol » (DecorThemes) : le sélecteur de matière, des pastilles de texte qui passent à la ligne ; puis les sols et les murs rangés par
+   couleur, une rangée par couleur : à gauche son nom et sa pastille, à droite ses thèmes. */
+.theme-materials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.theme-materials .bar-button {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: var(--text-xs);
+  border-radius: var(--radius-pill);
+}
+
+.theme-shelves {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.theme-shelf {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.theme-shelf-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-xs);
+  font-weight: var(--weight-semibold);
+  color: var(--text-soft);
+}
+
+.theme-color-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: var(--dot);
+  border-radius: 50%;
+  /* Un fin cerne : le blanc sur le panneau du jour, le noir sur celui de la nuit, restent visibles. */
+  box-shadow: inset 0 0 0 1px rgb(128 128 128 / 45%);
+}
+
+.theme-shelf .swatch-grid {
+  gap: 6px;
+}
+
 .decor-footer {
   display: flex;
   flex-direction: column;
@@ -3694,6 +3746,33 @@ svg.lucide.icon-s {
   margin: 0;
   font-size: var(--text-m);
   font-weight: var(--weight-semibold);
+  text-align: center;
+}
+
+/* La revanche, juste sous la phrase de fin : le bouton du geste principal (l'accent), puis la phrase qui dit qui l'a acceptée et qui on attend. Demandée, la revanche
+   garde le bouton enfoncé : un fond d'accent pâle et une coche, qu'on la voie partie (un second clic l'annule). */
+.game-rematch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.game-rematch .game-rematch-button {
+  min-width: 148px;
+  min-height: 40px;
+}
+
+.game-rematch .bar-button.is-primary[aria-pressed='true'],
+.game-rematch .bar-button.is-primary[aria-pressed='true']:hover:not(:disabled):not([aria-disabled='true']) {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+
+.game-rematch-line {
+  margin: 0;
+  font-size: var(--text-s);
+  color: var(--text-soft);
   text-align: center;
 }
 
@@ -4113,6 +4192,32 @@ svg.lucide.icon-s {
 
 .mode-new .mode-mark svg.lucide {
   color: var(--text-soft);
+}
+
+/* « Mon tapis de course », sous un mode qui conduit à la salle de sport : une autre façon de le prendre. Plus basse et plus discrète que la ligne du mode, sa
+   flèche descend de la marque du mode, et son nom s'aligne sur celui du mode ; survolée, prise ou cochée, elle se comporte comme les autres lignes. */
+.mode-sub .mode-pick {
+  min-height: 32px;
+  padding-left: 14px;
+  font-size: var(--text-s);
+  color: var(--text-soft);
+}
+
+.mode-sub[data-checked] .mode-pick {
+  color: var(--text);
+}
+
+.mode-sub-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 20px;
+  color: var(--text-muted);
+}
+
+.mode-sub-mark svg.lucide {
+  width: 15px;
+  height: 15px;
 }
 
 /* L'éditeur d'un mode, à la place de la liste. */

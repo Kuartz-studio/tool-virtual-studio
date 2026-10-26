@@ -1,15 +1,20 @@
 import { DEFAULT_DESK_DECOR, DESK_ROOMS, buildOfficeTiledMap, defaultDeskDecor, deskRoomSpecOf, parseOfficeMap, type DecorError, type DeskDecor } from '@bureau/shared';
 
-// Ce que montre une pièce dont la personne n'a rien réglé (et toute place libre), tel qu'il figure dans une DeskInfo.
-export const DEFAULT_SETUP = { floor: DEFAULT_DESK_DECOR.floor, wall: DEFAULT_DESK_DECOR.wall, items: DEFAULT_DESK_DECOR.items };
-
 // Ce que montre la place `key` de la grande carte quand rien n'est réglé : le poste par défaut de sa pièce (sa taille et le côté de sa porte : les
-// six places n'ont pas toutes le même).
+// six places n'ont pas toutes le même), et devant elle son dehors par défaut.
 const OFFICE_MAP = parseOfficeMap(buildOfficeTiledMap());
 export function defaultSetupOf(key: string): { floor: string; wall: string; items: DeskDecor['items'] } {
   const { floor, wall, items } = defaultDeskDecor(deskRoomSpecOf(OFFICE_MAP, key) ?? DESK_ROOMS.standard);
   return { floor, wall, items };
 }
+
+// Ce que montre une pièce standard à porte au sud dont la personne n'a rien réglé (et toute place libre de cette sorte : A1 et A2), tel qu'il figure
+// dans une DeskInfo.
+export const DEFAULT_SETUP = defaultSetupOf('A1');
+
+// La même chose sur la petite carte de développement : ses bureaux n'ont ni porte ni dehors (deskRoomSpecOf ne leur donne pas de pièce), ils montrent
+// le poste de la pièce standard, sans rien devant.
+export const DEV_DEFAULT_SETUP = { floor: DEFAULT_DESK_DECOR.floor, wall: DEFAULT_DESK_DECOR.wall, items: DEFAULT_DESK_DECOR.items };
 
 // Un décor valable dans les quatre sortes de pièces de la carte (standard ou compacte, porte au sud ou au nord), différent du poste par défaut : un autre
 // sol, d'autres murs, un bureau avec un écran dessus et une plante, loin des portes.

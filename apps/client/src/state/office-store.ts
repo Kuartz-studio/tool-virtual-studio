@@ -25,6 +25,7 @@ import {
   type RoomMusic,
   type Status,
   type TaskView,
+  type TreadmillRef,
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
 import { clampZoomPercent, stepZoomPercent, ZOOM_DEFAULT_PERCENT, ZOOM_WHEEL_STEP } from '../game/zoom';
@@ -135,6 +136,8 @@ export interface OfficeState {
   // L'état d'activité que la personne a pris dans le menu (identifiant), dans cet onglet ; null si elle n'en a pas pris. Comme chosenStatus :
   // le serveur ne le garde qu'en mémoire, la connexion le lui redit après un redémarrage.
   chosenActivityId: string | null;
+  // Elle l'a pris sur son tapis de course (la ligne « Mon tapis de course » du menu) : la connexion le redit ainsi. Un autre mode l'oublie.
+  chosenTreadmill: boolean;
   // Les places de bureau, dans l'ordre de la carte (celui de l'`init`), tenues à jour par `desk:changed`.
   desks: DeskInfo[];
   // Les places dont la porte est fermée pour soi (verrou, état d'activité de son propriétaire, ou exclusion) : l'avatar n'y entre pas.
@@ -266,11 +269,15 @@ export interface OfficeState {
   setStatus(id: string, s: Status): void;
   // L'état d'activité d'un joueur (`activity:changed`) ; null : plus aucun.
   setActivity(id: string, activity: ActivityState | null): void;
+  // Le tapis de course où court un joueur (`treadmill:changed`) ; null : il en est descendu (le champ disparaît, comme dans les messages du serveur).
+  setTreadmill(id: string, treadmill: TreadmillRef | null): void;
   setMyStates(states: ActivityState[]): void;
   // Un de ses états créé ou remplacé (même identifiant : il prend sa place dans la liste) ; ou supprimé.
   upsertMyState(state: ActivityState): void;
   removeMyState(id: string): void;
+  // Le mode choisi (un autre que celui d'avant oublie le tapis), et s'il l'est sur son tapis de course.
   setChosenActivity(id: string | null): void;
+  setChosenTreadmill(on: boolean): void;
   setMedia(id: string, m: MediaState): void;
   // Cette personne se met à parler (vrai), ou se tait (faux : la clé disparaît, comme dans les messages du serveur) : `speaking:changed`.
   setSpeaking(id: string, speaking: boolean): void;
@@ -335,6 +342,7 @@ type Data = Pick<
   | 'chosenStatus'
   | 'myStates'
   | 'chosenActivityId'
+  | 'chosenTreadmill'
   | 'desks'
   | 'closedDesks'
   | 'deskBans'
@@ -384,6 +392,7 @@ const initialData = (): Data => ({
   chosenStatus: null,
   myStates: [],
   chosenActivityId: null,
+  chosenTreadmill: false,
   desks: [],
   closedDesks: [],
   deskBans: [],
@@ -696,11 +705,19 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
       markDecorSaved: () => set((state) => (state.decorEditor ? { decorEditor: { ...state.decorEditor, saved: state.decorEditor.draft } } : state)),
 
       setActivity: (id, activity) => updatePlayer(id, (p) => ({ ...p, activity })),
+      setTreadmill: (id, treadmill) =>
+        updatePlayer(id, (p) => {
+          if (treadmill) return { ...p, treadmill };
+          const off = { ...p };
+          delete off.treadmill;
+          return off;
+        }),
       setMyStates: (myStates) => set({ myStates }),
       upsertMyState: (state) =>
         set((s) => (s.myStates.some((m) => m.id === state.id) ? { myStates: s.myStates.map((m) => (m.id === state.id ? state : m)) } : { myStates: [...s.myStates, state] })),
       removeMyState: (id) => set((s) => ({ myStates: s.myStates.filter((m) => m.id !== id) })),
-      setChosenActivity: (chosenActivityId) => set({ chosenActivityId }),
+      setChosenActivity: (chosenActivityId) => set((state) => (state.chosenActivityId === chosenActivityId ? state : { chosenActivityId, chosenTreadmill: false })),
+      setChosenTreadmill: (chosenTreadmill) => set({ chosenTreadmill }),
 
       setStatus: (id, status) => updatePlayer(id, (p) => ({ ...p, status })),
       setMedia: (id, m) => updatePlayer(id, (p) => ({ ...p, media: { mic: m.mic, cam: m.cam, screen: m.screen } })),

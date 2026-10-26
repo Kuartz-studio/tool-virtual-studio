@@ -1,7 +1,7 @@
 // Généré par `pnpm --filter @bureau/client gen:assets` (apps/client/scripts/assets/tileset.ts) : ne pas modifier à la main.
 
 // Le jeu de tuiles de la carte : public/assets/tiles/office.png (16 colonnes de cases de 32 px), cité par la carte.
-export const TILESET = { name: 'office', image: '../tiles/office.png', columns: 16, tileCount: 318 } as const;
+export const TILESET = { name: 'office', image: '../tiles/office.png', columns: 16, tileCount: 334 } as const;
 
 // Les sols qu'on peut choisir pour une pièce (et ceux de la carte) : le numéro de leur tuile dans le jeu de tuiles.
 export const FLOOR_THEMES = [
@@ -27,6 +27,10 @@ export const FLOOR_THEMES = [
   { id: "turquoise", label: "Turquoise", gid: 20 },
   { id: "pierre", label: "Pierre claire", gid: 21 },
   { id: "losanges", label: "Losanges bleus", gid: 22 },
+  { id: "bois-noir", label: "Bois noir", gid: 319 },
+  { id: "moquette-noire", label: "Moquette noire", gid: 320 },
+  { id: "carrelage-noir", label: "Carrelage noir", gid: 321 },
+  { id: "noir-mat", label: "Noir mat", gid: 322 },
 ] as const;
 
 // Les murs : la face (deux cases de haut : `top` puis `bottom`) et le pan vertical (`stem`).
@@ -51,6 +55,10 @@ export const WALL_THEMES = [
   { id: "carreaux-bleus", label: "Carreaux bleus", top: 74, bottom: 75, stem: 76 },
   { id: "menthe", label: "Menthe", top: 77, bottom: 78, stem: 79 },
   { id: "vert-gris", label: "Vert-gris", top: 80, bottom: 81, stem: 82 },
+  { id: "noir-mat", label: "Noir mat", top: 323, bottom: 324, stem: 325 },
+  { id: "lambris-noir", label: "Lambris noir", top: 326, bottom: 327, stem: 328 },
+  { id: "brique-noire", label: "Brique noire", top: 329, bottom: 330, stem: 331 },
+  { id: "carrelage-noir", label: "Carrelage noir", top: 332, bottom: 333, stem: 334 },
 ] as const;
 
 // Les tuiles de la piscine : le fond d'eau, les bords et les coins.

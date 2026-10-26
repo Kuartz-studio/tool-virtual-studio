@@ -1,8 +1,8 @@
-import { GAME_TURN_WARNING_MS, type GameMatchView, type GameResult, type GameTableView } from '@bureau/shared';
+import { GAME_TURN_WARNING_MS, type GameChairView, type GameMatchView, type GameResult, type GameTableView } from '@bureau/shared';
 import { fr, t } from '../i18n/fr';
 
-// Ce que les composants des jeux lisent d'une table, en fonctions pures (sans React) : où est une personne (siège, chaise), le compte à rebours, et comment une fin de partie
-// se dit.
+// Ce que les composants des jeux lisent d'une table, en fonctions pures (sans React) : où est une personne (siège, chaise), le compte à rebours, comment une fin de partie
+// se dit, et où en est la revanche.
 
 // Le siège de cette personne dans la partie, ou null (spectateur, ou pas de partie).
 export function seatOf(match: GameMatchView | null | undefined, userId: string | null): number | null {
@@ -40,7 +40,7 @@ export function soleWinner(result: GameResult | null): number | null {
 }
 
 // « Alice », « Alice et Claire », « Alice, Bastien et Claire ».
-const listOf = (names: string[]): string => (names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} et ${names.at(-1)}`);
+export const listOf = (names: string[]): string => (names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} et ${names.at(-1)}`);
 
 // La fin d'une partie, en une phrase. Les raisons que la plateforme écrit (abandon, délai, départ, accord) sont dites ici ; celle d'un jeu (« Échec et mat », « Gammon »…) l'est par le
 // module du jeu (`own`) ; sans module, le vainqueur ou la nulle. `names` : le nom de chaque siège.
@@ -62,6 +62,31 @@ export function endText(result: GameResult, names: string[], own: ((result: Game
       if (result.ranking.length === 1 && winners.length > 1) return fr.games.end.drawn;
       return winners.length === 1 ? t(fr.games.end.winner, { name: winners[0]! }) : t(fr.games.end.winners, { names: listOf(winners) });
   }
+}
+
+// La phrase de la revanche pour cette personne assise, au bout d'une partie : qui l'a déjà acceptée (« prêt »), qui on attend. Elle commence quand toutes les personnes assises,
+// assez nombreuses, l'ont acceptée : `minPlayers` est celui du jeu, null quand son module n'est pas là.
+export function rematchLine(table: GameTableView, selfId: string | null, minPlayers: number | null): string {
+  const seated = table.chairs.flatMap((chair) => (chair ? [chair] : []));
+  if (minPlayers !== null && seated.length < minPlayers) return t(fr.games.lobby.needMore, { count: minPlayers });
+  const others = seated.filter((chair) => chair.userId !== selfId);
+  const accepted = others.filter((chair) => chair.ready).map((chair) => chair.name);
+  const waiting = others.filter((chair) => !chair.ready).map((chair) => chair.name);
+  if (seated.some((chair) => chair.userId === selfId && chair.ready)) {
+    return waiting.length > 0 ? t(fr.games.rematch.asked, { names: listOf(waiting) }) : fr.games.lobby.allReady;
+  }
+  if (accepted.length === 0) return fr.games.rematch.open;
+  const many = accepted.length > 1;
+  if (waiting.length === 0) return t(many ? fr.games.rematch.askedByMany : fr.games.rematch.askedBy, { names: listOf(accepted) });
+  return t(many ? fr.games.rematch.askedByManyAndWaiting : fr.games.rematch.askedByAndWaiting, { names: listOf(accepted), others: listOf([...waiting, fr.games.you]) });
+}
+
+// Les personnes assises qui ont accepté une revanche que cette personne, assise elle aussi, n'a pas encore acceptée ; personne sans partie finie à cette table.
+export function rematchAskers(table: GameTableView | undefined, selfId: string | null): GameChairView[] {
+  if (table?.match?.status !== 'ended' || selfId === null) return [];
+  const mine = table.chairs.find((chair) => chair?.userId === selfId);
+  if (!mine || mine.ready) return [];
+  return table.chairs.flatMap((chair) => (chair && chair.userId !== selfId && chair.ready ? [chair] : []));
 }
 
 export interface RatingLine {

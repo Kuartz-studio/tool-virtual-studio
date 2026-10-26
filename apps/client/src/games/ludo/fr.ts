@@ -84,7 +84,7 @@ export const ludoFr = {
   // L'aide « Règles » du panneau.
   rules: [
     'Chacun a quatre chevaux, qui font le tour du plateau dans le sens des aiguilles d\'une montre.',
-    'Un 6 fait sortir un cheval de l\'écurie, sur ta case de départ, et fait rejouer. Sans cheval en jeu, tu as trois essais pour faire un 6.',
+    'Un 6 fait sortir un cheval de l\'écurie, sur ta case de départ, et fait rejouer. Sans cheval en jeu, tu as trois essais, et le 6 tombe deux fois sur six.',
     'À chaque lancer, tu avances un seul cheval, du nombre de points. Si aucun ne peut jouer, tu passes.',
     'Un cheval qui s\'arrête sur un cheval adverse le renvoie à l\'écurie. Aucune case n\'est protégée.',
     'Tu ne peux pas finir sur l\'un de tes chevaux, mais tu peux passer par-dessus tous les chevaux.',

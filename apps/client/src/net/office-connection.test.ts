@@ -554,6 +554,32 @@ describe('connectOffice', () => {
       expect(socket.sentOf('status:set')).toEqual([]);
     });
 
+    test('init : un mode pris ici sur son tapis de course, et oublié par un serveur redémarré, est redit avec le tapis', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      store.getState().setChosenActivity('s3');
+      store.getState().setChosenTreadmill(true);
+      socket.receive('init', init([A]));
+      expect(socket.sentOf('state:set')).toEqual([{ id: 's3', treadmill: true }]);
+    });
+
+    test('treadmill:changed : au magasin (pour soi comme pour les autres), puis au jeu (net:treadmill)', () => {
+      connectOffice(socket.asSocket(), store, bus);
+      socket.serverAccepts();
+      socket.receive('init', init([A]));
+      const tapis = { desk: 'A1', x: 1, y: 2 };
+
+      socket.receive('treadmill:changed', { id: 'a', treadmill: tapis });
+      expect(store.getState().players.a?.treadmill).toEqual(tapis);
+      expect(bus.emittedOf('net:treadmill')).toEqual([{ id: 'a', treadmill: tapis }]);
+
+      socket.receive('treadmill:changed', { id: 'moi', treadmill: tapis });
+      expect(store.getState().self?.treadmill).toEqual(tapis);
+      socket.receive('treadmill:changed', { id: 'moi', treadmill: null });
+      expect(store.getState().self).not.toHaveProperty('treadmill');
+      expect(bus.emittedOf('net:treadmill')).toHaveLength(3);
+    });
+
     test('un état d\'activité pris : il passe avant le statut choisi, qui n\'est pas redit', () => {
       connectOffice(socket.asSocket(), store, bus);
       socket.serverAccepts();

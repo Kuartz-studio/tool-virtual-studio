@@ -4,8 +4,8 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { fr, t } from '../i18n/fr';
 import { FakeSocket } from '../test/fake-socket';
-import { BASTIEN, CLAIRE, SELF, applyWorld, chair, player, table, tictactoe } from './games-test-kit';
-import { GameLobby } from './GameLobby';
+import { BASTIEN, CLAIRE, SELF, applyWorld, chair, match, morpion, player, table, tictactoe } from './games-test-kit';
+import { GameLobby, RematchBar } from './GameLobby';
 
 let socket: FakeSocket;
 beforeEach(() => {
@@ -74,10 +74,14 @@ describe('« Prêt », « Revanche » et « Se lever »', () => {
     expect(sent()).toEqual([{ type: 'ready', game: 'connect4', ready: false }]);
   });
 
-  test('après une partie, « Prêt » s\'appelle « Revanche »', () => {
-    setup([chair(SELF), chair(BASTIEN)], { rematch: true });
-    expect(screen.getByRole('button', { name: fr.games.actions.rematch })).toBeTruthy();
+  test('après une partie, la chaise garde « Se lever » (« Revanche » est dans la barre de la revanche), dit « veut la revanche » de qui l\'a acceptée, sans seconde phrase', () => {
+    setup([chair(SELF), chair(BASTIEN, { ready: true })], { rematch: true });
     expect(screen.queryByRole('button', { name: fr.games.lobby.ready })).toBeNull();
+    expect(screen.queryByRole('button', { name: fr.games.actions.rematch })).toBeNull();
+    expect(screen.getByRole('button', { name: fr.games.lobby.stand })).toBeTruthy();
+    const rows = screen.getAllByRole('listitem').filter((row) => row.classList.contains('game-chair'));
+    expect(within(rows[1]!).getByText(fr.games.rematch.accepted)).toBeTruthy();
+    expect(document.querySelector('.game-lobby-hint')).toBeNull();
   });
 
   test('« Se lever » envoie `stand`', async () => {
@@ -97,6 +101,96 @@ describe('« Prêt », « Revanche » et « Se lever »', () => {
     serverAnswers({ ok: true });
     await vi.waitFor(() => expect(onMessage).toHaveBeenLastCalledWith(null));
     expect(onMessage).not.toHaveBeenCalledWith(fr.games.errors.stale);
+  });
+});
+
+describe('la barre de la revanche', () => {
+  // Une partie finie à cette table (ces chaises), et sa barre de la revanche, vue par moi ; `body` : la barre est dans le corps d'un panneau, sous la phrase de fin.
+  function rematchBar(chairs: Array<ReturnType<typeof chair> | null>, options: { body?: boolean } = {}) {
+    const players = chairs.flatMap((seated) => (seated ? [seated.userId] : []));
+    const view = table('connect4', 9, { chairs, match: match(players, morpion([0, 3]), { status: 'ended', turnMs: null }) });
+    applyWorld([BASTIEN, CLAIRE], [view]);
+    const bar = <RematchBar game="connect4" table={view} minPlayers={2} selfId={SELF} socket={socket.asSocket()} settled onMessage={vi.fn()} />;
+    return render(
+      options.body ? (
+        <div className="drawer-body">
+          <p className="game-status">Fin</p>
+          {bar}
+        </div>
+      ) : (
+        bar
+      ),
+    );
+  }
+  const rematchButton = () => screen.getByRole('button', { name: fr.games.actions.rematch });
+  const line = () => document.querySelector('.game-rematch-line')?.textContent;
+
+  test('personne ne l\'a acceptée : « Revanche », pas enfoncé, et la règle ; un clic la demande (`ready`)', async () => {
+    rematchBar([chair(SELF), chair(BASTIEN)]);
+    expect(rematchButton().getAttribute('aria-pressed')).toBe('false');
+    expect(line()).toBe(fr.games.rematch.open);
+    await userEvent.click(rematchButton());
+    expect(sent()).toEqual([{ type: 'ready', game: 'connect4', ready: true }]);
+  });
+
+  test('Bastien l\'a demandée : la phrase le dit, et qu\'on n\'attend plus que moi', () => {
+    rematchBar([chair(SELF), chair(BASTIEN, { ready: true })]);
+    expect(line()).toBe(t(fr.games.rematch.askedBy, { names: 'Bastien' }));
+    expect(rematchButton().getAttribute('aria-pressed')).toBe('false');
+  });
+
+  test('je l\'ai demandée : le bouton reste enfoncé, avec une coche et ce qu\'un second clic ferait ; la phrase dit qui on attend ; un clic l\'annule', async () => {
+    rematchBar([chair(SELF, { ready: true }), chair(BASTIEN)]);
+    const button = rematchButton();
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(button.getAttribute('title')).toBe(fr.games.rematch.cancelTip);
+    expect(button.querySelector('svg')).toBeTruthy();
+    expect(line()).toBe(t(fr.games.rematch.asked, { names: 'Bastien' }));
+    await userEvent.click(button);
+    expect(sent()).toEqual([{ type: 'ready', game: 'connect4', ready: false }]);
+  });
+
+  test('un spectateur n\'a pas de barre : il n\'a pas de revanche à demander', () => {
+    const { container } = rematchBar([chair(BASTIEN), chair(CLAIRE)]);
+    expect(container.querySelector('.game-rematch')).toBeNull();
+  });
+
+  // Le corps du panneau et ce qu'il contient, aux places que donne `boxes` (par classe) : happy-dom ne met rien en page.
+  function placeBoxes(boxes: Record<string, { top: number; bottom: number }>) {
+    return vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const found = Object.entries(boxes).find(([name]) => this.classList.contains(name));
+      const { top, bottom } = found?.[1] ?? { top: 0, bottom: 0 };
+      return { top, bottom, left: 0, right: 400, width: 400, height: bottom - top, x: 0, y: top, toJSON: () => ({}) } as DOMRect;
+    });
+  }
+
+  test('sous le pli, le corps du panneau défile juste ce qu\'il faut pour la montrer (et sa marge de 12 px) ; au-dessus, pour la montrer avec la phrase de fin', async () => {
+    const boxes = placeBoxes({ 'drawer-body': { top: 100, bottom: 700 }, 'game-status': { top: 760, bottom: 790 }, 'game-rematch': { top: 800, bottom: 880 } });
+    const view = rematchBar([chair(SELF), chair(BASTIEN)], { body: true });
+    const body = document.querySelector('.drawer-body') as HTMLElement;
+    await vi.waitFor(() => expect(body.scrollTop).toBe(880 + 12 - 700));
+    view.unmount();
+
+    // Défilé trop loin : la barre est au-dessus, la phrase de fin aussi ; on remonte jusqu'à la phrase.
+    boxes.mockRestore();
+    placeBoxes({ 'drawer-body': { top: 100, bottom: 700 }, 'game-status': { top: 20, bottom: 50 }, 'game-rematch': { top: 60, bottom: 140 } });
+    rematchBar([chair(SELF), chair(BASTIEN)], { body: true });
+    const again = document.querySelector('.drawer-body') as HTMLElement;
+    again.scrollTop = 500;
+    await vi.waitFor(() => expect(again.scrollTop).toBe(500 + 20 - 12 - 100));
+    vi.restoreAllMocks();
+  });
+
+  test('déjà visible, elle ne fait rien défiler', async () => {
+    placeBoxes({ 'drawer-body': { top: 100, bottom: 700 }, 'game-status': { top: 300, bottom: 330 }, 'game-rematch': { top: 340, bottom: 420 } });
+    rematchBar([chair(SELF), chair(BASTIEN)], { body: true });
+    const body = document.querySelector('.drawer-body') as HTMLElement;
+    const scrolled = vi.spyOn(body, 'scrollTo');
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(scrolled).not.toHaveBeenCalled();
+    expect(body.scrollTop).toBe(0);
+    vi.restoreAllMocks();
   });
 });
 

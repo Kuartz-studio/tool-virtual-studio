@@ -751,3 +751,47 @@ describe('la parole', () => {
     expect(world.get('a')).not.toHaveProperty('speaking');
   });
 });
+
+describe('le tapis de course', () => {
+  const treadmill = { desk: 'A1', x: 1, y: 2 };
+
+  test('elle y court tant que ses pieds sont sur la bande, tournée vers la console : sa direction sur place ne change rien, un pas ailleurs l\'en fait descendre, et le tick suivant le dit une fois', () => {
+    const { clock, world, join } = setup();
+    join('a');
+    expect(world.setTreadmill('a', treadmill)).toBe(true);
+    expect(world.setTreadmill('a', treadmill)).toBe(false);   // déjà dessus
+    expect(world.get('a')).toMatchObject({ x: 80, y: 240, dir: 'up', treadmill });
+    // Ce que le monde donne est une copie : la changer ne change pas le monde.
+    world.get('a')!.treadmill!.x = 7;
+    expect(world.list()[0]?.treadmill).toEqual(treadmill);
+
+    clock.t = 100;
+    expect(world.applyMove('a', { x: 80, y: 240, dir: 'up', moving: false })).toEqual({ ok: true });
+    expect(world.get('a')?.treadmill).toEqual(treadmill);
+    expect(world.drainTreadmillStops()).toEqual([]);
+
+    expect(world.applyMove('a', { x: 100, y: 240, dir: 'right', moving: true })).toEqual({ ok: true });
+    expect(world.get('a')).not.toHaveProperty('treadmill');
+    expect(world.drainTreadmillStops()).toEqual(['a']);
+    expect(world.drainTreadmillStops()).toEqual([]);
+  });
+
+  test('un saut ailleurs aussi ; remonter avant le tick efface la descente pas encore dite ; null la fait descendre ; partir aussi, sans rien à dire', () => {
+    const { world, join } = setup();
+    join('a');
+    world.setTreadmill('a', treadmill);
+    expect(world.teleport('a', 120, 240)).toBe(true);
+    expect(world.get('a')).not.toHaveProperty('treadmill');
+    world.setTreadmill('a', treadmill);
+    expect(world.drainTreadmillStops()).toEqual([]);
+    expect(world.setTreadmill('a', null)).toBe(true);
+    expect(world.setTreadmill('a', null)).toBe(false);
+    expect(world.drainTreadmillStops()).toEqual(['a']);
+
+    world.setTreadmill('a', treadmill);
+    world.setTreadmill('a', null);
+    world.leave('a');
+    expect(world.drainTreadmillStops()).toEqual([]);
+    expect(world.setTreadmill('fantome', treadmill)).toBe(false);
+  });
+});

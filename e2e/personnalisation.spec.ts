@@ -44,6 +44,17 @@ async function arrive(browser: Browser, name: string, desk: 'needed' | 'given ba
   return { page, id: (await selfAt(page)).id, account };
 }
 
+// Rend, à la fin d'un test, le bureau qu'il a pris pour sa déco (l'avatar y est encore : pas de marche) : les specs qui passent après lui sur ce
+// serveur (les portes, suivre…) ont besoin d'une place libre, et il n'y en a que six.
+async function giveBack(page: Page): Promise<void> {
+  const editor = page.getByRole('complementary', { name: 'Décorer mon bureau' });
+  if (await editor.isVisible()) await editor.getByRole('button', { name: 'Fermer l\'éditeur de déco' }).click();
+  const panel = await openPanel(page, 'Mon bureau');
+  await panel.getByRole('button', { name: 'Rendre mon bureau' }).click();
+  await panel.getByRole('button', { name: 'Oui, le rendre' }).click();
+  await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
+}
+
 test('le builder : A choisit un autre personnage prêt à jouer, B le voit tout de suite, et A le retrouve après un rechargement', async ({ browser }) => {
   test.slow();   // deux personnes dans deux navigateurs : plus de 20 s sur une machine chargée
   const a = await arrive(browser, 'Ambre');
@@ -127,6 +138,33 @@ test('la déco du bureau : le sol et les murs se règlent, s\'enregistrent, et s
   await again.getByRole('tab', { name: 'Murs et sol' }).click();
   await expect(again.getByRole('button', { name: 'Noyer' })).toHaveAttribute('aria-pressed', 'true');
   await expect(again.getByRole('button', { name: 'Bleu ciel' })).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('la déco du bureau : le sélecteur de matière filtre les sols et les murs, et un sol et un mur noirs, gratuits, s\'enregistrent', async ({ browser }) => {
+  const a = await arrive(browser, 'Anouk', 'needed');
+  await openPanel(a.page, 'Mon bureau');
+  await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
+  const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
+  await panel.getByRole('tab', { name: 'Murs et sol' }).click();
+
+  // Les listes sont rangées par couleur ; « Moquette » ne garde que les moquettes, la noire comprise.
+  const materials = panel.getByRole('group', { name: 'Matière', exact: true });
+  const floors = panel.getByRole('group', { name: 'Sol', exact: true });
+  const walls = panel.getByRole('group', { name: 'Murs', exact: true });
+  await expect(floors.getByRole('group', { name: 'Noir', exact: true })).toBeVisible();
+  await materials.getByRole('button', { name: 'Moquette', exact: true }).click();
+  await expect(floors.getByRole('button', { name: 'Noyer' })).toHaveCount(0);
+  await floors.getByRole('button', { name: 'Moquette noire' }).click();
+  await materials.getByRole('button', { name: 'Brique', exact: true }).click();
+  await walls.getByRole('button', { name: 'Brique noire' }).click();
+
+  // Gratuits : rien à acheter, l'enregistrement passe tout de suite.
+  await panel.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(panel.getByText('Déco enregistrée.')).toBeVisible();
+  await materials.getByRole('button', { name: 'Toutes', exact: true }).click();
+  await expect(floors.getByRole('button', { name: 'Moquette noire' })).toHaveAttribute('aria-pressed', 'true');
+  await expect(walls.getByRole('button', { name: 'Brique noire' })).toHaveAttribute('aria-pressed', 'true');
+  await giveBack(a.page);
 });
 
 test('la déco du bureau : un élément pris en main se pose dans la pièce, et « Tout vider » puis « Poste par défaut » remplacent le brouillon', async ({ browser }) => {
@@ -223,21 +261,65 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
 });
 
-// Seuls les gros meubles arrêtent : dans la rue nord, un arbuste (27, 11) se traverse, et la fontaine à eau (29, 11) qui le suit arrête (le test
-// « l'agencement » de office.test.ts garde ces deux positions). On part à gauche de l'arbuste, on marche vers la droite.
+test('la déco du bureau : un pot devant sa pièce, sur la rangée de la rue, s\'enregistre et se retrouve après un rechargement', async ({ browser }) => {
+  const a = await arrive(browser, 'Nina', 'needed');
+  await openPanel(a.page, 'Mon bureau');
+  await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
+  const panel = a.page.getByRole('complementary', { name: 'Décorer mon bureau' });
+  const initial = await itemCount(panel);
+  await panel.getByRole('button', { name: 'Plantes' }).click();
+  await panel.getByRole('button', { name: 'Plante en pot', exact: true }).click();
+
+  // La rangée du dehors : sous la pièce (7 rangées), sa bande de mur sud (rangées 7 et 8), puis la rue, rangée 9. On lit où la caméra a mis la pièce.
+  const spotAt = async (column: number, row: number) => {
+    const room = await a.page.evaluate(() => window.__office!.editorRoom());
+    if (!room) return null;
+    return a.page.evaluate(({ x, y }) => window.__office!.toScreen(x, y), { x: room.x + column * 32 + 16, y: room.y + row * 32 + 16 });
+  };
+  await expect.poll(() => spotAt(2, 9), { timeout: 5000 }).not.toBeNull();
+  await a.page.waitForTimeout(700);
+  const viewport = a.page.viewportSize()!;
+  // Une case libre de la rangée : le dehors par défaut a des plantes et une fontaine, le mur l'interrupteur ou le panneau de sortie, selon la pièce.
+  let placed = false;
+  for (const column of [2, 4, 3, 5, 6]) {
+    const where = (await spotAt(column, 9))!;
+    expect(where.y, 'la rangée du dehors est à l\'écran').toBeLessThan(viewport.height);
+    await a.page.mouse.click(where.x, where.y);
+    if (await panel.getByText(`${initial + 1} / 80 éléments`).isVisible({ timeout: 1500 }).catch(() => false)) {
+      placed = true;
+      break;
+    }
+    const dialog = a.page.getByRole('alertdialog', { name: 'Remplacer cet élément ?' });
+    if (await dialog.isVisible()) await dialog.getByRole('button', { name: 'Annuler' }).click();
+  }
+  expect(placed, 'une case libre devant la pièce').toBe(true);
+  await panel.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(panel.getByText('Déco enregistrée.')).toBeVisible();
+
+  await a.page.reload();
+  await enterOffice(a.page);
+  await openPanel(a.page, 'Mon bureau');
+  await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
+  await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
+  await giveBack(a.page);
+});
+
+// Seuls les gros meubles arrêtent : dans la rue nord, loin des bureaux (devant eux, la rangée de la rue est leur dehors, que chacun décore), un arbuste
+// (68, 11) se traverse, et la fontaine à eau (63, 11) qui le suit arrête (le test « les fontaines à eau » de office.test.ts garde ces deux positions).
+// On part à droite de l'arbuste, on marche vers la gauche.
 test('la marche : une petite plante se traverse, un gros meuble arrête', async ({ browser }) => {
   test.slow();   // l'arrivée marche jusqu'au bureau libre, qui peut être à l'autre bout de la carte : 30 s ne suffisent pas sur une machine chargée
   const a = await arrive(browser, 'Alma');
-  await a.page.evaluate(() => window.__office!.teleport(25 * 32 + 16, 11 * 32 + 16));
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(25 * 32 + 16);
+  await a.page.evaluate(() => window.__office!.teleport(70 * 32 + 16, 11 * 32 + 16));
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(70 * 32 + 16);
 
-  await a.page.keyboard.down('ArrowRight');
-  // L'arbuste occupe les x de 864 à 896 : l'avatar le traverse, puis butte contre la fontaine (bord gauche à 928, moins la demi-largeur du corps).
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeGreaterThan(900);
+  await a.page.keyboard.down('ArrowLeft');
+  // L'arbuste occupe les x de 2176 à 2208 : l'avatar le traverse, puis bute contre la fontaine (bord droit à 2048, plus la demi-largeur du corps).
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeLessThan(2170);
   await a.page.waitForTimeout(800);
-  await a.page.keyboard.up('ArrowRight');
+  await a.page.keyboard.up('ArrowLeft');
   const stopped = (await selfAt(a.page)).x;
-  expect(stopped).toBeLessThanOrEqual(928 - 9);
-  expect(stopped).toBeGreaterThan(900);
+  expect(stopped).toBeGreaterThanOrEqual(2048 + 9);
+  expect(stopped).toBeLessThan(2170);
 });
 

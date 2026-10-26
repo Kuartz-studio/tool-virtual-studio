@@ -10,7 +10,8 @@ export function addShadow(scene: Scene, x: number, y: number): GameObjects.Ellip
   return scene.add.ellipse(x, y, SHADOW.width, SHADOW.height, SHADOW.color, SHADOW.alpha).setDepth(y - 1);
 }
 
-// Suit l'avatar dont les pieds sont maintenant en (x, y).
-export function placeShadow(shadow: GameObjects.Ellipse, x: number, y: number): void {
-  shadow.setPosition(x, y).setDepth(y - 1);
+// Suit l'avatar dont les pieds sont maintenant en (x, y). `depth` : celle de l'avatar, quand ce n'est pas le y de ses pieds (sur son tapis de course, il est
+// devant le tapis).
+export function placeShadow(shadow: GameObjects.Ellipse, x: number, y: number, depth: number = y): void {
+  shadow.setPosition(x, y).setDepth(depth - 1);
 }

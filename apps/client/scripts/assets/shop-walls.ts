@@ -49,8 +49,8 @@ export interface WallMotion {
 }
 
 // Les couleurs de construction du pack : le trait sombre des bords et le liseré blanc du haut du mur (mesurées sur ses murs).
-const OUTLINE = rgb(58, 58, 80);
-const CAP = rgb(248, 248, 248);
+export const OUTLINE = rgb(58, 58, 80);
+export const CAP = rgb(248, 248, 248);
 
 // Une surface à peindre, en pixels du pack. En x, elle se répète : ce qui dépasse à droite revient à gauche (le motif continue d'une case à l'autre).
 export class Canvas {

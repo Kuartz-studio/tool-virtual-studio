@@ -10,7 +10,7 @@ import { Alert } from '../pages/AuthLayout';
 import { useOfficeStore } from '../state/office-store';
 import { AvatarPortrait } from '../office/ui/AvatarPortrait';
 import { Segmented } from '../office/ui/Segmented';
-import { GameLobby } from './GameLobby';
+import { GameLobby, RematchBar } from './GameLobby';
 import { Ladder } from './Ladder';
 import { ResignDialog } from './ResignDialog';
 import { chairOf, countdownVisible, endText, formatClock, formatDelta, ratingLines, seatOf, soleWinner } from './table-view';
@@ -31,7 +31,8 @@ export interface GameFrameProps {
 type Tab = 'match' | 'ladder';
 
 // Le cadre du panneau d'un jeu, commun aux quatre : l'onglet « Partie » (les joueurs, le plateau que fournit le module du jeu, la ligne d'état, les gestes, les spectateurs) et l'onglet
-// « Classement ». Avant la première partie de la table, et après chaque fin, la salle d'attente (GameLobby) est au-dessus du plateau.
+// « Classement ». Avant la première partie de la table, et après chaque fin, la salle d'attente (GameLobby) est sous le plateau ; après une fin, la revanche (RematchBar) est juste
+// sous la phrase de fin, et le panneau défile pour la montrer.
 export function GameFrame({ game, socket, module, rulesOpen }: GameFrameProps) {
   const table = useOfficeStore((state) => state.games[game]);
   const selfId = useOfficeStore((state) => state.selfId);
@@ -272,6 +273,9 @@ function MatchView({ game, table, socket, module, selfId }: { game: GameId; tabl
       </div>
 
       <p className="game-status">{status}</p>
+      {match?.status === 'ended' && myChair !== null && (
+        <RematchBar game={game} table={table} minPlayers={def?.minPlayers ?? null} selfId={selfId} socket={socket} settled={module.status !== 'loading'} onMessage={setMessage} />
+      )}
       {match?.status === 'ended' && (
         <div className="game-end">
           {match.ranked === false && <p className="desk-hint">{fr.games.end.unranked}</p>}

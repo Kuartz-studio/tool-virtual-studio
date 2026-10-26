@@ -16,7 +16,7 @@ export const todoInputSchema = z.object({ title: titleSchema, notes: notesSchema
 // La modifier (PATCH /api/me/tasks/:id) : ce qui n'est pas dit ne change pas ; des notes vides les retirent.
 export const todoPatchSchema = z.object({ title: titleSchema.optional(), notes: notesSchema.optional() }).refine((patch) => patch.title !== undefined || patch.notes !== undefined);
 
-// Confier une mission à quelqu'un (l'événement `mission:give`, auprès d'une administratrice de l'accueil) : à qui, quoi, et sa difficulté de 1 à 10.
+// Confier une mission à quelqu'un, ou à soi-même (l'événement `mission:give`, auprès d'une administratrice de l'accueil) : à qui, quoi, et sa difficulté de 1 à 10.
 export const missionGiveSchema = z.object({
   to: z.string().min(1).max(128),
   title: titleSchema,
@@ -38,12 +38,12 @@ export interface PersonRef {
 }
 
 // Une tâche :
-// - `kind` : `todo`, une tâche de sa propre liste ; `mission`, confiée par quelqu'un d'autre (`giver`) auprès d'une administratrice ;
+// - `kind` : `todo`, une tâche de sa propre liste ; `mission`, confiée auprès d'une administratrice, par quelqu'un d'autre ou par soi-même (`giver`) ;
 // - `tier` : la difficulté d'une mission (1 à 10) ; null pour une tâche à soi ;
 // - `xp` : ce qu'elle rapporte (une mission : selon sa difficulté, fixé quand on la confie) ; une fois faite, ce qu'elle a rapporté (une tâche à soi au-delà
 //   du plafond du jour : 0) ;
 // - `status` : `open` (à faire), `done` (faite), `declined` (rendue par celle qui l'avait reçue), `cancelled` (retirée par celle qui l'avait confiée) ;
-// - `seen` : celle qui l'a reçue l'a vue (une mission non vue est « nouvelle ») ; une tâche à soi l'est toujours.
+// - `seen` : celle qui l'a reçue l'a vue (une mission non vue est « nouvelle ») ; une tâche à soi l'est toujours, une mission qu'on s'est donnée aussi.
 // Les dates sont en ISO 8601.
 export interface TaskView {
   id: string;
@@ -116,8 +116,8 @@ export interface CharacterStats {
 }
 
 // La réponse à `mission:give` : la mission confiée, ou pourquoi elle ne l'a pas été — `invalid` (charge refusée), `rate_limited`, `too_far` (aucune
-// administratrice à portée), `unknown_member` (personne de ce nom parmi les membres actifs), `self` (on ne se confie pas de mission), `limit` (sa liste
-// est pleine), `unavailable` (la base n'a pas pris la mission).
+// administratrice à portée), `unknown_member` (personne de ce nom parmi les membres actifs), `limit` (sa liste est pleine), `unavailable` (la base n'a pas
+// pris la mission).
 export type MissionAck =
   | { ok: true; task: TaskView }
-  | { ok: false; error: 'invalid' | 'rate_limited' | 'too_far' | 'unknown_member' | 'self' | 'limit' | 'unavailable' };
+  | { ok: false; error: 'invalid' | 'rate_limited' | 'too_far' | 'unknown_member' | 'limit' | 'unavailable' };

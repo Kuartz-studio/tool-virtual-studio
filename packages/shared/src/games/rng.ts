@@ -29,7 +29,8 @@ export function rngFromDice(dice: readonly number[], sides = 6): number[] {
   return dice.map((die) => (die - 0.5) / sides);
 }
 
-// 1 + floor(rng() × sides), ramené à [1, sides]. Le seul tirage de dé des jeux.
+// 1 + floor(rng() × sides), ramené à [1, sides]. Le dé juste des jeux ; celui des petits chevaux, qui fait plus souvent 6 sans cheval en jeu, a sa propre loi (rollLudoDie), tirée
+// elle aussi d'une seule valeur.
 export function rollDie(rng: Rng, sides = 6): number {
   return Math.min(sides, Math.max(1, 1 + Math.floor(rng() * sides)));
 }

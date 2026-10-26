@@ -12,6 +12,7 @@ import {
   ChevronUp,
   ClipboardList,
   Coffee,
+  CornerDownRight,
   Crown,
   DoorClosed,
   DoorOpen,
@@ -136,6 +137,11 @@ export function ZoomResetIcon() {
 // L'épingle : un lieu.
 export function PlaceIcon() {
   return <MapPin />;
+}
+
+// Une flèche qui descend de la ligne du dessus, puis part à droite : une autre façon de la prendre (un mode sur son tapis de course).
+export function SubChoiceIcon() {
+  return <CornerDownRight />;
 }
 
 // Une tasse fumante : le café qu'on a pris.

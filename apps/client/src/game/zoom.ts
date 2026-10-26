@@ -22,21 +22,27 @@ export interface Bounds extends Size {
   y: number;
 }
 
+// La caméra peut sortir de la carte de CAMERA_MARGIN_TILES cases de chaque côté : au bord du monde, elle suit encore l'avatar, qui reste au
+// milieu de l'écran au lieu de glisser sous l'interface (la puce du lieu en haut, les barres d'outils en bas) ; au-delà de la carte, on voit le
+// fond du jeu.
+export const CAMERA_MARGIN_TILES = 10;
+
 // Les bornes de la caméra (camera.setBounds), en pixels de la carte, pour une carte de `map` pixels vue dans un canevas de
-// `canvas` pixels, à ce zoom.
+// `canvas` pixels, à ce zoom, avec `margin` pixels de carte de débord de chaque côté.
 //
-// Sur chaque axe, une carte plus grande que la vue se parcourt en entier : les bornes sont la carte. Une carte plus petite que
-// la vue n'a rien à parcourir, mais Phaser la collerait alors en haut à gauche : on donne à la caméra des bornes de la taille de
-// la vue, placées pour que la carte soit au milieu.
+// Sur chaque axe, une carte plus grande que la vue se parcourt en entier, et la caméra peut en sortir de `margin` : les bornes sont la
+// carte, élargie de la marge. Une carte plus petite que la vue n'a rien à parcourir (elle est tout entière à l'écran : la marge n'y sert
+// pas), mais Phaser la collerait alors en haut à gauche : on donne à la caméra des bornes de la taille de la vue, placées pour que la carte
+// soit au milieu.
 //
-// La marge est un nombre entier de pixels de l'écran (le reste impair va du côté droit ou bas) : le bord de la carte tombe sur un
-// pixel de l'écran, pas entre deux.
-export function cameraBounds(map: Size, canvas: Size, zoom: number): Bounds {
+// Le décalage qui la centre est un nombre entier de pixels de l'écran (le reste impair va du côté droit ou bas) : le bord de la carte tombe
+// sur un pixel de l'écran, pas entre deux.
+export function cameraBounds(map: Size, canvas: Size, zoom: number, margin = 0): Bounds {
   const axis = (mapLength: number, canvasLength: number): [start: number, length: number] => {
-    if (canvasLength < mapLength * zoom) return [0, mapLength];
-    const margin = Math.floor((canvasLength - mapLength * zoom) / 2);
-    // `|| 0` : sans marge, −0 / zoom vaut −0, qu'on ne veut pas voir dans les bornes.
-    return [-margin / zoom || 0, canvasLength / zoom];
+    // `|| 0` : sans marge, −0 vaut −0, qu'on ne veut pas voir dans les bornes.
+    if (canvasLength < mapLength * zoom) return [-margin || 0, mapLength + 2 * margin];
+    const offset = Math.floor((canvasLength - mapLength * zoom) / 2);
+    return [-offset / zoom || 0, canvasLength / zoom];
   };
   const [x, width] = axis(map.width, canvas.width);
   const [y, height] = axis(map.height, canvas.height);

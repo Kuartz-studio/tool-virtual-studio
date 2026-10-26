@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { deepFreeze } from '../conformance';
-import { rngFromDice, scriptedRng } from '../rng';
+import { rngFromDice, scriptedRng, seededRng } from '../rng';
 import { FORFEIT_REASONS } from '../types';
 import {
   fabricateLudo,
@@ -11,6 +11,7 @@ import {
   LUDO_TRACK,
   ludo,
   ludoMoveSchema,
+  rollLudoDie,
   trackCell,
   type LudoEvent,
   type LudoFabrication,
@@ -267,6 +268,59 @@ describe('petits chevaux : sortir, le 6, les essais', () => {
     const four = roll(start, 4);
     expect(four.events).toEqual([dice(0, 4), pass(0, 'no-move'), turnTo(1)]);
     expect(ludo.invariants(four.state)).toEqual([]);
+  });
+
+  test('C49 : sans cheval en jeu, le 6 sort deux fois sur six et chaque autre face 4 fois sur 30 ; avec un cheval en jeu, le dé est juste (6 000 lancers d\'un générateur à graine)', () => {
+    // La part de chaque face sur 6 000 lancers du siège 0, tous joués sur le même état : c'est l'état de celui qui lance qui décide.
+    const odds = (horses: number[]): number[] => {
+      const state = fab({ horses: [horses, STABLE] });
+      const rng = seededRng(2026);
+      const counts = [0, 0, 0, 0, 0, 0];
+      for (let i = 0; i < 6000; i++) {
+        const out = ludo.apply(state, 0, { type: 'roll' }, rng);
+        if (!out.ok) throw new Error(`le lancer est refusé : ${out.error}`);
+        const rolled = out.events[0] as Extract<LudoEvent, { type: 'dice' }>;
+        counts[rolled.value - 1]!++;
+      }
+      return counts.map((count) => count / 6000);
+    };
+    // Aucun cheval en jeu : tous à l'écurie, ou les arrivés et les autres à l'écurie (les arrivés ne comptent pas, comme pour les trois essais).
+    for (const horses of [STABLE, [56, 56, -1, -1], [56, 56, 56, -1]]) {
+      const shares = odds(horses);
+      expect(shares[5], `le 6, chevaux ${horses.join(', ')}`).toBeGreaterThan(0.31);
+      expect(shares[5], `le 6, chevaux ${horses.join(', ')}`).toBeLessThan(0.36);
+      for (const share of shares.slice(0, 5)) {
+        expect(share).toBeGreaterThan(0.115);
+        expect(share).toBeLessThan(0.155);
+      }
+    }
+    // Un cheval en jeu (sur la piste, sur sa case de départ, ou dans son allée) : chaque face une fois sur six.
+    for (const horses of [[10, -1, -1, -1], [0, -1, -1, -1], [56, 56, 56, 53]]) {
+      for (const share of odds(horses)) {
+        expect(share, `chevaux ${horses.join(', ')}`).toBeGreaterThan(0.14);
+        expect(share, `chevaux ${horses.join(', ')}`).toBeLessThan(0.19);
+      }
+    }
+  });
+
+  test('C50 : un dé imposé (rngFromDice : les tests, le débogage de bout en bout) donne toujours sa face, avec ou sans cheval en jeu ; le 6 offert est la fin de la part de chaque face', () => {
+    for (const die of [1, 2, 3, 4, 5, 6]) {
+      expect(rollLudoDie(scriptedRng(rngFromDice([die])), false)).toBe(die);
+      expect(rollLudoDie(scriptedRng(rngFromDice([die])), true)).toBe(die);
+      // Le lancer du moteur aussi, sur un état sans cheval en jeu.
+      expect(roll(fab({ horses: [STABLE, STABLE] }), die).events[0]).toEqual(dice(0, die));
+    }
+    // La part du 3 est [2/6, 3/6) : sans cheval en jeu, ses quatre premiers cinquièmes restent un 3, le dernier fait un 6 ; avec un cheval en jeu, toute sa part est un 3.
+    const from = 2 / 6;
+    const width = 1 / 6;
+    expect(rollLudoDie(() => from, false)).toBe(3);
+    expect(rollLudoDie(() => from + width * 0.79, false)).toBe(3);
+    expect(rollLudoDie(() => from + width * 0.81, false)).toBe(6);
+    expect(rollLudoDie(() => from + width * 0.81, true)).toBe(3);
+    // La part du 6 reste un 6, et les bords du générateur restent des faces.
+    expect(rollLudoDie(() => 5.5 / 6, false)).toBe(6);
+    expect(rollLudoDie(() => 0, false)).toBe(1);
+    expect(rollLudoDie(() => 0.9999999, true)).toBe(6);
   });
 });
 

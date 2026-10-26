@@ -1,6 +1,6 @@
 import type { GameMatchView, GameResult, GameTableView } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
-import { chairOf, countdownVisible, endText, formatClock, formatDelta, ratingLines, seatOf, soleWinner } from './table-view';
+import { chairOf, countdownVisible, endText, formatClock, formatDelta, ratingLines, rematchAskers, rematchLine, seatOf, soleWinner } from './table-view';
 
 const match = (userIds: string[], over: Partial<GameMatchView> = {}): GameMatchView => ({
   id: 'm',
@@ -109,6 +109,50 @@ describe('endText : comment la fin d\'une partie se dit', () => {
     expect(endText(result([[1], [0]], 'checkmate'), names, null)).toBe('Bastien gagne.');
     expect(endText(result([[0, 1]], 'stalemate'), names, null)).toBe('Match nul.');
     expect(endText(result([[0, 2], [1]], 'x'), names, null)).toBe('Alice et Claire gagnent.');
+  });
+});
+
+describe('la revanche : la phrase de la barre, et qui la demande', () => {
+  // Une table dont la partie est finie : les chaises (null : libre), et qui a accepté la revanche (est prêt).
+  const after = (chairs: Array<string | null>, ready: string[] = []): GameTableView => {
+    const view = table(chairs);
+    return {
+      ...view,
+      chairs: view.chairs.map((chair) => chair && { ...chair, ready: ready.includes(chair.userId) }),
+      match: match(chairs.flatMap((userId) => (userId ? [userId] : [])), { status: 'ended' }),
+    };
+  };
+
+  test('personne ne l\'a acceptée : la règle, elle commence quand tout le monde l\'a acceptée', () => {
+    expect(rematchLine(after(['a', 'b']), 'a', 2)).toBe('La revanche commence dès que tout le monde l\'a acceptée.');
+  });
+
+  test('je l\'ai demandée : qui on attend', () => {
+    expect(rematchLine(after(['a', 'b'], ['a']), 'a', 2)).toBe('Revanche demandée : on attend B.');
+    expect(rematchLine(after(['a', 'b', 'c'], ['a']), 'a', 2)).toBe('Revanche demandée : on attend B et C.');
+  });
+
+  test('un autre l\'a demandée : qui, et si l\'on n\'attend plus que moi', () => {
+    expect(rematchLine(after(['a', 'b'], ['b']), 'a', 2)).toBe('B veut la revanche : on n\'attend plus que toi.');
+    expect(rematchLine(after(['a', 'b', 'c'], ['b', 'c']), 'a', 2)).toBe('B et C veulent la revanche : on n\'attend plus que toi.');
+    expect(rematchLine(after(['a', 'b', 'c', 'd'], ['b']), 'a', 2)).toBe('B veut la revanche. On attend encore C, D et toi.');
+    expect(rematchLine(after(['a', 'b', 'c', 'd'], ['b', 'd']), 'a', 2)).toBe('B et D veulent la revanche. On attend encore C et toi.');
+  });
+
+  test('l\'autre s\'est levé : il faut assez de joueurs ; sans module, on ne le sait pas', () => {
+    expect(rematchLine(after(['a', null], ['a']), 'a', 2)).toBe('Il faut 2 joueurs au moins pour commencer.');
+    expect(rematchLine(after(['a', null], ['a']), 'a', null)).toBe('Tout le monde est prêt : la partie commence.');
+  });
+
+  test('qui demande la revanche à une personne assise qui ne l\'a pas encore acceptée ; personne d\'autre ne l\'apprend', () => {
+    expect(rematchAskers(after(['a', 'b'], ['b']), 'a').map((chair) => chair.userId)).toEqual(['b']);
+    expect(rematchAskers(after(['a', 'b', 'c'], ['b', 'c']), 'a').map((chair) => chair.userId)).toEqual(['b', 'c']);
+    // Elle l'a déjà acceptée, personne ne l'a demandée, elle n'est pas assise, la partie n'est pas finie : personne.
+    expect(rematchAskers(after(['a', 'b'], ['a', 'b']), 'a')).toEqual([]);
+    expect(rematchAskers(after(['a', 'b']), 'a')).toEqual([]);
+    expect(rematchAskers(after(['b', 'c'], ['b']), 'a')).toEqual([]);
+    expect(rematchAskers({ ...after(['a', 'b'], ['b']), match: match(['a', 'b']) }, 'a')).toEqual([]);
+    expect(rematchAskers(undefined, 'a')).toEqual([]);
   });
 });
 

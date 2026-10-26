@@ -1,4 +1,4 @@
-import { DESK_ROOMS, TILE_SIZE, decorAtlasOf, decorItem, footprintOf, type DeskRoomSpec, type Zone } from '@bureau/shared';
+import { DESK_ROOMS, TILE_SIZE, decorAtlasOf, decorItem, footprintOf, outsideRow, type DeskRoomSpec, type Zone } from '@bureau/shared';
 import type { GameObjects, Input } from 'phaser';
 import { anchorFor, handleOf, planPlace, type DecorSnap } from '../office/decor-draft';
 import { useOfficeStore, type DecorEditor as DecorEditorState } from '../state/office-store';
@@ -15,7 +15,10 @@ import { snapToPixels } from './pixel-snap';
 // panneau), l'élément sous le pointeur s'entoure de rouge et un clic l'efface. Poser sur un élément de la même sorte le remplace, après
 // confirmation (le fantôme est alors orange) ; tant que la fenêtre de confirmation est ouverte, la pièce ne répond plus. Les gestes passent par
 // le magasin, que le panneau (DecorPanel) pilote aussi : il n'y a qu'un brouillon.
+// Devant la pièce, son dehors (quand la carte lui en donne un) se décore de même : la face de son mur sud, que l'on voit de la rue, et la rangée de la
+// rue juste dessous, quadrillée elle aussi ; le mur et la rangée s'éclairent quand on les vise.
 const GRID = { color: 0xffffff, alpha: 0.28 };
+const OUTSIDE_LIGHT = { color: 0xffffff, alpha: 0.16 };
 const OK = 0x59d38c;
 const REPLACE = 0xf2b24c;
 const REFUSED = 0xf26b6b;
@@ -25,6 +28,8 @@ const VERDICT_COLOR: Record<Verdict, number> = { ok: OK, replace: REPLACE, refus
 const VERDICT_TINT: Record<Verdict, number> = { ok: 0xffffff, replace: 0xffd9a0, refused: 0xff8a8a };
 // Un élément mural se vise aussi sur la bande de mur au-dessus de la pièce (2 cases de haut, voir DecorKind).
 const WALL_BAND = 2;
+// Le dehors, sous la pièce : la bande du mur sud et la rangée de la rue.
+const OUTSIDE_ROWS = WALL_BAND + 1;
 
 export interface DecorEditorHooks {
   // L'éditeur s'ouvre sur cette pièce (le jeu y amène la caméra) ; il se ferme (la caméra reprend l'avatar).
@@ -93,6 +98,11 @@ export class DecorEditorView {
     this.grid.lineStyle(1, GRID.color, GRID.alpha);
     for (let i = 0; i <= this.spec.width; i++) this.grid.lineBetween(room.x + i * TILE_SIZE, room.y, room.x + i * TILE_SIZE, room.y + room.height);
     for (let j = 0; j <= this.spec.height; j++) this.grid.lineBetween(room.x, room.y + j * TILE_SIZE, room.x + room.width, room.y + j * TILE_SIZE);
+    if (this.spec.outside) {
+      const [top, bottom] = [room.y + outsideRow(this.spec) * TILE_SIZE, room.y + (outsideRow(this.spec) + 1) * TILE_SIZE];
+      for (let i = 0; i <= this.spec.width; i++) this.grid.lineBetween(room.x + i * TILE_SIZE, top, room.x + i * TILE_SIZE, bottom);
+      for (const y of [top, bottom]) this.grid.lineBetween(room.x, y, room.x + room.width, y);
+    }
     this.outline = this.scene.add.graphics().setDepth(DEPTH.dessus - 2);
     this.hooks.onOpen(room);
   }
@@ -116,13 +126,14 @@ export class DecorEditorView {
   }
 
   // Le point que vise l'élément tenu : celui du pointeur, décalé de la prise (grab) si on le tient là où on l'a attrapé. null quand le pointeur
-  // n'est pas dans la pièce (ni, pour un élément mural, sur la bande de mur qui la surplombe).
+  // n'est ni dans la pièce (ni, pour un élément mural, sur la bande de mur qui la surplombe), ni sur son dehors (anchorFor y pose).
   private aim(pointer: Input.Pointer): { x: number; y: number } | null {
     const editor = this.editor;
     const point = this.pointOf(pointer);
     if (!editor || editor.held === null || !point) return null;
     const top = decorItem(editor.held)?.kind === 'wall' ? -WALL_BAND : 0;
-    if (point.x < 0 || point.x >= this.spec.width || point.y < top || point.y >= this.spec.height) return null;
+    const bottom = this.spec.height + (this.spec.outside ? OUTSIDE_ROWS : 0);
+    if (point.x < 0 || point.x >= this.spec.width || point.y < top || point.y >= bottom) return null;
     const grab = this.grab?.id === editor.held ? this.grab : null;
     return grab ? { x: point.x + grab.dx, y: point.y + grab.dy } : point;
   }
@@ -171,10 +182,22 @@ export class DecorEditorView {
     this.outline?.lineStyle(2, REFUSED, 1).strokeRect(room.x + toPixels(f.x), room.y + toPixels(f.y), f.w * TILE_SIZE, f.h * TILE_SIZE);
   }
 
+  // Le dehors s'éclaire quand on le vise : l'élément tenu s'y poserait, ou, les mains vides (la gomme comprise), le pointeur passe sur son mur ou sa rangée.
+  private lightOutside(target: { y: number } | null, pointer: Input.Pointer): void {
+    const room = this.room;
+    if (!room || !this.outline || !this.spec.outside) return;
+    const point = this.pointOf(pointer);
+    const over = point !== null && point.x >= 0 && point.x < this.spec.width && point.y >= this.spec.height && point.y < this.spec.height + OUTSIDE_ROWS;
+    const holding = this.editor !== null && this.editor.held !== null;
+    const lit = holding ? target?.y === outsideRow(this.spec) : over;
+    if (lit) this.outline.fillStyle(OUTSIDE_LIGHT.color, OUTSIDE_LIGHT.alpha).fillRect(room.x, room.y + room.height, room.width, OUTSIDE_ROWS * TILE_SIZE);
+  }
+
   private drawGhost(target: { x: number; y: number; verdict: Verdict } | null, pointer: Input.Pointer = this.scene.input.activePointer): void {
     const editor = this.editor;
     const room = this.room;
     this.outline?.clear();
+    this.lightOutside(target, pointer);
     this.drawEraser(pointer);
     if (!editor || !room || !target || editor.held === null) {
       this.ghost?.setVisible(false);
@@ -187,9 +210,10 @@ export class DecorEditorView {
       this.ghost = snapToPixels(this.scene.add.image(0, 0, decorTextureKey(decorAtlasOf(item)), item.id).setOrigin(0, 1).setAlpha(0.7).setDepth(DEPTH.dessus - 1));
       this.ghostFor = item.id;
     }
-    // Au pixel près, comme l'élément une fois posé (layoutDecor).
+    // Au pixel près, comme l'élément une fois posé (layoutDecor) : un élément mural, au bas du mur qui surplombe sa rangée (le mur du nord à la rangée 0,
+    // celui du sud à la rangée du dehors).
     const left = room.x + toPixels(target.x);
-    const top = room.y + (item.kind === 'wall' ? 0 : toPixels(target.y));
+    const top = room.y + toPixels(target.y);
     this.ghost.setVisible(true).setPosition(left, top + (item.kind === 'wall' ? 0 : item.claim * TILE_SIZE)).setTint(VERDICT_TINT[target.verdict]);
     // Le rectangle de l'empreinte (une rangée pour le mur) : ce que l'élément prendra vraiment.
     const color = VERDICT_COLOR[target.verdict];

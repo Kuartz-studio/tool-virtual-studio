@@ -96,6 +96,38 @@ test('setSpeaking : la parole d\'un autre, ou la sienne ; se taire retire la cl�
   expect(store.getState().players).toBe(before);
 });
 
+test('setTreadmill : le tapis de course où court un autre, ou soi-même ; en descendre retire la clé ; un inconnu est ignoré', () => {
+  store.getState().applyInit(init(SELF, [A, B]));
+  const { setTreadmill } = store.getState();
+  const tapis = { desk: 'A1', x: 1, y: 2 };
+  setTreadmill('a', tapis);
+  setTreadmill('moi', { desk: 'A2', x: 5, y: 2 });
+  expect(store.getState().players.a?.treadmill).toEqual(tapis);
+  expect(store.getState().self?.treadmill).toEqual({ desk: 'A2', x: 5, y: 2 });
+  expect(store.getState().players.b).not.toHaveProperty('treadmill');
+  setTreadmill('a', null);
+  setTreadmill('moi', null);
+  expect(store.getState().players.a).not.toHaveProperty('treadmill');
+  expect(store.getState().self).not.toHaveProperty('treadmill');
+  const before = store.getState().players;
+  setTreadmill('inconnu', tapis);
+  expect(store.getState().players).toBe(before);
+});
+
+test('le mode choisi sur son tapis de course : un autre mode (ou aucun) l\'oublie ; le même le garde', () => {
+  const { setChosenActivity, setChosenTreadmill } = store.getState();
+  setChosenActivity('s3');
+  setChosenTreadmill(true);
+  setChosenActivity('s3');
+  expect(store.getState()).toMatchObject({ chosenActivityId: 's3', chosenTreadmill: true });
+  setChosenActivity('s1');
+  expect(store.getState()).toMatchObject({ chosenActivityId: 's1', chosenTreadmill: false });
+  setChosenActivity('s3');
+  setChosenTreadmill(true);
+  setChosenActivity(null);
+  expect(store.getState()).toMatchObject({ chosenActivityId: null, chosenTreadmill: false });
+});
+
 test('setStatus, setMedia, setProfile : pour un autre joueur, et pour soi-même', () => {
   store.getState().applyInit(init(SELF, [A]));
   const { setStatus, setMedia, setProfile } = store.getState();

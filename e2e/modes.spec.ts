@@ -116,3 +116,78 @@ test('Alice crée un mode « Muscu » avec la salle de sport pour emplacement, s
   await expect(meChip(alice)).toContainText('Concentration');
   await expect.poll(() => aliceAt(alice), { timeout: TRAVEL_TIMEOUT }).not.toBe('gym');
 });
+
+// Les tapis de course qui tournent, tels que cette page les dessine (window.__office.treadmills).
+const spinning = (page: Page) => page.evaluate(() => window.__office?.treadmills() ?? []);
+
+test('Alice pose un tapis de course dans sa pièce : « Sport » lui propose « Mon tapis de course », où elle court (le tapis tourne, chez Bastien aussi) ; une touche, puis « Disponible », la font descendre devant lui', async ({ browser }) => {
+  // Deux personnes, la marche jusqu'au bureau, l'éditeur de déco et deux tours de tapis : plus que les 90 s de test.slow() sur une machine chargée.
+  test.setTimeout(180_000);
+  const alice = await arrive(browser, 'Alice', 'kept');
+  const bastien = await arrive(browser, 'Bastien');
+
+  // Sa pièce n'a pas encore de tapis de course : « Sport » est seul.
+  const menu = await openMeMenu(alice);
+  await expect(menu.getByRole('menuitemradio', { name: 'Sport', exact: true })).toBeVisible();
+  await expect(menu.getByRole('menuitemradio', { name: 'Sport sur mon tapis de course' })).toHaveCount(0);
+  await alice.keyboard.press('Escape');
+
+  // Elle vide sa pièce, y pose un tapis de course (un clic dans la pièce pose l'élément tenu) et enregistre.
+  await (await openDeskPanel(alice)).getByRole('button', { name: 'Décorer mon bureau' }).click();
+  const decor = alice.getByRole('complementary', { name: 'Décorer mon bureau' });
+  await decor.getByRole('button', { name: 'Tout vider' }).click();
+  await expect(decor.getByText('0 / 80 éléments')).toBeVisible();
+  await decor.getByRole('button', { name: 'Sport & jeux' }).click();
+  await decor.getByRole('button', { name: 'Tapis de course', exact: true }).click();
+  // La caméra amène la pièce dans la partie de l'écran que le panneau laisse libre : on lit où elle est, une fois arrêtée.
+  const spotAt = async (column: number, row: number) => {
+    const room = await alice.evaluate(() => window.__office!.editorRoom());
+    return room && alice.evaluate(({ x, y }) => window.__office!.toScreen(x, y), { x: room.x + column * 32 + 16, y: room.y + row * 32 + 16 });
+  };
+  await expect.poll(() => spotAt(3, 3), { timeout: 5000 }).not.toBeNull();
+  await alice.waitForTimeout(700);
+  const where = (await spotAt(3, 3))!;
+  await alice.mouse.click(where.x, where.y);
+  await expect(decor.getByText('1 / 80 éléments')).toBeVisible();
+  await decor.getByRole('button', { name: 'Enregistrer' }).click();
+  await expect(decor.getByText('Déco enregistrée.')).toBeVisible();
+  await decor.getByRole('button', { name: 'Fermer l\'éditeur de déco' }).click();
+  await expect(decor).toHaveCount(0);
+  const deskPlace = await aliceAt(alice);
+  expect(deskPlace).toMatch(/^desk:/);
+
+  // « Mon tapis de course », sous « Sport » : le serveur la pose sur la bande, où elle court sur place ; le tapis tourne, chez elle comme chez Bastien.
+  await (await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Sport sur mon tapis de course' }).click();
+  await expect(meChip(alice)).toContainText('Sport');
+  await expect.poll(() => spinning(alice), { timeout: TRAVEL_TIMEOUT }).toHaveLength(1);
+  const [treadmill] = await spinning(alice);
+  await expect.poll(() => spinning(bastien), { timeout: TRAVEL_TIMEOUT }).toEqual([treadmill]);
+  const belt = await selfAt(alice);
+  expect(placeOf(belt)).toBe(deskPlace);
+  await alice.waitForTimeout(500);
+  expect(await selfAt(alice)).toEqual(belt);
+  await expect((await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Sport sur mon tapis de course' })).toHaveAttribute('aria-checked', 'true');
+  await alice.keyboard.press('Escape');
+
+  // Une touche : elle descend devant le tapis, qui s'arrête ; le mode reste.
+  await alice.keyboard.down('ArrowDown');
+  await expect.poll(() => spinning(alice), { timeout: TRAVEL_TIMEOUT }).toEqual([]);
+  await alice.keyboard.up('ArrowDown');
+  expect((await selfAt(alice)).y).toBeGreaterThan(belt.y);
+  await expect.poll(() => spinning(bastien), { timeout: TRAVEL_TIMEOUT }).toEqual([]);
+  await expect(meChip(alice)).toContainText('Sport');
+
+  // De nouveau sur son tapis, puis « Disponible » : elle en descend, devant lui, dans sa pièce.
+  await (await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Sport sur mon tapis de course' }).click();
+  await expect.poll(() => selfAt(alice), { timeout: TRAVEL_TIMEOUT }).toMatchObject({ x: belt.x, y: belt.y });
+  await expect.poll(() => spinning(alice), { timeout: TRAVEL_TIMEOUT }).toEqual([treadmill]);
+  await (await openMeMenu(alice)).getByRole('menuitemradio', { name: 'Disponible', exact: true }).click();
+  await expect(meChip(alice)).toContainText('Disponible');
+  await expect.poll(() => spinning(alice), { timeout: TRAVEL_TIMEOUT }).toEqual([]);
+  const off = await selfAt(alice);
+  expect(off.y).toBeGreaterThan(belt.y);
+  expect(placeOf(off)).toBe(deskPlace);
+
+  // Elle rend son bureau : il est libre pour les tests suivants (sa déco reste la sienne).
+  await giveDeskBack(alice);
+});

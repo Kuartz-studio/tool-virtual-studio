@@ -15,12 +15,15 @@ import {
   TILESET,
   WALL_THEMES,
   blockedCells,
+  buildOfficeTiledMap,
+  buildTiledMap,
   checkDecor,
   decorAtlasNames,
   decorAtlasOf,
   decorAtlasUrl,
   decorItem,
   defaultDeskDecor,
+  deskRoomSpecOf,
   doorEntryCells,
   decorItemsOf,
   floorTheme,
@@ -29,7 +32,9 @@ import {
   isDecorStep,
   isFloorTheme,
   isWallTheme,
+  outsideRow,
   overlappingItems,
+  parseOfficeMap,
   shopPriceOf,
   snapToDecorStep,
   wallPrice,
@@ -37,6 +42,7 @@ import {
   type DeskDecor,
   type DeskRoomSpec,
   type PlacedItem,
+  type ZoneInput,
 } from '../src';
 
 const decor = (items: PlacedItem[], more: Partial<DeskDecor> = {}): DeskDecor => ({ ...DEFAULT_DESK_DECOR, items, ...more });
@@ -428,5 +434,154 @@ describe('defaultDeskDecor', () => {
     const odd: DeskRoomSpec = { width: 4, height: 3, door: { side: 'south', x: 1, width: 2 } };
     expect(defaultDeskDecor(odd)).toEqual({ floor: DEFAULT_DESK_DECOR.floor, wall: DEFAULT_DESK_DECOR.wall, items: [] });
     expect(checkDecor(defaultDeskDecor(odd), odd)).toEqual({ ok: true });
+  });
+});
+
+// ---- Le dehors : la face du mur sud et la rangée de la rue juste dessous ---------------------------------------------------------
+
+// Les pièces de la grande carte, lues comme le serveur les lit : A1 (porte au sud, en haut), A2 (l'interrupteur sur la face de son mur sud), A3 (porte au
+// nord, en bas), A5 et A6 (compactes, le panneau de sortie sur la face de leur mur sud, à l'ouest).
+const OFFICE_MAP = parseOfficeMap(buildOfficeTiledMap());
+const roomOf = (key: string): DeskRoomSpec => deskRoomSpecOf(OFFICE_MAP, key)!;
+const [A1, A2, A3, A5, A6] = ['A1', 'A2', 'A3', 'A5', 'A6'].map(roomOf) as [DeskRoomSpec, DeskRoomSpec, DeskRoomSpec, DeskRoomSpec, DeskRoomSpec];
+// La rangée du dehors des pièces de 7 rangées : 7 et 8 sont la bande de mur sud, 9 la rue.
+const OUT = 9;
+// Une plante en pot (1 × 2, une rangée au sol), une fontaine à eau (solide, 1 × 3), un bureau (deux rangées au sol), une natte (un tapis d'une rangée) et
+// un grand tapis (trois rangées), une horloge ronde (1 × 1 au mur) et un tableau (2 × 2 au mur).
+const POT = 'of-6-10';
+const FOUNTAIN = 'of-12-15';
+const DESK = 'of-7-28';
+const MAT = 'jp-5-2';
+const RUG = 'cf-0-8';
+const CLOCK = 'horloge-ronde';
+const BOARD = 'of-9-12';
+
+describe('le dehors : devant sa pièce', () => {
+  test('les pièces de la carte ont un dehors à la rangée 9 ; DESK_ROOMS, non (c\'est la carte qui le donne)', () => {
+    expect(outsideRow(STANDARD)).toBe(OUT);
+    for (const room of [A1, A2, A3, A5, A6]) expect(room.outside).toBeDefined();
+    expect('outside' in STANDARD).toBe(false);
+    expect('outside' in COMPACT).toBe(false);
+  });
+
+  test('une horloge sur la face du mur sud, un pot sur la rangée de la rue : dans un bureau du haut comme dans un bureau du bas', () => {
+    for (const room of [A1, A3, A5, A6]) {
+      expect(checkDecor(decor([{ id: CLOCK, x: 5, y: OUT }, { id: POT, x: 5, y: OUT }]), room), JSON.stringify(room.door)).toEqual({ ok: true });
+    }
+    // Au dixième près, comme dedans ; un tableau de deux cases de haut couvre toute la bande.
+    expect(checkDecor(decor([{ id: BOARD, x: 4.5, y: OUT }, { id: POT, x: 0.3, y: OUT }]), A3)).toEqual({ ok: true });
+  });
+
+  test('pile sur la rangée, et une case de profondeur au plus : un bureau, un grand tapis, ou entre deux rangées, c\'est hors de la place', () => {
+    expect(checkDecor(decor([{ id: DESK, x: 5, y: OUT }]), A3)).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    expect(checkDecor(decor([{ id: RUG, x: 4, y: OUT }]), A3)).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    expect(checkDecor(decor([{ id: MAT, x: 5, y: OUT }]), A3)).toEqual({ ok: true });
+    for (const y of [7, 8, 8.5, 9.5, 10]) expect(checkDecor(decor([{ id: POT, x: 5, y }]), A3), `y = ${y}`).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    for (const y of [8, 9.5]) expect(checkDecor(decor([{ id: CLOCK, x: 5, y }]), A3), `y = ${y}`).toEqual({ ok: false, error: 'bad_position', index: 0 });
+  });
+
+  test('sur la largeur de la pièce seulement : ni devant ses pans de mur, ni chez le voisin', () => {
+    expect(checkDecor(decor([{ id: POT, x: -1, y: OUT }]), A3)).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    expect(checkDecor(decor([{ id: POT, x: A3.width - 0.9, y: OUT }]), A3)).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    expect(checkDecor(decor([{ id: POT, x: A3.width - 1, y: OUT }]), A3)).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: BOARD, x: A3.width - 1, y: OUT }]), A3)).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+  });
+
+  test('la porte d\'un bureau du haut : aucun élément mural ne la recouvre, rien de solide devant elle (même d\'un dixième) ; un pot, une natte, si', () => {
+    const doorX = A1.door.x;
+    expect(checkDecor(decor([{ id: CLOCK, x: doorX, y: OUT }]), A1)).toEqual({ ok: false, error: 'blocks_door', index: 0 });
+    expect(checkDecor(decor([{ id: BOARD, x: doorX - 1, y: OUT }]), A1)).toEqual({ ok: false, error: 'blocks_door', index: 0 });
+    expect(checkDecor(decor([{ id: FOUNTAIN, x: doorX + 1, y: OUT }]), A1)).toEqual({ ok: false, error: 'blocks_door', index: 0 });
+    expect(checkDecor(decor([{ id: FOUNTAIN, x: doorX - 0.9, y: OUT }]), A1)).toEqual({ ok: false, error: 'blocks_door', index: 0 });
+    expect(checkDecor(decor([{ id: FOUNTAIN, x: doorX - 1, y: OUT }, { id: FOUNTAIN, x: doorX + A1.door.width, y: OUT }]), A1)).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: POT, x: doorX, y: OUT }, { id: MAT, x: doorX, y: OUT }]), A1)).toEqual({ ok: true });
+    // Un bureau du bas a sa porte de l'autre côté : devant son mur sud, rien ne la gêne.
+    expect(checkDecor(decor([{ id: CLOCK, x: doorX, y: OUT }, { id: FOUNTAIN, x: doorX, y: OUT }]), A3)).toEqual({ ok: true });
+  });
+
+  test('l\'interrupteur (devant A2) et le panneau de sortie (devant A5 et A6) restent visibles : ni un élément mural ni un objet devant eux ne les cache', () => {
+    expect(checkDecor(decor([{ id: CLOCK, x: 8, y: OUT }]), A2)).toEqual({ ok: false, error: 'overlap', index: 0 });
+    expect(checkDecor(decor([{ id: BOARD, x: 7, y: OUT }]), A2)).toEqual({ ok: false, error: 'overlap', index: 0 });
+    expect(checkDecor(decor([{ id: POT, x: 7.5, y: OUT }]), A2)).toEqual({ ok: false, error: 'overlap', index: 0 });
+    // À côté, ou à plat sur la rangée (une natte ne monte pas sur le mur) : permis.
+    expect(checkDecor(decor([{ id: CLOCK, x: 7, y: OUT }, { id: POT, x: 6, y: OUT }, { id: MAT, x: 7, y: OUT }]), A2)).toEqual({ ok: true });
+    for (const room of [A5, A6]) {
+      expect(checkDecor(decor([{ id: CLOCK, x: 0, y: OUT }]), room)).toEqual({ ok: false, error: 'overlap', index: 0 });
+      expect(checkDecor(decor([{ id: POT, x: 0, y: OUT }]), room)).toEqual({ ok: false, error: 'overlap', index: 0 });
+      expect(checkDecor(decor([{ id: CLOCK, x: 1, y: OUT }, { id: POT, x: 1, y: OUT }]), room)).toEqual({ ok: true });
+    }
+  });
+
+  test('deux éléments de la même sorte ne se chevauchent pas dehors non plus ; dehors et dedans ne se gênent pas', () => {
+    expect(checkDecor(decor([{ id: POT, x: 5, y: OUT }, { id: POT, x: 5.5, y: OUT }]), A3)).toEqual({ ok: false, error: 'overlap', index: 1 });
+    expect(checkDecor(decor([{ id: CLOCK, x: 5, y: OUT }, { id: CLOCK, x: 5, y: 0 }, { id: POT, x: 5, y: OUT }, { id: POT, x: 5, y: 6 }]), A3)).toEqual({ ok: true });
+  });
+
+  test('une rangée de fontaines dehors ne ferme rien dans la pièce : la règle de passage n\'y compte que la pièce', () => {
+    const row = Array.from({ length: A3.width }, (_, x) => ({ id: FOUNTAIN, x, y: OUT }));
+    expect(checkDecor(decor(row), A3)).toEqual({ ok: true });
+    expect(blockedCells(row, A3.width).size).toBe(A3.width);
+  });
+
+  test('le dehors compte dans les 80 éléments', () => {
+    const inside = Array.from({ length: MAX_DECOR_ITEMS - 1 }, () => ({ id: 'of-14-12', x: 0, y: 0 }));
+    expect(checkDecor(decor([...inside, { id: POT, x: 5, y: OUT }, { id: POT, x: 6, y: OUT }]), A3)).toEqual({ ok: false, error: 'too_many' });
+  });
+
+  test('une pièce sans dehors : rien ne se pose sous son mur sud', () => {
+    expect(checkDecor(decor([{ id: POT, x: 5, y: OUT }]), STANDARD)).toEqual({ ok: false, error: 'out_of_room', index: 0 });
+    expect(checkDecor(decor([{ id: CLOCK, x: 5, y: OUT }]), STANDARD)).toEqual({ ok: false, error: 'bad_position', index: 0 });
+  });
+
+  test('une déco qui suit son occupant dans un bureau de l\'autre rangée : le dehors suit les mêmes règles que le dedans', () => {
+    // Une fontaine dans l'axe de la colonne 3 : rien ne la gêne en bas (A3), elle bloquerait la porte en haut (A1).
+    const below = decor([{ id: FOUNTAIN, x: 3, y: OUT }]);
+    expect(checkDecor(below, A3)).toEqual({ ok: true });
+    expect(checkDecor(below, A1)).toEqual({ ok: false, error: 'blocks_door', index: 0 });
+    // Une horloge à la colonne 8 : libre devant A1, sur l'interrupteur devant A2.
+    expect(checkDecor(decor([{ id: CLOCK, x: 8, y: OUT }]), A1)).toEqual({ ok: true });
+    expect(checkDecor(decor([{ id: CLOCK, x: 8, y: OUT }]), A2)).toMatchObject({ ok: false });
+  });
+
+  test('libre, une pièce de la carte montre son poste et, devant elle, son dehors par défaut, le même pour toutes celles d\'une taille', () => {
+    const front = (room: DeskRoomSpec) => defaultDeskDecor(room).items.filter((placed) => placed.y === OUT);
+    for (const room of [A1, A2, A3, A5, A6]) {
+      expect(checkDecor(defaultDeskDecor(room), room)).toEqual({ ok: true });
+      expect(front(room).length).toBeGreaterThanOrEqual(1);
+      expect(defaultDeskDecor(room).items.slice(0, -front(room).length)).toEqual(defaultDeskDecor({ ...room, outside: undefined }).items);
+    }
+    expect(front(A1)).toEqual(front(A3));
+    expect(front(A5)).toEqual(front(A6));
+    expect(front(STANDARD)).toEqual([]);
+  });
+});
+
+describe('deskRoomSpecOf : le dehors que la carte donne', () => {
+  // Une pièce de 3 × 2, sa porte au sud (colonne 1), sous elle sa bande de mur de deux rangées et une rangée libre ; à côté, d'autres sous lesquelles la rue
+  // n'est pas libre.
+  const spec = (rows: string[], zones: ZoneInput[] = []) =>
+    deskRoomSpecOf(
+      parseOfficeMap(
+        buildTiledMap({
+          ascii: rows,
+          zones: [{ type: 'desk', name: 'P', x: 1, y: 1, w: 3, h: 2 }, { type: 'door', name: 'P', x: 2, y: 3, w: 1, h: 2 }, { type: 'spawn', x: 6, y: 6, w: 1, h: 1 }, ...zones],
+          tileset: { name: 'dev', image: 'tiles.png' },
+        }),
+      ),
+      'P',
+    );
+  const ROWS = ['########', '#...#..#', '#...#..#', '##.###.#', '##.###.#', '#......#', '#......#', '########'];
+
+  test('une bande de mur percée de la porte, puis une rangée libre : un dehors, et l\'interrupteur posé sur la bande en est un obstacle', () => {
+    expect(spec(ROWS)?.outside).toEqual({ fixtures: [] });
+    expect(spec(ROWS, [{ type: 'switch', x: 3, y: 4, w: 1, h: 1 }])?.outside).toEqual({ fixtures: [{ x: 2, y: 3, w: 1, h: 1 }] });
+    // Un interrupteur ailleurs n'en est pas un.
+    expect(spec(ROWS, [{ type: 'switch', x: 5, y: 4, w: 1, h: 1 }])?.outside).toEqual({ fixtures: [] });
+  });
+
+  test('pas de dehors sans mur sous la pièce, ni sans rue libre dessous', () => {
+    expect(spec(ROWS.map((row, y) => (y === 3 ? '#....#.#' : row)))?.outside).toBeUndefined();
+    expect(spec(ROWS.map((row, y) => (y === 5 ? '#..#...#' : row)))?.outside).toBeUndefined();
+    expect(spec(ROWS)?.width).toBe(3);
   });
 });

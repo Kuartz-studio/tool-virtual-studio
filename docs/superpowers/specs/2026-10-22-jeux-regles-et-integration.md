@@ -592,9 +592,9 @@ export interface GameTable {
 1. En-tête du panneau : `label` du jeu, « Règles » (un `IconButton` qui montre `ui.rules`), « Fermer ».
 2. Onglets (`Segmented`) : « Partie » · « Classement ».
 3. Les joueurs, une ligne par siège : portrait (`AvatarPortrait`), nom, pastille et nom de couleur (`ui.seatLabel`), « (toi) », repère du tour, compte à rebours dans la dernière minute, « déconnecté · 1:12 ».
-4. Le plateau (`ui.Board`). Avant la première partie d'une table : la salle d'attente (chaises, « S'asseoir », « Prêt », « Inviter ») au-dessus d'un plateau d'aperçu (`preview`, état de `create({ seats: max(minPlayers, assises), first: 0 }, seededRng(1))` ; jamais un générateur constant, qui ferait relancer sans fin l'ouverture du backgammon).
-5. La ligne d'état : « À toi de jouer », « Au tour de Bastien », puis le texte de fin (raisons de plateforme écrites par G2, raisons du jeu par `ui.describeResult`) et les changements de note (« +16 »).
-6. Les actions. En partie : « Abandonner » (confirmation dans un `alertdialog`, focus sur « Annuler », comme le retrait d'un membre) ; aux échecs, « Proposer la nulle », ou « Accepter la nulle » et « Refuser ». Après la fin : « Revanche » (= prêt) et « Se lever ». Spectateur : « S'asseoir » quand une chaise est libre et qu'aucune partie ne tourne.
+4. Le plateau (`ui.Board`). Avant la première partie d'une table : un plateau d'aperçu (`preview`, état de `create({ seats: max(minPlayers, assises), first: 0 }, seededRng(1))` ; jamais un générateur constant, qui ferait relancer sans fin l'ouverture du backgammon), et la salle d'attente (chaises, « S'asseoir », « Prêt », « Inviter ») plus bas, sous la ligne d'état.
+5. La ligne d'état : « À toi de jouer », « Au tour de Bastien », puis le texte de fin (raisons de plateforme écrites par G2, raisons du jeu par `ui.describeResult`) et les changements de note (« +16 »). Juste sous le texte de fin, pour une personne assise, la barre de la revanche (`RematchBar`, chantier du 26 oct.) : « Revanche » (= prêt ; demandée, le bouton reste enfoncé, pâle avec une coche, et un second clic l'annule) et la phrase qui dit qui attend qui, du point de vue de celui qui lit (« Bastien veut la revanche : on n'attend plus que toi. », « Revanche demandée : on attend Bastien. »). À la fin, ou quand le panneau s'ouvre sur une partie finie, le corps du panneau défile juste ce qu'il faut pour la montrer : sous un grand plateau, elle serait sous le pli.
+6. Les actions. En partie : « Abandonner » (confirmation dans un `alertdialog`, focus sur « Annuler », comme le retrait d'un membre) ; aux échecs, « Proposer la nulle », ou « Accepter la nulle » et « Refuser ». Après la fin : « Revanche » (dans la barre de la revanche) et « Se lever » (dans la salle d'attente, dont les chaises disent « veut la revanche » de qui l'a acceptée). Panneau fermé, quand une autre personne assise demande la revanche : un toast « Bastien veut la revanche aux échecs », avec « Revanche » (l'accepte et ouvre le panneau) et « Plus tard » ; une fois par partie, il part quand la revanche ne tient plus ou qu'on ouvre le panneau, sinon au bout de 60 s. Spectateur : « S'asseoir » quand une chaise est libre et qu'aucune partie ne tourne.
 7. Les spectateurs : « 2 spectateurs : Claire, Dan ».
 8. Une seule région `aria-live="polite"` : les phrases de `ui.announce`, « À toi de jouer », la fin.
 9. Onglet « Classement » : les 10 premiers (rang, nom, note, parties, victoires, nulles, défaites) et sa propre ligne si elle est au-delà ; relu à l'ouverture et après chaque fin de partie à cette table.
@@ -1317,7 +1317,7 @@ Le jeu des petits chevaux a autant de règles que d'éditeurs [Wikipédia FR]. L
 | R3 | À son tour, on lance un dé (`roll`), puis on avance **un seul** cheval du nombre de points. | Wikipédia FR |
 | R4 | Sortir un cheval de l'écurie demande un 6 : il se pose sur sa case de départ (le 6 sert à la sortie). | Wikipédia FR |
 | R5 | Un 6 donne un nouveau lancer, même s'il n'a pas pu être joué. Au troisième 6 de suite dans un même tour, ce 6 n'est pas joué et le tour passe. | Wikipédia FR (6 = rejouer) ; Wikipédia EN (3e six : le tour passe) ; écarté : « éliminer un de ses pions » (Wikipédia FR) |
-| R6 | Trois essais : sans cheval en jeu (tous à l'écurie ou arrivés), on a jusqu'à trois lancers dans le tour pour faire un 6. | Wikipédia EN (règle maison répandue) ; choix (accélère le début) |
+| R6 | Trois essais : sans cheval en jeu (tous à l'écurie ou arrivés), on a jusqu'à trois lancers dans le tour pour faire un 6. Et, sans cheval en jeu, le dé fait 6 deux fois sur six (les cinq autres faces, 4/30 chacune) ; avec un cheval en jeu, il est juste. | Wikipédia EN (règle maison répandue) ; choix (accélère le début) ; le 6 deux fois sur six : demande d'Andréa du 26 octobre 2026 (« ça permet d'éviter d'avoir des parties qui traînent en longueur ») |
 | R7 | On doit jouer si un coup est possible, et on choisit le cheval. Sans coup possible, le tour passe (sauf R5 et R6). | Wikipédia FR, EN |
 | R8 | Prise : un cheval qui s'arrête sur une case de la piste occupée par un cheval adverse le renvoie dans son écurie, y compris en sortant sur sa case de départ. Aucune case n'est protégée. Rien ne se prend dans les allées. | Wikipédia FR ; aucune case protégée : choix (les cases étoilées sûres de Wikipédia EN : écartées) |
 | R9 | Jamais deux chevaux d'une même couleur sur une même case (piste ou allée) : un coup qui finirait sur un de ses chevaux est interdit. Donc ni empilement ni barrage. L'arrivée, elle, reçoit les quatre. | choix de variante (Wikipédia FR : on s'arrête juste derrière ; Wikipédia EN : empilement en bloc) |
@@ -1373,9 +1373,10 @@ export const ludoMoveSchema = z.discriminatedUnion('type', [
 
 ```text
 roll (phase roll, siège = turn) :
-  d = rollDie(rng) ; événement dice
-  si d = 6 : sixes + 1 ; si sixes = 3 : événement pass « third-six », tour suivant, fin
   enJeu = un cheval du siège a une avancée de 0 à 55
+  d = rollLudoDie(rng, enJeu) ; événement dice
+    (une seule valeur v du générateur ; f = 1 + ⌊6v⌋ ; si non enJeu et f ≠ 6 et 6v − (f − 1) ≥ 4/5 : d = 6, sinon d = f)
+  si d = 6 : sixes + 1 ; si sixes = 3 : événement pass « third-six », tour suivant, fin
   si non enJeu : tries + 1
   coups = coupsLégaux(d)
   si coups non vide : phase move, die = d
@@ -1457,6 +1458,8 @@ Les états sont fabriqués par un outil de test de l'agent (avancées par siège
 | C22 | deux chevaux arrivés, deux à l'écurie ; dés 2, 4, 1 | les arrivés ne sont pas « en jeu » : trois essais, puis le tour passe |
 | C23 | un 6 joué, puis un 2 | le tour passe ; au tour suivant, `sixes` et `tries` sont à 0 |
 | C24 | aller-retour JSON ; `invariants` de deux chevaux sur une même case de piste, d'un siège sorti avec un cheval en piste | égalité ; violations listées |
+| C49 | 6 000 lancers d'un générateur à graine, sans cheval en jeu (tout à l'écurie, ou des arrivés et le reste à l'écurie), puis avec un cheval en jeu | sans : le 6 entre 31 % et 36 %, chaque autre face entre 11,5 % et 15,5 % ; avec : chaque face entre 14 % et 19 % |
+| C50 | les dés imposés `rngFromDice([d])`, avec et sans cheval en jeu ; les bords de la part du 3 | toujours la face d ; sans cheval en jeu, le dernier cinquième de la part du 3 fait un 6 |
 
 **Rejeu** : trois parties du harnais (2, 3 et 4 joueurs, graines fixes) enregistrées en fixtures, rejouées à l'identique.
 

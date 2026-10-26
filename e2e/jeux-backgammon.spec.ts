@@ -198,6 +198,8 @@ test('une partie de bout en bout : invitation, un tour à la souris, une fin en 
   // « Gammon ! » s'affiche pour les deux, la partie comptée vaut une victoire simple : +16 et −16, une seule fois.
   await expect(panel(alice).locator('.game-status')).toContainText('Alice a sorti tous ses pions. Gammon !');
   await expect(panel(bastien).locator('.game-status')).toContainText('Alice a sorti tous ses pions. Gammon !');
+  // « Revanche » se voit sans faire défiler le panneau à la main : sous le plateau, elle était sous le pli. Le panneau défile de lui-même.
+  for (const page of [alice, bastien]) await expect(readyButton(page, 'backgammon')).toBeInViewport({ ratio: 1 });
   await expect(panel(alice).getByText('Alice : 1200 → 1216 (+16)')).toBeVisible();
   await expect(panel(alice).getByText('Bastien : 1200 → 1184 (−16)')).toBeVisible();
   expect(ended.match!.ranked).toBe(true);

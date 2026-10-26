@@ -1,4 +1,5 @@
 import { MUSIC_SCENES, type MusicScene } from '../audio/scenes';
+import { decorItem } from '../decor/catalog';
 import type { Point } from './find-path';
 import type { GameTable, Place, Rect } from './places';
 import { isWalkablePoint } from './queries';
@@ -69,6 +70,9 @@ export interface OfficeMap {
   arena: Rect | null;
   // Les administratrices de l'accueil : le centre de la case où chacune se tient, en pixels, et sa clé (son prénom, sans accent : margot, ines…).
   clerks: Array<Point & { name: string }>;
+  // Ce que le calque `objets` accroche aux murs (ses éléments muraux : les panneaux de sortie…) : le rectangle de chaque image sur la face du mur, en
+  // pixels. La déco du dehors d'un bureau ne les recouvre pas (deskRoomSpecOf). Absent : la carte n'en accroche aucun (celles des tests, écrites à la main).
+  wallItems?: Rect[];
 }
 
 // Pourquoi une carte est refusée :
@@ -130,6 +134,7 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
     signs: readSigns(zones),
     arena: readArena(zones),
     clerks: readClerks(zones, tileSize),
+    wallItems: readWallItems(layers, tileSize),
   };
   if (!isWalkablePoint(map, map.spawn.x, map.spawn.y)) {
     throw new MapError(
@@ -418,6 +423,19 @@ function readSigns(zones: Zone[]): Array<Rect & { text: string }> {
       if (text === null) throw new MapError('bad_zone', `${labelOf(zone)} : ce panneau (zone sign) n'a pas de propriété « text ».`);
       return { x: zone.x, y: zone.y, width: zone.width, height: zone.height, text };
     });
+}
+
+// Les éléments muraux du calque d'objets `objets` (le nom d'un objet est la clé de l'élément de la banque), là où leur image recouvre le mur : un élément
+// mural est posé à la case qu'il surplombe (la rangée sous le mur, en haut de l'objet), et son image monte de sa hauteur au-dessus. Une carte sans ce
+// calque n'en a pas ; ce que la banque ne connaît pas est laissé de côté.
+function readWallItems(layers: TiledLayer[], tileSize: number): Rect[] {
+  const layer = layers.find((l) => l.name === 'objets');
+  if (!layer || layer.type !== 'objectgroup' || !Array.isArray(layer.objects)) return [];
+  return layer.objects.flatMap((object) => {
+    const item = typeof object.name === 'string' ? decorItem(object.name) : undefined;
+    if (item?.kind !== 'wall' || !Number.isFinite(object.x) || !Number.isFinite(object.y)) return [];
+    return [{ x: object.x, y: object.y - item.h * tileSize, width: item.w * tileSize, height: item.h * tileSize }];
+  });
 }
 
 // Le ring de l'octogone : au plus une zone `arena`.

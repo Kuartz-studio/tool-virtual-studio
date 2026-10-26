@@ -4,6 +4,7 @@ import { animKey, avatarObjectName, resolveAvatarKey, type AvatarSpec } from '..
 import { snapToPixels } from '../pixel-snap';
 import { SnapshotBuffer, type BodyFits, type Snapshot } from '../snapshot-buffer';
 import { stepAnimationScale } from '../step-animation';
+import { RUN_IN_PLACE_SCALE, runningAt, type TreadmillRun } from '../treadmill';
 import { AvatarSkin, avatarLibraryOf } from './avatar-skin';
 import { DustTrail } from './DustTrail';
 import { NameTag } from './NameTag';
@@ -14,7 +15,8 @@ const REMOTE_STEP_SCALE = stepAnimationScale(WALK_SPEED_PX_PER_S);
 
 // L'avatar d'un autre joueur : un sprite sans physique (sa position vient du serveur), son ombre et son étiquette. Les positions
 // reçues (push) sont dessinées avec REMOTE_RENDER_DELAY_MS de retard, en glissant de l'une à l'autre (SnapshotBuffer) ; render() est
-// appelé à chaque image. Comme l'avatar local, ses pieds sont son origine et sa profondeur est leur y.
+// appelé à chaque image. Comme l'avatar local, ses pieds sont son origine et sa profondeur est leur y. Le serveur le dit courir sur un tapis de
+// course (setRunning) : une fois dessiné sur la bande, il y court sur place, tourné vers la console, devant le tapis.
 export class RemotePlayer {
   readonly id: string;
   private snapshots: SnapshotBuffer;
@@ -28,6 +30,9 @@ export class RemotePlayer {
   private coffeeUntil = 0;
   // La position dessinée à la dernière image.
   private drawn: Snapshot;
+  // Le tapis où le serveur le dit courir (null : aucun), et celui où il court tel qu'on le dessine à la dernière image (sur la bande : runningAt).
+  private run: TreadmillRun | null = null;
+  private runShown: TreadmillRun | null = null;
 
   // La carte, qui borne l'extrapolation de ses positions : jamais dans un mur.
   private readonly bodyFits: BodyFits;
@@ -79,6 +84,16 @@ export class RemotePlayer {
     this.tag.setActivity(activity);
   }
 
+  // Il court sur ce tapis de course (treadmillRun), ou n'y court plus (null).
+  setRunning(run: TreadmillRun | null): void {
+    this.run = run;
+  }
+
+  // Le tapis où il court, tel qu'on le dessine (sur la bande) : celui qui tourne sous lui ; null sinon.
+  runningOn(): TreadmillRun | null {
+    return this.runShown;
+  }
+
   setProfile(name: string, avatarKey: string | null): void {
     this.tag.setName(name);
     this.skin.set(avatarKey);
@@ -128,11 +143,18 @@ export class RemotePlayer {
     const s = this.snapshots.sample(now - REMOTE_RENDER_DELAY_MS);
     if (s) this.drawn = s;
     const { x, y, dir, moving } = this.drawn;
-    this.sprite.setPosition(x, y).setDepth(y);
-    // `true` : une animation déjà en cours n'est pas relancée à chaque image.
-    this.sprite.play(animKey(this.spec.key, moving ? 'walk' : 'idle', dir), true);
-    this.sprite.anims.timeScale = moving ? REMOTE_STEP_SCALE : 1;
-    placeShadow(this.shadow, x, y);
+    this.runShown = runningAt(this.run, { x, y });
+    const depth = this.runShown?.depth ?? y;
+    this.sprite.setPosition(x, y).setDepth(depth);
+    // `true` : une animation déjà en cours n'est pas relancée à chaque image. Sur son tapis, il court sur place, tourné vers la console.
+    if (this.runShown !== null) {
+      this.sprite.play(animKey(this.spec.key, 'walk', 'up'), true);
+      this.sprite.anims.timeScale = RUN_IN_PLACE_SCALE;
+    } else {
+      this.sprite.play(animKey(this.spec.key, moving ? 'walk' : 'idle', dir), true);
+      this.sprite.anims.timeScale = moving ? REMOTE_STEP_SCALE : 1;
+    }
+    placeShadow(this.shadow, x, y, depth);
     this.tag.placeAbove(x, y - this.spec.height);
     // La tasse et la poussière suivent l'heure : le serveur le dit fini (setCoffeeUntil 0), ou l'échéance passe.
     const coffee = now < this.coffeeUntil;

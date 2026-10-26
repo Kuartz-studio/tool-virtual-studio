@@ -1,5 +1,5 @@
-import { GAME_RECONNECT_MS, GAME_TURN_TIMEOUT_MS, rngFromDice, rollDie, type GameDefinition, type GameResult } from '@bureau/shared';
-import { ludo } from '@bureau/shared/games/ludo';
+import { GAMES, GAME_RECONNECT_MS, GAME_TURN_TIMEOUT_MS, rngFromDice, rollDie, seededRng, type GameDefinition, type GameId, type GameResult } from '@bureau/shared';
+import { ludo, type LudoEvent, type LudoMove, type LudoState } from '@bureau/shared/games/ludo';
 import { replayMatch } from '@bureau/shared/games/testing';
 import { z } from 'zod';
 import { describe, expect, test } from 'vitest';
@@ -295,6 +295,103 @@ describe('revanche : qui commence', () => {
     expect(context.view().match!.players.map((player) => player.userId)).toEqual([ALICE, CLAIRE]);
     // Le tirage (0,1) donne le premier siège : l'alternance, elle, aurait donné le second (celui qui avait commencé la partie d'avant, c'était le premier).
     expect(context.view().match!.first).toBe(0);
+  });
+});
+
+describe('la revanche, avec les quatre vrais jeux', () => {
+  // Les règles du registre, pas le morpion. Le générateur est à graine : l'ouverture du backgammon relance les égalités, un générateur constant ne la départagerait jamais.
+  const withGames = () => gamesSetup({ games: GAMES, random: seededRng(26) });
+  // Les personnes assises, et si elles ont accepté la revanche (sont prêtes).
+  const seated = (context: ReturnType<typeof gamesSetup>, game: GameId) => context.view(game).chairs.flatMap((chair) => (chair ? [[chair.userId, chair.ready]] : []));
+
+  // Une partie à deux finie (Alice abandonne), puis la revanche, acceptée par Bastien, puis par Alice. Personne ne se lève ni ne recharge : la partie suivante commence au
+  // moment où la dernière l'accepte, aux mêmes chaises, celui qui commence passe au suivant, et son premier coup se joue.
+  test.each(['chess', 'backgammon', 'connect4', 'ludo'] as const)('%s : la partie suivante commence dès que les deux l\'ont acceptée', async (game) => {
+    const context = withGames();
+    const def = GAMES[game]!;
+    const before = (await context.startMatch(game)).match!;
+    expect(before.status).toBe('playing');
+    expect(await context.service.run(ALICE, { type: 'resign', game })).toEqual({ ok: true });
+    expect(context.view(game).match).toMatchObject({ id: before.id, status: 'ended' });
+    // Les deux restent assis, pas prêts : la revanche attend qu'on l'accepte.
+    expect(seated(context, game)).toEqual([[ALICE, false], [BASTIEN, false]]);
+
+    expect(await context.ready(BASTIEN, game)).toEqual({ ok: true });
+    expect(context.view(game).match).toMatchObject({ id: before.id, status: 'ended' });
+    expect(seated(context, game)).toEqual([[ALICE, false], [BASTIEN, true]]);
+
+    expect(await context.ready(ALICE, game)).toEqual({ ok: true });
+    const after = context.view(game).match!;
+    expect(after.id).not.toBe(before.id);
+    expect(after).toMatchObject({ status: 'playing', first: (before.first + 1) % 2 });
+    expect(after.players.map((player) => player.userId)).toEqual([ALICE, BASTIEN]);
+    // Diffusée à l'instant, à tout le bureau ; les chaises sont prêtes pour la revanche d'après.
+    expect(context.sent.tables.at(-1)?.match).toMatchObject({ id: after.id, status: 'playing' });
+    expect(seated(context, game)).toEqual([[ALICE, false], [BASTIEN, false]]);
+
+    // Le premier coup de la partie suivante se joue.
+    const seat = def.turn(after.state)!;
+    const [move] = def.legalMoves(after.state, seat);
+    expect(await context.service.run(after.players[seat]!.userId, { type: 'move', game, version: context.view(game).version, move })).toEqual({ ok: true });
+  });
+
+  test('aux petits chevaux à trois : la revanche attend aussi celle qui avait abandonné (elle est toujours assise) ; celui qui commence passe au suivant des trois', async () => {
+    const context = withGames();
+    for (const who of [ALICE, BASTIEN, CLAIRE]) await context.sit(who, 'ludo');
+    for (const who of [ALICE, BASTIEN, CLAIRE]) await context.ready(who, 'ludo');
+    const before = context.view('ludo').match!;
+    // Claire abandonne (la partie continue à deux), puis Bastien : Alice gagne.
+    await context.service.run(CLAIRE, { type: 'resign', game: 'ludo' });
+    await context.service.run(BASTIEN, { type: 'resign', game: 'ludo' });
+    expect(context.view('ludo').match).toMatchObject({ id: before.id, status: 'ended' });
+
+    await context.ready(ALICE, 'ludo');
+    await context.ready(BASTIEN, 'ludo');
+    expect(context.view('ludo').match).toMatchObject({ id: before.id, status: 'ended' });
+    await context.ready(CLAIRE, 'ludo');
+    expect(context.view('ludo').match).toMatchObject({ status: 'playing', first: (before.first + 1) % 3 });
+    expect(context.view('ludo').match!.players.map((player) => player.userId)).toEqual([ALICE, BASTIEN, CLAIRE]);
+  });
+});
+
+describe('le dé d\'une vraie partie de petits chevaux, au serveur', () => {
+  // Alice et Bastien aux petits chevaux (les vraies règles) ; Alice commence (le tirage 0,1). `dice` : les dés tirés, dans l'ordre, d'après ce que la table a diffusé.
+  async function ludoAtTwo() {
+    const context = gamesSetup({ games: { ludo: ludo as never } });
+    await context.startMatch('ludo');
+    const state = () => context.view('ludo').match!.state as LudoState;
+    const act = (who: string, move: LudoMove) => context.service.run(who, { type: 'move', game: 'ludo', version: context.view('ludo').version, move });
+    const dice = () =>
+      context.sent.tables.flatMap((table) => (table.match?.events ?? []).flatMap((event) => ((event as LudoEvent).type === 'dice' ? [(event as Extract<LudoEvent, { type: 'dice' }>).value] : [])));
+    return { context, state, act, dice };
+  }
+
+  test('les dés imposés (débogage de bout en bout) donnent la valeur demandée, sans cheval en jeu comme avec ; le journal redonne l\'état final', async () => {
+    const { context, state, act, dice } = await ludoAtTwo();
+    expect(state()).toMatchObject({ turn: 0, phase: 'roll' });
+    // Sans cheval en jeu, le 6 sort plus souvent, mais un 5 et un 3 imposés restent un 5 et un 3 (deux essais manqués) ; le 6 du troisième essai fait sortir un cheval.
+    await context.service.debugSet('ludo', state(), [5, 3, 6, 4]);
+    for (let roll = 0; roll < 3; roll++) expect(await act(ALICE, { type: 'roll' })).toEqual({ ok: true });
+    expect(state()).toMatchObject({ turn: 0, phase: 'move', die: 6 });
+    expect(await act(ALICE, { type: 'move', horse: 0 })).toEqual({ ok: true });
+    // Le 6 fait rejouer, avec un cheval en jeu cette fois : le 4 imposé.
+    expect(await act(ALICE, { type: 'roll' })).toEqual({ ok: true });
+    expect(state()).toMatchObject({ turn: 0, phase: 'move', die: 4 });
+    expect(dice()).toEqual([5, 3, 6, 4]);
+
+    // Le journal de la partie la rejoue à l'identique, avec la loi du dé des règles partagées.
+    expect(await context.service.run(BASTIEN, { type: 'resign', game: 'ludo' })).toEqual({ ok: true });
+    expect(replayMatch(ludo as never, context.records[0]!.moves)).toEqual(context.view('ludo').match!.state);
+  });
+
+  test('le générateur du service suit la loi des règles partagées : 0,15 (la fin de la part du 1) fait un 6 sans cheval en jeu, et un 1 avec un cheval en jeu', async () => {
+    const { context, state, act, dice } = await ludoAtTwo();
+    context.random.value = 0.15;
+    expect(await act(ALICE, { type: 'roll' })).toEqual({ ok: true });
+    expect(await act(ALICE, { type: 'move', horse: 0 })).toEqual({ ok: true });
+    expect(await act(ALICE, { type: 'roll' })).toEqual({ ok: true });
+    expect(dice()).toEqual([6, 1]);
+    expect(state()).toMatchObject({ turn: 0, phase: 'move', die: 1 });
   });
 });
 

@@ -14,8 +14,8 @@ export const FOLLOW_SPRINT_PX = 4 * TILE_SIZE;
 // Le trajet est recalculé quand la personne change de case, et au moins toutes les FOLLOW_REPLAN_MS (un trajet que la marche a abandonné, bloquée).
 export const FOLLOW_REPLAN_MS = 400;
 
-// La carte comme la voit qui en suit un autre : celle du jeu, plus les meubles posés dans les bureaux (furnitureTiles) et les portes qui nous sont fermées
-// (`closedDesks`, les clés de leurs places). Le chemin les contourne ; s'il n'y en a plus, on ne suit plus.
+// La carte comme la voit qui en suit un autre : celle du jeu, plus les meubles posés dans les bureaux et devant eux, dans la rue (furnitureTiles), et les
+// portes qui nous sont fermées (`closedDesks`, les clés de leurs places). Le chemin les contourne ; s'il n'y en a plus, on ne suit plus.
 export function followWalkMap(map: OfficeMap, desks: ReadonlyArray<Pick<DeskInfo, 'key' | 'items'>>, closedDesks: readonly string[]): OfficeMap {
   const blocked = Uint8Array.from(map.blocked);
   for (const index of furnitureTiles(map, desks)) blocked[index] = 1;

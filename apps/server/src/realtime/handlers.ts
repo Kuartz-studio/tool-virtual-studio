@@ -14,7 +14,6 @@ import {
   DESK_RATE,
   SPEAKING_RATE,
   STATUS_RATE,
-  activityIdSchema,
   arenaCommandSchema,
   chatSendSchema,
   conversationCommandSchema,
@@ -35,6 +34,7 @@ import {
   overlayLocks,
   placeAt,
   speakingSchema,
+  stateSetSchema,
   statusSchema,
   withinClerkReach,
   withGroup,
@@ -70,6 +70,7 @@ import type { GamesController } from '../games/games-controller';
 import type { LightsService } from '../lights/lights-service';
 import { logServerError } from '../logger';
 import type { MediaCoordinator, MediaEvent } from '../media/media-coordinator';
+import type { ModeTravel } from '../modes/mode-travel';
 import type { MusicService } from '../music/music-service';
 import type { ProgressService } from '../progress/progress-service';
 import { createRateLimiter, type RateLimiter } from '../rate-limit';
@@ -94,6 +95,8 @@ export interface HandlerDeps {
   desks: Pick<DeskController, 'run'>;
   /** Les états d'activité : `state:set` y passe, et un statut ordinaire en efface un. */
   activity: Pick<ActivityController, 'choose' | 'clear'>;
+  /** Les voyages des modes : un `move` de qui court sur son tapis de course y passe d'abord (il l'en fait descendre). */
+  travel: Pick<ModeTravel, 'move'>;
   /** Rejoindre quelqu'un : `person:join` y passe (createJoin). */
   join: Join;
   /** La limite de débit de ces demandes (JOIN_RATE), par compte : une seule pour toutes les sockets d'une personne. */
@@ -159,7 +162,8 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
 
   // Au-delà de MOVE_RATE.max par fenêtre, un `move` est ignoré, valide ou non : la limite passe avant le schéma, pour que même un
   // flot de messages invalides ne coûte presque rien. Refusé par le monde (trop vite, case bloquante, hors carte), il renvoie à
-  // l'émetteur, et à lui seul, sa dernière position acceptée : il se recale. Accepté, il part aux autres au prochain tick.
+  // l'émetteur, et à lui seul, sa dernière position acceptée : il se recale. Accepté, il part aux autres au prochain tick. Qui court sur
+  // son tapis de course en descend : un pas qui le laisse sur le tapis est remplacé par la descente (ModeTravel.move).
   socket.on('move', (payload) => {
     if (!moveLimiter.take(socket.id)) return;
     const move = moveSchema.safeParse(payload);
@@ -167,6 +171,7 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     // applyMove prend un joueur inconnu pour un mouvement refusé et répondrait par le point d'apparition : pas de correction pour
     // qui n'est pas dans le monde.
     if (!d.world.get(userId)) return;
+    if (d.travel.move(userId, move.data)) return;
     const result = d.world.applyMove(userId, move.data);
     if (!result.ok) socket.emit('move:correct', result.correct);
   });
@@ -182,13 +187,14 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
     d.activity.clear(userId);
   });
 
-  // Prendre un de ses états d'activité (ou null, pour revenir à un statut ordinaire) : à tout le bureau, émetteur compris. Même limite de
-  // débit que le statut. Un identifiant qui n'est pas l'un des siens est ignoré.
+  // Prendre un de ses états d'activité (ou null, pour revenir à un statut ordinaire), éventuellement sur son tapis de course : à tout le bureau,
+  // émetteur compris. Même limite de débit que le statut. Un identifiant qui n'est pas l'un des siens est ignoré.
   socket.on('state:set', (payload) => {
     if (!statusLimiter.take(socket.id)) return;
-    const id = activityIdSchema.safeParse(payload);
-    if (!id.success || !d.world.get(userId)) return;
-    void d.activity.choose(userId, id.data);
+    const request = stateSetSchema.safeParse(payload);
+    if (!request.success || !d.world.get(userId)) return;
+    if (request.data === null || typeof request.data === 'string') void d.activity.choose(userId, request.data);
+    else void d.activity.choose(userId, request.data.id, { treadmill: true });
   });
 
   // Micro, caméra et partage d'écran, pour l'affichage chez les autres : à tout le monde, émetteur compris. Le monde le garde,
@@ -353,8 +359,9 @@ export function registerHandlers(io: TypedServer, socket: TypedSocket, d: Handle
   // Confier une mission à quelqu'un, auprès d'une administratrice de l'accueil, avec accusé de réception. Le tronc commun, comme `desk:do` : une socket qui n'a pas
   // reçu son init, ou dont la personne n'est pas au monde, est ignorée sans réponse. Puis, dans cet ordre : 1. charge invalide (missionGiveSchema) : `invalid` ;
   // 2. aucune administratrice à CLERK_STAY_TILES cases ou moins, là où le monde voit la personne (jamais là où elle dit être) : `too_far` ; 3. au-delà de MISSION_RATE
-  // par compte (se reconnecter ne la remet pas à zéro) : `rate_limited` ; 4. le service (ProgressService.give) : `self`, `unknown_member` ou `limit`, sinon la mission,
-  // que celle qui la reçoit apprend tout de suite (`task:assigned`). Une base en panne répond `unavailable`.
+  // par compte (se reconnecter ne la remet pas à zéro) : `rate_limited` ; 4. le service (ProgressService.give) : `unknown_member` ou `limit`, sinon la mission,
+  // que celle qui la reçoit apprend tout de suite (`task:assigned` ; à soi aussi, pour une mission qu'on se donne : ses autres onglets la voient arriver). Une
+  // base en panne répond `unavailable`.
   socket.on('mission:give', (payload, ack) => {
     const reply = (r: MissionAck): void => {
       if (typeof ack === 'function') ack(r);
@@ -517,9 +524,13 @@ export function startWorldTicks(io: TypedServer, world: World, tickMs: number, n
     // Une bulle de parole que plus rien ne tient (SPEAKING_TTL_MS sans nouveau « je parle ») s'éteint pour tout le monde, comme un café qui finit.
     for (const id of world.expireSpeaking()) io.to(OFFICE_ROOM).emit('speaking:changed', { id, speaking: false });
     for (const id of world.expireBoosts()) io.to(OFFICE_ROOM).emit('coffee:changed', { id, ms: 0 });
+    const stops = world.drainTreadmillStops();
     const moves = world.drainMoves();
-    if (moves.length === 0) return;
-    io.to(OFFICE_ROOM).volatile.emit('world:tick', { t: Math.round(now()), moves });
+    if (moves.length > 0) io.to(OFFICE_ROOM).volatile.emit('world:tick', { t: Math.round(now()), moves });
+    // Qui vient de descendre de son tapis de course ne court plus : c'est dit juste après le tick qui porte le pas (ou le saut) qui l'en a fait descendre. Pas avant :
+    // un message ordinaire occupe la connexion le temps de partir, et le tick, volatile, qui le suivrait aussitôt serait perdu (Socket.io jette un paquet volatile
+    // quand la connexion n'est pas prête).
+    for (const id of stops) io.to(OFFICE_ROOM).emit('treadmill:changed', { id, treadmill: null });
   });
 }
 

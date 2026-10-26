@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  CAMERA_MARGIN_TILES,
   WheelZoom,
   ZOOM_BASE_FACTOR,
   ZOOM_BUTTON_STEP,
@@ -44,6 +45,22 @@ describe('cameraBounds', () => {
     expect(cameraBounds(map, { width: 1600, height: 600 }, 2)).toEqual({ x: -16, y: 0, width: 800, height: 512 });
     // Haute mais pas large.
     expect(cameraBounds(map, { width: 700, height: 1200 }, 1)).toEqual({ x: 0, y: -344, width: 768, height: 1200 });
+  });
+
+  test('avec une marge : la caméra sort de la carte de la marge de chaque côté, sur un axe à parcourir', () => {
+    // Dix cases de 32 px : 320 px de carte au-delà de chaque bord.
+    expect(cameraBounds(map, { width: 600, height: 400 }, 1, 320)).toEqual({ x: -320, y: -320, width: 1408, height: 1152 });
+    expect(cameraBounds(map, { width: 1280, height: 720 }, 2, 320)).toEqual({ x: -320, y: -320, width: 1408, height: 1152 });
+    // Large mais pas haute : la largeur reste centrée sans marge (toute la carte est à l'écran), la hauteur déborde.
+    expect(cameraBounds(map, { width: 1600, height: 600 }, 2, 320)).toEqual({ x: -16, y: -320, width: 800, height: 1152 });
+  });
+
+  test('avec une marge, une carte plus petite que la vue reste au milieu', () => {
+    expect(cameraBounds(map, { width: 1100, height: 760 }, 1, 320)).toEqual(cameraBounds(map, { width: 1100, height: 760 }, 1));
+  });
+
+  test('la marge de la carte : dix cases', () => {
+    expect(CAMERA_MARGIN_TILES).toBe(10);
   });
 
   test('la vue exactement de la taille de la carte : les bornes sont la carte', () => {

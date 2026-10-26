@@ -58,15 +58,16 @@ describe('la conversation avec une administratrice', () => {
     expect(useOfficeStore.getState().clerk).toBeNull();
   });
 
-  test('confier une mission : à qui (sans soi), quoi, quelle difficulté, le récapitulatif, puis l\'envoi par la connexion', async () => {
+  test('confier une mission : à qui (soi en tête, « Moi »), quoi, quelle difficulté, le récapitulatif, puis l\'envoi par la connexion', async () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     const socket = new FakeSocket().connect();
     socket.serverAccepts();
     const user = userEvent.setup();
     const { dialog } = open(socket);
     await user.click(within(dialog()).getByRole('button', { name: fr.clerks.menu.give }));
-    const people = await within(dialog()).findAllByRole('button', { name: /Bob|Élise/ });
-    expect(people.map((button) => button.querySelector('.clerk-person-name')?.textContent)).toEqual(['Bob', 'Élise']);
+    await within(dialog()).findAllByRole('button', { name: /Bob|Élise/ });
+    const people = within(dialog()).getAllByRole('listitem').map((item) => item.querySelector('.clerk-person-name')?.textContent);
+    expect(people).toEqual([fr.clerks.me, 'Bob', 'Élise']);
     // La recherche ignore les accents.
     await user.type(within(dialog()).getByLabelText(fr.clerks.whoSearchLabel), 'elise');
     expect(within(dialog()).queryByText('Bob')).toBeNull();
@@ -85,6 +86,33 @@ describe('la conversation avec une administratrice', () => {
     await act(async () => socket.serverAcks('mission:give', { ok: true, task: given({ owner: { id: 'eli', name: 'Élise' } }) }));
     expect(dialog().textContent).toContain(t(fr.clerks.sent, { name: 'Élise' }));
     expect(useOfficeStore.getState().given?.map((task) => task.id)).toEqual(['m1']);
+  });
+
+  test('se confier une mission : la conversation le dit à la deuxième personne, et elle n\'est pas de celles qu\'on a confiées', async () => {
+    fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
+    const socket = new FakeSocket().connect();
+    socket.serverAccepts();
+    const user = userEvent.setup();
+    const { dialog } = open(socket);
+    await user.click(within(dialog()).getByRole('button', { name: fr.clerks.menu.give }));
+    // « moi » trouve soi.
+    await within(dialog()).findAllByRole('button', { name: /Bob/ });
+    await user.type(within(dialog()).getByLabelText(fr.clerks.whoSearchLabel), 'moi');
+    expect(within(dialog()).queryByText('Bob')).toBeNull();
+    await user.click(within(dialog()).getByText(fr.clerks.me));
+
+    expect(dialog().textContent).toContain(fr.clerks.whatSelf);
+    await user.type(within(dialog()).getByLabelText(fr.clerks.titleLabel), 'Ranger mes fichiers');
+    await user.click(within(dialog()).getByRole('button', { name: fr.clerks.next }));
+    await user.click(within(dialog()).getByRole('radio', { name: /^4/ }));
+    await user.click(within(dialog()).getByRole('button', { name: fr.clerks.next }));
+    expect(dialog().textContent).toContain('Je résume : tu te donnes « Ranger mes fichiers ». Difficulté 4 sur 10');
+
+    await user.click(within(dialog()).getByRole('button', { name: fr.clerks.confirm }));
+    expect(socket.sentOf('mission:give')).toEqual([{ to: 'ana', title: 'Ranger mes fichiers', tier: 4 }]);
+    await act(async () => socket.serverAcks('mission:give', { ok: true, task: given({ owner: { id: 'ana', name: 'Ana' }, seen: true }) }));
+    expect(dialog().textContent).toContain(fr.clerks.sentSelf);
+    expect(useOfficeStore.getState().given).toBeNull();
   });
 
   test('un refus du serveur se dit dans la conversation : trop loin du comptoir', async () => {

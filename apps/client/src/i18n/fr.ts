@@ -1,4 +1,4 @@
-import type { ActivityIcon, Status } from '@bureau/shared';
+import type { ActivityIcon, Status, ThemeColor, ThemeMaterial } from '@bureau/shared';
 
 // Tous les textes de l'interface. Un texte variable porte des {clés}, que t() remplace.
 export const fr = {
@@ -149,6 +149,10 @@ export const fr = {
     edit: 'Modifier le mode {label}',
     // Le mode en cours conduit quelque part : la pièce, à droite de son nom.
     placeIn: 'à {place}',
+    // Un mode qui conduit à la salle de sport, quand sa pièce a un tapis de course : la ligne, sous la sienne, qui le prend sur le tapis (son nom, pour les
+    // lecteurs d'écran, dit aussi le mode).
+    treadmill: 'Mon tapis de course',
+    onTreadmill: '{label} sur mon tapis de course',
     titleCreate: 'Nouveau mode',
     titleEdit: 'Modifier le mode',
     back: 'Revenir aux modes',
@@ -584,9 +588,25 @@ export const fr = {
       resignConfirm: 'Abandonner',
       resignCancel: 'Annuler',
       rematch: 'Revanche',
-      rematchWaiting: 'Revanche demandée : on attend l\'autre.',
       leave: 'Se lever',
       sit: 'S\'asseoir',
+    },
+    // La revanche, au bout d'une partie : elle commence dès que toutes les personnes assises l'ont acceptée. La phrase sous le bouton dit qui l'a acceptée et qui on
+    // attend ; la chaise de qui l'a acceptée le dit aussi ; panneau fermé, un toast le dit.
+    rematch: {
+      open: 'La revanche commence dès que tout le monde l\'a acceptée.',
+      asked: 'Revanche demandée : on attend {names}.',
+      askedBy: '{names} veut la revanche : on n\'attend plus que toi.',
+      askedByMany: '{names} veulent la revanche : on n\'attend plus que toi.',
+      // {others} : ceux qu'on attend encore, « toi » compris (« Claire, Dan et toi »).
+      askedByAndWaiting: '{names} veut la revanche. On attend encore {others}.',
+      askedByManyAndWaiting: '{names} veulent la revanche. On attend encore {others}.',
+      cancelTip: 'Revanche demandée : clique encore pour l\'annuler',
+      accepted: 'veut la revanche',
+      toast: '{names} veut la revanche {game}.',
+      toastMany: '{names} veulent la revanche {game}.',
+      acceptLabel: 'Accepter la revanche de {names}',
+      later: 'Plus tard',
     },
     draw: {
       offer: 'Proposer la nulle',
@@ -714,15 +734,20 @@ export const fr = {
     received: 'Missions reçues',
     mine: 'Ma liste',
     closed: 'Terminées ({count})',
-    empty: 'Rien à faire pour l\'instant. Ajoute une tâche, ou passe voir les administratrices de l\'accueil pour confier une mission à quelqu\'un.',
+    empty: 'Rien à faire pour l\'instant. Ajoute une tâche, ou passe voir les administratrices de l\'accueil pour confier une mission à quelqu\'un, ou à toi-même.',
     from: '{name} te confie',
     fromGone: 'Un ancien membre te confie',
+    fromSelf: 'Ta propre mission',
     new: 'Nouvelle',
     finish: 'Terminer',
     finishLabel: 'Terminer la mission « {title} »',
     giveBack: 'Rendre',
     giveBackConfirm: 'Rendre cette mission ? {name} le saura.',
     giveBackYes: 'Oui, la rendre',
+    // Une mission qu'on s'est donnée ne se rend à personne : on l'abandonne.
+    giveUp: 'Abandonner',
+    giveUpConfirm: 'Abandonner cette mission ?',
+    giveUpYes: 'Oui, l\'abandonner',
     keep: 'La garder',
     check: 'Cocher « {title} »',
     remove: 'Supprimer « {title} »',
@@ -730,6 +755,7 @@ export const fr = {
     todoCapped: 'Plafond du jour atteint : les tâches cochées aujourd\'hui ne rapportent plus d\'XP (les missions, si).',
     statusDone: 'Faite',
     statusDeclined: 'Rendue',
+    statusGivenUp: 'Abandonnée',
     statusCancelled: 'Retirée',
     loadFailed: 'Impossible de charger ta liste.',
     actionFailed: 'Ça n\'a pas marché. Réessaie dans un instant.',
@@ -792,7 +818,10 @@ export const fr = {
     whoEmpty: 'Personne ne correspond.',
     whoLoading: 'Je consulte le registre…',
     whoFailed: 'Le registre ne répond pas. Réessaie dans un instant.',
+    // Soi, en tête de la liste : on peut se donner une mission.
+    me: 'Moi',
     what: 'Que doit faire {name} ?',
+    whatSelf: 'Quelle mission te donnes-tu ?',
     titleLabel: 'La mission',
     titlePlaceholder: 'Préparer la maquette de la page d\'accueil',
     notesLabel: 'Précisions (facultatif)',
@@ -800,12 +829,14 @@ export const fr = {
     tier: 'Quelle envergure, cette mission ?',
     tierLabel: 'Difficulté',
     recap: 'Je résume : {name} doit « {title} ». Difficulté {tier} sur 10 ({label}) : {xp} XP, soit {share}.',
+    recapSelf: 'Je résume : tu te donnes « {title} ». Difficulté {tier} sur 10 ({label}) : {xp} XP, soit {share}.',
     confirm: 'Confier la mission',
     sending: 'Je transmets…',
     edit: 'Modifier',
     next: 'Suivant',
     back: 'Retour',
     sent: 'C\'est transmis ! {name} trouvera la mission dans sa liste.',
+    sentSelf: 'C\'est noté ! Tu la trouveras dans ta liste.',
     another: 'Une autre mission',
     thanks: 'Merci, au revoir',
     given: 'Voici les missions que tu as confiées cette semaine.',
@@ -820,10 +851,11 @@ export const fr = {
       rate_limited: 'Doucement ! Laisse-moi souffler une minute avant la suivante.',
       too_far: 'Approche-toi du comptoir pour me confier une mission.',
       unknown_member: 'Je ne trouve personne de ce nom dans le registre.',
-      self: 'Tu ne peux pas te confier une mission à toi-même.',
       limit: 'Sa liste est pleine : je ne peux rien y ajouter.',
       unavailable: 'Le registre ne répond pas. Réessaie dans un instant.',
     },
+    // `limit` pour une mission qu'on se donne : c'est sa propre liste qui est pleine.
+    limitSelf: 'Ta liste est pleine : termine ou supprime des tâches d\'abord.',
     close: 'Fermer la conversation',
   },
   // La boutique : des éléments de décor rares pour sa pièce, qu'on achète une fois avec ses kuartzons (gagnés en montant de niveau).
@@ -941,7 +973,7 @@ export const fr = {
     kinds: { object: 'au sol', floor: 'tapis', onTop: 'sur un meuble', wall: 'au mur' },
     // L'aide, derrière l'icône « i » du pied du panneau (une infobulle) : tout ce qu'il faut savoir pour décorer.
     helpLabel: 'Comment décorer',
-    help: 'Choisis un élément puis clique dans la pièce pour le poser (Maj enfoncée : aligné sur les cases) ; sur un autre élément, il le remplace après confirmation. Clique sur un élément posé pour le reprendre, clic droit pour le jeter ou le lâcher. Échap lâche l\'élément tenu.',
+    help: 'Choisis un élément puis clique dans la pièce pour le poser (Maj enfoncée : aligné sur les cases) ; sur un autre élément, il le remplace après confirmation. Tu décores aussi devant ta pièce : son mur, côté rue, et la case de la rue juste dessous (ce qui y tient sur une case de profondeur). Clique sur un élément posé pour le reprendre, clic droit pour le jeter ou le lâcher. Échap lâche l\'élément tenu.',
     tools: 'Outils',
     erase: 'Gomme',
     eraseHelp: 'Gomme : clique sur un élément pour l\'effacer.',
@@ -957,10 +989,40 @@ export const fr = {
     },
     held: 'En main : {name}',
     drop: 'Lâcher',
+    // L'onglet « Murs et sol » : le sélecteur de matière, puis les sols et les murs rangés par couleur (decor/theme-looks.ts).
+    materialsLabel: 'Matière',
+    allMaterials: 'Toutes',
+    materials: {
+      uni: 'Uni',
+      bois: 'Bois',
+      carrelage: 'Carrelage',
+      moquette: 'Moquette',
+      pierre: 'Pierre',
+      beton: 'Béton',
+      brique: 'Brique',
+      tissu: 'Tissu',
+      motif: 'Motif',
+    } satisfies Record<ThemeMaterial, string>,
+    colors: {
+      blanc: 'Blanc',
+      creme: 'Crème',
+      beige: 'Beige',
+      gris: 'Gris',
+      noir: 'Noir',
+      brun: 'Brun',
+      rouge: 'Rouge',
+      rose: 'Rose',
+      orange: 'Orange',
+      vert: 'Vert',
+      bleu: 'Bleu',
+      violet: 'Violet',
+      multicolore: 'Multicolore',
+    } satisfies Record<ThemeColor, string>,
     floorTitle: 'Sol',
     wallTitle: 'Murs',
-    // Les murs de la boutique, sous les autres : un mur pas encore acheté porte un cadenas et son prix, et se choisit quand même, à l'essai.
-    shopWallsTitle: 'Murs de la boutique',
+    noFloors: 'Aucun sol de cette matière.',
+    noWalls: 'Aucun mur de cette matière.',
+    // Les murs de la boutique, rangés avec les autres : un mur pas encore acheté porte un cadenas et son prix, et se choisit quand même, à l'essai.
     lockedWall: '{name} : à la boutique, {price} kuartzons',
     // Au pied du panneau : ce que le brouillon essaie de la boutique sans l'avoir acheté.
     cart: {
@@ -1001,7 +1063,7 @@ export const fr = {
       unknown_item: 'Cet élément n\'existe pas.',
       unknown_theme: 'Ce thème n\'existe pas.',
       bad_position: 'Cet élément ne se pose pas là.',
-      out_of_room: 'Ça dépasse de la pièce.',
+      out_of_room: 'Ça dépasse de la pièce, ou de la case devant.',
       overlap: 'Il y a déjà quelque chose ici.',
       blocks_door: 'Ça bloquerait ta porte.',
       unreachable: 'Un coin de la pièce deviendrait inaccessible.',

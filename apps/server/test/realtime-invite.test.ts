@@ -163,6 +163,16 @@ describe('rejoindre quelqu\'un', () => {
     expect(Math.hypot(at.x - OUTSIDE.x, at.y - OUTSIDE.y)).toBeLessThanOrEqual(2 * 32);
   });
 
+  test('la personne est dans la rue, juste sous la fontaine du dehors de A1 (son dehors par défaut) : on n\'est jamais posé dans la fontaine', async () => {
+    const srv = await startOffice();
+    const a = await person(srv, 'a@x.fr');   // A1, rien de réglé : son dehors par défaut, la fontaine en (10, 11)
+    const b = await person(srv, 'b@x.fr');
+    await teleport(srv, b, { x: px(10), y: px(12) });
+    expect(await join(a.socket, b.id)).toEqual({ ok: true });
+    // Des quatre cases voisines, la plus haute (la fontaine) est fermée : la suivante, à l'ouest.
+    expect(posOf(srv, a)).toEqual({ x: px(9), y: px(12) });
+  });
+
   test('une demande mal formée : invalid ; trop de demandes : rate_limited', async () => {
     const srv = await startOffice();
     const a = await person(srv, 'a@x.fr');

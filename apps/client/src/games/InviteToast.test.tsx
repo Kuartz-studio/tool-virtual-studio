@@ -1,4 +1,4 @@
-import type { GameInvite, GameNotice } from '@bureau/shared';
+import type { GameInvite, GameNotice, GameTableView } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -7,9 +7,10 @@ import { fr, t } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
 import { FakeSocket } from '../test/fake-socket';
 import { Toasts, useToasts } from '../office/Toasts';
-import { BASTIEN, CLAIRE, applyWorld, player } from './games-test-kit';
+import { BASTIEN, CLAIRE, SELF, applyWorld, chair, match, player, table } from './games-test-kit';
 
-// Les invitations à une table, dans la file de toasts : « Bastien t'invite aux échecs », « Accepter » et « Refuser », un compte à rebours de 60 s, les avis de réponse.
+// Les invitations à une table, dans la file de toasts : « Bastien t'invite aux échecs », « Accepter » et « Refuser », un compte à rebours de 60 s, les avis de réponse ; et la
+// revanche qu'on attend de soi quand le panneau de la table est fermé.
 
 let socket: FakeSocket;
 beforeEach(() => {
@@ -127,6 +128,88 @@ describe('une invitation reçue', () => {
     receive(invite('i1'));
     receive(invite('i1'));
     expect(screen.getAllByText(t(fr.games.invitation, { name: 'Bastien', game: 'aux échecs' }))).toHaveLength(1);
+  });
+});
+
+describe('la revanche, panneau fermé', () => {
+  // La table des échecs, sa partie finie (Bastien a gagné) : Bastien et moi assis, prêts ou non (prêt : on a accepté la revanche).
+  const finished = (version: number, ready: string[] = [], over: Partial<GameTableView> = {}): GameTableView =>
+    table('chess', version, {
+      chairs: [chair(SELF, { ready: ready.includes(SELF) }), chair(BASTIEN, { ready: ready.includes(BASTIEN) })],
+      match: match([SELF, BASTIEN], {}, { id: 'm1', status: 'ended', turnMs: null, result: { ranking: [[1], [0]], reason: 'resign' } }),
+      ...over,
+    });
+  const tableIs = (view: GameTableView) => act(() => useOfficeStore.getState().setGameTable(view));
+  const text = t(fr.games.rematch.toast, { names: 'Bastien', game: fr.games.invitedTo.chess });
+  const rematchToast = () => screen.queryByText(text)?.closest<HTMLElement>('.toast') ?? null;
+
+  test('Bastien demande la revanche : un toast « Bastien veut la revanche aux échecs », avec « Revanche » (nommé pour un lecteur d\'écran) et « Plus tard »', () => {
+    setup();
+    tableIs(finished(1));
+    expect(rematchToast()).toBeNull();
+    tableIs(finished(2, [BASTIEN]));
+    const shown = rematchToast()!;
+    expect(within(shown).getByRole('button', { name: t(fr.games.rematch.acceptLabel, { names: 'Bastien' }) }).textContent).toBe(fr.games.actions.rematch);
+    expect(within(shown).getByRole('button', { name: fr.games.rematch.later })).toBeTruthy();
+  });
+
+  test('« Revanche » l\'accepte (`ready`) et ouvre le panneau de la table ; le toast part', async () => {
+    setup();
+    tableIs(finished(2, [BASTIEN]));
+    await userEvent.click(within(rematchToast()!).getByRole('button', { name: t(fr.games.rematch.acceptLabel, { names: 'Bastien' }) }));
+    expect(socket.sent).toEqual([['game:do', { type: 'ready', game: 'chess', ready: true }]]);
+    expect(useOfficeStore.getState().gameOpen).toBe('chess');
+    expect(rematchToast()).toBeNull();
+  });
+
+  test('refusée par le serveur (ma chaise s\'est libérée) : on le dit', async () => {
+    setup();
+    tableIs(finished(2, [BASTIEN]));
+    await userEvent.click(within(rematchToast()!).getByRole('button', { name: t(fr.games.rematch.acceptLabel, { names: 'Bastien' }) }));
+    answerWith({ ok: false, error: 'not_seated' });
+    expect(await screen.findByText(fr.games.errors.not_seated)).toBeTruthy();
+  });
+
+  test('« Plus tard » l\'écarte, et la table qui change encore ne la redit pas', async () => {
+    setup();
+    tableIs(finished(2, [BASTIEN]));
+    await userEvent.click(within(rematchToast()!).getByRole('button', { name: fr.games.rematch.later }));
+    expect(rematchToast()).toBeNull();
+    tableIs({ ...finished(3, [BASTIEN]), spectators: [{ id: CLAIRE, name: 'Claire' }] });
+    expect(rematchToast()).toBeNull();
+    expect(socket.sent).toEqual([]);
+  });
+
+  test('le panneau de la table ouvert, pas de toast : il le dit déjà ; ouvert après coup, le toast part', () => {
+    setup();
+    act(() => useOfficeStore.getState().openGame('chess'));
+    tableIs(finished(2, [BASTIEN]));
+    expect(rematchToast()).toBeNull();
+    act(() => useOfficeStore.getState().openGame(null));
+    tableIs(finished(3, [BASTIEN], { match: { ...finished(3).match!, id: 'm2' } }));
+    expect(rematchToast()).toBeTruthy();
+    act(() => useOfficeStore.getState().openGame('chess'));
+    expect(rematchToast()).toBeNull();
+  });
+
+  test('la revanche ne tient plus : la partie suivante a commencé, ou Bastien l\'a retirée : le toast part', () => {
+    setup();
+    tableIs(finished(2, [BASTIEN]));
+    expect(rematchToast()).toBeTruthy();
+    tableIs(finished(3));
+    expect(rematchToast()).toBeNull();
+  });
+
+  test('personne ne l\'a demandée, je l\'ai demandée moi-même, je ne suis pas assis : pas de toast ; sinon, il s\'éteint au bout de 60 s', () => {
+    setup();
+    tableIs(finished(2, [SELF]));
+    expect(screen.queryByText(/veut la revanche/)).toBeNull();
+    tableIs(finished(3, [BASTIEN], { chairs: [chair(CLAIRE), chair(BASTIEN, { ready: true })] }));
+    expect(screen.queryByText(/veut la revanche/)).toBeNull();
+    tableIs(finished(4, [BASTIEN]));
+    expect(rematchToast()).toBeTruthy();
+    act(() => void vi.advanceTimersByTime(61_000));
+    expect(rematchToast()).toBeNull();
   });
 });
 

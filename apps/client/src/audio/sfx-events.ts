@@ -128,8 +128,9 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKe
       if (levelAfter > levelBefore) engine.playSfx('level-up');
       else if (source !== 'checkin') engine.playSfx('xp');
     }),
-    listenOnBus(bus, 'task:assigned', () => {
-      if (!quiet()) engine.playSfx('mission');
+    listenOnBus(bus, 'task:assigned', (task) => {
+      // Pas pour une mission qu'on vient de se donner : on l'a confiée soi-même, sans surprise.
+      if (!quiet() && task.giver?.id !== state().selfId) engine.playSfx('mission');
     }),
     listenOnBus(bus, 'task:changed', (task) => {
       if (task.status === 'done' && task.giver?.id === state().selfId && !quiet()) engine.playSfx('success');
