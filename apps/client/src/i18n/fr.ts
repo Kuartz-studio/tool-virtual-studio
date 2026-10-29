@@ -27,6 +27,21 @@ export const fr = {
       message: 'Une nouvelle version est peut-être en ligne, ou la connexion a coupé. Recharge la page.',
     },
   },
+  // La fenêtre « Quoi de neuf ? » (updates/WhatsNew.tsx), à la première entrée au bureau après une mise à jour, et la ligne « Nouveautés » du menu
+  // « Moi ». Les notes elles-mêmes sont dans updates/releases.ts.
+  whatsNew: {
+    title: 'Quoi de neuf ?',
+    // Le numéro d'une version, court (la pastille « v1.00 · 29 octobre 2026 », la ligne du menu), et ce qu'un lecteur d'écran lit de la pastille.
+    version: 'v{version}',
+    badgeLabel: 'Version {version}, du {date}',
+    // Les titres des groupes, un par genre de nouveauté (updates/releases.ts, RELEASE_KINDS), dans cet ordre.
+    groups: { new: 'Nouveautés', improved: 'Améliorations', fixed: 'Corrections', removed: 'Suppressions' },
+    done: 'C\'est parti',
+    history: 'Tout l\'historique',
+    // La ligne du menu « Moi », avec à droite le numéro de la version en cours.
+    menuItem: 'Nouveautés',
+    menuItemLabel: 'Nouveautés, version {version}',
+  },
   login: {
     title: 'Connexion',
     email: 'Adresse e-mail',
@@ -383,12 +398,14 @@ export const fr = {
       generic: 'Impossible de rejoindre cette personne. Réessaie.',
     },
   },
-  // Les boutons de zoom du jeu, en bas à droite : de 25 % à 200 %, 100 % au départ ; le pourcentage du milieu le rétablit.
+  // Les boutons de zoom du jeu, en bas à droite : du plancher (zoomFloorPercent, game/zoom.ts : la carte et sa marge, jamais moins de 25 %) à
+  // 200 %, 100 % au départ, ou le plancher s'il est plus haut (un écran en portrait ou très large) ; le pourcentage du milieu rétablit ce zoom
+  // de départ. Son nom ne dit pas « 100 % », qui serait faux sur ces écrans-là (143 % sur un moniteur de 1 080 × 1 920 en portrait).
   zoom: {
     group: 'Zoom',
     in: 'Zoom avant',
     out: 'Zoom arrière',
-    reset: 'Rétablir le zoom (100 %)',
+    reset: 'Rétablir le zoom de départ',
     level: '{percent} %',
   },
   // La lumière du bureau : une pour tout le monde, que l'interrupteur du couloir allume ou éteint (touche E ou clic, de près). `off` et `on` sont
@@ -1148,72 +1165,83 @@ export const fr = {
     unreadOne: '{count} nouveau message',
     unreadMany: '{count} nouveaux messages',
   },
-  // Le panneau Admin (réservé aux admins) : inviter, les invitations en attente, les membres, et ce que le serveur peut refuser.
+  // Le panneau Admin (réservé aux admins) : les membres et les invitations en attente, inviter, et ce que le serveur peut refuser.
   admin: {
     toggle: 'Admin',
     title: 'Admin',
-    close: 'Fermer le panneau Admin',
     you: '(toi)',
     // Le rôle d'un compte : choisi en invitant, écrit dans les listes.
     roles: { member: 'Membre', admin: 'Admin' },
+    // Les deux listes du panneau, en onglets (le nombre de chacune suit son libellé).
+    tabs: { label: 'Listes', members: 'Membres', invitations: 'Invitations' },
+    // Le bouton « … » d'une ligne, qui ouvre ses gestes : son nom dit pour qui (un membre, une adresse invitée).
+    actions: 'Actions pour {name}',
     invite: {
-      title: 'Inviter',
+      // Le bouton du haut du panneau, qui ouvre (et ferme) le formulaire.
+      toggle: 'Inviter',
+      title: 'Inviter quelqu\'un',
+      close: 'Fermer le formulaire',
       email: 'Adresse e-mail',
+      emailPlaceholder: 'prenom@exemple.fr',
       role: 'Rôle',
       submit: 'Envoyer l\'invitation',
       submitting: 'Envoi…',
       sent: 'Invitation envoyée à {email}.',
       // Serveur sans e-mail (MAILER=none) : rien n'est envoyé, le serveur rend le lien de l'invitation, que l'admin transmet lui-même. Il ne
-      // le redonne pas : « Nouveau lien », dans les invitations en attente, en donne un autre. Le bouton ne parle plus d'envoi.
+      // le redonne pas : « Nouveau lien », dans l'onglet Invitations, en donne un autre. Le bouton ne parle plus d'envoi.
       create: 'Créer le lien d\'invitation',
       creating: 'Création…',
       created: 'Invitation créée pour {email}. Envoie-lui ce lien :',
-      validity: 'Ce lien est valable {days} jours. Il ne sera plus affiché : si tu le perds, utilise « Nouveau lien » dans les invitations en attente.',
+      validity: 'Valable {days} jours. Il ne sera plus affiché : si tu le perds, utilise « Nouveau lien » dans l\'onglet Invitations.',
     },
-    // Les invitations ni acceptées ni annulées, expirées comprises (on les renvoie). `title` : la section avant l'arrivée de la liste,
-    // `titleCount` : une fois la liste là.
+    // Les invitations ni acceptées ni annulées, expirées comprises (on les renvoie).
     pending: {
-      title: 'Invitations en attente',
-      titleCount: 'Invitations en attente ({count})',
       empty: 'Aucune invitation en attente.',
+      emptyHint: 'Une invitation reste ici jusqu\'à ce que la personne l\'accepte.',
       loadFailed: 'Impossible de charger les invitations en attente.',
-      expired: 'expirée',
-      resend: 'Renvoyer',
-      resendLabel: 'Renvoyer l\'invitation à {email}',
-      // Serveur sans e-mail : rien n'est renvoyé, « Renvoyer » devient « Nouveau lien ».
+      // Ce qu'il reste à vivre à son lien : en jours, puis en heures le dernier jour ; « Expirée » quand il ne marche plus.
+      expired: 'Expirée',
+      expiresInDays: 'Expire dans {count} jours',
+      expiresInDay: 'Expire dans 1 jour',
+      expiresInHours: 'Expire dans {count} h',
+      expiresSoon: 'Expire dans moins d\'une heure',
+      // Ses gestes, dans son menu « … ». Serveur sans e-mail : rien n'est renvoyé, « Renvoyer l'invitation » devient « Nouveau lien ».
+      resend: 'Renvoyer l\'invitation',
       renew: 'Nouveau lien',
-      renewLabel: 'Nouveau lien d\'invitation pour {email}',
-      revoke: 'Annuler',
-      revokeLabel: 'Annuler l\'invitation de {email}',
+      revoke: 'Annuler l\'invitation',
       resent: 'Invitation renvoyée à {email}.',
       revoked: 'Invitation à {email} annulée.',
       // Serveur sans e-mail : « Nouveau lien » rend un lien neuf, et l'ancien ne marche plus.
       renewed: 'Nouveau lien pour {email} : l\'ancien ne marche plus. Envoie-lui ce lien :',
     },
     members: {
-      title: 'Membres',
-      titleCount: 'Membres ({count})',
       loadFailed: 'Impossible de charger la liste des membres.',
-      remove: 'Retirer',
-      removeLabel: 'Retirer {name}',
+      // La recherche, quand la liste est longue : dans le nom et dans l'adresse, sans tenir compte des accents ni des majuscules.
+      search: 'Rechercher un membre',
+      searchPlaceholder: 'Nom ou adresse e-mail',
+      noMatch: 'Personne ne correspond à « {query} ».',
+      // Sa présence, sous son rôle : en ligne, ou depuis quand on ne l'a plus vu (LastSeen), ou jamais venu au bureau.
+      online: 'En ligne',
+      neverSeen: 'Aucune visite',
+      // Ses gestes, dans son menu « … ».
+      remove: 'Retirer du bureau',
       removed: '{name} ne fait plus partie du bureau.',
       // Serveur sans e-mail : l'admin demande le lien par lequel la personne choisit un nouveau mot de passe, et le lui transmet.
       passwordLink: 'Lien de mot de passe',
-      passwordLinkLabel: 'Lien de mot de passe de {name}',
       passwordLinkIntro: 'Ce lien permet de choisir un nouveau mot de passe pour {name}.',
-      passwordLinkValidity: 'Ce lien est valable une heure. Il ne sera plus affiché : si tu le perds, demandes-en un autre.',
+      passwordLinkValidity: 'Valable une heure. Il ne sera plus affiché : si tu le perds, demandes-en un autre.',
     },
     // La boîte d'un lien à transmettre (invitation créée ou renvoyée, mot de passe) : copier, ou masquer.
     link: {
       copy: 'Copier le lien',
-      copied: 'Copié',
+      copied: 'Lien copié.',
       selected: 'Lien sélectionné : copie-le avec Ctrl+C (⌘C sur Mac).',
-      dismiss: 'Masquer',
+      dismiss: 'Masquer le lien',
     },
     // La confirmation d'un retrait : le compte est désactivé, pas supprimé, et son adresse ne peut plus être invitée (le serveur répond
     // alors « already_member »).
     removal: {
-      title: 'Retirer {name} ?',
+      title: 'Retirer {name} du bureau ?',
       body: 'Le compte {email} sera désactivé. La personne sera déconnectée tout de suite et ne pourra plus se connecter. Cette adresse ne pourra plus être invitée.',
       confirm: 'Retirer',
       confirming: 'Retrait…',
@@ -1282,8 +1310,17 @@ export const fr = {
       you: '{name} (toi)',
       enlarge: 'Agrandir',
       shrink: 'Réduire',
-      fullscreen: 'Plein écran',
-      exitFullscreen: 'Quitter le plein écran',
+    },
+    // Le plein écran d'une vignette (VideoStrip) : la caméra ou les initiales de n'importe qui, ou le partage d'écran d'un autre.
+    fullscreen: {
+      // L'infobulle du bouton, en haut à droite de la vignette.
+      enter: 'Plein écran',
+      // Son nom pour les lecteurs d'écran, qui dit de quelle vignette il s'agit.
+      camera: 'Plein écran : vidéo de {name}',
+      screen: 'Plein écran : partage d\'écran de {name}',
+      exit: 'Quitter le plein écran',
+      previous: 'Vidéo précédente',
+      next: 'Vidéo suivante',
     },
     // Verrouiller la conversation : ses membres restent ensemble où qu'ils aillent, et personne d'autre n'y entre.
     lock: {

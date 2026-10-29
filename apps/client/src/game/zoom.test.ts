@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  CAMERA_MARGIN_TILES,
+  MAP_MARGIN_TILES,
   WheelZoom,
   ZOOM_BASE_FACTOR,
   ZOOM_BUTTON_STEP,
@@ -9,85 +9,220 @@ import {
   ZOOM_MAX_PERCENT,
   ZOOM_MIN_PERCENT,
   ZOOM_WHEEL_STEP,
-  cameraBounds,
+  boundZoomPercent,
   cameraZoom,
   ceilToQuarter,
   chooseZoom,
+  clampFreeCenter,
+  clampZoomFloor,
   clampZoomPercent,
+  displayZoomPercent,
   easeZoom,
+  freeCameraReach,
   stepZoomPercent,
   textResolution,
+  zoomFloorPercent,
+  type ZoomGlide,
 } from './zoom';
 
 test.each([[1920, 1080, 2], [1280, 720, 2], [1279, 800, 1], [1440, 700, 1]])('chooseZoom(%i, %i) = %i', (w, h, z) => expect(chooseZoom(w, h)).toBe(z));
 
-// La carte de développement : 24 × 16 cases de 32 px.
+// La carte de développement : 24 × 16 cases de 32 px. La vraie carte : 81 × 46 cases. La marge : cinq cases, 160 px de carte.
 const map = { width: 768, height: 512 };
+const office = { width: 2592, height: 1472 };
+const MARGIN = MAP_MARGIN_TILES * 32;
 
-describe('cameraBounds', () => {
-  test('carte plus grande que la vue : la caméra peut parcourir exactement la carte', () => {
-    // 600 × 400 au zoom ×1 : la vue montre 600 × 400 px de carte, sur 768 × 512.
-    expect(cameraBounds(map, { width: 600, height: 400 }, 1)).toEqual({ x: 0, y: 0, width: 768, height: 512 });
-    // 1280 × 720 au zoom ×2 : la vue montre 640 × 360 px de carte.
-    expect(cameraBounds(map, { width: 1280, height: 720 }, 2)).toEqual({ x: 0, y: 0, width: 768, height: 512 });
+// La caméra qui suit l'avatar n'a pas de bornes (Office.ts) : Phaser la centre sur le milieu de l'avatar et zoome autour de ce centre, à tout
+// zoom, au bord de la carte comme au milieu (e2e/camera.spec.ts le relève à chaque image). La seule règle qui reste à la caméra est celle de la
+// caméra libre, qu'on fait glisser à la souris : son centre va au plus à la marge au-delà de chaque bord de la carte, et moins quand la vue au
+// plus près (200 %) en perdrait la carte.
+const TILE = 32;
+const FULL = { x: MARGIN, y: MARGIN };
+
+describe('freeCameraReach', () => {
+  test('la marge de la carte : cinq cases', () => {
+    expect(MAP_MARGIN_TILES).toBe(5);
   });
 
-  test('carte plus petite que la vue : une zone de la taille de la vue, la carte au milieu', () => {
-    // ×1 sur 1100 × 760 : 166 px de marge à gauche et 166 à droite (1100 − 768 = 332), 124 en haut et en bas.
-    expect(cameraBounds(map, { width: 1100, height: 760 }, 1)).toEqual({ x: -166, y: -124, width: 1100, height: 760 });
-    // ×2 sur 1600 × 1100 : la carte fait 1536 × 1024 à l'écran, 32 px de marge de chaque côté et 38 en haut et en bas, soit
-    // 16 et 19 px de carte.
-    expect(cameraBounds(map, { width: 1600, height: 1100 }, 2)).toEqual({ x: -16, y: -19, width: 800, height: 550 });
+  // [canevas, limite attendue en pixels de carte]. Au plus près, la vue est à ×3 à partir de 1280 × 720, à ×1,5 en dessous : la limite est
+  // la moitié de la vue moins une case, jamais plus que la marge (160 px).
+  test.each([
+    [{ width: 1280, height: 720 }, { x: 160, y: 88 }],
+    [{ width: 1440, height: 900 }, { x: 160, y: 118 }],
+    [{ width: 1920, height: 1080 }, { x: 160, y: 148 }],
+    [{ width: 2560, height: 1440 }, FULL],
+    [{ width: 390, height: 844 }, { x: 98, y: 160 }],
+    [{ width: 1080, height: 1920 }, { x: 160, y: 160 }],
+  ])('dans un canevas de %o : %o', (canvas, reach) => {
+    expect(freeCameraReach(canvas, MARGIN, TILE)).toEqual(reach);
   });
 
-  test('chaque axe est traité à part', () => {
-    // Large mais pas haute : centrée en largeur, bornée à la carte en hauteur.
-    expect(cameraBounds(map, { width: 1600, height: 600 }, 2)).toEqual({ x: -16, y: 0, width: 800, height: 512 });
-    // Haute mais pas large.
-    expect(cameraBounds(map, { width: 700, height: 1200 }, 1)).toEqual({ x: 0, y: -344, width: 768, height: 1200 });
-  });
-
-  test('avec une marge : la caméra sort de la carte de la marge de chaque côté, sur un axe à parcourir', () => {
-    // Dix cases de 32 px : 320 px de carte au-delà de chaque bord.
-    expect(cameraBounds(map, { width: 600, height: 400 }, 1, 320)).toEqual({ x: -320, y: -320, width: 1408, height: 1152 });
-    expect(cameraBounds(map, { width: 1280, height: 720 }, 2, 320)).toEqual({ x: -320, y: -320, width: 1408, height: 1152 });
-    // Large mais pas haute : la largeur reste centrée sans marge (toute la carte est à l'écran), la hauteur déborde.
-    expect(cameraBounds(map, { width: 1600, height: 600 }, 2, 320)).toEqual({ x: -16, y: -320, width: 800, height: 1152 });
-  });
-
-  test('avec une marge, une carte plus petite que la vue reste au milieu', () => {
-    expect(cameraBounds(map, { width: 1100, height: 760 }, 1, 320)).toEqual(cameraBounds(map, { width: 1100, height: 760 }, 1));
-  });
-
-  test('la marge de la carte : dix cases', () => {
-    expect(CAMERA_MARGIN_TILES).toBe(10);
-  });
-
-  test('la vue exactement de la taille de la carte : les bornes sont la carte', () => {
-    expect(cameraBounds(map, { width: 768, height: 512 }, 1)).toEqual({ x: 0, y: 0, width: 768, height: 512 });
-    expect(cameraBounds(map, { width: 1536, height: 1024 }, 2)).toEqual({ x: 0, y: 0, width: 768, height: 512 });
-  });
-
-  test('un reste impair de pixels : le bord de la carte tombe quand même sur un pixel entier de l\'écran', () => {
-    const cases: Array<[canvas: { width: number; height: number }, zoom: number]> = [
-      [{ width: 1301, height: 801 }, 1],
-      [{ width: 999, height: 777 }, 1],
-      [{ width: 1537, height: 1025 }, 2],
-      [{ width: 1999, height: 1333 }, 2],
-    ];
-    for (const [canvas, zoom] of cases) {
-      const bounds = cameraBounds(map, canvas, zoom);
-      // La carte (x = 0) est à −x × zoom pixels du bord gauche de la vue : un entier, sans demi-pixel qui flouterait les tuiles.
-      const left = -bounds.x * zoom;
-      const top = -bounds.y * zoom;
-      expect(Number.isInteger(left), `${canvas.width} × ${canvas.height} ×${zoom} : marge à gauche ${left}`).toBe(true);
-      expect(Number.isInteger(top), `${canvas.width} × ${canvas.height} ×${zoom} : marge en haut ${top}`).toBe(true);
-      // Et la carte reste au milieu, à un pixel près.
-      const right = bounds.width * zoom - left - map.width * zoom;
-      const bottom = bounds.height * zoom - top - map.height * zoom;
-      expect(Math.abs(left - right)).toBeLessThanOrEqual(1);
-      expect(Math.abs(top - bottom)).toBeLessThanOrEqual(1);
+  // Le défaut relevé le 29 octobre : sur 1280 × 720, le centre allait à 160 px sous la carte, et à 200 % (une vue de 240 px de carte de haut),
+  // l'écran ne montrait que le fond. La limite tient au plus près : à tout zoom, du plancher à 200 %, la vue centrée sur un coin de la limite
+  // garde au moins une case de carte sur chaque axe.
+  test('à tout zoom, la vue centrée à la limite garde au moins une case de la carte, sur chaque axe', () => {
+    for (const canvas of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 390, height: 844 }, { width: 800, height: 600 }]) {
+      const reach = freeCameraReach(canvas, MARGIN, TILE);
+      for (const percent of [ZOOM_MIN_PERCENT, 50, ZOOM_DEFAULT_PERCENT, 150, 187.5, ZOOM_MAX_PERCENT]) {
+        const zoom = cameraZoom(canvas.width, canvas.height, percent);
+        const view = { width: canvas.width / zoom, height: canvas.height / zoom };
+        // Au-delà du coin sud-est de la vraie carte : ce qui reste de carte entre le bord gauche (haut) de la vue et le bord est (sud) de la carte.
+        const center = clampFreeCenter({ x: 1e6, y: 1e6 }, office, reach);
+        expect(office.width - (center.x - view.width / 2), `${canvas.width} × ${canvas.height} à ${percent} %, en largeur`).toBeGreaterThanOrEqual(TILE - 1e-9);
+        expect(office.height - (center.y - view.height / 2), `${canvas.width} × ${canvas.height} à ${percent} %, en hauteur`).toBeGreaterThanOrEqual(TILE - 1e-9);
+        // Au-delà du coin nord-ouest, de même.
+        const north = clampFreeCenter({ x: -1e6, y: -1e6 }, office, reach);
+        expect(north.x + view.width / 2).toBeGreaterThanOrEqual(TILE - 1e-9);
+        expect(north.y + view.height / 2).toBeGreaterThanOrEqual(TILE - 1e-9);
+      }
     }
+  });
+
+  test('un canevas minuscule met la limite dans la carte ; un canevas illisible (NaN), au bord de la carte', () => {
+    // 120 × 90 : au plus près (×1,5), la vue fait 80 × 60 px de carte, moins de deux cases de haut.
+    expect(freeCameraReach({ width: 120, height: 90 }, MARGIN, TILE)).toEqual({ x: 40 - TILE, y: 30 - TILE });
+    expect(freeCameraReach({ width: Number.NaN, height: Number.NaN }, MARGIN, TILE)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe('clampFreeCenter', () => {
+  test('un centre dans la carte élargie de la limite reste exactement où il est, au bord de cette limite comme au milieu', () => {
+    for (const center of [{ x: 384, y: 256 }, { x: 0, y: 0 }, { x: -160, y: -160 }, { x: 768 + 160, y: 512 + 160 }, { x: -159.75, y: 671.5 }, { x: 12.3456, y: 400.001 }]) {
+      expect(clampFreeCenter(center, map, FULL)).toEqual(center);
+    }
+  });
+
+  test('au-delà, il est ramené à la limite, chaque axe à part, et à la sienne', () => {
+    // La carte de développement (768 × 512) et toute la marge (160 px) : le centre va de −160 à 928 en largeur, de −160 à 672 en hauteur.
+    expect(clampFreeCenter({ x: -500, y: 256 }, map, FULL)).toEqual({ x: -160, y: 256 });
+    expect(clampFreeCenter({ x: 2000, y: 256 }, map, FULL)).toEqual({ x: 928, y: 256 });
+    expect(clampFreeCenter({ x: 384, y: -1000 }, map, FULL)).toEqual({ x: 384, y: -160 });
+    expect(clampFreeCenter({ x: 384, y: 900 }, map, FULL)).toEqual({ x: 384, y: 672 });
+    // Dans un coin, les deux axes à la fois ; la vraie carte (2592 × 1472) sur 1280 × 720, où la limite est de 88 px en hauteur.
+    expect(clampFreeCenter({ x: -999, y: 9999 }, map, FULL)).toEqual({ x: -160, y: 672 });
+    expect(clampFreeCenter({ x: 5000, y: 5000 }, office, { x: 160, y: 88 })).toEqual({ x: 2752, y: 1560 });
+    expect(clampFreeCenter({ x: -5000, y: -5000 }, office, { x: 160, y: 88 })).toEqual({ x: -160, y: -88 });
+  });
+
+  test('sans marge, la carte elle-même ; une limite négative, dans la carte ; un centre illisible (NaN), ou sans place, au milieu de la carte', () => {
+    expect(clampFreeCenter({ x: -10, y: 600 }, map, { x: 0, y: 0 })).toEqual({ x: 0, y: 512 });
+    expect(Object.is(clampFreeCenter({ x: -10, y: 256 }, map, { x: 0, y: 0 }).x, -0)).toBe(false);
+    expect(clampFreeCenter({ x: -10, y: 600 }, map, { x: -8, y: -12 })).toEqual({ x: 8, y: 500 });
+    expect(clampFreeCenter({ x: Number.NaN, y: 100 }, map, FULL)).toEqual({ x: 384, y: 100 });
+    expect(clampFreeCenter({ x: 100, y: Number.NaN }, office, FULL)).toEqual({ x: 100, y: 736 });
+    expect(clampFreeCenter({ x: 0, y: 0 }, map, { x: -400, y: 0 })).toEqual({ x: 384, y: 0 });
+  });
+});
+
+// Le plancher du zoom : au plus loin, la vue fait la carte et sa marge (cinq cases au-delà de chaque bord) sur l'axe qui limite, pas plus. Une
+// mesure de la vue, la référence du dézoom maximal, et non une limite de ce qu'elle montre : la caméra, qui suit l'avatar sans bornes, montre
+// au bord de la carte autant de fond qu'il faut.
+describe('zoomFloorPercent', () => {
+  // [canevas, plancher attendu (en %), l'axe qui limite]. La vraie carte avec ses marges fait 2912 × 1792 px ; celle de développement,
+  // 1088 × 832. Le zoom de départ est ×1,5 à 100 % à partir de 1280 × 720, ×0,75 en dessous (le téléphone).
+  const CASES: Record<string, Array<[canvas: { width: number; height: number }, percent: number, axis: 'width' | 'height']>> = {
+    office: [
+      [{ width: 1440, height: 900 }, 33.482, 'height'],
+      [{ width: 1920, height: 1080 }, 43.956, 'width'],
+      [{ width: 2560, height: 1440 }, 58.608, 'width'],
+      [{ width: 390, height: 844 }, 62.798, 'height'],
+    ],
+    développement: [
+      [{ width: 1440, height: 900 }, 88.235, 'width'],
+      [{ width: 1920, height: 1080 }, 117.647, 'width'],
+      [{ width: 2560, height: 1440 }, 156.863, 'width'],
+      [{ width: 390, height: 844 }, 135.256, 'height'],
+    ],
+  };
+  const SIZES = { office, développement: map };
+
+  test.each(Object.keys(CASES))('carte %s : la formule, et au plancher, une vue de la taille de la carte et de ses deux marges sur l\'axe qui limite, plus petite sur l\'autre', (name) => {
+    const mapSize = SIZES[name as keyof typeof SIZES];
+    for (const [canvas, percent, axis] of CASES[name]!) {
+      const where = `${canvas.width} × ${canvas.height}`;
+      const floor = zoomFloorPercent(mapSize, canvas, MARGIN);
+      expect(floor, where).toBeCloseTo(percent, 3);
+      // La vue au plancher : la carte et ses deux marges sur l'axe qui limite, pas plus sur l'autre.
+      const zoom = cameraZoom(canvas.width, canvas.height, floor);
+      const other = axis === 'width' ? 'height' : 'width';
+      expect(canvas[axis] / zoom, where).toBeCloseTo(mapSize[axis] + 2 * MARGIN, 6);
+      expect(canvas[other] / zoom, where).toBeLessThanOrEqual(mapSize[other] + 2 * MARGIN + 1e-6);
+    }
+  });
+
+  test('plus près que le plancher, la vue est plus petite que la carte et ses deux marges, sur les deux axes, sur les deux cartes et ces écrans', () => {
+    for (const mapSize of [office, map]) {
+      for (const canvas of [{ width: 1280, height: 720 }, { width: 1440, height: 900 }, { width: 1920, height: 1080 }, { width: 2560, height: 1440 }, { width: 390, height: 844 }]) {
+        const floor = zoomFloorPercent(mapSize, canvas, MARGIN);
+        for (let percent = floor; percent <= ZOOM_MAX_PERCENT; percent = stepZoomPercent(percent, 1, ZOOM_WHEEL_STEP, floor)) {
+          const zoom = cameraZoom(canvas.width, canvas.height, percent);
+          const where = `${mapSize.width} px, ${canvas.width} × ${canvas.height} à ${percent} %`;
+          expect(canvas.width / zoom, where).toBeLessThanOrEqual(mapSize.width + 2 * MARGIN + 1e-6);
+          expect(canvas.height / zoom, where).toBeLessThanOrEqual(mapSize.height + 2 * MARGIN + 1e-6);
+          if (percent === ZOOM_MAX_PERCENT) break;
+        }
+      }
+    }
+  });
+
+  test('jamais sous 25 % (le plancher absolu), jamais au-dessus de 200 % ; une carte et un canevas vides : 25 %', () => {
+    // Un petit canevas verrait la vraie carte et sa marge de plus loin que 25 % : 11 % sur 200 × 150.
+    expect(zoomFloorPercent(office, { width: 200, height: 150 }, MARGIN)).toBe(ZOOM_MIN_PERCENT);
+    // Une carte de 4 × 4 cases sur 2560 × 1440 ne s'en approche qu'à 381 %.
+    expect(zoomFloorPercent({ width: 128, height: 128 }, { width: 2560, height: 1440 }, MARGIN)).toBe(ZOOM_MAX_PERCENT);
+    expect(zoomFloorPercent({ width: 0, height: 0 }, { width: 0, height: 0 }, 0)).toBe(ZOOM_MIN_PERCENT);
+    expect([clampZoomFloor(10), clampZoomFloor(33.5), clampZoomFloor(500), clampZoomFloor(Number.NaN)]).toEqual([25, 33.5, 200, 25]);
+  });
+
+  test('le plancher exact s\'écrit arrondi au pour-cent', () => {
+    expect([displayZoomPercent(33.482), displayZoomPercent(43.956), displayZoomPercent(62.798), displayZoomPercent(100), displayZoomPercent(117.647)]).toEqual([33, 44, 63, 100, 118]);
+  });
+});
+
+describe('pourcentages de zoom avec un plancher', () => {
+  // Le plancher de la vraie carte sur 1440 × 900.
+  const FLOOR = zoomFloorPercent(office, { width: 1440, height: 900 }, MARGIN);
+
+  test('un pourcentage sous le plancher y remonte, exactement ; le plancher reste lui-même, et non le cran voisin', () => {
+    expect([clampZoomPercent(20, FLOOR), clampZoomPercent(30, FLOOR), clampZoomPercent(FLOOR, FLOOR)]).toEqual([FLOOR, FLOOR, FLOOR]);
+    // Au-dessus, le cran de 5 % le plus proche, comme sans plancher.
+    expect([clampZoomPercent(34, FLOOR), clampZoomPercent(37, FLOOR), clampZoomPercent(999, FLOOR)]).toEqual([35, 35, 200]);
+    // Sans l'arrondir : de quoi poser la caméra au plancher exact.
+    expect([boundZoomPercent(20, FLOOR), boundZoomPercent(43.96, FLOOR), boundZoomPercent(Number.NaN, FLOOR)]).toEqual([FLOOR, 43.96, 100]);
+  });
+
+  test('un plancher au-dessus de 100 % (une petite carte, un grand écran) : la vue de départ est le plancher', () => {
+    const high = zoomFloorPercent(map, { width: 1920, height: 1080 }, MARGIN);
+    expect(high).toBeGreaterThan(ZOOM_DEFAULT_PERCENT);
+    expect([boundZoomPercent(ZOOM_DEFAULT_PERCENT, high), clampZoomPercent(Number.NaN, high), clampZoomPercent(ZOOM_DEFAULT_PERCENT, high)]).toEqual([high, high, high]);
+  });
+
+  test('la vraie carte aussi, sur un écran en portrait ou très large : la vue de départ n\'y est pas 100 %', () => {
+    // Un moniteur en portrait (sous 1280 de large : zoom de départ ×1) : la hauteur limite, 1920 / 1792 = ×1,071, soit 142,9 % de ×0,75.
+    // Une grande tablette en portrait, 1366 / 1792 = ×0,762 : 101,6 %. Un écran très large (×2), 5120 / 2912 = ×1,758 : 117,2 % de ×1,5.
+    const floors = [{ width: 1080, height: 1920 }, { width: 1024, height: 1366 }, { width: 5120, height: 1440 }].map((canvas) => zoomFloorPercent(office, canvas, MARGIN));
+    floors.forEach((floor, i) => expect(floor).toBeCloseTo([142.857, 101.637, 117.216][i]!, 3));
+    for (const floor of floors) expect(boundZoomPercent(Number.NaN, floor)).toBe(floor);
+  });
+
+  test('au plancher, plus loin ne bouge plus ; plus près va au cran suivant de la grille, et l\'on rejoint 100 % en remontant', () => {
+    expect([stepZoomPercent(FLOOR, -1, ZOOM_WHEEL_STEP, FLOOR), stepZoomPercent(FLOOR, -1, ZOOM_BUTTON_STEP, FLOOR), stepZoomPercent(100, -1000, ZOOM_WHEEL_STEP, FLOOR)]).toEqual([FLOOR, FLOOR, FLOOR]);
+    expect([stepZoomPercent(FLOOR, 1, ZOOM_WHEEL_STEP, FLOOR), stepZoomPercent(FLOOR, 1, ZOOM_BUTTON_STEP, FLOOR), stepZoomPercent(35, -1, ZOOM_WHEEL_STEP, FLOOR)]).toEqual([35, 40, FLOOR]);
+    let percent = FLOOR;
+    const climb: number[] = [];
+    while (percent < ZOOM_DEFAULT_PERCENT) {
+      percent = stepZoomPercent(percent, 1, ZOOM_BUTTON_STEP, FLOOR);
+      climb.push(percent);
+    }
+    expect(climb).toEqual([40, 50, 60, 70, 80, 90, 100]);
+  });
+
+  test('un pourcentage hors de la grille (un ancien plancher) n\'est pas arrondi avant le cran : 43,96 % + 5 % = 45 %', () => {
+    expect([stepZoomPercent(43.96, 1), stepZoomPercent(43.96, -1), stepZoomPercent(43.96, 0)]).toEqual([45, 40, 43.96]);
+  });
+
+  test('au plancher, le zoom de la caméra est exactement celui de la carte et de ses marges', () => {
+    expect(cameraZoom(1440, 900, FLOOR)).toBeCloseTo(900 / (office.height + 2 * MARGIN), 12);
   });
 });
 
@@ -188,12 +323,34 @@ describe('textResolution', () => {
 
 describe('easeZoom', () => {
   const FRAME_MS = 1000 / 60;
+  const at = (zoom: number, speed = 0): ZoomGlide => ({ zoom, speed });
 
-  test('en ZOOM_GLIDE_MS (80 ms), la caméra fait 1 − 1/e du chemin, au rythme du zoom (le rapport, pas la différence)', () => {
-    expect(ZOOM_GLIDE_MS).toBe(80);
-    expect(Math.log(easeZoom(1, 2, ZOOM_GLIDE_MS)) / Math.log(2)).toBeCloseTo(1 - Math.exp(-1), 9);
-    // Dans l'autre sens, de 2 à 1 : la part du chemin faite est celle du rapport (zoom d'arrivée sur zoom de départ), pas celle de la différence.
-    expect(Math.log(easeZoom(2, 1, ZOOM_GLIDE_MS) / 2) / Math.log(1 / 2)).toBeCloseTo(1 - Math.exp(-1), 9);
+  // Un glissement image par image vers `target`, depuis `from` à l'arrêt : les zooms de chaque image, jusqu'à ce qu'elle s'y pose.
+  function glideFrames(from: number, target: number): number[] {
+    let glide = at(from);
+    const zooms: number[] = [];
+    while ((glide.zoom !== target || glide.speed !== 0) && zooms.length < 200) {
+      glide = easeZoom(glide, target, FRAME_MS);
+      zooms.push(glide.zoom);
+    }
+    return zooms;
+  }
+
+  test('un ressort amorti juste ce qu\'il faut, de constante de temps ZOOM_GLIDE_MS (50 ms) : au rythme du zoom (le rapport, pas la différence)', () => {
+    expect(ZOOM_GLIDE_MS).toBe(50);
+    // Depuis l'arrêt, après t : la part du chemin faite est 1 − (1 + t/τ) e^(−t/τ), soit 1 − 2/e à t = τ.
+    expect(Math.log(easeZoom(at(1), 2, ZOOM_GLIDE_MS).zoom) / Math.log(2)).toBeCloseTo(1 - 2 * Math.exp(-1), 9);
+    // Dans l'autre sens, de 2 à 1 : la part du chemin est celle du rapport (zoom d'arrivée sur zoom de départ), pas celle de la différence.
+    expect(Math.log(easeZoom(at(2), 1, ZOOM_GLIDE_MS).zoom / 2) / Math.log(1 / 2)).toBeCloseTo(1 - 2 * Math.exp(-1), 9);
+  });
+
+  test('d\'un cran de 5 %, comme l\'exponentielle d\'avant : 95 % du chemin en 250 ms, posé en 300 ms', () => {
+    const zooms = glideFrames(1.5, 1.575);
+    const done = (zoom: number) => Math.log(zoom / 1.5) / Math.log(1.575 / 1.5);
+    const t95 = (zooms.findIndex((zoom) => done(zoom) >= 0.95) + 1) * FRAME_MS;
+    expect(t95).toBeGreaterThan(230);
+    expect(t95).toBeLessThan(270);
+    expect(zooms.length * FRAME_MS).toBeLessThan(320);
   });
 
   test.each([
@@ -202,45 +359,85 @@ describe('easeZoom', () => {
     [0.375, 3],
     [3, 0.375],
     [0.1875, 0.75],
-  ])('de %s à %s : converge vers la cible, sans jamais la dépasser, en moins d\'une seconde à 60 images par seconde', (from, to) => {
-    let zoom = from;
+  ])('de %s à %s, depuis l\'arrêt : converge vers la cible, sans jamais la dépasser ni revenir en arrière, en moins d\'une seconde à 60 images par seconde', (from, to) => {
+    const zooms = glideFrames(from, to);
     let previous = from;
-    let frames = 0;
-    while (zoom !== to && frames < 200) {
-      zoom = easeZoom(zoom, to, FRAME_MS);
-      // Toujours entre la valeur d'avant et la cible : ni retour en arrière, ni dépassement.
+    for (const zoom of zooms) {
       expect(zoom).toBeGreaterThanOrEqual(Math.min(previous, to));
       expect(zoom).toBeLessThanOrEqual(Math.max(previous, to));
       // Et la caméra avance à chaque image, jusqu'à la cible.
       if (zoom !== to) expect(zoom).not.toBe(previous);
       previous = zoom;
-      frames++;
     }
-    expect(zoom).toBe(to);
-    expect(frames).toBeLessThan(60);
+    expect(zooms.at(-1)).toBe(to);
+    expect(zooms.length).toBeLessThan(60);
   });
 
-  test('le glissement ne dépend pas du rythme des images : deux pas de 8 ms valent un pas de 16 ms', () => {
-    const twice = easeZoom(easeZoom(1, 2, 8), 2, 8);
-    expect(twice).toBeCloseTo(easeZoom(1, 2, 16), 12);
-    expect(easeZoom(easeZoom(1, 2, 8), 2, 8)).toBeCloseTo(easeZoom(easeZoom(1, 2, 4), 2, 12), 12);
+  test('sous une molette crantée, un cran de plus ne relance pas le glissement : sa vitesse ne gagne jamais plus d\'un quart d\'une image à l\'autre', () => {
+    // Un cran de 5 % toutes les 100 ms, depuis 100 % : la vitesse du zoom (en rapport de zooms par image) au régime établi, de la 4e à la 10e
+    // période. L'exponentielle d'avant repartait à pleine vitesse à chaque cran : sa vitesse doublait d'une image à la suivante (+105 %), et
+    // allait du simple au triple et demi d'un cran à l'autre.
+    let glide = at(1.5);
+    let target = 1.5;
+    const speeds: number[] = [];
+    for (let frame = 0; frame < 120; frame++) {
+      if (frame % 6 === 0) target *= 1.05;
+      const before = glide.zoom;
+      glide = easeZoom(glide, target, FRAME_MS);
+      speeds.push(Math.log(glide.zoom / before));
+    }
+    const steady = speeds.slice(18, 60);
+    const mean = steady.reduce((sum, speed) => sum + speed, 0) / steady.length;
+    for (let i = 1; i < steady.length; i++) expect(Math.abs(steady[i]! - steady[i - 1]!) / mean, `image ${i + 18}`).toBeLessThan(0.25);
+    expect(Math.max(...steady) / Math.min(...steady)).toBeLessThan(2);
   });
 
-  test('un onglet resté en arrière-plan (un pas de plusieurs secondes) arrive tout de suite', () => {
-    expect(easeZoom(1, 2, 60_000)).toBe(2);
-    expect(easeZoom(3, 0.375, Number.POSITIVE_INFINITY)).toBe(0.375);
+  test('on change de sens en route : le zoom ne sort jamais des zooms qu\'on lui a demandés', () => {
+    let glide = at(1.5);
+    const asked = [1.5];
+    for (const [target, frames] of [[3, 4], [0.375, 3], [2.4, 2], [0.375, 1], [3, 5], [1.5, 30]] as const) {
+      asked.push(target);
+      for (let i = 0; i < frames; i++) {
+        glide = easeZoom(glide, target, FRAME_MS);
+        expect(glide.zoom).toBeGreaterThanOrEqual(Math.min(...asked));
+        expect(glide.zoom).toBeLessThanOrEqual(Math.max(...asked));
+      }
+    }
+  });
+
+  test('le glissement ne dépend pas du rythme des images : deux pas de 8 ms valent un pas de 16 ms, vitesse comprise', () => {
+    const twice = easeZoom(easeZoom(at(1), 2, 8), 2, 8);
+    const once = easeZoom(at(1), 2, 16);
+    expect(twice.zoom).toBeCloseTo(once.zoom, 12);
+    expect(twice.speed).toBeCloseTo(once.speed, 12);
+    // Et depuis un glissement en cours (une vitesse), comme deux pas de 4 et 12 ms.
+    const moving = at(1.2, 0.004);
+    expect(easeZoom(easeZoom(moving, 2, 8), 2, 8).zoom).toBeCloseTo(easeZoom(easeZoom(moving, 2, 4), 2, 12).zoom, 12);
+  });
+
+  test('un onglet resté en arrière-plan (un pas de plusieurs secondes) arrive tout de suite, à l\'arrêt', () => {
+    expect(easeZoom(at(1, 0.01), 2, 60_000)).toEqual(at(2));
+    expect(easeZoom(at(3), 0.375, Number.POSITIVE_INFINITY)).toEqual(at(0.375));
   });
 
   test('sans temps écoulé (zéro, négatif, illisible), elle reste où elle est', () => {
-    expect([easeZoom(1.5, 3, 0), easeZoom(1.5, 3, -5), easeZoom(1.5, 3, Number.NaN)]).toEqual([1.5, 1.5, 1.5]);
+    const moving = at(1.5, 0.002);
+    expect([easeZoom(moving, 3, 0), easeZoom(moving, 3, -5), easeZoom(moving, 3, Number.NaN)]).toEqual([moving, moving, moving]);
   });
 
-  test('déjà à la cible : la cible', () => {
-    expect(easeZoom(1.5, 1.5, FRAME_MS)).toBe(1.5);
+  test('déjà à la cible, à l\'arrêt : elle y reste', () => {
+    expect(easeZoom(at(1.5), 1.5, FRAME_MS)).toEqual(at(1.5));
   });
 
-  test('un zoom nul ou illisible n\'a pas de rapport avec la cible : elle y va tout de suite, jamais un NaN', () => {
-    expect([easeZoom(Number.NaN, 2, FRAME_MS), easeZoom(0, 2, FRAME_MS), easeZoom(-1, 2, FRAME_MS)]).toEqual([2, 2, 2]);
+  test('à la cible mais encore en mouvement (on vient de changer de sens) : elle la dépasse un peu, puis y revient', () => {
+    let glide = easeZoom(at(1.5, 0.003), 1.5, FRAME_MS);
+    expect(glide.zoom).toBeGreaterThan(1.5);
+    for (let i = 0; i < 60 && glide.speed !== 0; i++) glide = easeZoom(glide, 1.5, FRAME_MS);
+    expect(glide).toEqual(at(1.5));
+  });
+
+  test('un zoom ou une vitesse illisibles, un zoom nul n\'ont pas de rapport avec la cible : elle y va tout de suite, jamais un NaN', () => {
+    expect([easeZoom(at(Number.NaN), 2, FRAME_MS), easeZoom(at(0), 2, FRAME_MS), easeZoom(at(-1), 2, FRAME_MS), easeZoom(at(1, Number.NaN), 2, FRAME_MS)]).toEqual([at(2), at(2), at(2), at(2)]);
   });
 });
 

@@ -94,6 +94,16 @@ test('status : le point du statut est dit, et il n\'y en a pas sans statut', () 
   expect(container.querySelector('.portrait-dot')).toBeNull();
 });
 
+test('activity : le point prend la couleur du mode en cours, et reprend celle du statut sans mode', () => {
+  const { container, rerender } = render(<AvatarPortrait avatarKey={null} name="Bob" size={28} status="available" activity={{ id: 'rose', color: '#ec4899' }} />);
+  const dot = () => container.querySelector('.portrait-dot') as HTMLElement;
+  expect(dot().style.backgroundColor).toMatch(/^(#ec4899|rgb\(236, 72, 153\))$/i);
+  expect(dot().getAttribute('data-activity')).toBe('rose');
+  rerender(<AvatarPortrait avatarKey={null} name="Bob" size={28} status="available" activity={null} />);
+  expect(dot().style.backgroundColor).toBe('');
+  expect(dot().getAttribute('data-activity')).toBeNull();
+});
+
 test('il est décoratif : le nom de la personne est écrit à côté', () => {
   const { container } = render(<AvatarPortrait avatarKey={null} name="Bob" size={28} />);
   expect(container.querySelector('.portrait')?.getAttribute('aria-hidden')).toBe('true');

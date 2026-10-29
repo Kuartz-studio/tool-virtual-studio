@@ -134,7 +134,7 @@ describe('le menu « Plus »', () => {
     expect(screen.queryByRole('menu')).toBeNull();
   });
 
-  test('« Rétablir le zoom (100 %) » : son nom ne change pas, il dit le niveau du moment à droite, et rend le zoom de départ', async () => {
+  test('« Rétablir le zoom de départ » : son nom ne change pas, il dit le niveau du moment à droite, et rend le zoom de départ', async () => {
     const user = userEvent.setup();
     renderDock();
     act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MIN_PERCENT));

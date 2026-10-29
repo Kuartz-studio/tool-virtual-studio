@@ -39,7 +39,7 @@ test('les noms des boutons de la barre du bas et de ses menus', () => {
   expect(fr.chat.toggle).toBe('Chat');
   expect(fr.desk.toggle).toBe('Mon bureau');
   expect(fr.decor.toggle).toBe('Décorer');
-  expect(fr.zoom.reset).toBe('Rétablir le zoom (100 %)');
+  expect(fr.zoom.reset).toBe('Rétablir le zoom de départ');
   // Pas de bouton « Réactions » : rien n'existe derrière.
   expect(fr.media.controls).not.toHaveProperty('reactions');
 });
@@ -97,11 +97,15 @@ test('le panneau Admin : ses textes et les messages de chaque erreur de l\'API',
   expect(fr.admin.title).toBe('Admin');
   expect(fr.admin.invite.submit).toBe('Envoyer l\'invitation');
   expect(t(fr.admin.invite.sent, { email: 'nina@x.fr' })).toBe('Invitation envoyée à nina@x.fr.');
-  expect(t(fr.admin.members.removeLabel, { name: 'Bob' })).toBe('Retirer Bob');
-  expect(t(fr.admin.removal.title, { name: 'Bob' })).toBe('Retirer Bob ?');
-  expect(t(fr.admin.pending.titleCount, { count: 2 })).toBe('Invitations en attente (2)');
-  expect(t(fr.admin.members.titleCount, { count: 3 })).toBe('Membres (3)');
-  expect(fr.admin.pending.expired).toBe('expirée');
+  expect(fr.admin.invite.toggle).toBe('Inviter');
+  expect(fr.admin.invite.title).toBe('Inviter quelqu\'un');
+  expect([fr.admin.tabs.members, fr.admin.tabs.invitations]).toEqual(['Membres', 'Invitations']);
+  expect(t(fr.admin.actions, { name: 'Bob' })).toBe('Actions pour Bob');
+  expect(fr.admin.members.remove).toBe('Retirer du bureau');
+  expect(t(fr.admin.removal.title, { name: 'Bob' })).toBe('Retirer Bob du bureau ?');
+  expect(fr.admin.pending.resend).toBe('Renvoyer l\'invitation');
+  expect(fr.admin.pending.revoke).toBe('Annuler l\'invitation');
+  expect(fr.admin.pending.expired).toBe('Expirée');
   // Les codes du serveur (admin-routes.ts) : un message pour chacun.
   expect(fr.admin.errors.alreadyInvited).toBe('Une invitation est déjà en attente pour cette adresse.');
   expect(fr.admin.errors.alreadyMember).toBe('Cette adresse a déjà un compte (actif ou retiré).');
@@ -123,12 +127,12 @@ test('le panneau Personnes compte ses lignes', () => {
 // Sans e-mail (MAILER=none) : les phrases des liens à transmettre, mot pour mot.
 test('les textes des liens à transmettre', () => {
   expect(t(fr.admin.invite.created, { email: 'nina@x.fr' })).toBe('Invitation créée pour nina@x.fr. Envoie-lui ce lien :');
-  expect(t(fr.admin.invite.validity, { days: 7 })).toMatch(/^Ce lien est valable 7 jours\. Il ne sera plus affiché/);
+  expect(t(fr.admin.invite.validity, { days: 7 })).toMatch(/^Valable 7 jours\. Il ne sera plus affiché/);
   expect(t(fr.admin.pending.renewed, { email: 'nina@x.fr' })).toBe('Nouveau lien pour nina@x.fr : l\'ancien ne marche plus. Envoie-lui ce lien :');
   expect(t(fr.admin.members.passwordLinkIntro, { name: 'Bob' })).toBe('Ce lien permet de choisir un nouveau mot de passe pour Bob.');
   expect(fr.admin.members.passwordLink).toBe('Lien de mot de passe');
   expect(fr.admin.link.copy).toBe('Copier le lien');
-  expect(fr.admin.link.copied).toBe('Copié');
+  expect(fr.admin.link.copied).toBe('Lien copié.');
   expect(fr.admin.errors.resetFailed.length).toBeGreaterThan(10);
   // Le texte d'une invitation créée ne promet aucun e-mail.
   expect(JSON.stringify([fr.admin.invite.created, fr.admin.pending.renewed, fr.admin.members.passwordLinkIntro])).not.toMatch(/e-mail|envoyé/i);

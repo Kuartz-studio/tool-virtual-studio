@@ -160,18 +160,21 @@ describe('accès réservé aux admins', () => {
 });
 
 describe('GET /api/admin/members', () => {
-  test('id, nom, adresse et rôle des comptes actifs', async () => {
+  test('id, nom, adresse, rôle, personnage et dernière présence des comptes actifs', async () => {
     const t = await createTestApp();
     const admin = await asAdmin(t);
     const lea = await t.inviteAndAccept('lea@x.fr', { name: 'Léa' });
     const tom = await t.inviteAndAccept('tom@x.fr', { name: 'Tom' });
     await t.db.update(user).set({ disabledAt: new Date() }).where(eq(user.id, tom.userId));
+    // Léa est venue au bureau, avec un personnage ; Camille jamais (ni personnage, ni présence).
+    const seenAt = new Date('2026-10-28T09:30:00.000Z');
+    await t.db.update(user).set({ avatarKey: 'premade-02', lastSeenAt: seenAt }).where(eq(user.id, lea.userId));
 
     const res = await request(t.app).get('/api/admin/members').set('Cookie', admin.cookie);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([
-      { id: admin.userId, name: 'Camille', email: 'admin@x.fr', role: 'admin' },
-      { id: lea.userId, name: 'Léa', email: 'lea@x.fr', role: 'member' },
+      { id: admin.userId, name: 'Camille', email: 'admin@x.fr', role: 'admin', avatarKey: null, lastSeenAt: null },
+      { id: lea.userId, name: 'Léa', email: 'lea@x.fr', role: 'member', avatarKey: 'premade-02', lastSeenAt: seenAt.toISOString() },
     ]);
   });
 });

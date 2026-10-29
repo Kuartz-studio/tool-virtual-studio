@@ -30,10 +30,16 @@ function readNow(): number {
   return now;
 }
 
+// La même horloge pour un autre compte à rebours (le panneau Admin : « Expire dans 5 h », puis « Expirée ») : l'heure du moment, remise à
+// jour chaque minute, avec la même minuterie que les « Il y a … ».
+export function useMinuteClock(): number {
+  return useSyncExternalStore(subscribe, readNow);
+}
+
 // La dernière connexion d'un membre (`at`, en millisecondes) : « Il y a 3 h », la date entière au survol. Les lecteurs d'écran
 // entendent « Dernière connexion : il y a 3 h ».
 export function LastSeen({ at }: { at: number }) {
-  const current = useSyncExternalStore(subscribe, readNow);
+  const current = useMinuteClock();
   return (
     <span>
       <span className="visually-hidden">{fr.office.people.lastSeen} </span>

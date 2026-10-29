@@ -23,7 +23,7 @@ interface MeChipProps {
   signingOut: boolean;
 }
 
-// La puce « Moi », en bas à gauche : ton portrait avec la pastille de ton statut, ton nom, et dessous ton mode en cours (l'icône, ou le point de
+// La puce « Moi », en bas à gauche : ton portrait avec la pastille de ton statut (de la couleur de ton mode, si tu en as un), ton nom, et dessous ton mode en cours (l'icône, ou le point de
 // la couleur, et le nom de l'état d'activité) ou, sans mode, ton statut. Un seul bouton, nommé « Mon profil », qui ouvre le menu (MeMenu) vers
 // le haut. Un lecteur d'écran entend le nom, le statut et le mode en description du bouton, et un changement de statut confirmé par le serveur.
 //
@@ -71,7 +71,7 @@ export function MeChip({ name, email, socket, panels, onSignOut, signingOut }: M
         onClick={() => setOpen((wasOpen) => !wasOpen)}
       >
         <span className="me-portrait">
-          <AvatarPortrait avatarKey={avatarKey} name={name} size={36} status={status} />
+          <AvatarPortrait avatarKey={avatarKey} name={name} size={36} status={status} activity={activity} />
           {xp !== null && <LevelBadge level={levelOf(xp)} />}
         </span>
         <span className="me-text" id={detailsId}>

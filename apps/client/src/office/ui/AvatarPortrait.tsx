@@ -1,4 +1,4 @@
-import { CHARACTER_SHEET, type Status } from '@bureau/shared';
+import { CHARACTER_SHEET, type ActivityState, type Status } from '@bureau/shared';
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { composeAvatar } from '../../game/avatar-compose';
 import { initials } from './initials';
@@ -42,9 +42,23 @@ export function clearPortraitCache(): void {
 }
 
 // Le portrait, sur un carré de `size` px, dessiné sans lissage (le pixel art ne se floute pas). Avant qu'il soit prêt, ou sans personnage
-// (`avatarKey` nul : le compte n'en a pas choisi), les initiales du nom. `status` ajoute le point du statut, en bas à droite.
+// (`avatarKey` nul : le compte n'en a pas choisi), les initiales du nom. `status` ajoute le point du statut, en bas à droite : de la couleur
+// du statut, ou de celle de l'état d'activité que la personne a pris (`activity`, « #rrggbb » validé par le serveur), comme StatusDot et le
+// point au-dessus de l'avatar. `data-activity` : l'identifiant de l'état, pour les tests.
 // Il est décoratif : le nom de la personne est écrit à côté.
-export function AvatarPortrait({ avatarKey, name = '', size, status }: { avatarKey: string | null; name?: string; size: number; status?: Status | null }) {
+export function AvatarPortrait({
+  avatarKey,
+  name = '',
+  size,
+  status,
+  activity,
+}: {
+  avatarKey: string | null;
+  name?: string;
+  size: number;
+  status?: Status | null;
+  activity?: Pick<ActivityState, 'id' | 'color'> | null;
+}) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState(false);
 
@@ -69,7 +83,9 @@ export function AvatarPortrait({ avatarKey, name = '', size, status }: { avatarK
     <span className="portrait" style={{ '--s': `${size}px` } as CSSProperties} aria-hidden="true">
       <canvas ref={canvas} className="portrait-image" width={size} height={size} hidden={!drawn} />
       {!drawn && <span className="portrait-initials">{initials(name)}</span>}
-      {status != null && <span className="portrait-dot" data-status={status} />}
+      {status != null && (
+        <span className="portrait-dot" data-status={status} data-activity={activity?.id} style={activity ? { backgroundColor: activity.color } : undefined} />
+      )}
     </span>
   );
 }

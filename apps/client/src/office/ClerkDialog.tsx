@@ -275,7 +275,7 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
               return (
                 <li key={member.id}>
                   <button type="button" onClick={() => pick(member)} data-user={member.id} data-self={me || undefined}>
-                    <AvatarPortrait avatarKey={member.avatarKey} name={member.name} size={28} status={here?.status ?? null} />
+                    <AvatarPortrait avatarKey={member.avatarKey} name={member.name} size={28} status={here?.status ?? null} activity={here?.activity} />
                     <span className="clerk-person-name">{me ? fr.clerks.me : member.name}</span>
                     <LevelBadge level={here?.level ?? member.level ?? 0} />
                   </button>

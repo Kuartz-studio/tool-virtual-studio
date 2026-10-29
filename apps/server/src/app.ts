@@ -17,6 +17,7 @@ import type { Mailer } from './mail/mailer';
 import { memberRoutes } from './members/member-routes';
 import { progressRoutes } from './progress/progress-routes';
 import { ProgressService } from './progress/progress-service';
+import { releaseRoutes } from './releases/release-routes';
 import type { ServerEvents } from './server-events';
 import type { SimHost } from './sim/sim-host';
 import { simRoutes } from './sim/sim-routes';
@@ -75,6 +76,7 @@ export function createApp(deps: AppDeps): express.Express {
     activityRoutes({ auth: deps.auth, events: deps.events, activities: deps.activities ?? createActivityService(deps.db), destinations: deps.destinations ?? new Set<string>() }),
   );
   app.use('/api', progressRoutes({ auth: deps.auth, events: deps.events, progress: deps.progress ?? new ProgressService(deps.db) }));
+  app.use('/api', releaseRoutes({ auth: deps.auth, db: deps.db }));
   // Une adresse inconnue sous /api répond en JSON, avant le client : jamais sa page HTML.
   app.use('/api', notFound);
 

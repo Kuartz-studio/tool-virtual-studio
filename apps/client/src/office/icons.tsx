@@ -86,9 +86,15 @@ import {
   X,
   createLucideIcon,
 } from 'lucide-react';
+// Le panneau Admin (voir sa section, en bas du fichier) : importées à part, pour que les icônes des autres panneaux s'ajoutent à la liste du
+// dessus sans toucher celle-ci.
+import { Copy, Inbox, KeyRound, Mail, MailWarning, MailX, RotateCw, Send, UserMinus, UserPlus } from 'lucide-react';
 import type { LightLevel } from '@bureau/shared';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
+// Celles des nouveautés (la fin de ce fichier), à part : elles n'ont rien à voir avec les boutons du bureau.
+import { BrickWall, CircleDot, Expand, Flower2, Megaphone, ZoomIn } from 'lucide-react';
+import type { ReleaseIconName } from '../updates/releases';
 
 // Le point d'import des icônes des boutons et des menus : celles de Lucide (licence ISC, voir public/assets/CREDITS.txt), sous le nom de leur
 // usage (celles des états d'activité sont dans activity-icons.ts, où elles portent le nom que le serveur garde). Elles sont
@@ -463,4 +469,77 @@ const DAY_PART_ICONS: Readonly<Record<'morning' | 'afternoon' | 'evening' | 'nig
 export function DayPartIcon({ part }: { part: 'morning' | 'afternoon' | 'evening' | 'night' }) {
   const Icon = DAY_PART_ICONS[part];
   return <Icon />;
+}
+
+// ---- Les nouveautés (la fenêtre « Quoi de neuf ? », updates/WhatsNew.tsx) ----
+
+// Un mégaphone : les nouveautés qu'on annonce, sur la ligne « Nouveautés » du menu « Moi » et en tête de la fenêtre.
+export function WhatsNewIcon() {
+  return <Megaphone />;
+}
+
+// L'icône d'une note de version, par le nom que lui donne updates/releases.ts.
+const RELEASE_ICONS: Readonly<Record<ReleaseIconName, LucideIcon>> = {
+  fullscreen: Expand,
+  zoom: ZoomIn,
+  admin: ShieldCheck,
+  whatsNew: Megaphone,
+  statusDot: CircleDot,
+  treadmill: Dumbbell,
+  decor: Flower2,
+  blackTiles: BrickWall,
+};
+
+export function ReleaseIcon({ name }: { name: ReleaseIconName }) {
+  const Icon = RELEASE_ICONS[name];
+  return <Icon />;
+}
+
+// ---- Le panneau Admin ----
+
+// Une silhouette et un « + » : inviter quelqu'un au bureau.
+export function InviteIcon() {
+  return <UserPlus />;
+}
+
+// Une enveloppe : une invitation en attente ; avec un point d'exclamation, une invitation expirée ; barrée d'une croix, l'annuler.
+export function MailIcon() {
+  return <Mail />;
+}
+
+export function MailExpiredIcon() {
+  return <MailWarning />;
+}
+
+export function RevokeIcon() {
+  return <MailX />;
+}
+
+// Une flèche qui tourne : un nouveau lien d'invitation (sans e-mail) ; un avion en papier : renvoyer l'invitation par e-mail.
+export function RenewIcon() {
+  return <RotateCw />;
+}
+
+export function ResendIcon() {
+  return <Send />;
+}
+
+// Une clé : le lien par lequel un membre choisit un nouveau mot de passe.
+export function KeyIcon() {
+  return <KeyRound />;
+}
+
+// Une silhouette et un « − » : retirer quelqu'un du bureau.
+export function RemoveMemberIcon() {
+  return <UserMinus />;
+}
+
+// Deux feuilles l'une sur l'autre : copier un lien.
+export function CopyIcon() {
+  return <Copy />;
+}
+
+// Une boîte de réception vide : aucune invitation en attente.
+export function InboxIcon() {
+  return <Inbox />;
 }

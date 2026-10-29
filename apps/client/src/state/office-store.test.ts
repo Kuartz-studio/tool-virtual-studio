@@ -553,6 +553,64 @@ describe('zoom', () => {
     store().reset();
     expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
   });
+
+  // Le plancher de la vraie carte sur 1440 × 900 (33,48 %), puis sur 1920 × 1080 (43,96 %), tels que le jeu les donne (zoom.ts).
+  const FLOOR = (100 * 900) / 1792 / 1.5;
+  const HIGHER_FLOOR = (100 * 1920) / 2912 / 1.5;
+
+  test('le plancher : 25 % avant le jeu ; ni la molette, ni les boutons, ni un pourcentage donné ne passent dessous', () => {
+    expect(store().zoomFloor).toBe(ZOOM_MIN_PERCENT);
+    store().setZoomFloor(FLOOR);
+    expect(store().zoomFloor).toBe(FLOOR);
+    // À 100 %, le plancher ne change rien.
+    expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
+    store().stepZoom(-1000);
+    expect(store().zoomPercent).toBe(FLOOR);
+    store().stepZoom(-1, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(FLOOR);
+    store().stepZoom(1, ZOOM_BUTTON_STEP);
+    expect(store().zoomPercent).toBe(40);
+    store().setZoomPercent(ZOOM_MIN_PERCENT);
+    expect(store().zoomPercent).toBe(FLOOR);
+  });
+
+  test('un plancher qui monte au-dessus du pourcentage l\'y remonte ; un plancher qui descend le laisse où il est', () => {
+    store().setZoomFloor(FLOOR);
+    store().stepZoom(-1000);
+    store().setZoomFloor(HIGHER_FLOOR);
+    expect(store().zoomPercent).toBe(HIGHER_FLOOR);
+    store().setZoomFloor(FLOOR);
+    expect(store().zoomPercent).toBe(HIGHER_FLOOR);
+    // Un cran de plus près depuis là : le cran suivant de la grille, 45 %.
+    store().stepZoom(1);
+    expect(store().zoomPercent).toBe(45);
+  });
+
+  test('le même plancher, à chaque redimensionnement, ne change pas l\'état : aucun abonné n\'est prévenu', () => {
+    store().setZoomFloor(FLOOR);
+    const before = useOfficeStore.getState();
+    store().setZoomFloor(FLOOR);
+    expect(useOfficeStore.getState()).toBe(before);
+  });
+
+  test('un plancher au-dessus de 100 % (une petite carte sur un grand écran) : la vue de départ est le plancher', () => {
+    store().setZoomFloor(117.5);
+    expect(store().zoomPercent).toBe(117.5);
+    store().stepZoom(2);
+    store().resetZoom();
+    expect(store().zoomPercent).toBe(117.5);
+    // Un plancher illisible ou hors bornes est ramené aux bornes.
+    store().setZoomFloor(Number.NaN);
+    expect(store().zoomFloor).toBe(ZOOM_MIN_PERCENT);
+    store().setZoomFloor(999);
+    expect([store().zoomFloor, store().zoomPercent]).toEqual([ZOOM_MAX_PERCENT, ZOOM_MAX_PERCENT]);
+  });
+
+  test('reset() rend le plancher absolu', () => {
+    store().setZoomFloor(FLOOR);
+    store().reset();
+    expect(store().zoomFloor).toBe(ZOOM_MIN_PERCENT);
+  });
 });
 
 describe('la lumière', () => {

@@ -6,6 +6,7 @@ import { useMinute } from '../lib/use-clock';
 import { formatClock, wallTime } from '../lib/zoned-time';
 import type { OfficeSocket } from '../net/socket';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
+import { WhatsNewMenuItem } from '../updates/WhatsNew';
 import { GlobeIcon, LogOutIcon, PencilIcon, ShirtIcon } from './icons';
 import { ModeEditor } from './ModeEditor';
 import { ModeList } from './ModeList';
@@ -46,6 +47,7 @@ export interface MeMenuProps {
 //   ferme. Quand ta pièce a un tapis de course, un mode qui conduit à la salle de sport a, sous lui, la ligne « Mon tapis de course » : le prendre sur ton tapis ;
 // - « Fuseau horaire » : la ville de ton fuseau et l'heure qu'il est chez toi, à la minute ; la ligne ouvre son choix (TimezoneEditor) dans le menu même,
 //   à la place de la liste, comme « Changer de nom » ;
+// - « Nouveautés », avec le numéro de la version en cours : tout l'historique des mises à jour (updates/WhatsNew.tsx) ;
 // - Se déconnecter. Il n'y a pas de « Compte » : l'e-mail, en haut, et la déconnexion en tiennent lieu. Le bureau et le son sont dans le dock du
 //   milieu (MediaDock) : ce menu ne parle que de toi.
 //
@@ -291,6 +293,7 @@ export function MeMenu({ open, onClose, anchorRef, id, name, email, socket, pane
 
         <div className="menu-rule" role="separator" />
         <TimezoneLine timezone={timezone} disabled={!enabled} onOpen={() => setZoning(true)} />
+        <WhatsNewMenuItem onClose={onClose} anchorRef={anchorRef} />
         <button type="button" role="menuitem" tabIndex={-1} className="menu-item" disabled={signingOut} onClick={signOut}>
           <LogOutIcon />
           <span>{signingOut ? fr.office.signingOut : fr.office.signOut}</span>

@@ -240,7 +240,7 @@ describe('la barre', () => {
   test('dans l\'ordre : la puce « Moi », micro, caméra, partage d\'écran, musique, le zoom, puis Chat, Personnes et Plus ; le nom est dans la puce ; pas de réactions', () => {
     renderBar();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Missions', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom de départ', 'Zoom avant', 'Missions', 'Chat', 'Personnes', 'Plus']);
     expect(within(button(fr.me.chip)).getByText('Léa').getAttribute('title')).toBe('Léa');
   });
 

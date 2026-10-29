@@ -1,4 +1,4 @@
-import { DEFAULT_TIMEZONE, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, SESSION_TTL_S } from '@bureau/shared';
+import { CURRENT_RELEASE, DEFAULT_TIMEZONE, PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, SESSION_TTL_S } from '@bureau/shared';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { APIError } from 'better-auth/api';
@@ -88,6 +88,10 @@ export function createAuth({
         lastSeenAt: { type: 'date', required: false, input: false },
         // Son fuseau horaire (un nom IANA) : l'heure de Paris tant qu'elle n'en a pas choisi d'autre (PATCH /api/me, qui le valide : timezoneSchema).
         timezone: { type: 'string', required: true, defaultValue: DEFAULT_TIMEZONE, input: false },
+        // La dernière version de l'appli dont la personne a vu les nouveautés (« 1.00 » : packages/shared/src/releases.ts), null si elle n'en a vu
+        // aucune. Elle arrive avec la session : le client montre la fenêtre « Quoi de neuf ? » au compte qui est en retard (docs/nouveautes.md).
+        // Seul POST /api/me/release-seen l'écrit, avec la version du serveur ; un compte neuf la reçoit du crochet user.create.before.
+        lastReleaseSeen: { type: 'string', required: false, input: false },
       },
     },
     // Avec le faux live (SIM=1) : aussi les autres écritures de l'adresse de la machine (127.0.0.1 pour localhost), sinon [].
@@ -123,12 +127,14 @@ export function createAuth({
           // Better Auth qui la demande. Elle n'est acceptée que dans le contexte ouvert par la route d'acceptation, après
           // vérification du jeton, et seulement pour l'adresse de l'invitation. Le compte reçoit alors le rôle de
           // l'invitation, et son adresse est vérifiée : le lien reçu par e-mail le prouve.
+          // Il part aussi à jour des nouveautés (lastReleaseSeen, la version en cours) : un nouveau venu n'a pas de « quoi de neuf » sur des
+          // choses qu'il n'a jamais connues. Le compte du bac à sable (sim/sim-account.ts) passe par ici, lui aussi.
           before: async (user) => {
             const invitation = invitationContext.getStore();
             if (!invitation || invitation.email.toLowerCase() !== user.email.toLowerCase()) {
               throw new APIError('FORBIDDEN', { code: 'INVITATION_REQUIRED', message: 'Un compte ne peut être créé que sur invitation.' });
             }
-            return { data: { ...user, emailVerified: true, role: invitation.role } };
+            return { data: { ...user, emailVerified: true, role: invitation.role, lastReleaseSeen: CURRENT_RELEASE } };
           },
           // Le compte créé reçoit les modes par défaut (Manger, Sport, Concentration). Un échec ne défait pas le compte : il aura « Disponible », et
           // créera ses modes lui-même.

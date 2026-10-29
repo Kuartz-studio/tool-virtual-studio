@@ -2,6 +2,7 @@ export * from './constants';
 export * from './avatars';
 export * from './protocol';
 export * from './timezone';
+export * from './releases';
 export * from './sim';
 export * from './map/tiled-types';
 export * from './audio/scenes';

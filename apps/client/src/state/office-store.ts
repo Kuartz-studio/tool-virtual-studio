@@ -28,7 +28,7 @@ import {
   type TreadmillRef,
 } from '@bureau/shared';
 import { create, type StoreApi, type UseBoundStore } from 'zustand';
-import { clampZoomPercent, stepZoomPercent, ZOOM_DEFAULT_PERCENT, ZOOM_WHEEL_STEP } from '../game/zoom';
+import { boundZoomPercent, clampZoomFloor, clampZoomPercent, stepZoomPercent, ZOOM_DEFAULT_PERCENT, ZOOM_MIN_PERCENT, ZOOM_WHEEL_STEP } from '../game/zoom';
 import { anchorFor, planPlace, removeAt, roomOfDesk, type DecorSnap } from '../office/decor-draft';
 import type { PanelId } from '../office/panels';
 
@@ -182,6 +182,9 @@ export interface OfficeState {
   // Le zoom de la caméra : le pourcentage choisi (zoom.ts), 100 % au début. Le jeu le lit (la caméra y glisse), les boutons de zoom, la
   // molette et le clavier l'écrivent.
   zoomPercent: number;
+  // Le plancher du zoom (zoom.ts, zoomFloorPercent) : le pourcentage le plus loin, où l'on voit la carte et sa marge, pas plus. Le jeu le
+  // calcule pour sa carte et la taille du canevas, à chaque mise en page de la caméra (setZoomFloor) ; 25 % (le plancher absolu) avant lui.
+  zoomFloor: number;
   // Sa progression (XP, kuartzons, série de pointage, ce qu'elle possède de la boutique), telle que le serveur la dit (l'`init`, puis `progress:mine`), sans le gain
   // qui l'y amène (la connexion l'annonce) ; null avant le premier `init`. Son niveau s'en déduit (levelOf) ; celui des autres est dans leur PublicPlayer.
   progress: MyProgress | null;
@@ -238,11 +241,14 @@ export interface OfficeState {
   openGame(game: GameId | null): void;
   // « Partie interrompue » a été lu.
   dismissGameInterrupted(): void;
-  // Le zoom : un pourcentage donné (ramené aux bornes et au cran de 5 % le plus proche), des crans de `size` % plus près (positifs) ou plus
-  // loin (négatifs ; 5 % par cran si `size` n'est pas dit), la vue de départ.
+  // Le zoom : un pourcentage donné (ramené entre le plancher et 200 %, et au cran de 5 % le plus proche), des crans de `size` % plus près
+  // (positifs) ou plus loin (négatifs ; 5 % par cran si `size` n'est pas dit), jamais sous le plancher, la vue de départ (100 %, ou le
+  // plancher s'il est plus haut). Et le plancher, que le jeu donne : un pourcentage passé dessous y remonte (la caméra y glisse) ; un plancher
+  // qui descend laisse le pourcentage où il est.
   setZoomPercent(percent: number): void;
   stepZoom(steps: number, size?: number): void;
   resetZoom(): void;
+  setZoomFloor(floor: number): void;
   // L'éditeur de déco : ouvert sur ce bureau (le sien), fermé ; le thème ; l'élément en main ; poser l'élément en main sur cette case de la pièce
   // (refusé si la pièce cesse d'être valable : `error` dit pourquoi) ; reprendre en main, ou jeter, l'élément n° i ; remplacer tout le brouillon.
   openDecorEditor(desk: DeskInfo): void;
@@ -360,6 +366,7 @@ type Data = Pick<
   | 'officeMap'
   | 'decorEditor'
   | 'zoomPercent'
+  | 'zoomFloor'
   | 'positions'
   | 'progress'
   | 'progressSeq'
@@ -410,6 +417,7 @@ const initialData = (): Data => ({
   officeMap: null,
   decorEditor: null,
   zoomPercent: ZOOM_DEFAULT_PERCENT,
+  zoomFloor: ZOOM_MIN_PERCENT,
   positions: new Map(),
   progress: null,
   progressSeq: 0,
@@ -654,9 +662,16 @@ export function createOfficeStore(): UseBoundStore<StoreApi<OfficeState>> {
         }),
       setRoomMusic: (place, state) => set((s) => ({ music: { ...s.music, [place]: state } })),
       setDeskNotice: (deskNotice) => set({ deskNotice }),
-      setZoomPercent: (percent) => set({ zoomPercent: clampZoomPercent(percent) }),
-      stepZoom: (steps, size = ZOOM_WHEEL_STEP) => set((state) => ({ zoomPercent: stepZoomPercent(state.zoomPercent, steps, size) })),
-      resetZoom: () => set({ zoomPercent: ZOOM_DEFAULT_PERCENT }),
+      setZoomPercent: (percent) => set((state) => ({ zoomPercent: clampZoomPercent(percent, state.zoomFloor) })),
+      stepZoom: (steps, size = ZOOM_WHEEL_STEP) => set((state) => ({ zoomPercent: stepZoomPercent(state.zoomPercent, steps, size, state.zoomFloor) })),
+      resetZoom: () => set((state) => ({ zoomPercent: boundZoomPercent(ZOOM_DEFAULT_PERCENT, state.zoomFloor) })),
+      // À chaque redimensionnement : rien ne change (le même état, aucun abonné prévenu) tant que le plancher reste le même.
+      setZoomFloor: (floor) =>
+        set((state) => {
+          const zoomFloor = clampZoomFloor(floor);
+          const zoomPercent = boundZoomPercent(state.zoomPercent, zoomFloor);
+          return zoomFloor === state.zoomFloor && zoomPercent === state.zoomPercent ? state : { zoomFloor, zoomPercent };
+        }),
 
       openDecorEditor: (desk) => {
         const saved: DeskDecor = { floor: desk.floor, wall: desk.wall, items: desk.items };

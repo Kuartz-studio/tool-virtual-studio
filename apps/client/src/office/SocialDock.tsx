@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
+import { displayZoomPercent } from '../game/zoom';
 import { fr, t } from '../i18n/fr';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
 import { ChatIcon, DecorIcon, FlaskIcon, MissionsIcon, MoreIcon, ShieldIcon, ShopIcon, UsersIcon, ZoomResetIcon } from './icons';
@@ -51,7 +52,7 @@ export function SocialDock({ panels }: { panels: PanelControls }) {
     { key: 'shop', label: fr.shop.toggle, icon: <ShopIcon />, disabled: !panels.ready, panel: true, run: (opener) => panels.show('shop', opener) },
     ...(panels.admin ? [{ key: 'admin', label: fr.admin.toggle, icon: <ShieldIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('admin', opener) }] : []),
     ...(panels.sim ? [{ key: 'sim', label: fr.sim.toggle, icon: <FlaskIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('sim', opener) }] : []),
-    { key: 'zoom', label: fr.zoom.reset, name: fr.zoom.reset, hint: t(fr.zoom.level, { percent }), icon: <ZoomResetIcon />, run: () => resetZoom() },
+    { key: 'zoom', label: fr.zoom.reset, name: fr.zoom.reset, hint: t(fr.zoom.level, { percent: displayZoomPercent(percent) }), icon: <ZoomResetIcon />, run: () => resetZoom() },
   ];
 
   // Les lignes qu'on peut choisir : celles qui ne sont pas inactives.

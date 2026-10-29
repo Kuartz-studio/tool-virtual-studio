@@ -96,6 +96,10 @@ test('placeOver : sous l\'ancre (`bottom-start`), alignée sur son bord gauche :
   expect(placeOver(anchorAt(300), VIEWPORT, 'bottom-start', 320)).toEqual({ top: 754, left: 300 });
 });
 
+test('placeOver : sous l\'ancre, alignée sur son bord droit (`bottom-end`, le menu « … » d\'une ligne)', () => {
+  expect(placeOver(anchorAt(300), VIEWPORT, 'bottom-end', 320)).toEqual({ top: 754, right: 660 });
+});
+
 test('placeOver : centrée, la fenêtre ne sort pas de la page', () => {
   // Près du bord gauche : sa moitié (160) et 16 px de marge.
   expect(placeOver(anchorAt(10), VIEWPORT, 'top', 320).left).toBe(176);

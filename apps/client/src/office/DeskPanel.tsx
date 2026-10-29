@@ -150,7 +150,7 @@ export function DeskPanel({ id, socket, onClose, onDecorate }: { id?: string; so
               ) : (
                 <ul className="desk-people">
                   {occupants.map((person) => (
-                    <PersonChip key={person.id} name={person.name} avatarKey={person.avatarKey} status={person.status}>
+                    <PersonChip key={person.id} name={person.name} avatarKey={person.avatarKey} status={person.status} activity={person.activity}>
                       <IconButton
                         small
                         label={t(fr.desk.kickLabel, { name: person.name })}
@@ -322,11 +322,23 @@ function DeskDoor({
   );
 }
 
-// Une personne en pastille : son portrait (et le point de son statut, si on le connaît), son nom, et un geste (exclure, réadmettre).
-function PersonChip({ name, avatarKey, status, children }: { name: string; avatarKey: string | null; status?: PublicPlayer['status']; children: ReactNode }) {
+// Une personne en pastille : son portrait (et le point de son statut, ou de son mode, si on le connaît), son nom, et un geste (exclure, réadmettre).
+function PersonChip({
+  name,
+  avatarKey,
+  status,
+  activity,
+  children,
+}: {
+  name: string;
+  avatarKey: string | null;
+  status?: PublicPlayer['status'];
+  activity?: PublicPlayer['activity'];
+  children: ReactNode;
+}) {
   return (
     <li className="desk-person">
-      <AvatarPortrait avatarKey={avatarKey} name={name} size={26} status={status} />
+      <AvatarPortrait avatarKey={avatarKey} name={name} size={26} status={status} activity={activity} />
       <span className="desk-person-name" title={name}>
         {name}
       </span>

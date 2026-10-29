@@ -20,6 +20,7 @@ const debug = (): OfficeDebug => ({
   toScreen: (x, y) => ({ x, y }),
   editorRoom: () => null,
   zoom: () => 2,
+  camera: () => ({ x: 0, y: 0, zoom: 2 }),
   nightLevel: () => 0,
   autoWalking: () => false,
   following: () => null,

@@ -151,7 +151,7 @@ describe('la mise en page', () => {
   test('la barre du bas : la puce « Moi », micro, caméra, partage d\'écran et musique, le zoom, puis Chat, Personnes et Plus ; le nom et le statut sont dans la puce', () => {
     renderShell();
     const names = within(bar()).getAllByRole('button').map((b) => b.getAttribute('aria-label') ?? b.textContent);
-    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom (100 %)', 'Zoom avant', 'Missions', 'Chat', 'Personnes', 'Plus']);
+    expect(names).toEqual(['Mon profil', 'Micro', 'Caméra', 'Partager l\'écran', 'Musique et ambiances', 'Zoom arrière', 'Rétablir le zoom de départ', 'Zoom avant', 'Missions', 'Chat', 'Personnes', 'Plus']);
     expect(within(meChip()).getByText('Léa')).toBeTruthy();
     expect(within(meChip()).getByText(fr.status.available)).toBeTruthy();
   });
@@ -759,6 +759,15 @@ describe('le panneau Admin', () => {
   const openAdmin = (user: User) => chooseInMoreMenu(user, fr.admin.toggle);
   const adminPanel = () => screen.getByRole('complementary', { name: fr.admin.title });
   const adminCalls = (api: ReturnType<typeof fakeApi>) => api.mock.calls.filter(([url]) => String(url).startsWith('/api/admin'));
+  // L'onglet Membres, une fois sa liste arrivée (son nombre suit son libellé), et sa liste.
+  const membersTab = () => screen.findByRole('tab', { name: `${fr.admin.tabs.members} 2` });
+  const membersList = () => screen.getByRole('tabpanel');
+  // Le bouton « … » d'un membre, et son menu, qu'il ouvre.
+  const actionsButton = (name: string) => screen.queryByRole('button', { name: t(fr.admin.actions, { name }) });
+  async function openActions(user: User, name: string): Promise<HTMLElement> {
+    await user.click(actionsButton(name)!);
+    return screen.getByRole('menu', { name: t(fr.admin.actions, { name }) });
+  }
 
   test('un membre n\'a pas de ligne Admin : ni panneau, ni requête à /api/admin, même Personnes ouvert', async () => {
     const user = userEvent.setup();
@@ -788,9 +797,9 @@ describe('le panneau Admin', () => {
 
     await openAdmin(user);
     expect(adminPanel().id).not.toBe('');
-    expect(await screen.findByRole('region', { name: 'Membres (2)' })).toBeTruthy();
+    expect(await membersTab()).toBeTruthy();
 
-    await user.click(screen.getByRole('button', { name: fr.admin.close }));
+    await user.click(screen.getByRole('button', { name: fr.ui.close }));
     expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
   });
 
@@ -801,7 +810,7 @@ describe('le panneau Admin', () => {
     for (let times = 0; times < 2; times++) {
       await openAdmin(user);
       expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.admin.title }));
-      await screen.findByRole('region', { name: 'Membres (2)' });
+      await membersTab();
       await user.keyboard('{Escape}');
       expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
       expect(document.activeElement).toBe(moreButton());
@@ -813,7 +822,7 @@ describe('le panneau Admin', () => {
     fakeApi(adminLists);
     renderShell({ role: 'admin' });
     await openAdmin(user);
-    await user.click(screen.getByRole('button', { name: fr.admin.close }));
+    await user.click(screen.getByRole('button', { name: fr.ui.close }));
     expect(screen.queryByRole('complementary', { name: fr.admin.title })).toBeNull();
     expect(document.activeElement).toBe(moreButton());
   });
@@ -830,7 +839,7 @@ describe('le panneau Admin', () => {
     await user.keyboard('{Enter}');
     expect(adminPanel()).toBeTruthy();
     await user.tab();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.admin.close }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.ui.close }));
   });
 
   test('il s\'ouvre dans la couche par-dessus le jeu, à droite, et prend la place d\'un autre panneau', async () => {
@@ -849,40 +858,44 @@ describe('le panneau Admin', () => {
     expect(screen.getByTestId('jeu')).toBe(game);
   });
 
-  test('le panneau reconnaît le compte connecté : sa ligne est « (toi) » et n\'a pas de bouton Retirer, celle de Bob oui', async () => {
+  test('le panneau reconnaît le compte connecté : sa ligne est « (toi) » et n\'a pas de menu, celle de Bob oui (avec « Retirer du bureau »)', async () => {
     const user = userEvent.setup();
     fakeApi(adminLists);
     renderShell({ role: 'admin' });
     await openAdmin(user);
-    const members = await screen.findByRole('region', { name: 'Membres (2)' });
-    const lea = within(members).getByText('Léa').closest('li')!;
+    await membersTab();
+    const lea = within(membersList()).getByText('Léa').closest('li')!;
     expect(lea.textContent).toContain(fr.admin.you);
     expect(within(lea).queryByRole('button')).toBeNull();
-    expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
+    const menu = await openActions(user, 'Bob');
+    expect(within(menu).getByRole('menuitem', { name: fr.admin.members.remove })).toBeTruthy();
   });
 
   // Le mode d'envoi du serveur (GET /api/config) décide si les membres ont « Lien de mot de passe » : OfficeShell le lit à l'ouverture
   // du panneau, jamais avant, et jamais pour un membre.
   describe('sans e-mail (GET /api/config)', () => {
     const configCalls = (api: ReturnType<typeof fakeApi>) => api.mock.calls.filter(([url]) => String(url) === '/api/config');
-    const passwordLink = (name: string) => screen.queryByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name }) });
+    const passwordLinkIn = (menu: HTMLElement) => within(menu).queryByRole('menuitem', { name: fr.admin.members.passwordLink });
 
-    test('MAILER=none : la configuration est lue à l\'ouverture du panneau, et Bob a « Lien de mot de passe » (Léa, qui est connectée, non)', async () => {
+    test('MAILER=none : la configuration est lue à l\'ouverture du panneau, et Bob a « Lien de mot de passe » (Léa, qui est connectée, n\'a pas de menu)', async () => {
       const user = userEvent.setup();
       const api = fakeApi({ ...adminLists, 'GET /api/config': () => json(200, { mail: 'none' }) });
       renderShell({ role: 'admin' });
       expect(configCalls(api)).toHaveLength(0);   // panneau fermé : rien n'est demandé
 
       await openAdmin(user);
-      const members = await screen.findByRole('region', { name: 'Membres (2)' });
-      expect(await within(members).findByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name: 'Bob' }) })).toBeTruthy();
-      expect(passwordLink('Léa')).toBeNull();
-      expect(configCalls(api)).toHaveLength(1);
+      await membersTab();
+      await waitFor(() => expect(configCalls(api)).toHaveLength(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(passwordLinkIn(await openActions(user, 'Bob'))).toBeTruthy();
+      expect(actionsButton('Léa')).toBeNull();
+      await user.keyboard('{Escape}');
 
-      // Fermé puis rouvert : la configuration est connue, elle n'est pas relue, et les boutons sont là tout de suite.
-      await user.click(screen.getByRole('button', { name: fr.admin.close }));
+      // Fermé puis rouvert : la configuration est connue, elle n'est pas relue, et la ligne est là tout de suite.
+      await user.click(screen.getByRole('button', { name: fr.ui.close }));
       await openAdmin(user);
-      expect(await screen.findByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name: 'Bob' }) })).toBeTruthy();
+      await membersTab();
+      expect(passwordLinkIn(await openActions(user, 'Bob'))).toBeTruthy();
       expect(configCalls(api)).toHaveLength(1);
     });
 
@@ -898,11 +911,12 @@ describe('le panneau Admin', () => {
       const api = fakeApi({ ...adminLists, 'GET /api/config': config });
       renderShell({ role: 'admin' });
       await openAdmin(user);
-      const members = await screen.findByRole('region', { name: 'Membres (2)' });
+      await membersTab();
       await waitFor(() => expect(configCalls(api)).toHaveLength(1));
       await new Promise((resolve) => setTimeout(resolve, 20));
-      expect(passwordLink('Bob')).toBeNull();
-      expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
+      const menu = await openActions(user, 'Bob');
+      expect(passwordLinkIn(menu)).toBeNull();
+      expect(within(menu).getByRole('menuitem', { name: fr.admin.members.remove })).toBeTruthy();
       expect(within(adminPanel()).queryByRole('alert')).toBeNull();
     });
 

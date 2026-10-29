@@ -23,6 +23,8 @@ interface Member {
   name: string;
   email: string;
   role: Role;
+  avatarKey?: string | null;
+  lastSeenAt?: string | null;
 }
 
 // Ce que GET /api/admin/members dit : les membres actifs, avec leur adresse et leur rôle.
@@ -32,14 +34,18 @@ const CLEO: Member = { id: 'cleo', name: 'Cléo', email: 'cleo@x.fr', role: 'adm
 const NINA: Member = { id: 'nina', name: 'Nina', email: 'nina@x.fr', role: 'member' };
 const MEMBERS = [ADA, BOB, CLEO];
 
-// Ce que GET /api/admin/invitations dit d'une invitation en attente (admin-routes.ts, `listed`).
-const invitation = (id: string, email: string, over: Partial<{ role: Role; expired: boolean }> = {}) => ({
+const HOUR = 3600 * 1000;
+const DAY = 24 * HOUR;
+
+// Ce que GET /api/admin/invitations dit d'une invitation en attente (admin-routes.ts, `listed`). Son lien vit encore presque sept jours,
+// sauf si elle est expirée.
+const invitation = (id: string, email: string, over: Partial<{ role: Role; expired: boolean; expiresAt: string }> = {}) => ({
   id,
   email,
   role: 'member' as Role,
   invitedBy: 'ada',
-  createdAt: '2026-10-19T10:00:00.000Z',
-  expiresAt: '2026-10-26T10:00:00.000Z',
+  createdAt: new Date(Date.now() - 60_000).toISOString(),
+  expiresAt: new Date(Date.now() + (over.expired ? -DAY : INVITATION_TTL_MS - 60_000)).toISOString(),
   expired: false,
   ...over,
 });
@@ -91,22 +97,41 @@ const player = (id: string, name: string): PublicPlayer => ({
 
 // ---- Le panneau --------------------------------------------------------------------------------------------------------------------
 
+type User = ReturnType<typeof userEvent.setup>;
+type Tab = 'members' | 'invitations';
+
 interface Options {
   selfId?: string;
   onClose?: () => void;
   // Le mode d'envoi du serveur (GET /api/config, que lit OfficeShell) : absent tant qu'il est inconnu.
   mail?: MailMode | null;
+  // L'onglet à ouvrir, une fois les listes arrivées (Membres par défaut).
+  tab?: Tab;
 }
 
 function renderPanel({ selfId = ADA.id, onClose = () => {}, mail }: Options = {}) {
   return render(<AdminPanel id="panneau-admin" selfId={selfId} mail={mail} onClose={onClose} />);
 }
 
-// Le panneau ouvert, ses deux listes arrivées (les titres des sections en portent le nombre).
-async function openPanel(options?: Options) {
+const panel = () => screen.getByRole('complementary', { name: fr.admin.title });
+// Un onglet, par son libellé (le nombre de sa liste le suit, une fois qu'elle est là).
+const tab = (which: Tab) => within(panel()).getByRole('tab', { name: new RegExp(`^${fr.admin.tabs[which]}`) });
+const tabpanel = () => within(panel()).getByRole('tabpanel');
+// La liste d'un onglet, même quand l'autre est ouvert (elle reste montée, cachée).
+const listOf = (which: Tab) => panel().querySelector<HTMLElement>(`[data-list="${which}"]`)!;
+const membersSection = () => listOf('members');
+const pendingSection = () => listOf('invitations');
+
+// Les deux listes arrivées : leur nombre suit le libellé de leur onglet.
+async function listsArrived() {
+  await screen.findByRole('tab', { name: /^Membres \d+$/ });
+  await screen.findByRole('tab', { name: /^Invitations \d+$/ });
+}
+
+async function openPanel(options: Options = {}) {
   const view = renderPanel(options);
-  await screen.findByRole('region', { name: /^Membres \(\d+\)$/ });
-  await screen.findByRole('region', { name: /^Invitations en attente \(\d+\)$/ });
+  await listsArrived();
+  if (options.tab === 'invitations') fireEvent.click(tab('invitations'));
   return view;
 }
 
@@ -119,48 +144,69 @@ async function openPanelBeside(options: Options = {}) {
       <AdminPanel id="panneau-admin" selfId={selfId} mail={mail} onClose={onClose} />
     </>,
   );
-  await screen.findByRole('region', { name: /^Membres \(\d+\)$/ });
-  await screen.findByRole('region', { name: /^Invitations en attente \(\d+\)$/ });
+  await listsArrived();
+  if (options.tab === 'invitations') fireEvent.click(tab('invitations'));
   return screen.getByRole('button', { name: 'Dehors' });
 }
 
-const panel = () => screen.getByRole('complementary', { name: fr.admin.title });
+// La carte du formulaire, que « Inviter » ouvre.
+const inviteToggle = () => within(panel()).getByRole('button', { name: fr.admin.invite.toggle }) as HTMLButtonElement;
 const inviteSection = () => within(panel()).getByRole('region', { name: fr.admin.invite.title });
-const pendingSection = () => within(panel()).getByRole('region', { name: /^Invitations en attente/ });
-const membersSection = () => within(panel()).getByRole('region', { name: /^Membres/ });
 const emailField = () => within(inviteSection()).getByLabelText(fr.admin.invite.email) as HTMLInputElement;
-const roleField = () => within(inviteSection()).getByLabelText(fr.admin.invite.role) as HTMLSelectElement;
+const roleRadio = (role: Role) => within(inviteSection()).getByRole('radio', { name: fr.admin.roles[role] });
+const checkedRole = () => within(inviteSection()).getByRole('radio', { checked: true }).textContent;
 // Le bouton du formulaire, sous l'un de ses libellés : avec e-mail (envoyer, envoi), sans e-mail (créer le lien, création).
 const submitButton = () =>
   within(inviteSection()).getByRole('button', {
     name: new RegExp(`^(${[fr.admin.invite.submit, fr.admin.invite.submitting, fr.admin.invite.create, fr.admin.invite.creating].join('|')})$`),
   }) as HTMLButtonElement;
-const rowOf = (section: HTMLElement, text: string) => within(section).getByText(text).closest('li') as HTMLElement;
-const removeButton = (name: string) => within(membersSection()).getByRole('button', { name: t(fr.admin.members.removeLabel, { name }) }) as HTMLButtonElement;
-const resendButton = (email: string) => within(pendingSection()).getByRole('button', { name: t(fr.admin.pending.resendLabel, { email }) }) as HTMLButtonElement;
-// Sans e-mail, « Renvoyer » devient « Nouveau lien » : rien n'est envoyé, un lien neuf est montré.
-const renewButton = (email: string) => within(pendingSection()).getByRole('button', { name: t(fr.admin.pending.renewLabel, { email }) }) as HTMLButtonElement;
-const revokeButton = (email: string) => within(pendingSection()).getByRole('button', { name: t(fr.admin.pending.revokeLabel, { email }) }) as HTMLButtonElement;
-const dialog = () => screen.getByRole('alertdialog');
-const dialogButton = (name: string) => within(dialog()).getByRole('button', { name }) as HTMLButtonElement;
 
-async function invite(user: ReturnType<typeof userEvent.setup>, email: string) {
+async function openInvite(user: User) {
+  await user.click(inviteToggle());
+  return inviteSection();
+}
+
+async function invite(user: User, email: string) {
   await user.clear(emailField());
   await user.type(emailField(), email);
   await user.click(submitButton());
 }
 
+const rowOf = (section: HTMLElement, text: string) => within(section).getByText(text).closest('li') as HTMLElement;
+// Le bouton « … » d'une ligne, que son nom désigne (un membre, une adresse invitée), et son menu.
+const actionsButton = (name: string) => within(panel()).getByRole('button', { name: t(fr.admin.actions, { name }) }) as HTMLButtonElement;
+const menuOf = (name: string) => screen.getByRole('menu', { name: t(fr.admin.actions, { name }) });
+async function openActions(user: User, name: string) {
+  await user.click(actionsButton(name));
+  return menuOf(name);
+}
+// Ouvre le menu d'une ligne et y choisit ce geste.
+async function choose(user: User, name: string, item: string) {
+  await user.click(within(await openActions(user, name)).getByRole('menuitem', { name: item }));
+}
+const remove = (user: User, name: string) => choose(user, name, fr.admin.members.remove);
+const resend = (user: User, email: string) => choose(user, email, fr.admin.pending.resend);
+// Sans e-mail, « Renvoyer l'invitation » devient « Nouveau lien » : rien n'est envoyé, un lien neuf est montré.
+const renew = (user: User, email: string) => choose(user, email, fr.admin.pending.renew);
+const revoke = (user: User, email: string) => choose(user, email, fr.admin.pending.revoke);
+const dialog = () => screen.getByRole('alertdialog');
+const dialogButton = (name: string) => within(dialog()).getByRole('button', { name }) as HTMLButtonElement;
+
 // ---- Le panneau en général ---------------------------------------------------------------------------------------------------------
 
 describe('le panneau', () => {
-  test('une région « Admin » nommée par son titre, avec ses trois sections : Inviter, Invitations en attente, Membres', async () => {
+  test('la coque des autres panneaux, nommée « Admin » ; deux onglets avec leur nombre, Membres ouvert, et « Inviter »', async () => {
     serve({ invitations: [invitation('inv-nina', 'nina@x.fr')] });
     await openPanel();
     expect(panel().id).toBe('panneau-admin');
+    expect(panel().classList.contains('drawer')).toBe(true);
     expect(screen.getByRole('heading', { level: 2, name: fr.admin.title })).toBeTruthy();
-    expect(within(panel()).getByRole('heading', { level: 3, name: fr.admin.invite.title })).toBeTruthy();
-    expect(within(panel()).getByRole('heading', { level: 3, name: 'Invitations en attente (1)' })).toBeTruthy();
-    expect(within(panel()).getByRole('heading', { level: 3, name: 'Membres (3)' })).toBeTruthy();
+    expect(within(panel()).getAllByRole('tab').map((one) => one.textContent)).toEqual(['Membres 3', 'Invitations 1']);
+    expect(tab('members').getAttribute('aria-selected')).toBe('true');
+    expect(tabpanel().getAttribute('aria-labelledby')).toBe(tab('members').id);
+    expect(inviteToggle().getAttribute('aria-expanded')).toBe('false');
+    // Le formulaire attend « Inviter » : il n'est pas là d'emblée.
+    expect(within(panel()).queryByRole('region', { name: fr.admin.invite.title })).toBeNull();
   });
 
   test('à l\'ouverture, les membres et les invitations en attente sont lus, une fois chacun, et rien d\'autre ne part', async () => {
@@ -173,9 +219,24 @@ describe('le panneau', () => {
     serve();
     renderPanel();
     expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2, name: fr.admin.title }));
-    await screen.findByRole('region', { name: /^Membres \(/ });
+    await listsArrived();
     await userEvent.tab();
-    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.admin.close }));
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.ui.close }));
+  });
+
+  test('les onglets : un clic montre l\'autre liste, et l\'onglet reprend son nom ; la liste cachée reste montée', async () => {
+    const user = userEvent.setup();
+    serve({ invitations: [invitation('inv-nina', 'nina@x.fr')] });
+    await openPanel();
+    expect(within(tabpanel()).getByText('bob@x.fr')).toBeTruthy();
+    expect(pendingSection().hidden).toBe(true);
+
+    await user.click(tab('invitations'));
+    expect(tab('invitations').getAttribute('aria-selected')).toBe('true');
+    expect(tabpanel().getAttribute('aria-labelledby')).toBe(tab('invitations').id);
+    expect(pendingSection().hidden).toBe(false);
+    expect(membersSection().hidden).toBe(true);
+    expect(within(pendingSection()).getByText('nina@x.fr')).toBeTruthy();
   });
 
   test('le bouton Fermer, et Échap, appellent onClose ; Échap pendant une composition (touche morte) l\'annule seulement', async () => {
@@ -184,40 +245,41 @@ describe('le panneau', () => {
     const onClose = vi.fn();
     await openPanel({ onClose });
 
-    await user.click(screen.getByRole('button', { name: fr.admin.close }));
+    await user.click(screen.getByRole('button', { name: fr.ui.close }));
     expect(onClose).toHaveBeenCalledTimes(1);
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalledTimes(2);
-    // Dans le champ de l'adresse aussi.
-    await user.click(emailField());
-    await user.keyboard('{Escape}');
-    expect(onClose).toHaveBeenCalledTimes(3);
 
-    fireEvent.keyDown(emailField(), { key: 'Escape', isComposing: true });
-    expect(onClose).toHaveBeenCalledTimes(3);
+    fireEvent.keyDown(tab('members'), { key: 'Escape', isComposing: true });
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  test('en attendant les listes : « Chargement… » dans chaque section, puis les listes', async () => {
+  test('en attendant les listes : des lignes grises (« Chargement… » pour les lecteurs d\'écran), l\'onglet est aria-busy ; puis les listes', async () => {
+    const user = userEvent.setup();
     const members = deferred<Response>();
     const invitations = deferred<Response>();
     fakeApi({ 'GET /api/admin/members': () => members.promise, 'GET /api/admin/invitations': () => invitations.promise });
     renderPanel();
-    expect(within(membersSection()).getByText(fr.common.loading)).toBeTruthy();
+    expect(within(membersSection()).getByText(fr.common.loading).className).toBe('visually-hidden');
+    expect(membersSection().querySelectorAll('.admin-skeleton-row')).toHaveLength(3);
+    expect(tabpanel().getAttribute('aria-busy')).toBe('true');
     expect(within(pendingSection()).getByText(fr.common.loading)).toBeTruthy();
 
     invitations.resolve(json(200, []));
-    expect(await within(pendingSection()).findByText(fr.admin.pending.empty)).toBeTruthy();
+    await user.click(await screen.findByRole('tab', { name: 'Invitations 0' }));
+    expect(within(pendingSection()).getByText(fr.admin.pending.empty)).toBeTruthy();
     expect(within(membersSection()).getByText(fr.common.loading)).toBeTruthy();
     members.resolve(json(200, MEMBERS));
     expect(await within(membersSection()).findByText('bob@x.fr')).toBeTruthy();
     expect(screen.queryByText(fr.common.loading)).toBeNull();
+    expect(tabpanel().hasAttribute('aria-busy')).toBe(false);
   });
 
   test.each([
     ['le serveur est injoignable', () => { throw new TypeError('Failed to fetch'); }],
     ['la session a expiré (401)', () => json(401, { error: 'unauthorized' })],
     ['erreur du serveur (500)', () => json(500, { error: 'internal' })],
-  ])('les membres ne se chargent pas (%s) : un message et « Réessayer » dans leur section, les invitations s\'affichent ; réessayer recharge', async (_case, failure) => {
+  ])('les membres ne se chargent pas (%s) : un message et « Réessayer » dans leur onglet, les invitations s\'affichent ; réessayer recharge', async (_case, failure) => {
     const user = userEvent.setup();
     let fail = true;
     fakeApi({
@@ -228,7 +290,7 @@ describe('le panneau', () => {
 
     expect((await within(membersSection()).findByRole('alert')).textContent).toBe(fr.admin.members.loadFailed);
     expect(await within(pendingSection()).findByText('nina@x.fr')).toBeTruthy();
-    expect(within(pendingSection()).queryByRole('alert')).toBeNull();
+    expect(pendingSection().querySelector('[role="alert"]')).toBeNull();
 
     fail = false;
     await user.click(within(membersSection()).getByRole('button', { name: fr.common.retry }));
@@ -236,7 +298,7 @@ describe('le panneau', () => {
     expect(within(membersSection()).queryByRole('alert')).toBeNull();
   });
 
-  test('les invitations ne se chargent pas : un message et « Réessayer » dans leur section, les membres s\'affichent', async () => {
+  test('les invitations ne se chargent pas : un message et « Réessayer » dans leur onglet, les membres s\'affichent', async () => {
     const user = userEvent.setup();
     let fail = true;
     fakeApi({
@@ -244,36 +306,37 @@ describe('le panneau', () => {
       'GET /api/admin/invitations': () => (fail ? json(500, { error: 'internal' }) : json(200, [])),
     });
     renderPanel();
+    expect(await within(membersSection()).findByText('bob@x.fr')).toBeTruthy();
+    await user.click(tab('invitations'));
 
     expect((await within(pendingSection()).findByRole('alert')).textContent).toBe(fr.admin.pending.loadFailed);
-    expect(await within(membersSection()).findByText('bob@x.fr')).toBeTruthy();
-
     fail = false;
     await user.click(within(pendingSection()).getByRole('button', { name: fr.common.retry }));
     expect(await within(pendingSection()).findByText(fr.admin.pending.empty)).toBeTruthy();
     expect(within(pendingSection()).queryByRole('alert')).toBeNull();
   });
 
-  // « Réessayer » disparaît au clic (« Chargement… » le remplace) : le focus irait au haut de la page.
+  // « Réessayer » disparaît au clic (le squelette le remplace) : le focus irait au haut de la page.
   test.each([
-    ['les membres', 'GET /api/admin/members', membersSection, 'Membres (3)'],
-    ['les invitations', 'GET /api/admin/invitations', pendingSection, 'Invitations en attente (0)'],
-  ] as const)('« Réessayer » (%s) : le focus passe au titre de la section, qui reste là quand la liste arrive', async (_list, route, section, title) => {
+    ['les membres', 'members', 'Membres 3'],
+    ['les invitations', 'invitations', 'Invitations 0'],
+  ] as const)('« Réessayer » (%s) : le focus passe à l\'onglet, qui le garde quand la liste arrive', async (_list, which, name) => {
     const user = userEvent.setup();
     let fail = true;
     fakeApi({
-      'GET /api/admin/members': () => (route.includes('members') && fail ? json(500, { error: 'internal' }) : json(200, MEMBERS)),
-      'GET /api/admin/invitations': () => (route.includes('invitations') && fail ? json(500, { error: 'internal' }) : json(200, [])),
+      'GET /api/admin/members': () => (which === 'members' && fail ? json(500, { error: 'internal' }) : json(200, MEMBERS)),
+      'GET /api/admin/invitations': () => (which === 'invitations' && fail ? json(500, { error: 'internal' }) : json(200, [])),
     });
     renderPanel();
-    const retry = await within(section()).findByRole('button', { name: fr.common.retry });
-    retry.focus();
+    await screen.findByRole('tab', { name: which === 'members' ? /^Invitations \d/ : /^Membres \d/ });
+    if (which === 'invitations') await user.click(tab('invitations'));
+    const retry = await within(listOf(which)).findByRole('button', { name: fr.common.retry });
 
     fail = false;
     await user.click(retry);
-    expect(document.activeElement).toBe(within(section()).getByRole('heading', { level: 3 }));
-    await screen.findByRole('heading', { level: 3, name: title });
-    expect(document.activeElement).toBe(within(section()).getByRole('heading', { level: 3 }));
+    expect(document.activeElement).toBe(tabpanel());
+    await screen.findByRole('tab', { name });
+    expect(document.activeElement).toBe(tabpanel());
   });
 
   test('deux demandes en vol (StrictMode ouvre deux fois) : la réponse la plus récente gagne, même arrivée la première', async () => {
@@ -290,10 +353,10 @@ describe('le panneau', () => {
     await waitFor(() => expect(countOf(api, 'GET /api/admin/members')).toBe(2));
 
     await act(async () => second.resolve(json(200, MEMBERS)));
-    await screen.findByRole('region', { name: 'Membres (3)' });
+    await screen.findByRole('tab', { name: 'Membres 3' });
     // La première réponse, plus lente, ne remet pas la liste à jour avec du plus ancien.
     await act(async () => first.resolve(json(200, [ADA])));
-    expect(screen.getByRole('region', { name: 'Membres (3)' })).toBeTruthy();
+    expect(screen.getByRole('tab', { name: 'Membres 3' })).toBeTruthy();
   });
 });
 
@@ -310,20 +373,54 @@ describe('inviter', () => {
     },
   });
 
+  test('« Inviter » ouvre la carte du formulaire et met le focus dans l\'adresse ; sa croix, « Inviter » et Échap la ferment, et rendent le focus à « Inviter »', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    serve();
+    await openPanel({ onClose });
+
+    const card = await openInvite(user);
+    expect(inviteToggle().getAttribute('aria-expanded')).toBe('true');
+    expect(inviteToggle().getAttribute('aria-controls')).toBe(card.id);
+    expect(document.activeElement).toBe(emailField());
+
+    // Échap dans la carte la ferme, sans fermer le panneau ; une seconde fois, il ferme le panneau.
+    await user.keyboard('{Escape}');
+    expect(within(panel()).queryByRole('region', { name: fr.admin.invite.title })).toBeNull();
+    expect(document.activeElement).toBe(inviteToggle());
+    expect(onClose).not.toHaveBeenCalled();
+
+    await openInvite(user);
+    await user.click(within(inviteSection()).getByRole('button', { name: fr.admin.invite.close }));
+    expect(within(panel()).queryByRole('region', { name: fr.admin.invite.title })).toBeNull();
+    expect(document.activeElement).toBe(inviteToggle());
+
+    await openInvite(user);
+    await user.click(inviteToggle());
+    expect(within(panel()).queryByRole('region', { name: fr.admin.invite.title })).toBeNull();
+    // Dans une composition (touche morte), Échap l'annule seulement.
+    await openInvite(user);
+    fireEvent.keyDown(emailField(), { key: 'Escape', isComposing: true });
+    expect(inviteSection()).toBeTruthy();
+    await user.keyboard('{Escape}');
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   test('invitation : POST puis rafraîchissement de la liste ; 409 already_invited affiché', async () => {
     const user = userEvent.setup();
     const { api } = serve({}, postInvitation);
     await openPanel();
-    expect(within(pendingSection()).getByText(fr.admin.pending.empty)).toBeTruthy();
+    await openInvite(user);
 
     await invite(user, 'nina@x.fr');
 
-    // La demande part avec l'adresse et le rôle, puis la liste est relue : l'invitation y est.
+    // La demande part avec l'adresse et le rôle, puis la liste est relue : l'invitation y est, et l'onglet la compte.
     expect(await within(pendingSection()).findByText('nina@x.fr')).toBeTruthy();
     expect(bodiesOf(api, 'POST /api/admin/invitations')).toEqual([{ email: 'nina@x.fr', role: 'member' }]);
     expect(routesOf(api).slice(-2)).toEqual(['POST /api/admin/invitations', 'GET /api/admin/invitations']);
-    expect(within(panel()).getByRole('heading', { level: 3, name: 'Invitations en attente (1)' })).toBeTruthy();
-    // Le serveur a accepté : le message le dit, le champ est vidé.
+    expect(within(panel()).getByRole('tab', { name: 'Invitations 1' })).toBeTruthy();
+    // Le serveur a accepté : le message le dit, le champ est vidé, la carte reste ouverte pour enchaîner.
     const sent = within(inviteSection()).getByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }));
     expect(sent.closest('[role="status"]')).toBeTruthy();
     expect(emailField().value).toBe('');
@@ -336,21 +433,40 @@ describe('inviter', () => {
     expect(countOf(api, 'POST /api/admin/invitations')).toBe(2);
   });
 
-  test('le rôle est « Membre » par défaut, et on peut inviter un admin', async () => {
+  test('le rôle est « Membre » par défaut, et on peut inviter un admin ; les flèches passent de l\'un à l\'autre sans faire marcher l\'avatar', async () => {
     const user = userEvent.setup();
-    const { api } = serve({}, postInvitation);
-    await openPanel();
+    const directions = new DirectionInput();
+    const unbind = bindKeyboard(directions);
+    try {
+      const { api } = serve({}, postInvitation);
+      await openPanel();
+      await openInvite(user);
 
-    expect(roleField().value).toBe('member');
-    expect([...roleField().options].map((option) => option.textContent)).toEqual([fr.admin.roles.member, fr.admin.roles.admin]);
+      expect(checkedRole()).toBe(fr.admin.roles.member);
+      expect(within(inviteSection()).getAllByRole('radio').map((radio) => radio.textContent)).toEqual([fr.admin.roles.member, fr.admin.roles.admin]);
+      expect(within(inviteSection()).getByRole('radiogroup', { name: fr.admin.invite.role })).toBeTruthy();
+      // Au clavier : le choisi seul est dans l'ordre de tabulation, et → choisit l'autre (sans que l'avatar ne le voie).
+      expect(roleRadio('member').tabIndex).toBe(0);
+      expect(roleRadio('admin').tabIndex).toBe(-1);
+      roleRadio('member').focus();
+      await user.keyboard('{ArrowRight>}');
+      expect(directions.current()).toBeNull();
+      await user.keyboard('{/ArrowRight}');
+      expect(checkedRole()).toBe(fr.admin.roles.admin);
+      expect(document.activeElement).toBe(roleRadio('admin'));
+      await user.keyboard('{Home}');
+      expect(checkedRole()).toBe(fr.admin.roles.member);
 
-    await user.type(emailField(), 'nina@x.fr');
-    await user.selectOptions(roleField(), 'admin');
-    await user.click(submitButton());
-    expect(await within(pendingSection()).findByText('nina@x.fr')).toBeTruthy();
-    expect(bodiesOf(api, 'POST /api/admin/invitations')).toEqual([{ email: 'nina@x.fr', role: 'admin' }]);
-    // Une invitation d'admin ne se répète pas par inadvertance : le formulaire revient à son état de départ.
-    expect(roleField().value).toBe('member');
+      await user.type(emailField(), 'nina@x.fr');
+      await user.click(roleRadio('admin'));
+      await user.click(submitButton());
+      expect(await within(pendingSection()).findByText('nina@x.fr')).toBeTruthy();
+      expect(bodiesOf(api, 'POST /api/admin/invitations')).toEqual([{ email: 'nina@x.fr', role: 'admin' }]);
+      // Une invitation d'admin ne se répète pas par inadvertance : le formulaire revient à son état de départ.
+      expect(checkedRole()).toBe(fr.admin.roles.member);
+    } finally {
+      unbind();
+    }
   });
 
   // Un lecteur d'écran n'annonce que ce qui paraît dans une région qui existait déjà : « Invitation envoyée » s'écrit dans la même.
@@ -358,6 +474,7 @@ describe('inviter', () => {
     const user = userEvent.setup();
     serve({}, postInvitation);
     await openPanel();
+    await openInvite(user);
     const region = within(inviteSection()).getByRole('status');
     expect(region.textContent).toBe('');
 
@@ -371,6 +488,7 @@ describe('inviter', () => {
     const user = userEvent.setup();
     serve({}, postInvitation);
     await openPanel();
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     await within(pendingSection()).findByText('nina@x.fr');
     expect(document.activeElement).toBe(emailField());
@@ -382,6 +500,7 @@ describe('inviter', () => {
     const reply = deferred<Response>();
     serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
     await openPanel();
+    await openInvite(user);
     await user.type(emailField(), 'nina@x.fr');
     await user.click(submitButton());
     await user.clear(emailField());
@@ -413,9 +532,10 @@ describe('inviter', () => {
       const { routes, answer } = slowPost();
       serve({}, routes);
       await openPanel({ onClose });
+      await openInvite(user);
       await user.type(emailField(), 'nina@x.fr');
       await user.click(submitButton());
-      await user.click(removeButton('Bob'));
+      await remove(user, 'Bob');
       expect(document.activeElement).toBe(dialogButton(fr.admin.removal.cancel));
 
       await answer();
@@ -431,6 +551,7 @@ describe('inviter', () => {
       const { routes, answer } = slowPost();
       serve({}, routes);
       const outside = await openPanelBeside();
+      await openInvite(user);
       await user.type(emailField(), 'nina@x.fr');
       await user.click(submitButton());
       outside.focus();
@@ -445,6 +566,7 @@ describe('inviter', () => {
       const reply = deferred<Response>();
       serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
       const outside = await openPanelBeside();
+      await openInvite(user);
       await user.type(emailField(), 'nina@x.fr');
       await user.click(submitButton());
       outside.focus();
@@ -459,6 +581,7 @@ describe('inviter', () => {
       const { routes, answer } = slowPost();
       serve({}, routes);
       await openPanel();
+      await openInvite(user);
       await user.type(emailField(), 'nina@x.fr');
       await user.click(submitButton());
       expect(document.activeElement).toBe(submitButton());
@@ -474,6 +597,7 @@ describe('inviter', () => {
       const { routes, answer } = slowPost();
       serve({}, routes);
       await openPanel();
+      await openInvite(user);
       await user.type(emailField(), 'nina@x.fr');
       emailField().blur();
       fireEvent.submit(emailField().form!);
@@ -489,6 +613,7 @@ describe('inviter', () => {
     const user = userEvent.setup();
     serve();
     await openPanel();
+    await openInvite(user);
     expect(submitButton().disabled).toBe(true);
     await user.type(emailField(), '   ');
     expect(submitButton().disabled).toBe(true);
@@ -501,6 +626,7 @@ describe('inviter', () => {
     const reply = deferred<Response>();
     const { api } = serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
     await openPanel();
+    await openInvite(user);
     await user.type(emailField(), 'nina@x.fr');
     await user.click(submitButton());
 
@@ -521,17 +647,18 @@ describe('inviter', () => {
     ['plus admin (403)', 403, { error: 'forbidden' }, fr.admin.errors.forbidden],
     ['erreur du serveur (500)', 500, { error: 'internal' }, fr.common.errors.unexpected],
     ['une réponse sans code (le relais est tombé)', 502, undefined, fr.common.errors.unexpected],
-  ])('refus (%s) : le message est affiché, l\'adresse et le rôle restent dans le champ', async (_case, status, body, message) => {
+  ])('refus (%s) : le message est affiché, l\'adresse et le rôle restent dans le formulaire', async (_case, status, body, message) => {
     const user = userEvent.setup();
     serve({}, () => ({ 'POST /api/admin/invitations': () => (body === undefined ? new Response('Bad Gateway', { status }) : json(status, body)) }));
     await openPanel();
+    await openInvite(user);
     await user.type(emailField(), 'nina@x.fr');
-    await user.selectOptions(roleField(), 'admin');
+    await user.click(roleRadio('admin'));
     await user.click(submitButton());
 
     expect((await within(inviteSection()).findByRole('alert')).textContent).toBe(message);
     expect(emailField().value).toBe('nina@x.fr');
-    expect(roleField().value).toBe('admin');
+    expect(checkedRole()).toBe(fr.admin.roles.admin);
     expect(submitButton().disabled).toBe(false);
     expect(document.activeElement).toBe(emailField());
   });
@@ -540,13 +667,14 @@ describe('inviter', () => {
     const user = userEvent.setup();
     serve({}, () => ({ 'POST /api/admin/invitations': () => { throw new TypeError('Failed to fetch'); } }));
     await openPanel();
+    await openInvite(user);
     await user.type(emailField(), 'nina@x.fr');
     await user.click(submitButton());
     expect((await within(inviteSection()).findByRole('alert')).textContent).toBe(fr.common.errors.network);
     expect(emailField().value).toBe('nina@x.fr');
   });
 
-  // L'e-mail n'est pas parti, mais l'invitation existe (admin-routes.ts) : la liste doit la montrer, avec « Renvoyer ».
+  // L'e-mail n'est pas parti, mais l'invitation existe (admin-routes.ts) : la liste doit la montrer, avec « Renvoyer l'invitation ».
   test('l\'e-mail n\'est pas parti (502) : le message le dit, l\'adresse reste, et l\'invitation gardée apparaît dans la liste', async () => {
     const user = userEvent.setup();
     serve({}, (state) => ({
@@ -556,18 +684,21 @@ describe('inviter', () => {
       },
     }));
     await openPanel();
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
 
     expect((await within(inviteSection()).findByRole('alert')).textContent).toBe(fr.admin.errors.mailFailed);
     expect(emailField().value).toBe('nina@x.fr');
     expect(await within(pendingSection()).findByText('nina@x.fr')).toBeTruthy();
-    expect(resendButton('nina@x.fr')).toBeTruthy();
+    await user.click(tab('invitations'));
+    expect(within(await openActions(user, 'nina@x.fr')).getByRole('menuitem', { name: fr.admin.pending.resend })).toBeTruthy();
   });
 
   test('retaper l\'adresse efface le message d\'avant, refus ou invitation envoyée : il parlait de l\'adresse d\'avant', async () => {
     const user = userEvent.setup();
     serve({}, postInvitation);
     await openPanel();
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     await within(inviteSection()).findByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }));
     await user.type(emailField(), 'n');
@@ -591,6 +722,7 @@ describe('inviter', () => {
       },
     }));
     await openPanel();
+    await openInvite(user);
     await invite(user, 'nina');
     await within(inviteSection()).findByRole('alert');
     await invite(user, 'nina@x.fr');
@@ -604,63 +736,117 @@ describe('inviter', () => {
 describe('invitations en attente', () => {
   const PENDING = [invitation('inv-nina', 'nina@x.fr'), invitation('inv-old', 'old@x.fr', { role: 'admin', expired: true })];
 
-  test('chaque invitation : l\'adresse, le rôle, « expirée » si son lien ne marche plus, et ses deux actions', async () => {
+  test('chaque invitation : l\'adresse, le rôle, ce qu\'il reste à son lien (ou « Expirée »), et son menu « … » : Renvoyer, Annuler', async () => {
+    const user = userEvent.setup();
     serve({ invitations: PENDING });
-    await openPanel();
-    const items = within(pendingSection()).getAllByRole('listitem');
-    expect(items).toHaveLength(2);
+    await openPanel({ tab: 'invitations' });
+    expect(within(pendingSection()).getAllByRole('listitem')).toHaveLength(2);
 
     const nina = rowOf(pendingSection(), 'nina@x.fr');
     expect(nina.textContent).toContain(fr.admin.roles.member);
-    expect(nina.textContent).not.toContain(fr.admin.pending.expired);
+    expect(nina.textContent).toContain(t(fr.admin.pending.expiresInDays, { count: 7 }));
+    expect(nina.hasAttribute('data-expired')).toBe(false);
     const old = rowOf(pendingSection(), 'old@x.fr');
     expect(old.textContent).toContain(fr.admin.roles.admin);
     expect(old.textContent).toContain(fr.admin.pending.expired);
+    expect(old.getAttribute('data-expired')).toBe('true');
 
-    // Le texte des boutons est court ; leur nom dit pour qui ils agissent.
-    for (const row of [nina, old]) {
-      expect(within(row).getAllByRole('button').map((button) => button.textContent)).toEqual([fr.admin.pending.resend, fr.admin.pending.revoke]);
+    // Une ligne n'a qu'un bouton, « … », dont le nom dit pour qui il agit ; ses gestes sont dans son menu.
+    for (const [row, email] of [[nina, 'nina@x.fr'], [old, 'old@x.fr']] as const) {
+      expect(within(row).getAllByRole('button')).toEqual([actionsButton(email)]);
+      expect(actionsButton(email).getAttribute('aria-haspopup')).toBe('menu');
     }
-    expect(resendButton('old@x.fr')).toBeTruthy();
-    expect(revokeButton('old@x.fr')).toBeTruthy();
+    const menu = await openActions(user, 'old@x.fr');
+    expect(actionsButton('old@x.fr').getAttribute('aria-expanded')).toBe('true');
+    expect(actionsButton('old@x.fr').getAttribute('aria-controls')).toBe(menu.id);
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([fr.admin.pending.resend, fr.admin.pending.revoke]);
+  });
+
+  test('ce qu\'il reste au lien : en jours, puis un jour, puis en heures, puis moins d\'une heure ; sans date, rien', async () => {
+    const now = Date.now();
+    const at = (left: number) => new Date(now + left).toISOString();
+    serve({
+      invitations: [
+        invitation('a', 'a@x.fr', { expiresAt: at(3 * DAY + 2 * HOUR) }),
+        invitation('b', 'b@x.fr', { expiresAt: at(DAY + 5 * HOUR) }),
+        invitation('c', 'c@x.fr', { expiresAt: at(5 * HOUR + 10 * 60_000) }),
+        invitation('d', 'd@x.fr', { expiresAt: at(20 * 60_000) }),
+        { ...invitation('e', 'e@x.fr'), expiresAt: undefined as unknown as string },
+        // Le serveur la disait encore valable, mais sa date est passée (l'horloge de la page avance sur la sienne).
+        invitation('f', 'f@x.fr', { expiresAt: at(-5 * 60_000) }),
+      ],
+    });
+    await openPanel({ tab: 'invitations' });
+    const sub = (email: string) => rowOf(pendingSection(), email).querySelector('.admin-row-sub')?.textContent ?? null;
+    expect(sub('a@x.fr')).toBe('Expire dans 3 jours');
+    expect(sub('b@x.fr')).toBe('Expire dans 1 jour');
+    expect(sub('c@x.fr')).toBe('Expire dans 5 h');
+    expect(sub('d@x.fr')).toBe('Expire dans moins d\'une heure');
+    expect(rowOf(pendingSection(), 'd@x.fr').hasAttribute('data-expired')).toBe(false);
+    expect(sub('e@x.fr')).toBeNull();
+    expect(sub('f@x.fr')).toBe(fr.admin.pending.expired);
+    expect(rowOf(pendingSection(), 'f@x.fr').getAttribute('data-expired')).toBe('true');
+  });
+
+  test('le panneau resté ouvert voit le temps passer : chaque minute, ce qu\'il reste est relu, jusqu\'à « Expirée »', async () => {
+    const NOW = Date.parse('2026-10-29T10:00:00Z');
+    vi.useFakeTimers({ shouldAdvanceTime: true, now: NOW });
+    try {
+      serve({ invitations: [invitation('d', 'd@x.fr', { expiresAt: new Date(NOW + 90_000).toISOString() })] });
+      await openPanel({ tab: 'invitations' });
+      const row = () => rowOf(pendingSection(), 'd@x.fr');
+      expect(row().textContent).toContain(fr.admin.pending.expiresSoon);
+
+      // Comme pour « Il y a … » (PeoplePanel.test.tsx) : l'horloge n'est branchée qu'après les effets, qu'on laisse finir.
+      await act(async () => {});
+      act(() => vi.advanceTimersByTime(2 * 60_000));
+      expect(row().textContent).toContain(fr.admin.pending.expired);
+      expect(row().getAttribute('data-expired')).toBe('true');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('une adresse trop longue est coupée à l\'écran, et son infobulle la donne entière', async () => {
     const long = `${'a'.repeat(60)}@exemple-tres-long.fr`;
     serve({ invitations: [invitation('inv-long', long)] });
-    await openPanel();
+    await openPanel({ tab: 'invitations' });
     expect(within(pendingSection()).getByText(long).getAttribute('title')).toBe(long);
   });
 
-  test('aucune invitation en attente : un message, pas de liste', async () => {
+  test('aucune invitation en attente : une icône, une phrase et ce qui arrive ici ; pas de liste', async () => {
     serve();
-    await openPanel();
+    await openPanel({ tab: 'invitations' });
     expect(within(pendingSection()).getByText(fr.admin.pending.empty)).toBeTruthy();
+    expect(within(pendingSection()).getByText(fr.admin.pending.emptyHint)).toBeTruthy();
+    expect(pendingSection().querySelector('.admin-empty-icon svg')).toBeTruthy();
     expect(within(pendingSection()).queryByRole('list')).toBeNull();
-    expect(within(panel()).getByRole('heading', { level: 3, name: 'Invitations en attente (0)' })).toBeTruthy();
+    expect(within(panel()).getByRole('tab', { name: 'Invitations 0' })).toBeTruthy();
   });
 
-  test('Renvoyer : POST …/resend, la liste est relue ; une invitation expirée n\'est plus expirée, et le message le dit', async () => {
+  test('Renvoyer : POST …/resend, la liste est relue ; une invitation expirée ne l\'est plus, et le message le dit', async () => {
     const user = userEvent.setup();
     const { api } = serve({ invitations: PENDING }, (state) => ({
       'POST /api/admin/invitations/inv-old/resend': () => {
-        state.invitations = state.invitations.map((pending) => (pending.id === 'inv-old' ? { ...pending, expired: false } : pending));
+        state.invitations = state.invitations.map((pending) => (pending.id === 'inv-old' ? invitation('inv-old', 'old@x.fr', { role: 'admin' }) : pending));
         return json(200, { ok: true });
       },
     }));
-    await openPanel();
+    await openPanel({ tab: 'invitations' });
     expect(rowOf(pendingSection(), 'old@x.fr').textContent).toContain(fr.admin.pending.expired);
 
-    await user.click(resendButton('old@x.fr'));
+    await resend(user, 'old@x.fr');
 
     expect(await within(pendingSection()).findByText(t(fr.admin.pending.resent, { email: 'old@x.fr' }))).toBeTruthy();
     expect(routesOf(api).slice(-2)).toEqual(['POST /api/admin/invitations/inv-old/resend', 'GET /api/admin/invitations']);
-    expect(rowOf(pendingSection(), 'old@x.fr').textContent).not.toContain(fr.admin.pending.expired);
-    // Pas de corps : la route ne lit rien.
+    await waitFor(() => expect(rowOf(pendingSection(), 'old@x.fr').textContent).not.toContain(fr.admin.pending.expired));
+    // Pas de corps : la route ne lit rien. Le menu s'est fermé, et le focus est sur le bouton « … » de la ligne.
     expect(api.mock.calls.find(([input]) => String(input).endsWith('/resend'))?.[1]?.body).toBeUndefined();
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(actionsButton('old@x.fr'));
   });
 
-  test('Annuler : DELETE de l\'invitation, la liste est relue, l\'invitation n\'y est plus', async () => {
+  test('Annuler : DELETE de l\'invitation, la liste est relue, l\'invitation n\'y est plus ; le focus va à l\'onglet', async () => {
     const user = userEvent.setup();
     const { api } = serve({ invitations: PENDING }, (state) => ({
       'DELETE /api/admin/invitations/inv-nina': () => {
@@ -668,38 +854,39 @@ describe('invitations en attente', () => {
         return json(200, { ok: true });
       },
     }));
-    await openPanel();
+    await openPanel({ tab: 'invitations' });
 
-    await user.click(revokeButton('nina@x.fr'));
+    await revoke(user, 'nina@x.fr');
 
     await waitFor(() => expect(within(pendingSection()).queryByText('nina@x.fr')).toBeNull());
     expect(routesOf(api).slice(-2)).toEqual(['DELETE /api/admin/invitations/inv-nina', 'GET /api/admin/invitations']);
     expect(within(pendingSection()).getByText(t(fr.admin.pending.revoked, { email: 'nina@x.fr' }))).toBeTruthy();
     expect(within(pendingSection()).getByText('old@x.fr')).toBeTruthy();
-    // La ligne n'existe plus : le focus va au titre de la section, d'où la lecture continue.
-    const title = within(panel()).getByRole('heading', { level: 3, name: 'Invitations en attente (1)' });
-    expect(document.activeElement).toBe(title);
+    expect(within(panel()).getByRole('tab', { name: 'Invitations 1' })).toBeTruthy();
+    // La ligne n'existe plus : le focus va à l'onglet, d'où la lecture continue.
+    expect(document.activeElement).toBe(tabpanel());
   });
 
   // « Inactif » par aria-disabled et non par `disabled` : un bouton qui devient `disabled` perd le focus, et la personne au clavier
   // se retrouverait en haut de la page.
-  test('pendant une action : les boutons de la section sont inactifs (aria-disabled), le focus reste sur celui qu\'on a pris, et une seule demande part', async () => {
+  test('pendant une action : les boutons « … » de la liste sont inactifs (aria-disabled), le focus reste sur celui qu\'on a pris, et une seule demande part', async () => {
     const user = userEvent.setup();
     const reply = deferred<Response>();
     const { api } = serve({ invitations: PENDING }, () => ({ 'POST /api/admin/invitations/inv-nina/resend': () => reply.promise }));
-    await openPanel();
-    await user.click(resendButton('nina@x.fr'));
+    await openPanel({ tab: 'invitations' });
+    await resend(user, 'nina@x.fr');
 
     for (const button of within(pendingSection()).getAllByRole('button')) expect(button.getAttribute('aria-disabled')).toBe('true');
-    expect(document.activeElement).toBe(resendButton('nina@x.fr'));
-    // Entrée sur le même bouton, un clic sur celui d'une autre ligne : rien de plus ne part.
+    expect(document.activeElement).toBe(actionsButton('nina@x.fr'));
+    // Entrée sur le même bouton, un clic sur celui d'une autre ligne : aucun menu ne s'ouvre, rien de plus ne part.
     await user.keyboard('{Enter}');
-    fireEvent.click(revokeButton('old@x.fr'));
+    fireEvent.click(actionsButton('old@x.fr'));
+    expect(screen.queryByRole('menu')).toBeNull();
     expect(routesOf(api).filter((route) => route.startsWith('POST') || route.startsWith('DELETE'))).toEqual(['POST /api/admin/invitations/inv-nina/resend']);
 
     await act(async () => reply.resolve(json(200, { ok: true })));
-    await waitFor(() => expect(resendButton('nina@x.fr').hasAttribute('aria-disabled')).toBe(false));
-    expect(document.activeElement).toBe(resendButton('nina@x.fr'));
+    await waitFor(() => expect(actionsButton('nina@x.fr').hasAttribute('aria-disabled')).toBe(false));
+    expect(document.activeElement).toBe(actionsButton('nina@x.fr'));
   });
 
   test('annuler : la réponse qui arrive après que le focus est passé ailleurs ne le reprend pas (la ligne disparaît quand même)', async () => {
@@ -712,8 +899,8 @@ describe('invitations en attente', () => {
         return response;
       },
     }));
-    const outside = await openPanelBeside();
-    await user.click(revokeButton('nina@x.fr'));
+    const outside = await openPanelBeside({ tab: 'invitations' });
+    await revoke(user, 'nina@x.fr');
     outside.focus();
 
     await act(async () => reply.resolve(json(200, { ok: true })));
@@ -724,19 +911,19 @@ describe('invitations en attente', () => {
   test('renvoyer : l\'e-mail n\'est pas parti (502) → le message le dit, l\'invitation est gardée', async () => {
     const user = userEvent.setup();
     serve({ invitations: PENDING }, () => ({ 'POST /api/admin/invitations/inv-nina/resend': () => json(502, { error: 'mail_failed' }) }));
-    await openPanel();
-    await user.click(resendButton('nina@x.fr'));
+    await openPanel({ tab: 'invitations' });
+    await resend(user, 'nina@x.fr');
     expect((await within(pendingSection()).findByRole('alert')).textContent).toBe(fr.admin.errors.mailFailed);
     expect(within(pendingSection()).getByText('nina@x.fr')).toBeTruthy();
-    expect(resendButton('nina@x.fr').disabled).toBe(false);
+    await waitFor(() => expect(actionsButton('nina@x.fr').hasAttribute('aria-disabled')).toBe(false));
   });
 
   // Acceptée ou annulée par un autre admin entre-temps : le serveur répond 404 (« l'annulation n'a rien empêché »). Une invitation acceptée
   // est un nouveau membre : les deux listes sont relues.
   test.each([
-    ['renvoyer', 'POST', '/resend', resendButton],
-    ['annuler', 'DELETE', '', revokeButton],
-  ] as const)('%s une invitation qui n\'est plus en attente (404) : le message le dit, et les deux listes sont relues', async (_action, method, suffix, button) => {
+    ['renvoyer', 'POST', '/resend', resend],
+    ['annuler', 'DELETE', '', revoke],
+  ] as const)('%s une invitation qui n\'est plus en attente (404) : le message le dit, et les deux listes sont relues', async (_action, method, suffix, gesture) => {
     const user = userEvent.setup();
     const { api, state } = serve({ invitations: PENDING }, (world) => ({
       [`${method} /api/admin/invitations/inv-nina${suffix}`]: () => {
@@ -746,8 +933,8 @@ describe('invitations en attente', () => {
         return json(404, { error: 'not_found' });
       },
     }));
-    await openPanel();
-    await user.click(button('nina@x.fr'));
+    await openPanel({ tab: 'invitations' });
+    await gesture(user, 'nina@x.fr');
 
     expect((await within(pendingSection()).findByRole('alert')).textContent).toBe(fr.admin.errors.notFoundInvitation);
     await waitFor(() => expect(within(pendingSection()).queryByText('nina@x.fr')).toBeNull());
@@ -755,14 +942,15 @@ describe('invitations en attente', () => {
     expect(countOf(api, 'GET /api/admin/invitations')).toBe(2);
     expect(countOf(api, 'GET /api/admin/members')).toBe(2);
     expect(state.members).toContain(NINA);
-    expect(document.activeElement).toBe(within(panel()).getByRole('heading', { level: 3, name: 'Invitations en attente (1)' }));
+    expect(within(panel()).getByRole('tab', { name: 'Membres 4' })).toBeTruthy();
+    expect(document.activeElement).toBe(tabpanel());
   });
 
   test('serveur injoignable : le message réseau', async () => {
     const user = userEvent.setup();
     serve({ invitations: PENDING }, () => ({ 'DELETE /api/admin/invitations/inv-nina': () => { throw new TypeError('Failed to fetch'); } }));
-    await openPanel();
-    await user.click(revokeButton('nina@x.fr'));
+    await openPanel({ tab: 'invitations' });
+    await revoke(user, 'nina@x.fr');
     expect((await within(pendingSection()).findByRole('alert')).textContent).toBe(fr.common.errors.network);
   });
 
@@ -772,19 +960,95 @@ describe('invitations en attente', () => {
     serve({ invitations: PENDING }, () => ({
       'POST /api/admin/invitations/inv-nina/resend': () => (calls++ === 0 ? json(502, { error: 'mail_failed' }) : json(200, { ok: true })),
     }));
-    await openPanel();
-    await user.click(resendButton('nina@x.fr'));
+    await openPanel({ tab: 'invitations' });
+    await resend(user, 'nina@x.fr');
     await within(pendingSection()).findByRole('alert');
-    await user.click(resendButton('nina@x.fr'));
+    await waitFor(() => expect(actionsButton('nina@x.fr').hasAttribute('aria-disabled')).toBe(false));
+    await resend(user, 'nina@x.fr');
     await within(pendingSection()).findByText(t(fr.admin.pending.resent, { email: 'nina@x.fr' }));
     expect(within(pendingSection()).queryByRole('alert')).toBeNull();
+  });
+});
+
+// ---- Le menu « … » d'une ligne -----------------------------------------------------------------------------------------------------
+
+describe('le menu « … » d\'une ligne', () => {
+  test('au clavier : Entrée l\'ouvre et met le focus sur la première ligne, ↑ ↓ y circulent, Échap le ferme (pas le panneau) et rend le focus au bouton', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    serve();
+    await openPanel({ mail: 'none', onClose });
+    actionsButton('Bob').focus();
+    await user.keyboard('{Enter}');
+    const menu = menuOf('Bob');
+    const [password, removal] = within(menu).getAllByRole('menuitem');
+    expect(document.activeElement).toBe(password);
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(removal);
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(password);
+    await user.keyboard('{ArrowUp}');
+    expect(document.activeElement).toBe(removal);
+
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(document.activeElement).toBe(actionsButton('Bob'));
+    expect(actionsButton('Bob').getAttribute('aria-expanded')).toBe('false');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  test('ses flèches ne font pas marcher l\'avatar ; Tab le ferme, et un clic ailleurs aussi', async () => {
+    const user = userEvent.setup();
+    const directions = new DirectionInput();
+    const unbind = bindKeyboard(directions);
+    try {
+      serve();
+      await openPanel({ mail: 'none' });
+      await openActions(user, 'Bob');
+      await user.keyboard('{ArrowDown>}');
+      expect(directions.current()).toBeNull();
+      await user.keyboard('{/ArrowDown}');
+
+      await user.tab();
+      expect(screen.queryByRole('menu')).toBeNull();
+
+      await openActions(user, 'Bob');
+      await user.click(tab('members'));
+      expect(screen.queryByRole('menu')).toBeNull();
+      // Le bouton « … » ouvre et ferme son menu.
+      await openActions(user, 'Bob');
+      await user.click(actionsButton('Bob'));
+      expect(screen.queryByRole('menu')).toBeNull();
+    } finally {
+      unbind();
+    }
+  });
+
+  test('la liste qui défile ferme le menu (il est posé à la page, son bouton partirait sans lui) ; le focus revient au bouton', async () => {
+    const user = userEvent.setup();
+    serve();
+    await openPanel({ mail: 'none' });
+    const menu = await openActions(user, 'Bob');
+    expect(menu.contains(document.activeElement)).toBe(true);
+
+    const scroller = panel().querySelector('.admin-scroll')!;
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole('menu')).toBeNull();
+    expect(actionsButton('Bob').getAttribute('aria-expanded')).toBe('false');
+    expect(document.activeElement).toBe(actionsButton('Bob'));
+
+    // Le menu suivant s'ouvre comme avant, et ne se ferme que si la liste défile de nouveau.
+    await openActions(user, 'Cléo');
+    expect(screen.getByRole('menu')).toBeTruthy();
+    fireEvent.scroll(scroller);
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 });
 
 // ---- Membres -----------------------------------------------------------------------------------------------------------------------
 
 describe('membres', () => {
-  test('chaque membre : son nom, son adresse et son rôle ; soi-même est « (toi) », sans bouton Retirer ; les autres ont le leur', async () => {
+  test('chaque membre : son nom, son adresse et son rôle ; soi-même est « (toi) », sans menu ; les autres ont le leur', async () => {
     serve();
     await openPanel();
     const items = within(membersSection()).getAllByRole('listitem');
@@ -800,9 +1064,57 @@ describe('membres', () => {
     expect(bob.textContent).toContain('bob@x.fr');
     expect(bob.textContent).toContain(fr.admin.roles.member);
     expect(bob.textContent).not.toContain(fr.admin.you);
-    expect(within(bob).getByRole('button', { name: 'Retirer Bob' }).textContent).toBe(fr.admin.members.remove);
+    expect(within(bob).getAllByRole('button')).toEqual([actionsButton('Bob')]);
     // Un autre admin se retire comme les autres.
-    expect(removeButton('Cléo')).toBeTruthy();
+    expect(actionsButton('Cléo')).toBeTruthy();
+  });
+
+  test('sa présence : soi-même et qui est au bureau sont « En ligne » (avec le point de leur statut) ; les autres, leur dernière visite, ou aucune', async () => {
+    serve({
+      members: [
+        ADA,
+        BOB,
+        { ...CLEO, lastSeenAt: new Date(Date.now() - 3 * HOUR - 60_000).toISOString() },
+        { ...NINA, lastSeenAt: null },
+      ],
+    });
+    act(() => store().upsertPlayer({ ...player('bob', 'Bob'), status: 'busy' }));
+    await openPanel();
+    const seen = (name: string) => rowOf(membersSection(), name).querySelector('.admin-row-seen')?.textContent;
+
+    expect(seen('Ada')).toBe(fr.admin.members.online);
+    expect(seen('Bob')).toBe(fr.admin.members.online);
+    expect(rowOf(membersSection(), 'Bob').getAttribute('data-online')).toBe('true');
+    expect(rowOf(membersSection(), 'Bob').querySelector('.portrait-dot')?.getAttribute('data-status')).toBe('busy');
+    expect(seen('Cléo')).toBe(`${fr.office.people.lastSeen} Il y a 3 h`);
+    expect(rowOf(membersSection(), 'Cléo').hasAttribute('data-online')).toBe(false);
+    expect(rowOf(membersSection(), 'Cléo').querySelector('.portrait-dot')).toBeNull();
+    expect(seen('Nina')).toBe(fr.admin.members.neverSeen);
+  });
+
+  test('le point du portrait prend la couleur de l\'état d\'activité en cours (le sien, celui des autres), et reprend celle du statut sans état', async () => {
+    const PINK = /^(#ec4899|rgb\(236, 72, 153\))$/i;
+    const PURPLE = /^(#8b5cf6|rgb\(139, 92, 246\))$/i;
+    const pink = { id: 'rose', label: 'En pause', color: '#ec4899', allowEntry: true, hear: true, heard: true };
+    serve();
+    act(() => {
+      useOfficeStore.setState({ self: { ...player('ada', 'Ada'), activity: { id: 'focus', label: 'En focus', color: '#8b5cf6', allowEntry: false, hear: false, heard: false } } });
+      store().upsertPlayer({ ...player('bob', 'Bob'), activity: pink });
+    });
+    await openPanel();
+    const dot = (name: string) => rowOf(membersSection(), name).querySelector('.portrait-dot') as HTMLElement;
+
+    expect(dot('Bob').style.backgroundColor).toMatch(PINK);
+    expect(dot('Bob').getAttribute('data-activity')).toBe('rose');
+    // Le statut ordinaire reste dit par data-status.
+    expect(dot('Bob').getAttribute('data-status')).toBe('available');
+    expect(dot('Ada').style.backgroundColor).toMatch(PURPLE);
+    expect(dot('Ada').getAttribute('data-activity')).toBe('focus');
+
+    // Bob quitte son état : le point reprend la couleur de son statut (celle de la feuille de style).
+    act(() => store().setActivity('bob', null));
+    expect(dot('Bob').style.backgroundColor).toBe('');
+    expect(dot('Bob').hasAttribute('data-activity')).toBe(false);
   });
 
   test('un nom et une adresse trop longs sont coupés à l\'écran, et leur infobulle les donne entiers', async () => {
@@ -812,6 +1124,40 @@ describe('membres', () => {
     await openPanel();
     expect(within(membersSection()).getByText(longName).getAttribute('title')).toBe(longName);
     expect(within(membersSection()).getByText(longEmail).getAttribute('title')).toBe(longEmail);
+  });
+
+  test('plus de six membres : un champ de recherche, dans le nom et l\'adresse, sans accents ni majuscules ; Échap l\'efface, puis ferme le panneau', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const many = ['Dora', 'Élise', 'Farid', 'Gaëlle'].map((name, index) => ({ id: `m${index}`, name, email: `${name.toLowerCase()}@y.fr`, role: 'member' as Role }));
+    serve({ members: [...MEMBERS, ...many] });
+    await openPanel({ onClose });
+    const search = within(membersSection()).getByRole('searchbox', { name: fr.admin.members.search });
+    const names = () => within(membersSection()).getAllByRole('listitem').map((row) => row.querySelector('.admin-row-name')?.textContent);
+    expect(names()).toHaveLength(7);
+
+    await user.type(search, 'CLEO');
+    expect(names()).toEqual(['Cléo']);
+    await user.clear(search);
+    await user.type(search, 'y.fr');
+    expect(names()).toEqual(['Dora', 'Élise', 'Farid', 'Gaëlle']);
+    await user.clear(search);
+    await user.type(search, 'zz');
+    expect(within(membersSection()).queryByRole('list')).toBeNull();
+    expect(within(membersSection()).getByText(t(fr.admin.members.noMatch, { query: 'zz' }))).toBeTruthy();
+
+    await user.keyboard('{Escape}');
+    expect((search as HTMLInputElement).value).toBe('');
+    expect(names()).toHaveLength(7);
+    expect(onClose).not.toHaveBeenCalled();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  test('six membres ou moins : pas de champ de recherche', async () => {
+    serve();
+    await openPanel();
+    expect(within(membersSection()).queryByRole('searchbox')).toBeNull();
   });
 });
 
@@ -830,7 +1176,7 @@ describe('retirer un membre', () => {
     const { api } = serve({}, removeBob);
     await openPanel();
 
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     // Rien n'est parti : une boîte de dialogue demande de confirmer, en nommant la personne.
     const confirmation = screen.getByRole('alertdialog', { name: t(fr.admin.removal.title, { name: 'Bob' }) });
     expect(countOf(api, 'DELETE /api/admin/members/bob')).toBe(0);
@@ -843,12 +1189,12 @@ describe('retirer un membre', () => {
     expect(within(membersSection()).getByText('Bob')).toBeTruthy();
 
     // Confirmé : la demande part, la liste est relue, Bob n'y est plus.
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.click(dialogButton(fr.admin.removal.confirm));
     await waitFor(() => expect(within(membersSection()).queryByText('Bob')).toBeNull());
     expect(routesOf(api).slice(-2)).toEqual(['DELETE /api/admin/members/bob', 'GET /api/admin/members']);
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(within(panel()).getByRole('heading', { level: 3, name: 'Membres (2)' })).toBeTruthy();
+    expect(within(panel()).getByRole('tab', { name: 'Membres 2' })).toBeTruthy();
     expect(within(membersSection()).getByText(t(fr.admin.members.removed, { name: 'Bob' }))).toBeTruthy();
   });
 
@@ -856,30 +1202,30 @@ describe('retirer un membre', () => {
     const user = userEvent.setup();
     serve();
     await openPanel();
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
 
     const confirmation = dialog();
     expect(confirmation.getAttribute('aria-modal')).toBe('true');
-    expect(confirmation.getAttribute('aria-labelledby')).toBe(within(confirmation).getByRole('heading', { name: 'Retirer Bob ?' }).id);
+    expect(confirmation.getAttribute('aria-labelledby')).toBe(within(confirmation).getByRole('heading', { name: 'Retirer Bob du bureau ?' }).id);
     expect(confirmation.getAttribute('aria-describedby')).toBe(within(confirmation).getByText(t(fr.admin.removal.body, { email: 'bob@x.fr' })).id);
     expect(document.activeElement).toBe(dialogButton(fr.admin.removal.cancel));
     expect(within(confirmation).getAllByRole('button').map((button) => button.textContent)).toEqual([fr.admin.removal.cancel, fr.admin.removal.confirm]);
   });
 
-  test('Annuler et Échap la ferment sans rien envoyer, et le focus revient au bouton Retirer', async () => {
+  test('Annuler et Échap la ferment sans rien envoyer, et le focus revient au bouton « … » du membre', async () => {
     const user = userEvent.setup();
     const { api } = serve();
     await openPanel();
 
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.click(dialogButton(fr.admin.removal.cancel));
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(document.activeElement).toBe(removeButton('Bob'));
+    expect(document.activeElement).toBe(actionsButton('Bob'));
 
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(document.activeElement).toBe(removeButton('Bob'));
+    expect(document.activeElement).toBe(actionsButton('Bob'));
 
     expect(routesOf(api).filter((route) => route.startsWith('DELETE'))).toEqual([]);
   });
@@ -890,7 +1236,7 @@ describe('retirer un membre', () => {
     const user = userEvent.setup();
     const { api } = serve();
     await openPanel();
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     expect(document.activeElement).toBe(dialogButton(fr.admin.removal.cancel));
 
     await user.click(dialog().parentElement!);
@@ -912,7 +1258,7 @@ describe('retirer un membre', () => {
     const onClose = vi.fn();
     serve();
     await openPanel({ onClose });
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.keyboard('{Escape}');
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(onClose).not.toHaveBeenCalled();
@@ -925,7 +1271,7 @@ describe('retirer un membre', () => {
     const user = userEvent.setup();
     serve();
     await openPanel();
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     const cancel = dialogButton(fr.admin.removal.cancel);
     const confirm = dialogButton(fr.admin.removal.confirm);
 
@@ -947,7 +1293,7 @@ describe('retirer un membre', () => {
     try {
       serve();
       await openPanel();
-      await user.click(removeButton('Bob'));
+      await remove(user, 'Bob');
       // Touche gardée enfoncée (« > ») : sans la boîte pour la prendre, l'avatar marcherait tant qu'elle l'est.
       await user.keyboard('{ArrowRight>}');
       expect(directions.current()).toBeNull();
@@ -967,7 +1313,7 @@ describe('retirer un membre', () => {
     }
   });
 
-  test('confirmer : « Retrait… » et boutons inactifs pendant la demande, Échap sans effet ; puis la boîte se ferme et le focus va au titre des membres', async () => {
+  test('confirmer : « Retrait… » et boutons inactifs pendant la demande, Échap sans effet ; puis la boîte se ferme et le focus va à l\'onglet', async () => {
     const user = userEvent.setup();
     const reply = deferred<Response>();
     const { api } = serve({}, (state) => ({
@@ -978,7 +1324,7 @@ describe('retirer un membre', () => {
       },
     }));
     await openPanel();
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.click(dialogButton(fr.admin.removal.confirm));
 
     // Inactifs par aria-disabled : le focus reste sur le bouton pris, dans la boîte.
@@ -994,28 +1340,28 @@ describe('retirer un membre', () => {
     await act(async () => reply.resolve(json(200, { ok: true })));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
     await waitFor(() => expect(within(membersSection()).queryByText('Bob')).toBeNull());
-    // La ligne n'existe plus : le focus va au titre de la section, d'où la lecture continue.
-    expect(document.activeElement).toBe(within(panel()).getByRole('heading', { level: 3, name: 'Membres (2)' }));
+    // La ligne n'existe plus : le focus va à l'onglet, d'où la lecture continue.
+    expect(document.activeElement).toBe(tabpanel());
   });
 
-  // Le bouton manque à sa propre ligne, mais le serveur refuse aussi : ici, un panneau qui ne se reconnaît pas (selfId d'un autre compte).
+  // Soi-même n'a pas de menu, mais le serveur refuse aussi : ici, un panneau qui ne se reconnaît pas (selfId d'un autre compte).
   test.each([
     ['soi-même (400)', 400, { error: 'self' }, () => fr.admin.errors.self],
     ['le dernier admin (400)', 400, { error: 'last_admin' }, () => fr.admin.errors.lastAdmin],
     ['la session a expiré (401)', 401, { error: 'unauthorized' }, () => fr.admin.errors.unauthorized],
     ['plus admin (403)', 403, { error: 'forbidden' }, () => fr.admin.errors.forbidden],
     ['erreur du serveur (500)', 500, { error: 'internal' }, () => fr.common.errors.unexpected],
-  ])('refus du serveur (%s) : le message est dans la section, la boîte se ferme, le focus revient au bouton, la liste est intacte', async (_case, status, body, message) => {
+  ])('refus du serveur (%s) : le message est dans la liste, la boîte se ferme, le focus revient au bouton « … », la liste est intacte', async (_case, status, body, message) => {
     const user = userEvent.setup();
     serve({}, () => ({ 'DELETE /api/admin/members/ada': () => json(status, body) }));
     await openPanel({ selfId: 'quelqu-un-d-autre' });
 
-    await user.click(removeButton('Ada'));
+    await remove(user, 'Ada');
     await user.click(dialogButton(fr.admin.removal.confirm));
 
     expect((await within(membersSection()).findByRole('alert')).textContent).toBe(message());
     expect(screen.queryByRole('alertdialog')).toBeNull();
-    expect(document.activeElement).toBe(removeButton('Ada'));
+    expect(document.activeElement).toBe(actionsButton('Ada'));
     expect(within(membersSection()).getAllByRole('listitem')).toHaveLength(3);
   });
 
@@ -1030,7 +1376,7 @@ describe('retirer un membre', () => {
       },
     }));
     const outside = await openPanelBeside();
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.click(dialogButton(fr.admin.removal.confirm));
     outside.focus();
 
@@ -1049,20 +1395,20 @@ describe('retirer un membre', () => {
       },
     }));
     await openPanel();
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.click(dialogButton(fr.admin.removal.confirm));
 
     expect((await within(membersSection()).findByRole('alert')).textContent).toBe(fr.admin.errors.notFoundMember);
     await waitFor(() => expect(within(membersSection()).queryByText('Bob')).toBeNull());
     expect(countOf(api, 'GET /api/admin/members')).toBe(2);
-    expect(document.activeElement).toBe(within(panel()).getByRole('heading', { level: 3, name: 'Membres (2)' }));
+    expect(document.activeElement).toBe(tabpanel());
   });
 
   test('serveur injoignable : le message réseau, la boîte se ferme', async () => {
     const user = userEvent.setup();
     serve({}, () => ({ 'DELETE /api/admin/members/bob': () => { throw new TypeError('Failed to fetch'); } }));
     await openPanel();
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.click(dialogButton(fr.admin.removal.confirm));
     expect((await within(membersSection()).findByRole('alert')).textContent).toBe(fr.common.errors.network);
     expect(screen.queryByRole('alertdialog')).toBeNull();
@@ -1073,7 +1419,7 @@ describe('retirer un membre', () => {
     const odd = { id: 'a/b c', name: 'Zoé', email: 'zoe@x.fr', role: 'member' as Role };
     const { api } = serve({ members: [ADA, odd] }, () => ({ 'DELETE /api/admin/members/a%2Fb%20c': () => json(200, { ok: true }) }));
     await openPanel();
-    await user.click(removeButton('Zoé'));
+    await remove(user, 'Zoé');
     await user.click(dialogButton(fr.admin.removal.confirm));
     await waitFor(() => expect(countOf(api, 'DELETE /api/admin/members/a%2Fb%20c')).toBe(1));
   });
@@ -1101,6 +1447,8 @@ describe('quelqu\'un que les listes ne connaissent pas arrive en ligne', () => {
     await waitFor(() => expect(within(pendingSection()).queryByText('nina@x.fr')).toBeNull());
     expect(countOf(api, 'GET /api/admin/members')).toBe(2);
     expect(countOf(api, 'GET /api/admin/invitations')).toBe(2);
+    // Elle est là : sa ligne dit « En ligne ».
+    expect(rowOf(membersSection(), 'Nina').getAttribute('data-online')).toBe('true');
 
     // Un membre déjà connu qui arrive ne relit rien.
     act(() => store().upsertPlayer(player('bob', 'Bob')));
@@ -1139,11 +1487,12 @@ describe('quelqu\'un que les listes ne connaissent pas arrive en ligne', () => {
 // ---- Sans e-mail : des liens à transmettre ----------------------------------------------------------------------------------------
 
 // Avec MAILER=none, rien ne part par e-mail : le serveur rend le lien (`link`) de l'invitation créée ou renvoyée, et celui d'un
-// mot de passe. Le panneau le montre une fois, dans une boîte à copier, sous le geste qui l'a produit.
+// mot de passe. Le panneau le montre une fois, dans une boîte à copier (le ticket) : dans la carte du formulaire, ou en tête de l'onglet
+// du geste qui l'a produit.
 const LINK = 'https://bureau.exemple.fr/rejoindre?token=jeton-nina';
 const OTHER_LINK = 'https://bureau.exemple.fr/rejoindre?token=jeton-tom';
 const RESET_LINK = 'https://bureau.exemple.fr/api/auth/reset-password/jeton-bob?callbackURL=https%3A%2F%2Fbureau.exemple.fr%2Freinitialiser';
-const DAYS = INVITATION_TTL_MS / (24 * 3600 * 1000);
+const DAYS = INVITATION_TTL_MS / DAY;
 
 // Le presse-papiers du navigateur : `writeText` simulé, ou rien du tout (une page en http, hors localhost, n'a pas navigator.clipboard).
 function stubClipboard(writeText?: (text: string) => Promise<void>) {
@@ -1155,7 +1504,7 @@ afterEach(() => {
   Reflect.deleteProperty(navigator, 'clipboard');
 });
 
-// La boîte d'une section : le groupe nommé par la phrase qui la présente.
+// La boîte d'une partie du panneau : le groupe nommé par la phrase qui la présente.
 const boxIn = (section: HTMLElement, intro: string) => within(section).findByRole('group', { name: intro });
 const noBoxIn = (section: HTMLElement) => expect(within(section).queryByRole('group')).toBeNull();
 const fieldOf = (box: HTMLElement) => within(box).getByRole('textbox') as HTMLInputElement;
@@ -1180,6 +1529,7 @@ describe('inviter sans e-mail', () => {
     const user = userEvent.setup();
     const { api } = serve({}, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     noBoxIn(inviteSection());
 
     await invite(user, 'nina@x.fr');
@@ -1190,7 +1540,7 @@ describe('inviter sans e-mail', () => {
     expect(field.value).toBe(LINK);
     expect(field.readOnly).toBe(true);
     expect(within(box).getByRole('button', { name: fr.admin.link.copy })).toBeTruthy();
-    // Sept jours, et pas redonné : l'admin sait qu'il doit le transmettre maintenant, ou renvoyer l'invitation.
+    // Sept jours, et pas redonné : l'admin sait qu'il doit le transmettre maintenant, ou demander un nouveau lien.
     expect(within(box).getByText(t(fr.admin.invite.validity, { days: DAYS }))).toBeTruthy();
     expect(DAYS).toBe(7);
     expect(fr.admin.invite.validity).toMatch(/plus affiché/);
@@ -1211,6 +1561,7 @@ describe('inviter sans e-mail', () => {
     const user = userEvent.setup();
     serve({}, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     const live = inviteSection().querySelector('.admin-link > [aria-live="polite"]')!;
     expect(live.textContent).toBe('');
 
@@ -1224,7 +1575,7 @@ describe('inviter sans e-mail', () => {
     expect(live.textContent).not.toContain(LINK);
     expect(live.textContent).not.toContain('jeton-nina');
     expect(live.textContent).not.toContain(t(fr.admin.invite.validity, { days: DAYS }));
-    // Aucune région vivante de la section ne porte un champ ou un bouton, ni le lien.
+    // Aucune région vivante de la carte ne porte un champ ou un bouton, ni le lien.
     for (const region of inviteSection().querySelectorAll('[aria-live]')) {
       expect(region.querySelector('input, button')).toBeNull();
       expect(region.textContent).not.toContain('jeton-nina');
@@ -1234,25 +1585,28 @@ describe('inviter sans e-mail', () => {
     expect(document.activeElement).toBe(copyOf(box));
   });
 
-  test('sans boîte, la région vivante de la section est vide et le conteneur n\'est pas un groupe', async () => {
+  test('sans boîte, la région vivante de chaque partie est vide et le conteneur n\'est pas un groupe', async () => {
+    const user = userEvent.setup();
     serve();
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     for (const section of [inviteSection(), pendingSection(), membersSection()]) {
       expect(section.querySelector('.admin-link > [aria-live="polite"]')?.textContent).toBe('');
-      expect(within(section).queryByRole('group')).toBeNull();
+      expect(section.querySelector('[role="group"]')).toBeNull();
     }
   });
 
-  test('« Copier le lien » met le lien dans le presse-papiers et dit « Copié »', async () => {
+  test('« Copier le lien » met le lien dans le presse-papiers, dit « Lien copié. », et le bouton montre une coche', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => {});
     serve({}, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     const box = await boxIn(inviteSection(), created);
     stubClipboard(writeText);
     expect(within(box).queryByText(fr.admin.link.copied)).toBeNull();
-    // « Copié » s'écrit dans une région vivante déjà là, vide : un lecteur d'écran l'annonce.
+    // « Lien copié. » s'écrit dans une région vivante déjà là, vide : un lecteur d'écran l'annonce.
     const feedback = box.querySelector('.admin-link-copied')!;
     expect(feedback.getAttribute('aria-live')).toBe('polite');
     expect(feedback.textContent).toBe('');
@@ -1263,6 +1617,7 @@ describe('inviter sans e-mail', () => {
     expect(writeText).toHaveBeenCalledWith(LINK);
     expect(await within(box).findByText(fr.admin.link.copied)).toBe(feedback);
     expect(within(box).queryByText(fr.admin.link.selected)).toBeNull();
+    expect(copyOf(box).classList.contains('is-accent')).toBe(true);
     // Le focus reste sur le bouton.
     expect(document.activeElement).toBe(copyOf(box));
   });
@@ -1274,6 +1629,7 @@ describe('inviter sans e-mail', () => {
     const user = userEvent.setup();
     serve({}, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     const box = await boxIn(inviteSection(), created);
     arrange();
@@ -1291,31 +1647,81 @@ describe('inviter sans e-mail', () => {
     const user = userEvent.setup();
     serve({}, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     const field = fieldOf(await boxIn(inviteSection(), created));
     await user.click(field);
     expect([field.selectionStart, field.selectionEnd]).toEqual([0, LINK.length]);
   });
 
-  test('« Masquer » ferme la boîte et rend le focus au champ de l\'adresse', async () => {
+  test('« Masquer le lien » ferme la boîte et rend le focus au champ de l\'adresse', async () => {
     const user = userEvent.setup();
     serve({}, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     const box = await boxIn(inviteSection(), created);
 
     await user.click(dismissOf(box));
 
     noBoxIn(inviteSection());
-    expect(within(inviteSection()).queryByText(LINK)).toBeNull();
+    expect(within(inviteSection()).queryByDisplayValue(LINK)).toBeNull();
     expect(document.activeElement).toBe(emailField());
   });
 
-  test('le résultat suivant remplace la boîte : le nouveau lien, « Copié » oublié', async () => {
+  // Le serveur ne redonne pas le lien : la carte qui l'attend ne se ferme pas avant de l'avoir montré (sinon il arriverait là où rien
+  // ne le montre, perdu sans un mot).
+  test('pendant la création : la croix, « Inviter » (aria-disabled, ils gardent le focus) et Échap ne ferment ni la carte ni le panneau ; le lien arrive dans la carte', async () => {
+    const user = userEvent.setup();
+    const onClose = vi.fn();
+    const reply = deferred<Response>();
+    serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
+    await openPanel({ mail: 'none', onClose });
+    await openInvite(user);
+    await user.type(emailField(), 'nina@x.fr{Enter}');
+    expect(submitButton().textContent).toBe(fr.admin.invite.creating);
+
+    const close = within(inviteSection()).getByRole('button', { name: fr.admin.invite.close });
+    expect(close.getAttribute('aria-disabled')).toBe('true');
+    expect(inviteToggle().getAttribute('aria-disabled')).toBe('true');
+    await user.keyboard('{Escape}');
+    await user.click(close);
+    expect(document.activeElement).toBe(close);
+    await user.click(inviteToggle());
+    expect(document.activeElement).toBe(inviteToggle());
+    expect(inviteSection()).toBeTruthy();
+    expect(onClose).not.toHaveBeenCalled();
+
+    await act(async () => reply.resolve(json(201, { ...invitation('inv-nina', 'nina@x.fr'), link: LINK })));
+    const box = await boxIn(inviteSection(), created);
+    expect((within(box).getByRole('textbox', { name: created }) as HTMLInputElement).value).toBe(LINK);
+    // La réponse arrivée, la carte se ferme de nouveau.
+    expect(close.hasAttribute('aria-disabled')).toBe(false);
+    expect(inviteToggle().hasAttribute('aria-disabled')).toBe(false);
+    await user.click(inviteToggle());
+    expect(within(panel()).queryByRole('region', { name: fr.admin.invite.title })).toBeNull();
+  });
+
+  test('fermer la carte masque son lien : rouverte, elle repart à neuf', async () => {
+    const user = userEvent.setup();
+    serve({}, postWithLink({ 'nina@x.fr': LINK }));
+    await openPanel({ mail: 'none' });
+    await openInvite(user);
+    await invite(user, 'nina@x.fr');
+    await boxIn(inviteSection(), created);
+
+    await user.click(inviteToggle());
+    expect(document.activeElement).toBe(inviteToggle());
+    await openInvite(user);
+    noBoxIn(inviteSection());
+  });
+
+  test('le résultat suivant remplace la boîte : le nouveau lien, « Lien copié. » oublié', async () => {
     const user = userEvent.setup();
     stubClipboard(vi.fn(async () => {}));
     serve({}, postWithLink({ 'nina@x.fr': LINK, 'tom@x.fr': OTHER_LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     await user.click(copyOf(await boxIn(inviteSection(), created)));
     await within(inviteSection()).findByText(fr.admin.link.copied);
@@ -1334,6 +1740,7 @@ describe('inviter sans e-mail', () => {
     const user = userEvent.setup();
     serve({ invitations: [invitation('inv-tom', 'tom@x.fr')] }, postWithLink({ 'nina@x.fr': LINK }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     await boxIn(inviteSection(), created);
 
@@ -1354,6 +1761,7 @@ describe('inviter sans e-mail', () => {
       },
     }));
     await openPanel({ mail: 'resend' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     expect(await within(inviteSection()).findByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }))).toBeTruthy();
     noBoxIn(inviteSection());
@@ -1364,6 +1772,7 @@ describe('inviter sans e-mail', () => {
     const user = userEvent.setup();
     serve({}, () => ({ 'POST /api/admin/invitations': () => new Response(null, { status: 201 }) }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await invite(user, 'nina@x.fr');
     expect(await within(inviteSection()).findByText(t(fr.admin.invite.sent, { email: 'nina@x.fr' }))).toBeTruthy();
     expect(within(inviteSection()).queryByRole('alert')).toBeNull();
@@ -1375,6 +1784,7 @@ describe('inviter sans e-mail', () => {
     const reply = deferred<Response>();
     serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
     const outside = await openPanelBeside({ mail: 'none' });
+    await openInvite(user);
     await user.type(emailField(), 'nina@x.fr');
     await user.click(submitButton());
     outside.focus();
@@ -1402,6 +1812,7 @@ describe('libellés sans e-mail', () => {
     ] as const) {
       serve();
       const view = await openPanel({ mail });
+      fireEvent.click(inviteToggle());
       expect(submitButton().textContent, String(mail)).toBe(label);
       expect(within(inviteSection()).queryAllByRole('button', { name: mail === 'none' ? fr.admin.invite.submit : fr.admin.invite.create })).toEqual([]);
       view.unmount();
@@ -1411,16 +1822,18 @@ describe('libellés sans e-mail', () => {
   test('le libellé suit le mode quand il arrive après l\'ouverture (la configuration se lit à l\'ouverture)', async () => {
     serve();
     const view = await openPanel({ mail: undefined });
+    fireEvent.click(inviteToggle());
     expect(submitButton().textContent).toBe(fr.admin.invite.submit);
     view.rerender(<AdminPanel id="panneau-admin" selfId={ADA.id} mail="none" onClose={() => {}} />);
     expect(submitButton().textContent).toBe(fr.admin.invite.create);
   });
 
-  test('pendant la création : « Création… » avec none, « Envoi… » sinon', async () => {
+  test('pendant la création : « Création… » avec none', async () => {
     const user = userEvent.setup();
     const reply = deferred<Response>();
     serve({}, () => ({ 'POST /api/admin/invitations': () => reply.promise }));
     await openPanel({ mail: 'none' });
+    await openInvite(user);
     await user.type(emailField(), 'nina@x.fr');
     await user.click(submitButton());
     expect(submitButton().textContent).toBe(fr.admin.invite.creating);
@@ -1430,30 +1843,33 @@ describe('libellés sans e-mail', () => {
     await waitFor(() => expect(submitButton().textContent).toBe(fr.admin.invite.create));
   });
 
-  test('invitations en attente : « Nouveau lien » avec none (nom accessible dit pour qui), « Renvoyer » sinon', async () => {
+  test('le menu d\'une invitation : « Nouveau lien » avec none, « Renvoyer l\'invitation » sinon', async () => {
+    const user = userEvent.setup();
     expect(fr.admin.pending.renew).toBe('Nouveau lien');
-    serve({ invitations: PENDING });
-    const none = await openPanel({ mail: 'none' });
-    expect(renewButton('nina@x.fr').textContent).toBe(fr.admin.pending.renew);
-    expect(within(pendingSection()).queryByRole('button', { name: t(fr.admin.pending.resendLabel, { email: 'nina@x.fr' }) })).toBeNull();
-    expect(within(pendingSection()).queryByText(fr.admin.pending.resend)).toBeNull();
-    none.unmount();
-
-    for (const mail of ['resend', 'memory', null, undefined] as const) {
+    for (const [mail, label] of [
+      ['none', fr.admin.pending.renew],
+      ['resend', fr.admin.pending.resend],
+      ['memory', fr.admin.pending.resend],
+      [null, fr.admin.pending.resend],
+      [undefined, fr.admin.pending.resend],
+    ] as const) {
       serve({ invitations: PENDING });
-      const view = await openPanel({ mail });
-      expect(resendButton('nina@x.fr').textContent, String(mail)).toBe(fr.admin.pending.resend);
-      expect(within(pendingSection()).queryByText(fr.admin.pending.renew), String(mail)).toBeNull();
+      const view = await openPanel({ mail, tab: 'invitations' });
+      const menu = await openActions(user, 'nina@x.fr');
+      expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent), String(mail)).toEqual([label, fr.admin.pending.revoke]);
       view.unmount();
     }
   });
 
-  test('aucun libellé de bouton du panneau ne parle d\'e-mail ou d\'envoi avec none', async () => {
+  test('aucun libellé de bouton ni de ligne de menu ne parle d\'e-mail ou d\'envoi avec none', async () => {
+    const user = userEvent.setup();
     serve({ invitations: PENDING });
-    await openPanel({ mail: 'none' });
-    const names = within(panel())
-      .getAllByRole('button')
-      .map((button) => button.getAttribute('aria-label') ?? button.textContent ?? '');
+    await openPanel({ mail: 'none', tab: 'invitations' });
+    await openInvite(user);
+    await openActions(user, 'nina@x.fr');
+    const names = [...within(panel()).getAllByRole('button'), ...screen.getAllByRole('menuitem')].map(
+      (button) => button.getAttribute('aria-label') ?? button.textContent ?? '',
+    );
     expect(names.filter((name) => /e-mail|envoy|renvoy/i.test(name))).toEqual([]);
   });
 });
@@ -1468,13 +1884,13 @@ describe('renvoyer une invitation sans e-mail', () => {
     },
   });
 
-  test('le serveur rend un lien : la boîte est sous « Invitations en attente », et on ne dit pas qu\'un e-mail est reparti', async () => {
+  test('le serveur rend un lien : la boîte est en tête de l\'onglet Invitations, et on ne dit pas qu\'un e-mail est reparti', async () => {
     const user = userEvent.setup();
     const { api } = serve({ invitations: PENDING }, resendWithLink);
-    await openPanel({ mail: 'none' });
+    await openPanel({ mail: 'none', tab: 'invitations' });
     noBoxIn(pendingSection());
 
-    await user.click(renewButton('nina@x.fr'));
+    await renew(user, 'nina@x.fr');
     const box = await boxIn(pendingSection(), renewed);
 
     expect(fieldOf(box).value).toBe(LINK);
@@ -1483,16 +1899,16 @@ describe('renvoyer une invitation sans e-mail', () => {
     expect(within(pendingSection()).queryByText(t(fr.admin.pending.resent, { email: 'nina@x.fr' }))).toBeNull();
     expect(routesOf(api).slice(-2)).toEqual(['POST /api/admin/invitations/inv-nina/resend', 'GET /api/admin/invitations']);
     expect(document.activeElement).toBe(copyOf(box));
-    // La boîte précède la liste : elle est sous le titre et les messages, au-dessus des invitations.
+    // La boîte précède la liste : elle est sous les messages, au-dessus des invitations.
     expect(box.compareDocumentPosition(within(pendingSection()).getByRole('list')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  test('copier, masquer : comme sous le formulaire, et le focus revient à « Renvoyer »', async () => {
+  test('copier, masquer : comme dans la carte du formulaire, et le focus revient au bouton « … » de l\'invitation', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => {});
     serve({ invitations: PENDING }, resendWithLink);
-    await openPanel({ mail: 'none' });
-    await user.click(renewButton('nina@x.fr'));
+    await openPanel({ mail: 'none', tab: 'invitations' });
+    await renew(user, 'nina@x.fr');
     const box = await boxIn(pendingSection(), renewed);
     stubClipboard(writeText);
 
@@ -1502,7 +1918,7 @@ describe('renvoyer une invitation sans e-mail', () => {
 
     await user.click(dismissOf(box));
     noBoxIn(pendingSection());
-    expect(document.activeElement).toBe(renewButton('nina@x.fr'));
+    expect(document.activeElement).toBe(actionsButton('nina@x.fr'));
   });
 
   test('renvoyer une autre invitation remplace la boîte', async () => {
@@ -1511,10 +1927,10 @@ describe('renvoyer une invitation sans e-mail', () => {
       ...resendWithLink(state),
       'POST /api/admin/invitations/inv-old/resend': () => json(200, { ok: true, link: OTHER_LINK }),
     }));
-    await openPanel({ mail: 'none' });
-    await user.click(renewButton('nina@x.fr'));
+    await openPanel({ mail: 'none', tab: 'invitations' });
+    await renew(user, 'nina@x.fr');
     await boxIn(pendingSection(), renewed);
-    await user.click(renewButton('old@x.fr'));
+    await renew(user, 'old@x.fr');
     const second = await boxIn(pendingSection(), t(fr.admin.pending.renewed, { email: 'old@x.fr' }));
 
     expect(within(pendingSection()).getAllByRole('group')).toHaveLength(1);
@@ -1534,15 +1950,15 @@ describe('renvoyer une invitation sans e-mail', () => {
         return json(200, { ok: true });
       },
     }));
-    await openPanel({ mail: 'none' });
-    await user.click(renewButton('nina@x.fr'));
+    await openPanel({ mail: 'none', tab: 'invitations' });
+    await renew(user, 'nina@x.fr');
     await boxIn(pendingSection(), renewed);
 
-    await user.click(revokeButton('old@x.fr'));
+    await revoke(user, 'old@x.fr');
     await waitFor(() => expect(within(pendingSection()).queryByText('old@x.fr')).toBeNull());
     expect(within(pendingSection()).getByRole('group', { name: renewed })).toBeTruthy();
 
-    await user.click(revokeButton('nina@x.fr'));
+    await revoke(user, 'nina@x.fr');
     await waitFor(() => expect(within(pendingSection()).queryByText('nina@x.fr')).toBeNull());
     noBoxIn(pendingSection());
   });
@@ -1550,37 +1966,37 @@ describe('renvoyer une invitation sans e-mail', () => {
   test('sans lien dans la réponse (e-mail renvoyé), le message d\'avant, pas de boîte', async () => {
     const user = userEvent.setup();
     serve({ invitations: PENDING }, () => ({ 'POST /api/admin/invitations/inv-nina/resend': () => json(200, { ok: true }) }));
-    await openPanel({ mail: 'resend' });
-    await user.click(resendButton('nina@x.fr'));
+    await openPanel({ mail: 'resend', tab: 'invitations' });
+    await resend(user, 'nina@x.fr');
     expect(await within(pendingSection()).findByText(t(fr.admin.pending.resent, { email: 'nina@x.fr' }))).toBeTruthy();
     noBoxIn(pendingSection());
   });
 });
 
 describe('lien de mot de passe', () => {
-  const passwordLink = (name: string) => within(membersSection()).queryByRole('button', { name: t(fr.admin.members.passwordLinkLabel, { name }) }) as HTMLButtonElement | null;
+  const passwordItem = (menu: HTMLElement) => within(menu).queryByRole('menuitem', { name: fr.admin.members.passwordLink });
+  const askPasswordLink = (user: User, name: string) => choose(user, name, fr.admin.members.passwordLink);
   const introFor = (name: string) => t(fr.admin.members.passwordLinkIntro, { name });
   const resetLinkOf = (id: string, reply: () => Response | Promise<Response>) => ({ [`POST /api/admin/members/${id}/reset-link`]: reply });
 
-  test('avec MAILER=none : un bouton par membre, sauf pour soi-même', async () => {
+  test('avec MAILER=none : une ligne « Lien de mot de passe » dans le menu de chaque membre ; soi-même n\'a pas de menu', async () => {
+    const user = userEvent.setup();
     serve();
     await openPanel({ mail: 'none' });   // ADA est le compte connecté
-    expect(passwordLink('Bob')).not.toBeNull();
-    expect(passwordLink('Cléo')).not.toBeNull();
-    expect(passwordLink('Ada')).toBeNull();
-    expect(within(rowOf(membersSection(), 'Ada')).queryByRole('button')).toBeNull();   // ni ce bouton, ni « Retirer »
-    // Le bouton se lit « Lien de mot de passe », et son nom dit pour qui.
-    expect(passwordLink('Bob')!.textContent).toBe('Lien de mot de passe');
+    const bob = await openActions(user, 'Bob');
+    expect(within(bob).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([fr.admin.members.passwordLink, fr.admin.members.remove]);
     expect(fr.admin.members.passwordLink).toBe('Lien de mot de passe');
-    // « Retirer » reste là, à côté.
-    expect(removeButton('Bob')).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(passwordItem(await openActions(user, 'Cléo'))).not.toBeNull();
+    expect(within(rowOf(membersSection(), 'Ada')).queryByRole('button')).toBeNull();
   });
 
-  test('le compte connecté est celui de selfId : avec Cléo, c\'est Ada qui a le bouton', async () => {
+  test('le compte connecté est celui de selfId : avec Cléo, c\'est Ada qui a le menu', async () => {
+    const user = userEvent.setup();
     serve();
     await openPanel({ mail: 'none', selfId: CLEO.id });
-    expect(passwordLink('Cléo')).toBeNull();
-    expect(passwordLink('Ada')).not.toBeNull();
+    expect(within(rowOf(membersSection(), 'Cléo')).queryByRole('button')).toBeNull();
+    expect(passwordItem(await openActions(user, 'Ada'))).not.toBeNull();
   });
 
   test.each([
@@ -1588,20 +2004,20 @@ describe('lien de mot de passe', () => {
     ['null', null],
     ['MAILER=resend', 'resend'],
     ['MAILER=memory', 'memory'],
-  ] as const)('%s : aucun bouton « Lien de mot de passe », les lignes sont celles d\'avant', async (_name, mail) => {
+  ] as const)('%s : pas de « Lien de mot de passe », le menu n\'a que « Retirer du bureau »', async (_name, mail) => {
+    const user = userEvent.setup();
     serve();
     await openPanel({ mail });
-    expect(within(membersSection()).queryAllByRole('button', { name: /mot de passe/i })).toEqual([]);
-    expect(removeButton('Bob')).toBeTruthy();
-    expect(within(membersSection()).getAllByRole('button').map((button) => button.textContent)).toEqual([fr.admin.members.remove, fr.admin.members.remove]);
+    const menu = await openActions(user, 'Bob');
+    expect(within(menu).getAllByRole('menuitem').map((item) => item.textContent)).toEqual([fr.admin.members.remove]);
   });
 
-  test('un clic demande le lien (POST sans corps) et la boîte le montre, avec la phrase du membre', async () => {
+  test('la ligne demande le lien (POST sans corps) et la boîte le montre, avec la phrase du membre', async () => {
     const user = userEvent.setup();
     const { api } = serve({}, () => resetLinkOf('bob', () => json(200, { link: RESET_LINK })));
     await openPanel({ mail: 'none' });
 
-    await user.click(passwordLink('Bob')!);
+    await askPasswordLink(user, 'Bob');
     const box = await boxIn(membersSection(), introFor('Bob'));
 
     expect(introFor('Bob')).toBe('Ce lien permet de choisir un nouveau mot de passe pour Bob.');
@@ -1619,12 +2035,12 @@ describe('lien de mot de passe', () => {
     expect(within(membersSection()).queryByRole('alert')).toBeNull();
   });
 
-  test('copier et masquer : le focus revient au bouton « Lien de mot de passe » de ce membre', async () => {
+  test('copier et masquer : le focus revient au bouton « … » de ce membre', async () => {
     const user = userEvent.setup();
     const writeText = vi.fn(async () => {});
     serve({}, () => resetLinkOf('bob', () => json(200, { link: RESET_LINK })));
     await openPanel({ mail: 'none' });
-    await user.click(passwordLink('Bob')!);
+    await askPasswordLink(user, 'Bob');
     const box = await boxIn(membersSection(), introFor('Bob'));
     stubClipboard(writeText);
 
@@ -1634,7 +2050,7 @@ describe('lien de mot de passe', () => {
 
     await user.click(dismissOf(box));
     noBoxIn(membersSection());
-    expect(document.activeElement).toBe(passwordLink('Bob'));
+    expect(document.activeElement).toBe(actionsButton('Bob'));
   });
 
   test('le lien d\'un autre membre remplace la boîte', async () => {
@@ -1644,31 +2060,32 @@ describe('lien de mot de passe', () => {
       ...resetLinkOf('cleo', () => json(200, { link: OTHER_LINK })),
     }));
     await openPanel({ mail: 'none' });
-    await user.click(passwordLink('Bob')!);
+    await askPasswordLink(user, 'Bob');
     await boxIn(membersSection(), introFor('Bob'));
-    await user.click(passwordLink('Cléo')!);
+    await askPasswordLink(user, 'Cléo');
     const second = await boxIn(membersSection(), introFor('Cléo'));
     expect(within(membersSection()).getAllByRole('group')).toHaveLength(1);
     expect(fieldOf(second).value).toBe(OTHER_LINK);
   });
 
-  test('pendant la demande : les boutons sont inactifs (aria-disabled), le focus reste, une seule demande part', async () => {
+  test('pendant la demande : les boutons « … » sont inactifs (aria-disabled), le focus reste, une seule demande part', async () => {
     const user = userEvent.setup();
     const reply = deferred<Response>();
     const { api } = serve({}, () => resetLinkOf('bob', () => reply.promise));
     await openPanel({ mail: 'none' });
-    await user.click(passwordLink('Bob')!);
+    await askPasswordLink(user, 'Bob');
 
-    expect(passwordLink('Bob')!.getAttribute('aria-disabled')).toBe('true');
-    expect(passwordLink('Cléo')!.getAttribute('aria-disabled')).toBe('true');
-    expect(document.activeElement).toBe(passwordLink('Bob'));
+    expect(actionsButton('Bob').getAttribute('aria-disabled')).toBe('true');
+    expect(actionsButton('Cléo').getAttribute('aria-disabled')).toBe('true');
+    expect(document.activeElement).toBe(actionsButton('Bob'));
     await user.keyboard('{Enter}');
-    fireEvent.click(passwordLink('Cléo')!);
+    fireEvent.click(actionsButton('Cléo'));
+    expect(screen.queryByRole('menu')).toBeNull();
     expect(routesOf(api).filter((route) => route.startsWith('POST'))).toEqual(['POST /api/admin/members/bob/reset-link']);
 
     await act(async () => reply.resolve(json(200, { link: RESET_LINK })));
     await boxIn(membersSection(), introFor('Bob'));
-    expect(passwordLink('Bob')!.hasAttribute('aria-disabled')).toBe(false);
+    expect(actionsButton('Bob').hasAttribute('aria-disabled')).toBe(false);
   });
 
   test.each([
@@ -1685,13 +2102,13 @@ describe('lien de mot de passe', () => {
     const { api } = serve({}, () => resetLinkOf('bob', reply));
     await openPanel({ mail: 'none' });
 
-    await user.click(passwordLink('Bob')!);
+    await askPasswordLink(user, 'Bob');
 
     expect((await within(membersSection()).findByRole('alert')).textContent).toBe(message);
     noBoxIn(membersSection());
     await waitFor(() => expect(countOf(api, 'GET /api/admin/members')).toBe(reloads ? 2 : 1));
     // 404 : Bob n'est plus là pour tout le monde, la liste est relue (le faux serveur la garde telle quelle ici) ; sinon, le bouton sert encore.
-    if (!reloads) expect(passwordLink('Bob')!.hasAttribute('aria-disabled')).toBe(false);
+    if (!reloads) expect(actionsButton('Bob').hasAttribute('aria-disabled')).toBe(false);
   });
 
   test('retirer le membre fait disparaître son lien', async () => {
@@ -1704,10 +2121,10 @@ describe('lien de mot de passe', () => {
       },
     }));
     await openPanel({ mail: 'none' });
-    await user.click(passwordLink('Bob')!);
+    await askPasswordLink(user, 'Bob');
     await boxIn(membersSection(), introFor('Bob'));
 
-    await user.click(removeButton('Bob'));
+    await remove(user, 'Bob');
     await user.click(dialogButton(fr.admin.removal.confirm));
     await waitFor(() => expect(within(membersSection()).queryByText('Bob')).toBeNull());
     noBoxIn(membersSection());
@@ -1718,7 +2135,7 @@ describe('lien de mot de passe', () => {
     const odd: Member = { id: 'a/b c', name: 'Odd', email: 'odd@x.fr', role: 'member' };
     const { api } = serve({ members: [ADA, odd] }, () => resetLinkOf('a%2Fb%20c', () => json(200, { link: RESET_LINK })));
     await openPanel({ mail: 'none' });
-    await user.click(passwordLink('Odd')!);
+    await askPasswordLink(user, 'Odd');
     await boxIn(membersSection(), introFor('Odd'));
     expect(countOf(api, 'POST /api/admin/members/a%2Fb%20c/reset-link')).toBe(1);
   });

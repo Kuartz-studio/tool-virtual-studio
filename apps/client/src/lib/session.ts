@@ -8,6 +8,9 @@ export interface SessionUser {
   name: string;
   email: string;
   role: Role;
+  // La dernière version de l'appli dont la personne a vu les nouveautés (« 1.00 »), null si elle n'en a vu aucune : la fenêtre « Quoi de neuf ? » se
+  // montre alors (updates/WhatsNew.tsx). undefined quand la session ne le dit pas du tout : on ne sait pas, et la fenêtre ne s'impose pas.
+  lastReleaseSeen?: string | null;
 }
 
 // Le rôle du compte. Better Auth le renvoie avec la session (un champ que le serveur ajoute au compte : auth/auth.ts), sans que le
@@ -15,6 +18,14 @@ export interface SessionUser {
 // lit le rôle de la même façon (require-session.ts), et c'est lui qui refuse (403) un membre qui s'adresserait quand même à /api/admin.
 function roleOf(user: object): Role {
   return (user as { role?: unknown }).role === 'admin' ? 'admin' : 'member';
+}
+
+// La dernière version vue, un autre champ que le serveur ajoute au compte (auth/auth.ts) : un texte, null (aucune vue), ou rien du tout. Le numéro
+// lui-même est vérifié là où il sert (isReleaseBehind) : une valeur abîmée y vaut « aucune version vue ».
+function lastReleaseSeenOf(user: object): string | null | undefined {
+  if (!('lastReleaseSeen' in user)) return undefined;
+  const seen = (user as { lastReleaseSeen?: unknown }).lastReleaseSeen;
+  return typeof seen === 'string' ? seen : null;
 }
 
 export type SessionState =
@@ -41,7 +52,11 @@ export function useCurrentSession(): { state: SessionState; refresh: () => Promi
     try {
       const { data, error } = await authClient.getSession();
       if (error) next = { status: 'error' };
-      else if (data) next = { status: 'signedIn', user: { id: data.user.id, name: data.user.name, email: data.user.email, role: roleOf(data.user) } };
+      else if (data)
+        next = {
+          status: 'signedIn',
+          user: { id: data.user.id, name: data.user.name, email: data.user.email, role: roleOf(data.user), lastReleaseSeen: lastReleaseSeenOf(data.user) },
+        };
       else next = { status: 'signedOut' };
     } catch {
       next = { status: 'error' };

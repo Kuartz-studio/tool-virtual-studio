@@ -71,9 +71,12 @@ export function adminRoutes(d: {
     }
   }
 
+  // Les membres actifs, dans l'ordre d'arrivée : ce que GET /api/members dit déjà à tous (le nom, le personnage, la dernière présence), plus
+  // l'adresse et le rôle, que seul l'admin voit. Le personnage donne son portrait à qui n'est pas en ligne ; `lastSeenAt` (null : jamais
+  // venu au bureau) dit depuis quand on ne l'a plus vu.
   router.get('/members', async (_req, res) => {
     const members = await db
-      .select({ id: user.id, name: user.name, email: user.email, role: user.role })
+      .select({ id: user.id, name: user.name, email: user.email, role: user.role, avatarKey: user.avatarKey, lastSeenAt: user.lastSeenAt })
       .from(user)
       .where(isNull(user.disabledAt))
       .orderBy(asc(user.createdAt), asc(user.id));

@@ -83,6 +83,21 @@ test('le niveau vient du magasin : un changement venu d\'ailleurs (molette, clav
   expect(button(fr.zoom.in).disabled).toBe(false);
 });
 
+test('au plancher que le jeu a calculé, − s\'éteint, et le pourcentage s\'écrit arrondi au pour-cent', async () => {
+  const user = userEvent.setup();
+  render(<ZoomDock />);
+  // Le plancher de la vraie carte sur 1440 × 900 : 33,48 %.
+  act(() => useOfficeStore.getState().setZoomFloor((100 * 900) / 1792 / 1.5));
+  act(() => useOfficeStore.getState().setZoomPercent(40));
+  await user.click(button(fr.zoom.out));
+  expect(readout()).toBe('33 %');
+  expect(button(fr.zoom.out).disabled).toBe(true);
+  // + repart sur la grille de 10 : 40 %.
+  await user.click(button(fr.zoom.in));
+  expect(readout()).toBe('40 %');
+  expect(button(fr.zoom.out).disabled).toBe(false);
+});
+
 test('les touches du clavier sont dites dans l\'infobulle', () => {
   render(<ZoomDock />);
   expect(button(fr.zoom.in).querySelector('.icon-tip kbd')?.textContent).toBe('+');

@@ -250,7 +250,7 @@ export function PeoplePanel({
           });
         }}
       >
-        <AvatarPortrait avatarKey={person.avatarKey} name={person.name} size={38} status={person.status} />
+        <AvatarPortrait avatarKey={person.avatarKey} name={person.name} size={38} status={person.status} activity={person.activity} />
         <span className="person-text">
           <span className="person-head">
             {/* Un nom trop long est coupé (« … ») : l'infobulle le donne en entier. */}

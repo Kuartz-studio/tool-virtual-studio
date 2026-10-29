@@ -49,6 +49,9 @@ export interface OfficeDebug {
   editorRoom(): { x: number; y: number } | null;
   // Le zoom de la caméra en ce moment (celui de la vue de départ, multiplié par le niveau choisi).
   zoom(): number;
+  // La caméra telle qu'elle a dessiné la dernière image : le point de la carte au centre de la vue (en pixels de la carte : le milieu de l'avatar
+  // quand elle le suit) et son zoom. Relevée à chaque image, elle dit si la caméra glisse ou saute.
+  camera(): { x: number; y: number; zoom: number };
   // La nuit en ce moment, de 0 (la lumière est allumée : la couche de nuit n'est pas à l'écran) à 1 (pleine nuit) ; entre les deux pendant le
   // fondu ou le clignotement.
   nightLevel(): number;

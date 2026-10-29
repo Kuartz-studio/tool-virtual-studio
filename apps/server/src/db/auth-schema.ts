@@ -28,6 +28,7 @@ export const user = pgTable("user", {
   disabledAt: timestamp("disabled_at"),
   lastSeenAt: timestamp("last_seen_at"),
   timezone: text("timezone").default("Europe/Paris").notNull(),
+  lastReleaseSeen: text("last_release_seen"),
 });
 
 export const session = pgTable(

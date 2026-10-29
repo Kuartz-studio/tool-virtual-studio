@@ -13,6 +13,7 @@ import type { OfficeSocket } from '../net/socket';
 import { Alert } from '../pages/AuthLayout';
 import { SimPanel } from '../sim/SimPanel';
 import { selectChatUnread, selectNewMissions, useOfficeStore } from '../state/office-store';
+import { WhatsNew } from '../updates/WhatsNew';
 import { AdminPanel } from './AdminPanel';
 import { SheetPanel } from './CharacterSheet';
 import { ClerkDialog } from './ClerkDialog';
@@ -54,8 +55,9 @@ function useBarSize(layer: RefObject<HTMLDivElement | null>): void {
 interface OfficeShellProps {
   // Le compte connecté : son nom s'affiche avant que le serveur ait dit le sien (`init`), et son e-mail en haut du menu « Moi ». Son rôle décide
   // du panneau Admin (sa ligne du menu « Plus » et le panneau n'existent que pour un admin) ; son identifiant, de la ligne « (toi) » de ce
-  // panneau, qui n'a pas de bouton Retirer.
-  user: { id: string; name: string; email: string; role: Role };
+  // panneau, qui n'a pas de bouton Retirer. La dernière version vue décide de la fenêtre « Quoi de neuf ? » (WhatsNew) : null, aucune ; absente, on ne
+  // sait pas, et elle ne s'ouvre pas d'elle-même.
+  user: { id: string; name: string; email: string; role: Role; lastReleaseSeen?: string | null };
   // La connexion au bureau, que la page ouvre (null avant).
   socket: OfficeSocket | null;
   // L'audio et la vidéo : le client, et son état (useMedia).
@@ -82,6 +84,7 @@ interface OfficeShellProps {
 //   milieu les vignettes de la conversation (VideoStrip), avec au-dessus le verrou de la conversation (ConversationLockBar) ;
 // - sous elles, les messages passagers (Toasts) : un toc toc à la porte de son bureau, une porte fermée ;
 // - à droite, un seul panneau à la fois (Personnes, Chat, Mon bureau, Admin pour un admin…) : en ouvrir un ferme celui d'avant ;
+// - au milieu, à la première entrée après une mise à jour, la fenêtre « Quoi de neuf ? » (WhatsNew), par-dessus tout le reste de la couche ;
 // - en bas, la barre (ControlBar) : des docks à icônes (la puce « Moi » avec ton statut, le micro, la caméra, la musique et le bureau, le zoom, le
 //   chat et les personnes).
 //   Une seule lumière pour tout le bureau : éteinte, la couche prend les couleurs de la nuit (`data-theme`, `data-lights`) ; tamisée, elle garde celles du jour.
@@ -316,6 +319,8 @@ export function OfficeShell({
         <Toasts socket={socket} />
         <ClerkDialog socket={socket} onOpenPanel={(which) => useOfficeStore.getState().requestPanel(which === 'missions' ? { panel: 'missions', tab: 'sheet' } : { panel: 'shop' })} />
         <LevelUpBanner />
+        {/* Les nouveautés depuis la dernière mise à jour vue, une fois le bureau en place ; et tout l'historique, depuis le menu « Moi ». */}
+        <WhatsNew role={user.role} lastReleaseSeen={user.lastReleaseSeen} ready={knowsWhoIsHere} />
         <ControlBar name={name} email={user.email} socket={socket} client={media.client} snapshot={media.snapshot} panels={panels} micCutBy={micCutBy} onSignOut={onSignOut} signingOut={signingOut} />
       </div>
       {replaced && <ReplacedScreen onUseHere={onUseHere} />}

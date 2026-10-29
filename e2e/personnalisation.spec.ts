@@ -205,7 +205,7 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   await panel.getByRole('button', { name: 'Plantes' }).click();
   await panel.getByRole('button', { name: 'Plante en pot', exact: true }).click();
   // La caméra amène la pièce dans la partie de l'écran que le panneau laisse libre, et s'y arrête : on lit où elle est (le bureau attribué
-  // n'est pas toujours le même, et la caméra reste contre le bord de la carte pour les premiers).
+  // n'est pas toujours le même).
   const spotAt = async (column: number, row: number) => {
     const room = await a.page.evaluate(() => window.__office!.editorRoom());
     if (!room) return null;

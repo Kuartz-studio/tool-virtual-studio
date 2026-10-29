@@ -1,4 +1,4 @@
-import { STATUSES, TREADMILL_ID, type ActivityState, type OfficeMap, type PlacedItem, type PublicPlayer, type Status } from '@bureau/shared';
+import { CURRENT_RELEASE, STATUSES, TREADMILL_ID, type ActivityState, type OfficeMap, type PlacedItem, type PublicPlayer, type Status } from '@bureau/shared';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
@@ -117,8 +117,11 @@ describe('la puce', () => {
     const line = trigger().querySelector('.me-mode') as HTMLElement;
     expect(line.textContent).toBe('En focus');
     expect((line.querySelector('.status-dot') as HTMLElement).style.backgroundColor).toMatch(PURPLE);
-    // Le statut ordinaire, dessous, reste celui de la pastille du portrait.
-    expect(trigger().querySelector('.portrait-dot')?.getAttribute('data-status')).toBe('busy');
+    // La pastille du portrait prend aussi la couleur du mode (comme le point au-dessus de l'avatar) ; le statut ordinaire reste dit par data-status.
+    const dot = trigger().querySelector('.portrait-dot') as HTMLElement;
+    expect(dot.style.backgroundColor).toMatch(PURPLE);
+    expect(dot.getAttribute('data-activity')).toBe('s1');
+    expect(dot.getAttribute('data-status')).toBe('busy');
     expect(trigger().textContent).not.toContain('Occupé');
   });
 
@@ -210,6 +213,7 @@ describe('le menu', () => {
       t(fr.modes.edit, { label: 'À table' }),
       fr.modes.create,
       expect.stringMatching(/^Fuseau horaire : Paris, \d\d:\d\d$/),
+      t(fr.whatsNew.menuItemLabel, { version: CURRENT_RELEASE }),
       'Se déconnecter',
     ]);
     // Une seule section : plus de « Statut » à part, ni de « Mes modes ».
@@ -688,18 +692,22 @@ describe('au clavier', () => {
 
   test('les lignes inactives sont sautées', async () => {
     const user = userEvent.setup();
-    // Le serveur n'a pas encore dit qui est là : l'apparence attend (panels.ready), et les statuts aussi. Reste « Se déconnecter » : le focus y va,
-    // et les flèches n'en bougent pas.
+    // Le serveur n'a pas encore dit qui est là : l'apparence attend (panels.ready), et les statuts aussi. Restent « Nouveautés » (les notes sont dans
+    // l'appli, sans le serveur) et « Se déconnecter » : le focus va à la première, et les flèches ne passent que de l'une à l'autre.
     const socket = new FakeSocket();
     socket.serverAccepts();
     render(<MeChip name="Léa" email="lea@exemple.fr" socket={socket.asSocket()} panels={fakePanels({ ready: false })} onSignOut={() => {}} signingOut={false} />);
     await user.tab();
     await user.keyboard('{Enter}');
-    expect(document.activeElement).toBe(entry(fr.office.signOut));
+    const whatsNew = entry(t(fr.whatsNew.menuItemLabel, { version: CURRENT_RELEASE }));
+    expect(document.activeElement).toBe(whatsNew);
     await user.keyboard('{ArrowDown}');
     expect(document.activeElement).toBe(entry(fr.office.signOut));
+    await user.keyboard('{ArrowDown}');
+    expect(document.activeElement).toBe(whatsNew);
     await user.keyboard('{ArrowUp}');
     expect(document.activeElement).toBe(entry(fr.office.signOut));
+    expect(whatsNew.disabled).toBe(false);
   });
 
   test('Entrée sur Disponible le choisit', async () => {

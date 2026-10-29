@@ -56,11 +56,14 @@ import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingBubbles } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
 import { prefersReducedMotion } from '../reduced-motion';
-import { CAMERA_MARGIN_TILES, cameraBounds, cameraZoom, easeZoom, ZOOM_BUTTON_STEP } from '../zoom';
+import { cameraZoom, chooseZoom, clampFreeCenter, easeZoom, freeCameraReach, MAP_MARGIN_TILES, ZOOM_BUTTON_STEP, zoomFloorPercent, type Size, type ZoomGlide } from '../zoom';
 import { SimDrag } from '../../sim/sim-drag';
 
 // La largeur du panneau de déco (à droite de l'écran), en pixels de l'écran : la pièce se centre dans le reste.
 const EDITOR_PANEL_WIDTH_PX = 380;
+
+// Le temps que met la caméra à revenir à l'avatar (followPlayer), en ms de jeu.
+const RECENTER_MS = 350;
 
 // L'horloge des mouvements : celle de la cadence des `move` (MoveSender) et de la réception des positions des autres (SnapshotBuffer),
 // en ms. Jamais l'heure `t` des ticks du serveur, qui est celle de son horloge à lui.
@@ -130,11 +133,17 @@ export class Office extends Scene {
   private editingRoom: Zone | null = null;
   // Le panneau d'une table de jeu aussi : la caméra est sur la table, dans la partie de l'écran qu'il laisse libre.
   private focusedTable: GameTable | null = null;
-  // La carte a été glissée à la souris : la caméra ne suit plus l'avatar, jusqu'à un double-clic ou jusqu'à ce qu'il se remette à marcher.
+  // La carte a été glissée à la souris : la caméra ne suit plus l'avatar, jusqu'à un double-clic ou jusqu'à ce qu'il se remette à marcher. Son
+  // centre reste dans la carte élargie de sa marge, au plus, sans que la carte quitte jamais l'écran (placeFreeCamera).
   private cameraFree = false;
-  // Le zoom que la caméra montre en ce moment, et celui où elle va : elle glisse de l'un à l'autre quand la personne change de pourcentage.
-  private zoomShown = 1;
+  // Le retour de la caméra à l'avatar en cours (followPlayer) : le décalage du suivi au départ, et le temps de jeu écoulé depuis, en ms.
+  private recenter: { from: { x: number; y: number }; elapsed: number } | null = null;
+  // Le zoom que la caméra montre en ce moment (et la vitesse à laquelle il change), et celui où elle va : elle glisse de l'un à l'autre quand la
+  // personne change de pourcentage.
+  private zoomGlide: ZoomGlide = { zoom: 1, speed: 0 };
   private zoomTarget = 1;
+  // Le zoom de départ du canevas (chooseZoom) à la dernière mise en page de la caméra : null avant la première.
+  private zoomBase: number | null = null;
   // L'octogone (la carte en a un) : la cage, les barres de vie et les coups. Les pieds de l'avatar local à la dernière image où il était là où il en a le
   // droit (un combattant dans le ring, les autres dehors pendant un combat).
   private arena: ArenaLayer | null = null;
@@ -176,6 +185,10 @@ export class Office extends Scene {
       },
       editorRoom: () => (this.editingRoom ? { x: this.editingRoom.x, y: this.editingRoom.y } : null),
       zoom: () => this.cameras.main.zoom,
+      camera: () => {
+        const { midPoint, zoom } = this.cameras.main;
+        return { x: midPoint.x, y: midPoint.y, zoom };
+      },
       nightLevel: () => this.lighting?.level ?? 0,
       autoWalking: () => this.autoWalk?.walking ?? false,
       following: () => this.follow.id,
@@ -203,7 +216,8 @@ export class Office extends Scene {
     this.propLayer = new PropLayer(this, this.tilemap);
     this.decorEditor = new DecorEditorView(this, this.decorLayer, { onOpen: (room) => this.focusRoom(room), onClose: () => this.followPlayer() });
     useOfficeStore.getState().setOfficeMap(this.officeMap);
-    // Le zoom d'abord : les étiquettes des avatars en dépendent.
+    // Le zoom d'abord : les étiquettes des avatars en dépendent. Une scène relancée repart de zéro : la caméra prend son zoom tout de suite.
+    this.zoomBase = null;
     this.layoutCamera();
 
     // Là où le serveur nous a placés (le dernier init). Sans lui (le magasin vidé pendant le chargement : la page se ferme), au point
@@ -289,18 +303,20 @@ export class Office extends Scene {
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
     // pas prendre pour le zoom de la page), et les touches + - 0. Le pourcentage est au magasin ; la caméra y glisse (glideZoom).
     // La carte se fait glisser à la souris (la caméra quitte l'avatar), et un double-clic la recentre sur lui. Pas pendant l'éditeur de déco ni devant une
-    // table de jeu : la caméra y montre une pièce, ou une table.
+    // table de jeu : la caméra y montre une pièce, ou une table. Elle glisse de ce que la souris a fait, rapporté au zoom, sans que son centre sorte de la
+    // carte élargie de sa marge, au plus (placeFreeCamera) : contre cette limite, elle s'arrête, et la souris continue seule.
     const unbindDrag = bindCameraDrag(this, {
       canDrag: () => this.editingRoom === null && this.focusedTable === null,
       onStart: () => {
         const camera = this.cameras.main;
         camera.panEffect.reset();
         camera.stopFollow();
+        this.recenter = null;
         this.cameraFree = true;
       },
       onDrag: (dx, dy) => {
-        const camera = this.cameras.main;
-        camera.setScroll(camera.scrollX - dx / camera.zoom, camera.scrollY - dy / camera.zoom);
+        const { midPoint, zoom } = this.cameras.main;
+        this.placeFreeCamera(midPoint.x - dx / zoom, midPoint.y - dy / zoom);
       },
       onDoubleClick: () => this.recenterCamera(),
     });
@@ -311,9 +327,11 @@ export class Office extends Scene {
       else store.stepZoom(step, ZOOM_BUTTON_STEP);
     });
 
-    // La caméra suit l'avatar, dans les bornes de la carte. Le décalage met le milieu de l'avatar au centre de l'écran, et non ses
-    // pieds (que suit la caméra : l'origine du sprite est aux pieds). `true` : startFollow règle camera.roundPixels, et le remettrait
-    // à false (c'est son défaut) malgré roundPixels de config.ts ; à lui seul, il n'arrondit pas le défilement (voir pixel-snap.ts).
+    // La caméra suit l'avatar, sans bornes : il reste au centre de l'écran partout sur la carte, au bord et dans les coins aussi, où l'on voit
+    // le fond du jeu au-delà de la carte, autant qu'il faut (depuis le 29 octobre ; avant, la caméra était tenue dans la carte et une marge de cinq
+    // cases, et l'avatar glissait hors du centre au bord du monde, surtout en dézoomant). Le décalage met le milieu de l'avatar au centre de
+    // l'écran, et non ses pieds (que suit la caméra : l'origine du sprite est aux pieds). `true` : startFollow règle camera.roundPixels, et le
+    // remettrait à false (c'est son défaut) malgré roundPixels de config.ts ; à lui seul, il n'arrondit pas le défilement (voir pixel-snap.ts).
     this.cameras.main.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
     this.scale.on(Scale.Events.RESIZE, this.layoutCamera);
     this.events.on(Scenes.Events.POST_UPDATE, this.afterPhysics, this);
@@ -602,8 +620,9 @@ export class Office extends Scene {
   // position dans les sprites qu'après ; lu dans update(), l'arrêt partirait un pas de physique avant l'endroit où l'avatar s'arrête
   // vraiment, et les autres le verraient s'arrêter 2 ou 3 px trop tôt.
   private afterPhysics(): void {
-    // La caméra glisse vers son zoom avant que la nuit ne se dessine : elle la dessine à la vue de cette image.
+    // La caméra glisse vers son zoom (et revient à l'avatar) avant que la nuit ne se dessine : elle la dessine à la vue de cette image.
     this.glideZoom();
+    this.stepRecenter();
     this.keepArenaRules();
     this.sendLocalState(clock());
     const feet = this.feet();
@@ -693,6 +712,7 @@ export class Office extends Scene {
   private focusRoom(room: Zone): void {
     this.editingRoom = room;
     this.cameraFree = false;
+    this.recenter = null;
     const camera = this.cameras.main;
     camera.stopFollow();
     camera.pan(...this.roomFocus(room, camera.zoom), 450, 'Sine.easeInOut', true);
@@ -711,14 +731,44 @@ export class Office extends Scene {
     this.followPlayer();
   }
 
-  // Il se ferme (ou le panneau de la table de jeu) : la caméra revient à l'avatar.
+  // La caméra libre (la carte glissée à la souris) se centre en ce point, ramené dans la carte élargie de sa marge, ou de moins si la vue au
+  // plus près (200 %) en perdait la carte : il en reste toujours une case à l'écran, à tout zoom (freeCameraReach, clampFreeCenter). Elle n'a
+  // pas de bornes de Phaser (camera.setBounds tiendrait la vue entière, et non son centre, et pousserait aussi la caméra qui suit l'avatar) : le
+  // centre se règle ici, à chaque glissement et à chaque mise en page. Pas à chaque zoom : la limite tient déjà au plus près.
+  private placeFreeCamera(x: number, y: number): void {
+    const { width, height } = this.scale.gameSize;
+    const { map, margin } = this.cameraArea();
+    const center = clampFreeCenter({ x, y }, map, freeCameraReach({ width, height }, margin, this.tilemap.tileWidth));
+    this.cameras.main.centerOn(center.x, center.y);
+  }
+
+  // Il se ferme (ou le panneau de la table de jeu) : la caméra revient à l'avatar, en RECENTER_MS (Sine.easeInOut). Elle le suit dès le départ,
+  // avec un décalage : celui qui la laisse où elle est, et qui fond ensuite jusqu'au décalage ordinaire, le milieu de l'avatar au centre de
+  // l'écran (stepRecenter, à chaque image). Elle va ainsi là où il est à chaque image, sans retard : il peut marcher pendant ce retour (c'est
+  // même ce qui le lance, après avoir fait glisser la carte). Un glissement de Phaser (camera.pan) visait l'endroit où il était au départ, et
+  // le suivi, repris à l'arrivée, la posait d'un coup sur lui : 350 ms de marche, 112 px de carte (168 px de l'écran à 100 %) en une image.
   private followPlayer(): void {
     this.editingRoom = null;
     this.focusedTable = null;
     const camera = this.cameras.main;
-    camera.pan(this.player.x, this.player.y - this.player.displayHeight / 2, 350, 'Sine.easeInOut', true, (_camera: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-      if (progress === 1 && this.editingRoom === null && this.focusedTable === null && !this.cameraFree) camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
-    });
+    // Le glissement vers la pièce ou la table, s'il n'est pas fini : le suivi ne reprendrait qu'après lui.
+    camera.panEffect.reset();
+    const from = { x: this.player.x - camera.midPoint.x, y: this.player.y - camera.midPoint.y };
+    this.recenter = { from, elapsed: 0 };
+    camera.startFollow(this.player, true, 1, 1, from.x, from.y);
+  }
+
+  // Une image du retour de la caméra à l'avatar (followPlayer) : le décalage du suivi, du décalage de départ au décalage ordinaire. Après
+  // la physique, avant que la caméra ne suive l'avatar à sa place de cette image (preRender).
+  private stepRecenter(): void {
+    const recenter = this.recenter;
+    if (recenter === null) return;
+    recenter.elapsed += this.game.loop.delta;
+    const progress = Math.min(1, recenter.elapsed / RECENTER_MS);
+    const eased = (1 - Math.cos(Math.PI * progress)) / 2;
+    const middle = this.player.displayHeight / 2;
+    this.cameras.main.setFollowOffset(recenter.from.x * (1 - eased), recenter.from.y + (middle - recenter.from.y) * eased);
+    if (progress === 1) this.recenter = null;
   }
 
   // Les tables de jeu de la carte : une cible de la touche E devant chacune (« [E] Échecs : jouer »), qui demande l'ouverture de son panneau ; un clic sur la table fait de même,
@@ -762,6 +812,7 @@ export class Office extends Scene {
     }
     this.focusedTable = table;
     this.cameraFree = false;
+    this.recenter = null;
     const camera = this.cameras.main;
     camera.stopFollow();
     camera.pan(...tableFocus(table.rect, camera.zoom, this.scale.gameSize), 450, 'Sine.easeInOut', true);
@@ -872,12 +923,13 @@ export class Office extends Scene {
     this.sendLocalState(clock());
   }
 
-  // Un voyage (un mode qui conduit ailleurs) : la caméra saute avec l'avatar, au lieu de rester où il était ou de glisser derrière lui. Un glissement en cours
-  // (le retour à l'avatar après la fermeture d'un panneau) s'arrête, et elle le suit de nouveau. Pendant l'éditeur de déco ou devant une table de jeu, elle
-  // garde la pièce ou la table qu'elle montre : elle reviendra à l'avatar à leur fermeture (followPlayer).
+  // Un voyage (un mode qui conduit ailleurs) : la caméra saute avec l'avatar, au lieu de rester où il était ou de glisser derrière lui. Un retour en cours
+  // (à l'avatar, après la fermeture d'un panneau : followPlayer) s'arrête, et elle le suit de nouveau. Pendant l'éditeur de déco ou devant une table de jeu,
+  // elle garde la pièce ou la table qu'elle montre : elle reviendra à l'avatar à leur fermeture (followPlayer).
   private snapCameraToPlayer(): void {
     if (this.editingRoom !== null || this.focusedTable !== null) return;
     this.cameraFree = false;
+    this.recenter = null;
     const camera = this.cameras.main;
     camera.panEffect.reset();
     camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
@@ -1050,14 +1102,34 @@ export class Office extends Scene {
     this.sendLocalState(clock());
   };
 
-  // Le zoom et les bornes de la caméra dépendent de la taille du canevas et du pourcentage de zoom choisi. Au démarrage et à chaque
-  // redimensionnement, la caméra prend tout de suite le zoom du moment ; à chaque changement de pourcentage, elle y glisse (retargetZoom,
-  // puis glideZoom à chaque image).
+  // Le zoom de la caméra dépend de la taille du canevas et du pourcentage de zoom choisi ; le plancher du zoom, de la carte et de la taille du
+  // canevas. Au démarrage, et quand un redimensionnement change le zoom de départ du canevas (×1 ou ×2, chooseZoom : le même pourcentage n'est
+  // plus le même zoom), la caméra prend tout de suite le zoom du moment. Sinon, elle garde le sien et glisse comme à chaque changement de
+  // pourcentage (retargetZoom, puis glideZoom à chaque image) : un canevas agrandi qui relève le plancher au-dessus du pourcentage du moment y
+  // remonte le pourcentage (setZoomFloor, dont l'abonnement au magasin appelle retargetZoom), et la caméra y glisse au lieu d'y sauter ; un
+  // glissement en cours continue.
+  //
+  // La caméra libre garde son centre : Phaser, qui vient de donner au canevas sa nouvelle taille (son gestionnaire de caméras est abonné avant
+  // nous), a gardé le défilement, ce qui déplacerait le centre de la moitié de ce que le canevas a gagné. Le centre de la dernière image
+  // (midPoint, que setSize ne touche pas) est remis au centre, ramené dans sa limite, qui dépend du canevas (freeCameraReach) : un canevas
+  // plus petit peut la resserrer. Celle qui suit l'avatar s'y remet seule, à l'image suivante.
   private layoutCamera = (): void => {
+    const { width, height } = this.scale.gameSize;
+    const { map, margin } = this.cameraArea();
+    useOfficeStore.getState().setZoomFloor(zoomFloorPercent(map, { width, height }, margin));
     this.zoomTarget = this.targetZoom();
-    this.zoomShown = this.zoomTarget;
-    this.applyZoom(this.zoomShown);
+    const base = chooseZoom(width, height);
+    if (base !== this.zoomBase) this.zoomGlide = { zoom: this.zoomTarget, speed: 0 };
+    this.zoomBase = base;
+    this.applyZoom(this.zoomGlide.zoom);
+    if (this.cameraFree) this.placeFreeCamera(this.cameras.main.midPoint.x, this.cameras.main.midPoint.y);
   };
+
+  // La carte, en pixels, et sa marge de chaque côté (MAP_MARGIN_TILES cases) : la référence du dézoom maximal, et la limite du centre de la
+  // caméra libre, au plus (freeCameraReach).
+  private cameraArea(): { map: Size; margin: number } {
+    return { map: { width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels }, margin: MAP_MARGIN_TILES * this.tilemap.tileWidth };
+  }
 
   // Le zoom que la caméra doit avoir : celui du pourcentage choisi, pour la taille du canevas.
   private targetZoom(): number {
@@ -1069,29 +1141,36 @@ export class Office extends Scene {
   private retargetZoom(): void {
     this.zoomTarget = this.targetZoom();
     if (!prefersReducedMotion()) return;
-    this.zoomShown = this.zoomTarget;
-    this.applyZoom(this.zoomShown);
+    this.zoomGlide = { zoom: this.zoomTarget, speed: 0 };
+    this.applyZoom(this.zoomGlide.zoom);
   }
 
-  // À chaque image : un pas du glissement, tant que la caméra n'est pas au zoom voulu.
+  // À chaque image : un pas du glissement, tant que la caméra n'est pas au zoom voulu (et à l'arrêt).
   private glideZoom(): void {
-    if (this.zoomShown === this.zoomTarget) return;
-    this.zoomShown = easeZoom(this.zoomShown, this.zoomTarget, this.game.loop.delta);
-    this.applyZoom(this.zoomShown);
+    if (this.zoomGlide.zoom === this.zoomTarget && this.zoomGlide.speed === 0) return;
+    this.zoomGlide = easeZoom(this.zoomGlide, this.zoomTarget, this.game.loop.delta);
+    this.applyZoom(this.zoomGlide.zoom);
   }
 
-  // Le zoom de la caméra, ses bornes, et la résolution des étiquettes à ce zoom. Où elle regarde, en revanche, n'est pas à régler ici : elle
-  // suit l'avatar, et continue (sauf devant la pièce que l'éditeur montre : on la recentre, le panneau n'occupant pas la même part de l'écran
-  // à un autre zoom).
+  // Le zoom de la caméra, et la résolution des étiquettes à ce zoom. Où elle regarde, en revanche, n'est pas à régler ici : Phaser zoome
+  // autour du centre de la vue (le défilement, et donc le centre, ne dépendent pas du zoom). La caméra qui suit l'avatar le garde ainsi au
+  // centre de l'écran à chaque image d'un glissement, au même pixel ; la caméra libre zoome autour du centre de l'écran, sans saut.
+  //
+  // Sauf devant la pièce que l'éditeur montre, ou la table de jeu : on la recentre, le panneau n'occupant pas la même part de la carte à un
+  // autre zoom. Pendant le glissement qui l'y conduit (camera.pan), c'est l'arrivée du glissement qui change : le pan reprend sa course vers le
+  // nouveau point à l'image suivante, alors qu'un centerOn la poserait tout de suite à l'arrivée, et le pan l'en retirerait à l'image d'après.
+  // Sans bornes, elle arrive au point exact, même pour une pièce ou une table au bord de la carte.
   private applyZoom(zoom: number): void {
     const { width, height } = this.scale.gameSize;
-    const map = { width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels };
-    const bounds = cameraBounds(map, { width, height }, zoom, CAMERA_MARGIN_TILES * this.tilemap.tileWidth);
     const camera = this.cameras.main;
     camera.setZoom(zoom);
-    camera.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
-    if (this.editingRoom) camera.centerOn(...this.roomFocus(this.editingRoom, zoom));
-    else if (this.focusedTable) camera.centerOn(...tableFocus(this.focusedTable.rect, zoom, { width, height }));
+    const focus = this.editingRoom
+      ? this.roomFocus(this.editingRoom, zoom)
+      : this.focusedTable
+        ? tableFocus(this.focusedTable.rect, zoom, { width, height })
+        : null;
+    if (focus && camera.panEffect.isRunning) camera.panEffect.destination.set(...focus);
+    else if (focus) camera.centerOn(...focus);
     // À la création, layoutCamera passe avant les avatars.
     this.player?.setZoom(zoom);
     for (const remote of this.remotes.values()) remote.setZoom(zoom);

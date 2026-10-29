@@ -5,7 +5,7 @@ import { StrictMode } from 'react';
 import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { EventBus } from '../game/EventBus';
-import { fr } from '../i18n/fr';
+import { fr, t } from '../i18n/fr';
 import type { FakeMediaClient } from '../media/fake-media-client';
 import type { MediaPrefs } from '../media/media-client';
 import { savePrefs } from '../media/prefs';
@@ -595,11 +595,12 @@ test('admin : le menu « Plus » a une ligne Admin, qui ouvre le panneau sur les
 
   await user.click(await screen.findByRole('button', { name: fr.office.more.toggle }));
   await user.click(screen.getByRole('menuitem', { name: fr.admin.toggle }));
-  const members = await screen.findByRole('region', { name: 'Membres (2)' });
-  // Léa est le compte de la session : pas de bouton pour se retirer elle-même.
+  await screen.findByRole('tab', { name: `${fr.admin.tabs.members} 2` });
+  const members = screen.getByRole('tabpanel');
+  // Léa est le compte de la session : pas de menu pour se retirer elle-même ; Bob a le sien.
   expect(within(members).getByText('Léa').closest('li')?.textContent).toContain(fr.admin.you);
-  expect(within(members).queryByRole('button', { name: 'Retirer Léa' })).toBeNull();
-  expect(within(members).getByRole('button', { name: 'Retirer Bob' })).toBeTruthy();
+  expect(within(members).queryByRole('button', { name: t(fr.admin.actions, { name: 'Léa' }) })).toBeNull();
+  expect(within(members).getByRole('button', { name: t(fr.admin.actions, { name: 'Bob' }) })).toBeTruthy();
 });
 
 test('membre : ni ligne Admin dans le menu « Plus », ni requête à /api/admin', async () => {
