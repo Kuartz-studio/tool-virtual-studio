@@ -38,6 +38,7 @@ import {
   ListMusic,
   LocateFixed,
   Lock,
+  Map as MapGlyph,
   LockOpen,
   LogOut,
   MapPin,
@@ -93,7 +94,7 @@ import type { LightLevel } from '@bureau/shared';
 import type { LucideIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 // Celles des nouveautés (la fin de ce fichier), à part : elles n'ont rien à voir avec les boutons du bureau.
-import { BrickWall, CircleDot, Expand, Flower2, Megaphone, ZoomIn } from 'lucide-react';
+import { BrickWall, CircleDot, Expand, Flower2, Megaphone, MousePointerClick, Trees, WavesLadder, ZoomIn } from 'lucide-react';
 import type { ReleaseIconName } from '../updates/releases';
 
 // Le point d'import des icônes des boutons et des menus : celles de Lucide (licence ISC, voir public/assets/CREDITS.txt), sous le nom de leur
@@ -143,6 +144,11 @@ export function ZoomResetIcon() {
 // L'épingle : un lieu.
 export function PlaceIcon() {
   return <MapPin />;
+}
+
+// La carte du bureau (touche M).
+export function MapIcon() {
+  return <MapGlyph />;
 }
 
 // Une flèche qui descend de la ligne du dessus, puis part à droite : une autre façon de la prendre (un mode sur son tapis de course).
@@ -488,6 +494,11 @@ const RELEASE_ICONS: Readonly<Record<ReleaseIconName, LucideIcon>> = {
   treadmill: Dumbbell,
   decor: Flower2,
   blackTiles: BrickWall,
+  garden: Trees,
+  map: MapGlyph,
+  run: MousePointerClick,
+  music: Music,
+  pool: WavesLadder,
 };
 
 export function ReleaseIcon({ name }: { name: ReleaseIconName }) {

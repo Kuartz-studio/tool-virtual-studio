@@ -1,14 +1,17 @@
-import { musicUrls, SCENES, SFX, SFX_IDS, sfxUrl, type SceneId, type SfxId } from './catalog';
+import { musicUrls, natureUrls, SCENES, SFX, SFX_IDS, sfxUrl, type SceneId, type SfxId } from './catalog';
+import { isSilent, SILENT_NATURE, type NatureMix } from './nature';
+import { NaturePlayer } from './nature-player';
 
 // Le moteur de son : la musique d'ambiance (une boucle à la fois, avec un fondu enchaîné d'une ambiance à l'autre) et les effets (des
-// bruits courts), sur deux circuits séparés que la personne règle chacun de son côté (volume, coupure). La voix des autres, elle, passe par
-// LiveKit (media/) : rien ici ne la touche. Le moteur ne sait rien du bureau : on lui dit quelle ambiance jouer (setMusic) et quel effet
-// lancer (playSfx).
+// bruits courts), sur deux circuits séparés que la personne règle chacun de son côté (volume, coupure). Les bruits de la nature (l'eau, les
+// oiseaux, le vent, les insectes : nature-player.ts) passent par le circuit des effets. La voix des autres, elle, passe par
+// LiveKit (media/) : rien ici ne la touche. Le moteur ne sait rien du bureau : on lui dit quelle ambiance jouer (setMusic), quel effet
+// lancer (playSfx), et ce que la nature doit faire entendre (setNature).
 //
 //   ambiance → fondu → baisse quand on parle ┐
 //                                            ├→ volume de la musique ┐
 //   effet → son propre gain ─────────────────┐                       ├→ sortie
-//                                            └→ volume des effets ───┘
+//   nature (nature-player.ts) ───────────────┴→ volume des effets ───┘
 //
 // Les navigateurs ne laissent démarrer le son qu'après un geste de la personne : le contexte audio n'est créé qu'à unlock(), que
 // l'appli appelle à chaque clic ou touche (AudioDirector). Avant, setMusic retient l'ambiance voulue, et playSfx ne fait rien.
@@ -94,6 +97,10 @@ export class AudioEngine {
   private readonly sfxLastAt = new Map<SfxId, number>();
   private sfxActive = 0;
 
+  // La nature : son lecteur (créé la première fois qu'il y a quelque chose à entendre), et ce qu'on doit entendre.
+  private nature: NaturePlayer | null = null;
+  private natureMix: NatureMix = SILENT_NATURE;
+
   private musicLevel = 0.6;
   private sfxLevel = 0.8;
   private sfxOn = true;
@@ -139,6 +146,7 @@ export class AudioEngine {
       // Tout de suite : le chargement se fait pendant que le contexte démarre.
       if (this.sfxOn) this.preloadSfx();
       void this.applyMusic();
+      this.applyNature();
     }
     if (this.context.state !== 'running') this.context.resume().then(() => this.onContextState(), () => {});
     this.onContextState();
@@ -173,10 +181,11 @@ export class AudioEngine {
     this.glide(this.sfxBus?.gain, levelToGain(this.sfxLevel), 0.03);
   }
 
-  // Les effets coupés ne se lancent plus, et ne se chargent pas ; rallumés, ils se chargent (une fois).
+  // Les effets coupés ne se lancent plus, et ne se chargent pas ; rallumés, ils se chargent (une fois). La nature se tait avec eux.
   setSfxEnabled(on: boolean): void {
     this.sfxOn = on;
     if (on && this.context !== null) this.preloadSfx();
+    this.applyNature();
   }
 
   // La musique descend pendant qu'on parle (ou qu'on écoute quelqu'un), et remonte après.
@@ -392,6 +401,29 @@ export class AudioEngine {
     return promise;
   }
 
+  // ---- La nature ----------------------------------------------------------------------------------------------------------------
+
+  // Ce que la nature doit faire entendre là où l'on est (nature.ts). Avant unlock(), retient seulement ; effets coupés, elle se tait.
+  setNature(mix: NatureMix): void {
+    this.natureMix = mix;
+    this.applyNature();
+  }
+
+  private applyNature(): void {
+    const context = this.context;
+    if (context === null) return;
+    const mix = this.sfxOn ? this.natureMix : SILENT_NATURE;
+    if (this.nature === null) {
+      if (isSilent(mix)) return;
+      this.nature = new NaturePlayer(context, this.sfxBus, {
+        load: (id) => this.decodeFirst(context, natureUrls(id, (mime) => this.runtime.canPlay(mime))).catch(() => null),
+        nowMs: () => this.runtime.nowMs(),
+        random: Math.random,
+      });
+    }
+    this.nature.set(mix);
+  }
+
   // ---- La fin -------------------------------------------------------------------------------------------------------------------
 
   // Ferme le contexte (les tests) : plus aucun son, et le moteur n'est plus utilisable.
@@ -400,6 +432,8 @@ export class AudioEngine {
     this.context = null;
     this.wanted = null;
     this.voice = null;
+    this.nature?.dispose();
+    this.nature = null;
     this.fading.clear();
     this.musicBuffers.clear();
     this.sfxBuffers.clear();

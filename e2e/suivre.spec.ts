@@ -1,5 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { buildOfficeTiledMap, parseOfficeMap, zoneAt } from '../packages/shared/src/index';
+import { buildOfficeTiledMap, parseOfficeMap, placeByKey, zoneAt } from '../packages/shared/src/index';
 import { giveDeskBack, joinOffice, openDeskPanel, openPanel, selfAt } from './helpers';
 
 // Le menu d'une personne, sur la vraie carte (le second serveur des tests : playwright.config.ts) : un clic droit sur son avatar l'ouvre à la place de celui du
@@ -11,10 +11,13 @@ test.describe.configure({ mode: 'default' });
 
 const map = parseOfficeMap(buildOfficeTiledMap());
 const at = (tx: number, ty: number) => ({ x: tx * 32 + 16, y: ty * 32 + 16 });
-// La grande rue sous les bureaux du nord : rien n'y bloque, de la colonne 1 à la 79.
-const ALICE = at(20, 13);
-const NEAR = at(24, 13);
-const FAR = at(40, 13);
+// La rue des bureaux, sur sa rangée du milieu (la 17) : rien n'y bloque, d'une terrasse à l'autre. Alice à douze cases de son bout ouest (la colonne 30),
+// Bruno à quatre cases d'elle, ou à vingt (hors de l'écran).
+const street = placeByKey(map, 'street')!.rects[0]!;
+const [WEST, ROW] = [Math.floor(street.x / 32), Math.floor((street.y + street.height / 2) / 32)];
+const ALICE = at(WEST + 12, ROW);
+const NEAR = at(WEST + 16, ROW);
+const FAR = at(WEST + 32, ROW);
 
 const contexts: BrowserContext[] = [];
 test.afterEach(async () => {

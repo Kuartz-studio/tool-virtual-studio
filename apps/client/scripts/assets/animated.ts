@@ -19,6 +19,9 @@ export interface AnimatedSource {
   claim: number;
   solid: boolean;
   light?: LightKind;
+  // Seules ces premières rangées de pixels de chaque image sont gardées, le bas est effacé : la réceptionniste sans son poste, que la carte pose
+  // derrière le comptoir de l'accueil.
+  keepTop?: number;
 }
 
 const sheet = (name: string): string => `animated_${name}_32x32.png`;
@@ -51,6 +54,9 @@ export const ANIMATED_PROPS: readonly AnimatedSource[] = [
   { key: 'candle', file: sheet('candle'), frames: 3, fps: 6, loop: true, claim: 1, solid: false, light: 'candle' },
   { key: 'wall-candle', file: sheet('wall_candle'), frames: 3, fps: 6, loop: true, claim: 0, solid: false, light: 'candle' },
   { key: 'fishtank', file: sheet('fishtank_orange'), frames: 8, fps: 6, loop: true, claim: 1, solid: true, light: 'water' },
+  // Les deux réceptionnistes sans le module de comptoir de leur planche (la personne et son écran) : la carte les pose sur le comptoir en U de l'accueil.
+  { key: 'receptionist-seule', file: sheet('receptionist'), frames: 7, fps: 5, loop: true, claim: 1, solid: false, keepTop: 46 },
+  { key: 'receptionist-2-seule', file: sheet('receptionist_2'), frames: 7, fps: 5, loop: true, claim: 1, solid: false, keepTop: 46 },
 ];
 
 // Le prop d'une planche de cette taille : la taille d'une image (la largeur de la planche partagée entre ses images), son empreinte en cases.
@@ -91,6 +97,7 @@ export function buildAnimated(source: string, specs: readonly AnimatedSource[] =
     if (keys.has(spec.key)) throw new Error(`Deux objets animés portent la clé « ${spec.key} ».`);
     keys.add(spec.key);
     const image = readImage(join(source, ANIMATED_DIR, spec.file));
+    if (spec.keepTop !== undefined) image.fillRect(0, spec.keepTop, image.width, image.height - spec.keepTop, { r: 0, g: 0, b: 0, a: 0 });
     built.props.push(propFromSheet(spec, image.width, image.height));
     built.files.push({ path: `${spec.key}.png`, image });
   }

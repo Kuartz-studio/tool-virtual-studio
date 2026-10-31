@@ -160,7 +160,7 @@ function WhatsNewDialog({ releases, role, canShowAll, onShowAll, onClose }: Dial
         pressedBackdrop.current = false;
       }}
     >
-      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={introId} tabIndex={-1} className="whatsnew" onKeyDown={onKeyDown}>
+      <div ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={introId} tabIndex={-1} className="whatsnew" data-sfx-modal onKeyDown={onKeyDown}>
         <div className="whatsnew-banner" aria-hidden="true">
           <span className="whatsnew-tile" />
           <span className="whatsnew-tile" />
@@ -170,7 +170,7 @@ function WhatsNewDialog({ releases, role, canShowAll, onShowAll, onClose }: Dial
             <WhatsNewIcon />
           </span>
         </div>
-        <IconButton label={fr.ui.close} small tip="bottom" className="whatsnew-close" onClick={onClose}>
+        <IconButton label={fr.ui.close} small tip="bottom" className="whatsnew-close" data-sfx="none" onClick={onClose}>
           <CloseIcon />
         </IconButton>
 
@@ -200,7 +200,7 @@ function WhatsNewDialog({ releases, role, canShowAll, onShowAll, onClose }: Dial
               {fr.whatsNew.history}
             </button>
           )}
-          <button ref={done} type="button" className="button whatsnew-done" onClick={onClose}>
+          <button ref={done} type="button" className="button whatsnew-done" data-sfx="none" onClick={onClose}>
             {fr.whatsNew.done}
           </button>
         </footer>

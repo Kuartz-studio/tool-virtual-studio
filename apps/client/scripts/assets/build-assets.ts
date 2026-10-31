@@ -1,6 +1,6 @@
 // Range les images du pack LimeZu dans l'appli : `pnpm --filter @bureau/client gen:assets [dossier des ressources]`.
 //   public/assets/characters/   les pièces du builder de personnage (corps, yeux, tenues, coiffures, accessoires, personnages prêts)
-//   public/assets/decor/        la banque d'éléments, un atlas par catégorie
+//   public/assets/decor/        la banque d'éléments, un atlas par catégorie, et celui de la carte seule (plan.png : le jardin, plan-decor.ts)
 //   public/assets/tiles/        le jeu de tuiles de la carte (sols et murs des thèmes, piscine)
 //   public/assets/props/        les objets animés (portes vitrées, machine à café, cheminée, tapis de course…), une planche chacun
 //   packages/shared/src/        la liste de tout cela (decor/generated*.ts, character/generated.ts, props/generated.ts), que lisent le client et le serveur
@@ -13,6 +13,7 @@ import { buildAnimated, renderPropsSource } from './animated';
 import { buildCharacters, renderCharactersSource } from './characters';
 import { Sheets, buildDecor, renderCatalogSource } from './decor';
 import { writeImage } from './image';
+import { PLAN_ATLAS, buildPlanDecor, renderPlanSource } from './plan-decor';
 import { buildTileset, renderThemesSource } from './tileset';
 
 export const ASSETS_DIR = resolve(import.meta.dirname, '../../public/assets');
@@ -37,6 +38,11 @@ export function generateAssets(source: string, log: (line: string) => void = () 
   for (const [category, atlas] of decor.atlases) writeImage(join(ASSETS_DIR, 'decor', `${category}.png`), atlas);
   writeText(join(SHARED_SRC, 'decor/generated.ts'), renderCatalogSource(decor.items));
   log(`banque d'éléments : ${decor.items.length} éléments dans ${decor.atlases.size} atlas`);
+
+  const plan = buildPlanDecor(source);
+  writeImage(join(ASSETS_DIR, 'decor', `${PLAN_ATLAS}.png`), plan.atlas);
+  writeText(join(SHARED_SRC, 'decor/generated-plan.ts'), renderPlanSource(plan.items));
+  log(`éléments de la carte : ${plan.items.length} (le jardin, les objets pris un à un, les meubles composés)`);
 
   const tileset = buildTileset(source);
   writeImage(join(ASSETS_DIR, 'tiles/office.png'), tileset.image);

@@ -6,6 +6,7 @@ import { useOfficeStore } from '../state/office-store';
 import { audioEngine } from './audio';
 import { selectWantedScene, useAudioStore } from './audio-store';
 import type { AudioEngine } from './engine';
+import { natureAt, SILENT_NATURE } from './nature';
 import { OUTSIDE_SCENE, soundAt } from './scene-at';
 import { bindSfx } from './sfx-events';
 import { useSingleTab } from './single-tab';
@@ -26,7 +27,9 @@ export const DUCK_HOLD_MS = 1200;
 //     de l'appli (un seul onglet joue à la fois, single-tab.ts) ;
 //   - le lieu : tant qu'on n'est pas au bureau (connexion, écran d'entrée), la salle d'attente ; au bureau, l'ambiance de l'endroit où
 //     l'on se trouve, qui change quand on y reste (PLACE_SETTLE_MS), et la pièce dont on règle la musique (celle qui a une enceinte) :
-//     ceux qui y sont la règlent pour tous (le magasin du bureau la dit), elle peut être éteinte ou jouer une autre ambiance ;
+//     ceux qui y sont la règlent pour tous (le magasin du bureau la dit), elle peut être éteinte ou jouer une autre ambiance ; dehors (le jardin,
+//     les terrasses), pas d'enceinte : la musique du lieu s'y tait ;
+//   - la nature : l'eau qu'on approche, et dehors les oiseaux, le vent, les insectes la nuit (nature.ts), d'après les pieds et la lumière ;
 //   - la voix : quand quelqu'un parle dans la conversation, soi-même compris, la musique baisse ;
 //   - les effets : les clics, les arrivées, les messages… (sfx-events.ts) ;
 //   - la sortie du son choisie à l'écran d'entrée.
@@ -35,6 +38,7 @@ export function AudioDirector({ engine = audioEngine }: { engine?: AudioEngine }
   useEngineSettings(engine);
   useEngineState(engine);
   usePlaceScene();
+  useNature(engine);
   useDucking(engine);
   useEffect(() => bindSfx(engine, { bus: EventBus, store: useOfficeStore, placeKey: () => useAudioStore.getState().placeKey }), [engine]);
   useOutputDevice(engine);
@@ -60,8 +64,9 @@ function useEngineSettings(engine: AudioEngine): void {
   const prefs = useAudioStore((state) => state.prefs);
   const place = useAudioStore((state) => state.place);
   const placeKey = useAudioStore((state) => state.placeKey);
+  const outside = useAudioStore((state) => state.outside);
   const music = useOfficeStore((state) => state.music);
-  const wanted = selectWantedScene({ prefs, place, placeKey }, music);
+  const wanted = selectWantedScene({ prefs, place, placeKey, outside }, music);
   const replaced = useOfficeStore((state) => state.replaced);
   const elsewhere = useSingleTab();
   const silent = replaced || elsewhere;
@@ -92,10 +97,11 @@ function usePlaceScene(): void {
     }
     const start = useOfficeStore.getState().self ?? map.spawn;
     let settled = soundAt(map, start.x, start.y);
-    setPlace(settled.scene, settled.key);
+    setPlace(settled.scene, settled.key, settled.outside);
 
     // Un endroit est une ambiance et une pièce réglable : passer d'une pièce à une autre de même ambiance (deux salles de « focus ») change la musique qu'on y règle.
-    const same = (a: Spot, b: Spot) => a.scene === b.scene && a.key === b.key;
+    // Sortir (ou rentrer) aussi, même si le dehors a l'ambiance par défaut du couloir qu'on quitte.
+    const same = (a: Spot, b: Spot) => a.scene === b.scene && a.key === b.key && a.outside === b.outside;
     let pending: { spot: Spot; timer: ReturnType<typeof setTimeout> } | null = null;
     const moveTo = (x: number, y: number) => {
       const spot = soundAt(map, x, y);
@@ -108,7 +114,7 @@ function usePlaceScene(): void {
         timer: setTimeout(() => {
           pending = null;
           settled = spot;
-          setPlace(spot.scene, spot.key);
+          setPlace(spot.scene, spot.key, spot.outside);
         }, PLACE_SETTLE_MS),
       };
     };
@@ -118,6 +124,34 @@ function usePlaceScene(): void {
       if (pending !== null) clearTimeout(pending.timer);
     };
   }, [map]);
+}
+
+// La nature autour de soi : ce qu'on entend là où sont les pieds (l'eau, dedans ou dehors) et à la lumière du bureau (le jour, le soir, la nuit). Elle suit
+// chaque pas, sans attendre : ses propres fondus (nature-player.ts) adoucissent le passage d'une porte. Hors du bureau (pas de carte), elle se tait.
+function useNature(engine: AudioEngine): void {
+  const map = useOfficeStore((state) => state.officeMap);
+  useEffect(() => {
+    if (map === null) return;
+    const start = useOfficeStore.getState().self ?? map.spawn;
+    let feet = { x: start.x, y: start.y };
+    let lights = useOfficeStore.getState().lights.level;
+    const hear = () => engine.setNature(natureAt(map, feet.x, feet.y, lights));
+    hear();
+    const offMove = listenOnBus(EventBus, 'local:move', (move) => {
+      feet = { x: move.x, y: move.y };
+      hear();
+    });
+    const offLights = useOfficeStore.subscribe((state) => {
+      if (state.lights.level === lights) return;
+      lights = state.lights.level;
+      hear();
+    });
+    return () => {
+      offMove();
+      offLights();
+      engine.setNature(SILENT_NATURE);
+    };
+  }, [engine, map]);
 }
 
 // Qui parle (soi-même compris) baisse la musique ; elle remonte un peu après la dernière voix.

@@ -50,4 +50,19 @@ export const MEASURED_SFX = {
   xp: { gain: 1.691, seconds: 1.684 },
   'level-up': { gain: 1.271, seconds: 3.96 },
   coins: { gain: 0.376, seconds: 0.882 },
+  'map-open': { gain: 1.167, seconds: 0.604 },
+  'map-close': { gain: 1.149, seconds: 0.604 },
+  waypoint: { gain: 0.693, seconds: 0.685 },
+  hover: { gain: 0.432, seconds: 0.342 },
+  gem: { gain: 2.354, seconds: 1.57 },
+  voice: { gain: 0.855, seconds: 0.096 },
+  'modal-close': { gain: 0.551, seconds: 0.186 },
+} as const;
+
+export const MEASURED_NATURE = {
+  water: { gain: 2.951, seconds: 22.2 },
+  insects: { gain: 1.38, seconds: 20 },
+  birds: { gain: 0.741, seconds: 36 },
+  wind: { gain: 4.266, seconds: 8.607 },
+  moto: { gain: 0.944, seconds: 9.277 },
 } as const;

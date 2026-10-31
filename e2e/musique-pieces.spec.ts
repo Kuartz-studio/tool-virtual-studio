@@ -42,14 +42,17 @@ async function arrive(browser: Browser, name: string, desk: 'given back' | 'kept
 
 const playing = (page: Page) => page.evaluate(() => window.__audio?.playing() ?? null);
 
-test('Alice coupe la musique de la salle de jeu à l\'enceinte : Bastien, qui y est, n\'entend plus rien, même après un rechargement ; elle la relance, il l\'entend', async ({ browser }) => {
+test('Alice coupe la musique de la salle de jeux à l\'enceinte : Bastien, qui y est, n\'entend plus rien, même après un rechargement ; elle la relance, il l\'entend', async ({ browser }) => {
   test.slow();
   const alice = await arrive(browser, 'Alice');
   const bastien = await arrive(browser, 'Bastien');
-  // La salle de jeu joue le crépuscule. Alice est devant l'enceinte (case (34, 33), l'amplificateur au-dessus d'elle), Bastien au milieu de la salle.
+  // La salle de jeux joue le crépuscule. Alice est devant l'enceinte (l'amplificateur est en (83, 22) d'après la carte : elle se tient sur la case sous lui),
+  // Bastien au milieu de la salle.
   const game = placeByKey(map, 'game')!;
-  await teleportTo(alice, spotNear(34, 35));
-  await teleportTo(bastien, freeSpotIn(map, game, [spotNear(34, 35)])!);
+  const speaker = map.speakers.find((s) => s.place === 'game')!;
+  const atSpeaker = spotNear(Math.floor(speaker.x / 32), Math.floor(speaker.y / 32) + 1);
+  await teleportTo(alice, atSpeaker);
+  await teleportTo(bastien, freeSpotIn(map, game, [atSpeaker])!);
   await expect.poll(() => playing(alice), { timeout: DECODE_TIMEOUT }).toBe('dusk');
   await expect.poll(() => playing(bastien), { timeout: DECODE_TIMEOUT }).toBe('dusk');
 

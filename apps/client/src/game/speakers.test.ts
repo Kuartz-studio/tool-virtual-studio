@@ -79,7 +79,7 @@ test('sur la grande carte, chaque enceinte (zone speaker) est dans l\'image d\'a
   const sprites = propImages(layoutProps(objects))
     .filter((image) => image.key.startsWith('amplifier'))
     .map((image) => ({ x: image.x, y: image.y + image.h, displayWidth: image.w, displayHeight: image.h }));
-  expect(map.speakers.length).toBeGreaterThanOrEqual(7);
+  expect(map.speakers.length).toBeGreaterThanOrEqual(6);
   for (const one of map.speakers) {
     const found = speakerSprites(one, sprites);
     expect(found.length, one.place).toBeGreaterThanOrEqual(1);

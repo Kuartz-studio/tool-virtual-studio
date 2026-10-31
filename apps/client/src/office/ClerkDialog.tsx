@@ -3,7 +3,9 @@ import { useEffect, useId, useMemo, useRef, useState, type CSSProperties, type F
 import { fr, t } from '../i18n/fr';
 import { api } from '../lib/api';
 import { cancelMission, listGivenMissions } from '../lib/progress-api';
+import { EventBus } from '../game/EventBus';
 import { sendMission } from '../net/mission-commands';
+import { emitOnBus } from '../net/office-connection';
 import type { OfficeSocket } from '../net/socket';
 import { useOfficeStore } from '../state/office-store';
 import { CloseIcon, SearchIcon } from './icons';
@@ -19,6 +21,8 @@ const PORTRAIT = { top: 8, height: 30, scale: 3 } as const;
 // La machine à écrire : tant de caractères toutes les TYPE_TICK_MS (environ 190 caractères par seconde : une réplique s'écrit en moins d'une seconde).
 const TYPE_TICK_MS = 16;
 const TYPE_STEP = 3;
+// Sa voix pendant qu'elle écrit : un petit bip toutes les CLERK_VOICE_MS ms (audio/sfx-events.ts, chacun à sa hauteur), du premier caractère au dernier.
+const CLERK_VOICE_MS = 75;
 
 // Un membre, tel que GET /api/members le dit.
 interface Member {
@@ -47,6 +51,14 @@ function useTypewriter(text: string): [string, () => void] {
     }, TYPE_TICK_MS);
     return () => clearInterval(timer);
   }, [text]);
+  // Tant que la phrase s'écrit, sa voix ; finie (ou un clic qui la finit), elle se tait.
+  const typing = shown < text.length;
+  useEffect(() => {
+    if (!typing) return;
+    emitOnBus(EventBus, 'clerk:voice');
+    const voice = setInterval(() => emitOnBus(EventBus, 'clerk:voice'), CLERK_VOICE_MS);
+    return () => clearInterval(voice);
+  }, [typing, text]);
   return [text.slice(0, shown), () => setShown(text.length)];
 }
 
@@ -248,7 +260,7 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
             <button type="button" onClick={() => open('missions')}>
               {fr.clerks.menu.sheet}
             </button>
-            <button type="button" data-sfx="cancel" onClick={close}>
+            <button type="button" data-sfx="none" onClick={close}>
               {fr.clerks.menu.bye}
             </button>
           </div>
@@ -406,7 +418,7 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
   }
 
   return (
-    <div ref={box} className="clerk-dialog" role="dialog" aria-label={t(fr.clerks.dialogLabel, { name })} onKeyDown={onKeyDown}>
+    <div ref={box} className="clerk-dialog" role="dialog" aria-label={t(fr.clerks.dialogLabel, { name })} data-sfx-hover data-sfx-modal onKeyDown={onKeyDown}>
       <div className="clerk-side">
         <ClerkPortrait clerk={clerk} />
         <span className="clerk-name">{name}</span>
@@ -420,7 +432,7 @@ function Conversation({ clerk, selfName, socket, onOpenPanel }: { clerk: string;
         )}
         {content}
       </div>
-      <IconButton label={fr.clerks.close} small tip="bottom" className="clerk-close" onClick={close}>
+      <IconButton label={fr.clerks.close} small tip="bottom" className="clerk-close" data-sfx="none" onClick={close}>
         <CloseIcon />
       </IconButton>
     </div>

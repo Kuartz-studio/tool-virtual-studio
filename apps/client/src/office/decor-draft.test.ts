@@ -182,7 +182,8 @@ test('le poste par défaut de chaque pièce passe son propre contrôle', () => {
 
 // ---- Devant la pièce : le mur et la rangée du dehors ---------------------------------------------------------------------------
 
-// La grande carte : A1 (porte au sud, en haut), A2 (l'interrupteur sur son mur du dehors), A3 (porte au nord, en bas). Leur rangée du dehors est la 9.
+// La grande carte : six bureaux en rangée, portes au sud, sur la rue ; leur rangée du dehors est la 9. L'interrupteur de la lumière est sur la bande de mur
+// entre A1 et A2, au droit de leur pan commun : il n'est dans le dehors d'aucun des deux.
 const OFFICE = parseOfficeMap(buildOfficeTiledMap());
 const a1 = roomOfDesk(OFFICE, 'A1');
 const a2 = roomOfDesk(OFFICE, 'A2');
@@ -191,7 +192,7 @@ const a3 = roomOfDesk(OFFICE, 'A3');
 describe('poser devant sa pièce', () => {
   test('roomOfDesk lit le dehors sur la carte ; les pièces sans carte n\'en ont pas', () => {
     expect(a1.outside).toEqual({ fixtures: [] });
-    expect(a2.outside?.fixtures).toEqual([{ x: 8, y: 8, w: 1, h: 1 }]);
+    expect(a2.outside).toEqual({ fixtures: [] });
     expect(roomOfDesk(null, 'A1').outside).toBeUndefined();
   });
 
@@ -220,12 +221,11 @@ describe('poser devant sa pièce', () => {
     if (outside.kind !== 'place') throw new Error('attendu : poser');
     expect(outside.decor.items).toEqual([{ id: 'of-6-10', x: 6, y: 9 }]);
     expect(checkDecor(outside.decor, a1)).toEqual({ ok: true });
-    // Une fontaine (solide) dans la rue devant la porte de A1 ; une horloge sur l'interrupteur de A2 ; un bureau trop profond pour la rangée.
+    // Une fontaine (solide) dans la rue devant la porte de A1 ; un bureau trop profond pour la rangée.
     expect(planPlace(empty, 'of-12-15', { x: a1.door.x, y: 9 }, a1)).toEqual({ kind: 'refused', error: 'blocks_door' });
-    expect(planPlace(empty, 'horloge-ronde', { x: 8, y: 9 }, a2)).toEqual({ kind: 'refused', error: 'overlap' });
     expect(planPlace(empty, 'of-7-28', { x: 4, y: 9 }, a3)).toEqual({ kind: 'refused', error: 'out_of_room' });
-    // Devant un bureau du bas, la fontaine passe : sa porte est de l'autre côté.
-    expect(planPlace(empty, 'of-12-15', { x: a3.door.x, y: 9 }, a3)).toMatchObject({ kind: 'place' });
+    // À côté de la porte, la fontaine passe.
+    expect(planPlace(empty, 'of-12-15', { x: a3.door.x + a3.door.width, y: 9 }, a3)).toMatchObject({ kind: 'place' });
   });
 
   test('un pot posé sur un autre pot du dehors le remplace, après confirmation ; un pot dehors ne remplace rien dedans', () => {

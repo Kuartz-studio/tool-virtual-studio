@@ -398,7 +398,15 @@ export const fr = {
       generic: 'Impossible de rejoindre cette personne. Réessaie.',
     },
   },
-  // Les boutons de zoom du jeu, en bas à droite : du plancher (zoomFloorPercent, game/zoom.ts : la carte et sa marge, jamais moins de 25 %) à
+  // La carte du bureau (touche M, ou « Carte » dans le menu « Plus ») : le plan schématique, chacun à sa place ; un double-clic y fait courir l'avatar.
+  officeMap: {
+    toggle: 'Carte',
+    shortcut: 'M',
+    title: 'Carte du bureau',
+    help: 'Double-clic pour y aller',
+    close: 'Fermer la carte',
+  },
+  // Les boutons de zoom du jeu, en bas à droite : du plancher (zoomFloorPercent, game/zoom.ts : la carte et sa marge, jamais moins de 60 %) à
   // 200 %, 100 % au départ, ou le plancher s'il est plus haut (un écran en portrait ou très large) ; le pourcentage du milieu rétablit ce zoom
   // de départ. Son nom ne dit pas « 100 % », qui serait faux sur ces écrans-là (143 % sur un moniteur de 1 080 × 1 920 en portrait).
   zoom: {
@@ -449,6 +457,7 @@ export const fr = {
       desk: 'C\'est le bureau de {name} : c\'est à {name} de choisir sa musique.',
       freeDesk: 'Ce bureau est libre : sa musique se choisit quand on le prend.',
       noSpeaker: 'Pas d\'enceinte ici : on entend la musique du lieu, qui ne se change pas.',
+      outside: 'Dehors, pas d\'enceinte : la musique se tait, on entend le jardin.',
     },
   },
   // Le café : la machine du bar (« [E] Prendre un café », de près) et la pastille qui compte ce qu'il en reste, sous la puce du lieu.

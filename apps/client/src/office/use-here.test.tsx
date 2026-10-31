@@ -83,14 +83,14 @@ describe('usePlace : le lieu où l\'on est', () => {
     expect(EventBus.listenerCount('local:move')).toBe(before - 1);
   });
 
-  test('sur la grande carte (celle du magasin), les grandes pièces : l\'accueil à l\'arrivée, puis le café', () => {
+  test('sur la grande carte (celle du magasin), les grandes pièces : l\'accueil à l\'arrivée, puis la cafétéria', () => {
     const office = parseOfficeMap(buildOfficeTiledMap());
     init(player('moi', 'Léa', office.spawn.x, office.spawn.y), 'office');
     act(() => useOfficeStore.getState().setOfficeMap(office));
     const { result } = renderHook(() => usePlace());
     expect(result.current).toBe('Accueil');
-    walkTo(40 * 32 + 16, 5 * 32 + 16);
-    expect(result.current).toBe('Café');
+    walkTo(44 * 32 + 16, 25 * 32 + 16);
+    expect(result.current).toBe('Cafétéria');
   });
 
   test('le bureau de quelqu\'un porte son nom, et le suit quand il change de main', () => {

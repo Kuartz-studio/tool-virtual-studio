@@ -381,8 +381,8 @@ describe('les modes par défaut et leur emplacement', () => {
 // et la case libre devant lui : mode-travel.test.ts en fait le calcul.
 describe('le mode Sport sur son tapis de course', () => {
   const treadmill = { desk: 'A1', x: 1, y: 2 };
-  const belt = { x: 352, y: 167 };
-  const inFront = { x: 336, y: 208 };
+  const belt = { x: 896, y: 327 };
+  const inFront = { x: 880, y: 368 };
 
   type Person = Awaited<ReturnType<typeof person>>;
   const saveDecor = (a: Person, items: PlacedItem[]) =>

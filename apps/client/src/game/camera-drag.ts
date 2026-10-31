@@ -10,11 +10,11 @@ export interface CameraDragHandlers {
   onStart(): void;
   // La carte a glissé de (dx, dy) pixels de l'écran depuis l'appel précédent.
   onDrag(dx: number, dy: number): void;
-  // Un double-clic sur la carte.
-  onDoubleClick(): void;
+  // Un double-clic sur la carte, à ce point de la page.
+  onDoubleClick(clientX: number, clientY: number): void;
 }
 
-// Faire glisser la carte à la souris (bouton gauche, ou un doigt), et la recentrer d'un double-clic. Un appui sur un objet qu'on actionne (une table, la machine
+// Faire glisser la carte à la souris (bouton gauche, ou un doigt), et un double-clic (la scène y fait courir l'avatar, et y ramène la caméra). Un appui sur un objet qu'on actionne (une table, la machine
 // à café, une personne fictive qu'on déplace…) ne fait pas glisser la carte : l'objet le garde. Pendant le glissement, le curseur est une main fermée.
 // Renvoie la fonction qui débranche.
 export function bindCameraDrag(scene: Scene, handlers: CameraDragHandlers): () => void {
@@ -49,7 +49,7 @@ export function bindCameraDrag(scene: Scene, handlers: CameraDragHandlers): () =
 
   const onDoubleClick = (event: MouseEvent) => {
     if (event.button !== 0) return;
-    handlers.onDoubleClick();
+    handlers.onDoubleClick(event.clientX, event.clientY);
   };
 
   scene.input.on(Input.Events.POINTER_DOWN, onDown);

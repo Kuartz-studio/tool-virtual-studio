@@ -1,7 +1,10 @@
 import { DEFAULT_ROOM_MUSIC, type ChatMessage } from '@bureau/shared';
 import type { StoreApi } from 'zustand';
 import { doorSoundLevel } from '../game/door-state';
+import { prefersReducedMotion } from '../game/reduced-motion';
+import { SPIN_MS } from '../game/walk-marker';
 import { listenOnBus, type OfficeBus } from '../net/office-connection';
+import { useMapStore } from '../office/map-store';
 import { selectDeskOf, type OfficeState } from '../state/office-store';
 import { SFX, type SfxId } from './catalog';
 import type { SfxOptions } from './engine';
@@ -41,6 +44,17 @@ export function uiSoundFor(target: EventTarget | null): SfxId | null {
   return 'click';
 }
 
+// Les zones où le survol sonne (la fenêtre de l'accueil : `data-sfx-hover`).
+const HOVER_ZONES = '[data-sfx-hover]';
+
+// La commande qu'on survole dans une zone où le survol sonne, ou null : hors d'une telle zone, hors d'une commande, ou sur une commande inactive.
+export function hoverControlOf(target: EventTarget | null): Element | null {
+  if (!(target instanceof Element) || target.closest(HOVER_ZONES) === null) return null;
+  const control = target.closest(CONTROLS);
+  if (control === null || control.matches(':disabled, [aria-disabled="true"]') || control.getAttribute('data-sfx') === 'none') return null;
+  return control;
+}
+
 // Le dernier message d'une liste qui vient d'arriver, ou undefined : l'identifiant du dernier n'était pas dans la liste d'avant.
 function arrivedIn(next: readonly ChatMessage[], previous: readonly ChatMessage[]): ChatMessage | undefined {
   const last = next.at(-1);
@@ -52,24 +66,37 @@ function arrivedIn(next: readonly ChatMessage[], previous: readonly ChatMessage[
 export const LOST_AFTER_MS = 1500;
 // Le temps entre les deux coups d'un « toc toc ».
 const KNOCK_GAP_MS = 220;
+// La gemme qui apparaît sur la case où l'on court, juste après le point posé (`waypoint`) ; à chaque tour ensuite (quand elle refait face, toutes les
+// SPIN_MS ms), sa note, plus aiguë et tout bas.
+export const GEM_DELAY_MS = 90;
+export const GEM_TURN = { rate: 1.5, level: 0.4 } as const;
+// La voix de l'administratrice : chaque bip à une hauteur un peu différente (une vitesse de lecture entre ces deux-là), comme une voix qui parle.
+export const VOICE_RATES = { min: 0.95, max: 1.3 } as const;
+// Les fenêtres dont la fermeture sonne (la conversation à l'accueil, « Quoi de neuf ? ») : `data-sfx-modal`. Leurs boutons qui les ferment sont muets.
+const MODALS = '[data-sfx-modal]';
 // Le café qu'on se sert : le bruit de la machine (`coffee`, 1 s), puis le coup de fouet du café (`boost`) à la fin de la gorgée.
 export const COFFEE_BOOST_DELAY_MS = 850;
 
 interface SfxDeps {
   bus: OfficeBus;
   store: StoreApi<OfficeState>;
+  // La carte du bureau (office/map-store.ts) : ouverte ou fermée.
+  map?: StoreApi<{ open: boolean }>;
   doc?: Document;
   // La pièce réglable où sont les pieds de la personne (celle de l'audio : `placeKey`), ou null ; sans elle, la musique des pièces ne sonne pas.
   placeKey?: () => string | null;
+  // Un nombre entre 0 et 1 (Math.random) : la hauteur de chaque bip de la voix de l'accueil.
+  random?: () => number;
 }
 
 // Branche les effets sur ce qui se passe : les clics de l'interface, les arrivées et départs, les messages, les toc toc, la conversation
 // qui commence ou finit, l'arrivée au bureau, la connexion qui tombe, un bureau ou un personnage enregistré, la lumière qu'on allume ou
 // qu'on éteint, le café qu'on se sert, la musique que quelqu'un d'autre règle dans la pièce où l'on est, le voyage d'un mode, le verrou de sa
-// conversation. Renvoie la fonction qui débranche tout.
+// conversation, la carte du bureau qu'on ouvre ou qu'on ferme, le double-clic qui envoie l'avatar quelque part, le survol des commandes de la fenêtre de
+// l'accueil, la voix de l'administratrice qui parle, une fenêtre qui se ferme. Renvoie la fonction qui débranche tout.
 //
 // En « Ne pas déranger », ce qui vient des autres (arrivées, messages, toc toc, la lumière, la musique) ne sonne pas.
-export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKey = () => null }: SfxDeps): () => void {
+export function bindSfx(engine: SfxTarget, { bus, store, map = useMapStore, doc = document, placeKey = () => null, random = Math.random }: SfxDeps): () => void {
   const state = () => store.getState();
   const quiet = () => state().self?.status === 'dnd';
   const knock = () => {
@@ -84,9 +111,48 @@ export function bindSfx(engine: SfxTarget, { bus, store, doc = document, placeKe
   };
   doc.addEventListener('click', onClick, true);
 
+  // Le survol, à la souris seulement (un doigt qui touche n'a pas de survol) : un bruit chaque fois que le curseur arrive sur une autre commande d'une zone où
+  // le survol sonne ; rester dessus, ou passer d'un de ses enfants à l'autre, ne sonne pas.
+  let hovered: Element | null = null;
+  const onPointerOver = (event: Event) => {
+    if ((event as PointerEvent).pointerType !== 'mouse') return;
+    const control = hoverControlOf(event.target);
+    if (control === hovered) return;
+    hovered = control;
+    if (control !== null) engine.playSfx('hover');
+  };
+  doc.addEventListener('pointerover', onPointerOver, true);
+
+  // Une fenêtre `data-sfx-modal` qui quitte la page (fermée par sa croix, un bouton, Échap, ou qu'on s'éloigne du comptoir) : le bruit d'un livre qu'on referme.
+  const modals = new MutationObserver((records) => {
+    const closed = records.some((record) => [...record.removedNodes].some((node) => node instanceof Element && (node.matches(MODALS) || node.querySelector(MODALS) !== null)));
+    if (closed) engine.playSfx('modal-close');
+  });
+  modals.observe(doc.body, { childList: true, subtree: true });
+
   let lostTimer: ReturnType<typeof setTimeout> | undefined;
+  let gemTimer: ReturnType<typeof setInterval> | undefined;
   const offs = [
+    () => clearInterval(gemTimer),
     () => doc.removeEventListener('click', onClick, true),
+    () => doc.removeEventListener('pointerover', onPointerOver, true),
+    () => modals.disconnect(),
+    listenOnBus(bus, 'clerk:voice', () => engine.playSfx('voice', { rate: VOICE_RATES.min + (VOICE_RATES.max - VOICE_RATES.min) * random() })),
+    // La carte du bureau se déplie, ou se replie (la ligne « Carte » du menu et sa croix sont muettes : c'est elle qui sonne, par la touche M aussi).
+    map.subscribe((now, before) => {
+      if (now.open !== before.open) engine.playSfx(now.open ? 'map-open' : 'map-close');
+    }),
+    // Un double-clic envoie l'avatar quelque part (sur le jeu ou sur la carte) : le bruit d'un point qu'on pose, puis la note de la gemme qui apparaît sur la case,
+    // et de nouveau, tout bas, à chaque tour qu'elle fait, jusqu'à l'arrivée (en mouvement réduit, elle ne tourne pas : une note, pas plus). « Aller à mon bureau »
+    // a déjà le bruit de son bouton, et pas de gemme.
+    listenOnBus(bus, 'walk:state', ({ walking, to }) => {
+      clearInterval(gemTimer);
+      gemTimer = undefined;
+      if (!walking || to !== 'point') return;
+      engine.playSfx('waypoint');
+      engine.playSfx('gem', { delayMs: GEM_DELAY_MS });
+      if (!prefersReducedMotion()) gemTimer = setInterval(() => engine.playSfx('gem', { ...GEM_TURN, delayMs: GEM_DELAY_MS }), SPIN_MS);
+    }),
     () => clearTimeout(lostTimer),
     listenOnBus(bus, 'net:joined', (player) => {
       if (player.id !== state().selfId && !quiet()) engine.playSfx('arrive');

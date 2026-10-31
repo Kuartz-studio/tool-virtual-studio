@@ -86,10 +86,10 @@ describe('roomSceneOf : ce que joue une pièce', () => {
     expect(roomSceneOf(street, state({ scene: 'quest' }))).toBe('lobby');
   });
 
-  test('sur la grande carte : les pièces à enceinte se règlent (l\'octogone compris), la place et les rues non', () => {
+  test('sur la grande carte : les pièces à enceinte se règlent (la salle de boxe comprise), le hall, la rue et le dehors non', () => {
     const settable = (key: string) => placeByKey(map, key)!.music;
-    for (const key of ['cafe', 'reception', 'meeting', 'arena', 'conference', 'gym', 'game', 'lounge']) expect(settable(key), key).toBe(true);
-    for (const key of ['plaza', 'street-n', 'street-s', 'street-e']) expect(settable(key), key).toBe(false);
+    for (const key of ['cafe', 'reception', 'arena', 'conference', 'gym', 'game']) expect(settable(key), key).toBe(true);
+    for (const key of ['hall', 'street', 'terrace', 'garden']) expect(settable(key), key).toBe(false);
     // Un bureau a sa musique, que son propriétaire règle.
     expect(placeByKey(map, 'desk:A1')!.music).toBe(true);
   });

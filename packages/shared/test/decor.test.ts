@@ -10,6 +10,7 @@ import {
   DESK_ROOMS,
   FLOOR_THEMES,
   MAX_DECOR_ITEMS,
+  PLAN_ITEMS,
   POOL_TILES,
   SHOP_WALL_THEMES,
   TILESET,
@@ -95,15 +96,26 @@ describe('la banque d\'éléments', () => {
     expect(isClockId('of-15-0')).toBe(false);
     // Aucune clé du pack n'est prise, et la banque entière n'a pas de doublon ; les horloges ouvrent « Déco & murs ».
     expect(new Set(DECOR_CATALOG.map((item) => item.id)).size).toBe(DECOR_CATALOG.length);
-    expect(DECOR_CATALOG).toHaveLength(DECOR_ITEMS.length + CLOCK_ITEMS.length);
+    expect(DECOR_CATALOG).toHaveLength(DECOR_ITEMS.length + CLOCK_ITEMS.length + PLAN_ITEMS.length);
     expect(decorItemsOf('deco').slice(0, 4)).toEqual(CLOCK_ITEMS);
+  });
+
+  test('les éléments de la carte seule (le jardin, les meubles composés) : dans la banque, que la carte pose, jamais proposés ni posables dans un bureau', () => {
+    expect(PLAN_ITEMS.length).toBeGreaterThan(0);
+    for (const item of PLAN_ITEMS) {
+      expect(item.mapOnly, item.id).toBe(true);
+      expect(item.atlas, item.id).toBe('plan');
+      expect(decorItem(item.id), item.id).toBe(item);
+      expect(decorItemsOf(item.cat), item.id).not.toContain(item);
+    }
+    expect(checkDecor({ ...DEFAULT_DESK_DECOR, items: [{ id: 'jardiniere-1', x: 2, y: 2 }] })).toEqual({ ok: false, error: 'unknown_item', index: 0 });
   });
 
   test('l\'atlas d\'un élément : celui de sa catégorie, ou le sien', () => {
     expect(decorAtlasOf(decorItem('of-15-0')!)).toBe('deco');
     expect(decorAtlasOf(decorItem('horloge-gare')!)).toBe('horloges');
     expect(decorAtlasUrl('horloges')).toBe('/assets/decor/horloges.png');
-    expect(decorAtlasNames()).toEqual([...DECOR_CATEGORIES.map((c) => c.id), 'horloges']);
+    expect(decorAtlasNames()).toEqual([...DECOR_CATEGORIES.map((c) => c.id), 'horloges', 'plan']);
   });
 
   test('des thèmes de sol et de mur à choisir', () => {
@@ -439,11 +451,17 @@ describe('defaultDeskDecor', () => {
 
 // ---- Le dehors : la face du mur sud et la rangée de la rue juste dessous ---------------------------------------------------------
 
-// Les pièces de la grande carte, lues comme le serveur les lit : A1 (porte au sud, en haut), A2 (l'interrupteur sur la face de son mur sud), A3 (porte au
-// nord, en bas), A5 et A6 (compactes, le panneau de sortie sur la face de leur mur sud, à l'ouest).
+// Les pièces de la grande carte, lues comme le serveur les lit : toutes ont leur porte au sud, sur la rue, et rien d'accroché sur la face de leur mur (A1). Pour
+// les règles que cette carte n'exerce pas, des pièces écrites à la main : A2 avec l'interrupteur sur la face de son mur sud (colonne 8), A3 sa porte au nord,
+// A5 et A6 (compactes) un panneau de sortie à l'ouest sur la face de leur mur, A6 sa porte au nord.
 const OFFICE_MAP = parseOfficeMap(buildOfficeTiledMap());
 const roomOf = (key: string): DeskRoomSpec => deskRoomSpecOf(OFFICE_MAP, key)!;
-const [A1, A2, A3, A5, A6] = ['A1', 'A2', 'A3', 'A5', 'A6'].map(roomOf) as [DeskRoomSpec, DeskRoomSpec, DeskRoomSpec, DeskRoomSpec, DeskRoomSpec];
+const A1 = roomOf('A1');
+const SIGN = { x: 0, y: 8, w: 1, h: 1 };
+const A2: DeskRoomSpec = { ...DESK_ROOMS.standard, outside: { fixtures: [{ x: 8, y: 8, w: 1, h: 1 }] } };
+const A3: DeskRoomSpec = { ...DESK_ROOMS.standard, door: { ...DESK_ROOMS.standard.door, side: 'north' }, outside: { fixtures: [] } };
+const A5: DeskRoomSpec = { ...DESK_ROOMS.compact, outside: { fixtures: [SIGN] } };
+const A6: DeskRoomSpec = { ...DESK_ROOMS.compact, door: { ...DESK_ROOMS.compact.door, side: 'north' }, outside: { fixtures: [SIGN] } };
 // La rangée du dehors des pièces de 7 rangées : 7 et 8 sont la bande de mur sud, 9 la rue.
 const OUT = 9;
 // Une plante en pot (1 × 2, une rangée au sol), une fontaine à eau (solide, 1 × 3), un bureau (deux rangées au sol), une natte (un tapis d'une rangée) et
@@ -457,9 +475,9 @@ const CLOCK = 'horloge-ronde';
 const BOARD = 'of-9-12';
 
 describe('le dehors : devant sa pièce', () => {
-  test('les pièces de la carte ont un dehors à la rangée 9 ; DESK_ROOMS, non (c\'est la carte qui le donne)', () => {
+  test('les pièces de la carte ont un dehors à la rangée 9, leur porte au sud, rien d\'accroché devant elles ; DESK_ROOMS, non (c\'est la carte qui le donne)', () => {
     expect(outsideRow(STANDARD)).toBe(OUT);
-    for (const room of [A1, A2, A3, A5, A6]) expect(room.outside).toBeDefined();
+    for (const key of ['A1', 'A2', 'A3', 'A4', 'A5', 'A6']) expect(roomOf(key), key).toMatchObject({ door: { side: 'south' }, outside: { fixtures: [] } });
     expect('outside' in STANDARD).toBe(false);
     expect('outside' in COMPACT).toBe(false);
   });

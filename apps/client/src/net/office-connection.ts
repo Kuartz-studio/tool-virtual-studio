@@ -66,11 +66,16 @@ export interface OfficeBusEvents {
   // L'interface demande au jeu de faire marcher l'avatar tout seul jusqu'à son bureau (« Aller à mon bureau », game/auto-walk.ts), ou
   // d'arrêter cette marche. Rien ne part au serveur de ces deux-là : l'avatar marche comme au clavier, et ses positions partent par `local:move`.
   'local:walk-to-desk': () => void;
+  // Courir jusqu'à ce point de la carte, en pixels (un double-clic sur la carte du bureau) ; `near` : c'est quelqu'un, on s'arrête à une case de lui.
+  'local:walk-to': (p: { x: number; y: number; near?: boolean }) => void;
   'local:walk-cancel': () => void;
+  // L'administratrice de l'accueil parle (sa réplique s'écrit, office/ClerkDialog.tsx) : un petit bip de sa voix, toutes les CLERK_VOICE_MS ms.
+  'clerk:voice': () => void;
   // Le jeu : l'avatar marche tout seul (`walking` vrai), ou ne marche plus (faux : arrivé, interrompu par une touche de déplacement ou par
   // `local:walk-cancel`, bloqué, ou pas de chemin jusqu'au bureau). Dit à chaque départ et à chaque arrêt ; faux aussi en réponse à un
   // `local:walk-to-desk` sans bureau ou sans chemin, où l'avatar ne bouge pas.
-  'walk:state': (p: { walking: boolean }) => void;
+  // `to` : vers son bureau (« Aller à mon bureau »), ou vers un point montré d'un double-clic.
+  'walk:state': (p: { walking: boolean; to?: 'desk' | 'point' }) => void;
   // Qui parle dans la room audio/vidéo, soi-même compris (les identifiants des comptes), à chaque changement ; [] en la quittant. Le
   // jeu dessine l'anneau de parole sur leurs étiquettes (tâche 20).
   'media:speaking': (ids: string[]) => void;

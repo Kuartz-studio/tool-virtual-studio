@@ -72,22 +72,22 @@ describe('arrivalSpot : où poser quelqu\'un qui arrive à une table', () => {
     expect(avatarBodyFits(map, spot.x, spot.y)).toBe(true);
   });
 
-  test('l\'anneau ne sort jamais de la salle : une table contre le mur ouest, dont l\'anneau déborde sur la salle de sport voisine', () => {
+  test('l\'anneau ne sort jamais de la salle : une table contre le mur ouest, dont l\'anneau déborde sur la cafétéria voisine', () => {
     const room = placeByKey(map, 'game')!;
-    const gym = placeByKey(map, 'gym')!;
-    const flush = { game: 'chess' as const, rect: { x: room.rects[0]!.x, y: 1152, width: 96, height: 64 }, seats: [] };
+    const cafe = placeByKey(map, 'cafe')!;
+    const flush = { game: 'chess' as const, rect: { x: room.rects[0]!.x, y: 26 * tile, width: 96, height: 64 }, seats: [] };
     const around = { left: flush.rect.x - GAME_ARRIVAL_RING_TILES * tile, right: flush.rect.x + flush.rect.width + GAME_ARRIVAL_RING_TILES * tile, top: flush.rect.y - GAME_ARRIVAL_RING_TILES * tile, bottom: flush.rect.y + flush.rect.height + GAME_ARRIVAL_RING_TILES * tile };
-    // Quelqu'un sur chaque case de la salle que l'anneau couvre : il ne reste de libres, dans l'anneau, que celles de la salle de sport.
+    // Quelqu'un sur chaque case de la salle que l'anneau couvre : il ne reste de libres, dans l'anneau, que celles de la cafétéria.
     const taken: Array<{ x: number; y: number }> = [];
-    let gymCellsFree = 0;
+    let cafeCellsFree = 0;
     for (let ty = Math.floor(around.top / tile); ty < Math.ceil(around.bottom / tile); ty++) {
       for (let tx = Math.floor(around.left / tile); tx < Math.ceil(around.right / tile); tx++) {
         const point = { x: tx * tile + tile / 2, y: ty * tile + tile / 2 };
         if (placeAt(map, point.x, point.y)?.key === room.key) taken.push(point);
-        else if (placeAt(map, point.x, point.y)?.key === gym.key && avatarBodyFits(map, point.x, point.y)) gymCellsFree++;
+        else if (placeAt(map, point.x, point.y)?.key === cafe.key && avatarBodyFits(map, point.x, point.y)) cafeCellsFree++;
       }
     }
-    expect(gymCellsFree).toBeGreaterThan(0);
+    expect(cafeCellsFree).toBeGreaterThan(0);
     const spot = arrivalSpot(map, flush, null, taken)!;
     expect(spot).not.toBeNull();
     expect(placeAt(map, spot.x, spot.y)?.key).toBe(room.key);

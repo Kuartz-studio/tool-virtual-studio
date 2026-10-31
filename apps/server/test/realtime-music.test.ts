@@ -95,12 +95,12 @@ describe('l\'état de la musique des pièces', () => {
     expect(await changed).toMatchObject({ place: 'reception', state: { on: false } });
   });
 
-  test('c\'est la pièce où le monde voit la personne qui compte, la plus petite : dans le café (au milieu de la place), le café se règle, la place non', async () => {
+  test('c\'est la pièce où le monde voit la personne qui compte : à la cafétéria, la cafétéria se règle, l\'accueil non', async () => {
     const srv = await startMusic();
     const a = await person(srv, 'a@x.fr');
     await teleport(srv, a, spotIn(srv, 'cafe'));
     const seen = record(a.socket);
-    a.socket.emit('music:set', { place: 'plaza', on: false });
+    a.socket.emit('music:set', { place: 'reception', on: false });
     await sleep(150);
     expect(changes(seen)).toEqual([]);
     a.socket.emit('music:set', { place: 'cafe', on: false });
@@ -112,7 +112,7 @@ describe('l\'état de la musique des pièces', () => {
     const srv = await startMusic();
     const a = await person(srv, 'a@x.fr');
     const seen = record(a.socket);
-    for (const key of ['street-n']) {
+    for (const key of ['street']) {
       await teleport(srv, a, spotIn(srv, key));
       a.socket.emit('music:set', { place: key, on: false });
     }

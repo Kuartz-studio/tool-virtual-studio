@@ -174,10 +174,10 @@ describe('avec un bureau', () => {
 
   test('qui est dans le bureau (d\'après les positions) : « Exclure » envoie kick ; les autres n\'y figurent pas', async () => {
     const user = userEvent.setup();
-    // A1 : pièce des cases x 9 à 17, y 2 à 8 ; le point (400, 144) y est, (80, 400) est dans la rue au sud.
+    // A1 : pièce des cases x 26 à 34, y 7 à 13 ; le point (976, 304) y est, (656, 560) est dans la rue au sud.
     const { socket } = setup({
       desks: [owned('A1', 'moi', 'Léa')],
-      others: [player('bob', 'Bob', { x: 400, y: 144 }), player('zoe', 'Zoé', { x: 80, y: 400 })],
+      others: [player('bob', 'Bob', { x: 976, y: 304 }), player('zoe', 'Zoé', { x: 656, y: 560 })],
     });
     const inside = screen.getByRole('region', { name: fr.desk.insideTitle });
     expect(within(inside).getAllByRole('listitem').map((li) => li.querySelector('.desk-person-name')?.textContent)).toEqual(['Bob']);
@@ -186,9 +186,9 @@ describe('avec un bureau', () => {
   });
 
   test('les positions relues : quelqu\'un qui entre apparaît dans la liste', async () => {
-    const { view } = setup({ desks: [owned('A1', 'moi', 'Léa')], others: [player('bob', 'Bob', { x: 80, y: 400 })] });
+    const { view } = setup({ desks: [owned('A1', 'moi', 'Léa')], others: [player('bob', 'Bob', { x: 656, y: 560 })] });
     expect(screen.getByText(fr.desk.insideEmpty)).toBeTruthy();
-    useOfficeStore.getState().positions.set('bob', { x: 400, y: 144, dir: 'up', moving: false });
+    useOfficeStore.getState().positions.set('bob', { x: 976, y: 304, dir: 'up', moving: false });
     await act(async () => {
       await new Promise((resolve) => setTimeout(resolve, 600));
     });

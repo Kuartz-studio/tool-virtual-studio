@@ -1,5 +1,5 @@
 import { MUSIC_SCENES, MUSIC_THEME_IDS, MUSIC_THEMES, themeOfScene, type MusicTheme } from '@bureau/shared';
-import { MEASURED_MUSIC, MEASURED_SFX } from './measured.generated';
+import { MEASURED_MUSIC, MEASURED_NATURE, MEASURED_SFX } from './measured.generated';
 
 // Les sons de l'appli : des ambiances (de la musique en boucle) et des effets (tout ce qui n'est pas de la musique). Les fichiers sont
 // rangés par scripts/audio/build-audio.ts, qui mesure aussi le volume de chacun (measured.generated.ts) : le gain ci-dessous ramène
@@ -59,7 +59,12 @@ export const MUSIC_FORMATS = [
 // Les adresses d'une ambiance, dans l'ordre où les essayer : celles que le navigateur dit savoir lire, puis les autres (un navigateur qui
 // se trompe sur ce qu'il sait lire retombe ainsi sur l'autre copie).
 export function musicUrls(id: SceneId, canPlay: (mime: string) => boolean): string[] {
-  const urls = MUSIC_FORMATS.map((format) => ({ url: `/assets/audio/music/${id}.${format.extension}`, ok: canPlay(format.mime) }));
+  return copiesOf(`/assets/audio/music/${id}`, canPlay);
+}
+
+// Les deux copies d'un son (sans l'extension), dans cet ordre.
+function copiesOf(path: string, canPlay: (mime: string) => boolean): string[] {
+  const urls = MUSIC_FORMATS.map((format) => ({ url: `${path}.${format.extension}`, ok: canPlay(format.mime) }));
   return [...urls.filter((u) => u.ok), ...urls.filter((u) => !u.ok)].map((u) => u.url);
 }
 
@@ -109,8 +114,31 @@ export const SFX: Record<SfxId, Sfx> = {
   xp: sfx('xp', 0.6, 150),
   'level-up': sfx('level-up', 0.9, 2000),
   coins: sfx('coins', 0.7, 300),
+  // La carte du bureau qu'on déplie (touche M) et qu'on replie ; le double-clic qui envoie l'avatar quelque part ; le survol d'une commande, tout bas (la fenêtre de
+  // l'accueil) : un bruit à chaque commande qu'on survole, jamais deux en moins de 50 ms.
+  'map-open': sfx('map-open', 0.35, 200),
+  'map-close': sfx('map-close', 0.3, 200),
+  waypoint: sfx('waypoint', 0.45, 120),
+  hover: sfx('hover', 0.22, 50),
+  // La gemme qui tourne sur la case où l'on court : une note de boîte à musique, discrète, à son apparition puis à chaque tour (sfx-events.ts).
+  gem: sfx('gem', 0.3, 300),
+  // La voix de l'administratrice de l'accueil, un petit bip tout bas pendant que sa réplique s'écrit ; une fenêtre (l'accueil, « Quoi de neuf ? ») qui se ferme.
+  voice: sfx('voice', 0.25, 55),
+  'modal-close': sfx('modal-close', 0.45, 200),
 };
 
 export const SFX_IDS = Object.keys(SFX) as SfxId[];
 
 export const sfxUrl = (id: SfxId): string => `/assets/audio/sfx/${id}.wav`;
+
+// ---- La nature ------------------------------------------------------------------------------------------------------------------
+
+// Les bruits de la nature (nature.ts) : l'eau et les insectes (des boucles), le chant des oiseaux (une banque de phrases), le vent (lu par coups). Leur
+// gain mesuré les amène au niveau commun des ambiances ; leurs niveaux dans le mélange sont dans nature.ts (NATURE_LEVELS). Pour une boucle, `seconds`
+// est sa période (le fichier a ses marges en plus, NATURE_LOOP_MARGIN_S).
+export type NatureId = keyof typeof MEASURED_NATURE;
+
+export const NATURE: Record<NatureId, { gain: number; seconds: number }> = MEASURED_NATURE;
+
+// Comme la musique : l'ogg, ou l'AAC pour Safari.
+export const natureUrls = (id: NatureId, canPlay: (mime: string) => boolean): string[] => copiesOf(`/assets/audio/nature/${id}`, canPlay);

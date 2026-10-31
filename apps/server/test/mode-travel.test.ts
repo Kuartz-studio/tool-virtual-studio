@@ -198,13 +198,13 @@ describe('en sortir', () => {
 
 // ---- Sur son tapis de course -------------------------------------------------------------------------------------------------
 
-// Le bureau A1 (la pièce standard, porte au sud : ses cases vont de (9, 2) à (17, 8) sur la carte) et un tapis de course posé en (1, 2) de sa pièce : son empreinte
-// couvre les cases (10, 4) à (11, 5) de la carte ; la rangée juste au sud est la 6.
+// Le bureau A1 (la pièce standard, porte au sud : ses cases vont de (26, 7) à (34, 13) sur la carte) et un tapis de course posé en (1, 2) de sa pièce : son
+// empreinte couvre les cases (27, 9) à (28, 10) de la carte ; la rangée juste au sud est la 11.
 const treadmillAt = (x: number, y: number): PlacedItem => ({ id: TREADMILL_ID, x, y });
 const ref = (x: number, y: number, desk = 'A1'): TreadmillRef => ({ desk, x, y });
 const belt = treadmillBelt(map, ref(1, 2))!;
-// La case (10, 6), sous le tapis : la première de la rangée du sud (à égalité avec sa voisine, la plus à gauche).
-const inFront = { x: 336, y: 208 };
+// La case (27, 11), sous le tapis : la première de la rangée du sud (à égalité avec sa voisine, la plus à gauche).
+const inFront = { x: 880, y: 368 };
 
 // Le vrai monde (ses positions, et qui court) et des bureaux de poche : Ana a A1, où est posé `placed` (que le test peut changer : `items.A1`). `calls` : ce que teleport a
 // reçu ; `announced` : qui s'est mis à courir (qu'on en descend, le monde le dit lui-même : drainTreadmillStops).
@@ -240,7 +240,7 @@ describe('prendre un mode sur son tapis de course', () => {
     const { world, travel, calls, announced, join } = onTreadmills([treadmillAt(1, 2)]);
     join('ana', reception);
     travel.change('ana', null, sport, { treadmill: true });
-    expect(belt).toEqual({ x: 352, y: 167 });
+    expect(belt).toEqual({ x: 896, y: 327 });
     expect(isWalkablePoint(map, belt.x, belt.y)).toBe(true);
     expect(calls).toEqual([{ id: 'ana', at: belt, reason: 'teleport' }]);
     expect(world.get('ana')).toMatchObject({ ...belt, dir: 'up', treadmill: ref(1, 2) });
@@ -322,16 +322,16 @@ describe('descendre de son tapis de course', () => {
     join('bob', inFront);
     running();
     travel.change('ana', sport, null);
-    expect(calls[0]!.at).toEqual({ x: 368, y: 208 });
+    expect(calls[0]!.at).toEqual({ x: 912, y: 368 });
 
     const crowded = onTreadmills([treadmillAt(1, 2)]);
     crowded.join('ana', reception);
     crowded.join('bob', inFront);
-    crowded.join('carl', { x: 368, y: 208 });
+    crowded.join('carl', { x: 912, y: 368 });
     crowded.running();
     crowded.travel.change('ana', sport, null);
     // Les deux côtés sont à égalité : celui de gauche, la case (9, 5).
-    expect(crowded.calls[0]!.at).toEqual({ x: 304, y: 176 });
+    expect(crowded.calls[0]!.at).toEqual({ x: 848, y: 336 });
   });
 
   test('un tapis contre le mur du bas (sa rangée du sud est hors de la pièce) : on descend à côté', () => {
@@ -340,7 +340,7 @@ describe('descendre de son tapis de course', () => {
     travel.change('ana', null, sport, { treadmill: true });
     expect(world.get('ana')?.treadmill).toEqual(ref(0, 5));
     travel.change('ana', sport, null);
-    expect(calls.at(-1)).toEqual({ id: 'ana', at: { x: 368, y: 272 } });
+    expect(calls.at(-1)).toEqual({ id: 'ana', at: { x: 912, y: 432 } });
   });
 
   test('un pas de qui court : hors du tapis (son navigateur l\'a fait descendre), il passe comme un autre ; resté sur le tapis, le serveur la pose devant', () => {

@@ -2,11 +2,11 @@ import { COFFEE_DURATION_MS, COFFEE_RATE_MS, MAX_SPEED_PX_PER_S, MOVE_JITTER_MS,
 import { describe, expect, test } from 'vitest';
 import { enter, nextEvent, record, sleep, startTestServer, type TestServer, type TestServerOptions } from './helpers/realtime';
 
-// La machine à café de la grande carte (MAP_KEY=office) : sa case de service est (40, 5), devant le comptoir du café. Centre d'une case, en pixels.
+// La machine à café de la grande carte (MAP_KEY=office) : sa case de service est (44, 25), devant le bar de la cafétéria. Centre d'une case, en pixels.
 const px = (tile: number) => tile * 32 + 16;
-const AT_MACHINE = { x: px(40), y: px(5) };
-const TWO_TILES_AWAY = { x: px(40), y: px(7) };
-const THREE_TILES_AWAY = { x: px(40), y: px(8) };
+const AT_MACHINE = { x: px(44), y: px(25) };
+const TWO_TILES_AWAY = { x: px(44), y: px(27) };
+const THREE_TILES_AWAY = { x: px(44), y: px(28) };
 
 // Ce qu'un serveur à horloge à la main laisse faire : le temps du monde (café, limites de débit) est celui du test.
 function withClock(): { clock: { t: number }; options: TestServerOptions } {

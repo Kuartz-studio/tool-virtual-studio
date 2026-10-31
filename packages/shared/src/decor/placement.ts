@@ -199,7 +199,7 @@ export function checkDecor(decor: DeskDecor, room: DeskRoomSpec = DESK_ROOMS.sta
   const outsideY = room.outside ? outsideRow(room) * DECOR_STEPS : null;
   for (const [index, entry] of decor.items.entries()) {
     const item = decorItem(entry.id);
-    if (!item) return { ok: false, error: 'unknown_item', index };
+    if (!item || item.mapOnly) return { ok: false, error: 'unknown_item', index };
     if (!isDecorStep(entry.x) || !isDecorStep(entry.y)) return { ok: false, error: 'bad_position', index };
     const at = inSteps(footprintOf(item, entry));
     const outside = at.y === outsideY;

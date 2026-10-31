@@ -120,7 +120,8 @@ export function deskSettingsButton(page: Page): Locator {
   return officeBar(page).getByRole('button', { name: 'Réglages du bureau', exact: true });
 }
 
-// Le temps qu'on laisse à l'avatar pour marcher de l'accueil de la grande carte à son bureau (65 cases à 160 px/s : 13 s, plus sur une machine chargée).
+// Le temps qu'on laisse à l'avatar pour marcher de l'accueil de la grande carte à son bureau (70 cases jusqu'au plus loin, A6, à 320 px/s : 7 s, bien plus
+// sur une machine chargée).
 const DESK_WALK_TIMEOUT = 60_000;
 
 // Ouvre le panneau « Mon bureau » de cette page, et le renvoie : si l'on n'est pas dans son bureau, on y marche d'abord (« Aller à mon bureau », le

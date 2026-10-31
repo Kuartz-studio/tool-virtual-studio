@@ -95,38 +95,41 @@ describe('les lieux de la grande carte', () => {
   const px = (tile: number) => tile * office.tileSize + office.tileSize / 2;
   const at = (tx: number, ty: number, desks: DeskInfo[] = []) => placeAt(office, desks, px(tx), px(ty));
 
-  test('le café est le café, la place autour de lui la place centrale', () => {
-    expect(at(40, 5)).toBe('Café');
-    expect(at(33, 3)).toBe('Café');
-    expect(at(46, 8)).toBe('Café');
-    expect(at(31, 5)).toBe('Place centrale');
+  test('la cafétéria, d\'un bout à l\'autre : le bar, le salon à l\'ouest, la dernière table au sud-est', () => {
+    expect(at(44, 25)).toBe('Cafétéria');
+    expect(at(23, 24)).toBe('Cafétéria');
+    expect(at(60, 33)).toBe('Cafétéria');
   });
 
-  test('l\'accueil, où l\'on apparaît, n\'est pas le couloir', () => {
+  test('l\'accueil, où l\'on apparaît, n\'est pas le couloir ; le hall d\'entrée est à côté', () => {
     expect(placeAt(office, [], office.spawn.x, office.spawn.y)).toBe('Accueil');
-    expect(at(33, 17)).toBe('Accueil');
-    expect(at(47, 24)).toBe('Accueil');
+    expect(at(10, 40)).toBe('Accueil');
+    expect(at(26, 46)).toBe('Accueil');
+    expect(at(33, 45)).toBe("Hall d'entrée");
   });
 
-  test('les salles : réunion, octogone, conférence, sport, jeu, détente et piscine', () => {
-    expect(at(55, 5)).toBe('Salle de réunion');
-    expect(at(70, 5)).toBe('Octogone');
-    expect(at(60, 20)).toBe('Salle de conférence');
-    expect(at(5, 38)).toBe('Salle de sport');
-    expect(at(20, 38)).toBe('Salle de jeu');
-    expect(at(45, 33)).toBe('Détente et piscine');
-    expect(at(75, 40)).toBe('Détente et piscine');
+  test('les salles : conférence, jeux, sport, boxe', () => {
+    expect(at(12, 26)).toBe('Salle de conférence');
+    expect(at(70, 26)).toBe('Salle de jeux');
+    expect(at(50, 42)).toBe('Salle de sport');
+    expect(at(74, 40)).toBe('Salle de boxe');
   });
 
-  test('un bureau garde son nom ; une rue, au nord, au sud et à l\'est, est « Couloir »', () => {
+  test('dehors : le jardin qui fait le tour et ceux des deux angles, les terrasses', () => {
+    expect(at(2, 30)).toBe('Jardin');
+    expect(at(45, 53)).toBe('Jardin');
+    expect(at(10, 8)).toBe('Jardin');
+    expect(at(80, 8)).toBe('Jardin');
+    expect(at(10, 16)).toBe('Terrasse');
+    expect(at(80, 16)).toBe('Terrasse');
+  });
+
+  test('un bureau garde son nom ; la rue des bureaux est « Couloir »', () => {
     const slot = office.zones.find((zone) => zone.type === 'desk' && zone.name === 'A3')!;
     const mine = { key: 'A3', ownerId: 'moi', ownerName: 'Léa', name: null, locked: false, closedByState: false, floor: '', wall: '' } as unknown as DeskInfo;
     expect(placeAt(office, [mine], slot.x + 40, slot.y + 40)).toBe('Bureau de Léa');
-    expect(at(30, 12)).toBe('Couloir');
-    expect(at(5, 28)).toBe('Couloir');
-    expect(at(76, 20)).toBe('Couloir');
-    // La rue traverse la place : on y est dans le couloir, pas sur la place.
-    expect(at(40, 12)).toBe('Couloir');
+    expect(at(30, 17)).toBe('Couloir');
+    expect(at(60, 18)).toBe('Couloir');
   });
 
   test('un bureau libre se nomme « Place <clé> »', () => {
@@ -140,7 +143,7 @@ describe('les lieux de la grande carte', () => {
       for (let tx = 0; tx < office.widthTiles; tx++) names.add(at(tx, ty) ?? '?');
     }
     expect([...names].sort()).toEqual(
-      ['Accueil', 'Café', 'Couloir', 'Détente et piscine', 'Place centrale', 'Place A1', 'Place A2', 'Place A3', 'Place A4', 'Place A5', 'Place A6', 'Octogone', 'Salle de conférence', 'Salle de jeu', 'Salle de réunion', 'Salle de sport'].sort(),
+      ['Accueil', 'Cafétéria', 'Couloir', "Hall d'entrée", 'Jardin', 'Place A1', 'Place A2', 'Place A3', 'Place A4', 'Place A5', 'Place A6', 'Salle de boxe', 'Salle de conférence', 'Salle de jeux', 'Salle de sport', 'Terrasse'].sort(),
     );
   });
 

@@ -15,7 +15,7 @@
 - Le texte des notes est dans le client : `apps/client/src/updates/releases.ts` (`RELEASES`), la plus récente d'abord. Chaque version a son numéro, sa date (`AAAA-MM-JJ`), une accroche (une phrase) et ses nouveautés. La fenêtre les range **par genre**, chacun sous son titre et dans cet ordre : *Nouveautés*, *Améliorations*, *Corrections*, et, rarement, *Suppressions* (`RELEASE_KINDS`, `groupsFor`). Un genre sans nouveauté n'a pas de titre.
 - Une nouveauté a un **genre**, une **icône**, un **titre** et un **texte** :
   - `new` (groupe « Nouveautés », teinte de l'accent), `improved` (« Améliorations », vert), `fixed` (« Corrections », ambre), `removed` (« Suppressions », rouge : ce qu'on a retiré, rare) ;
-  - l'icône se donne par son nom (`fullscreen`, `zoom`, `admin`, `whatsNew`, `statusDot`, `treadmill`, `decor`, `blackTiles`) ; `ReleaseIcon`, dans `apps/client/src/office/icons.tsx`, la fait correspondre à une icône de Lucide ;
+  - l'icône se donne par son nom (`fullscreen`, `zoom`, `admin`, `whatsNew`, `statusDot`, `treadmill`, `decor`, `blackTiles`, `garden`, `map`, `run`, `music`, `pool`) ; `ReleaseIcon`, dans `apps/client/src/office/icons.tsx`, la fait correspondre à une icône de Lucide ;
   - `adminsOnly: true` la réserve aux admins (le panneau Admin, par exemple) : les membres ne la voient pas.
 - Les textes de la fenêtre elle-même (le titre, les boutons, les titres des groupes) sont dans `apps/client/src/i18n/fr.ts`, sous `whatsNew`.
 
@@ -34,8 +34,8 @@
 - **Un membre** ne voit ni les nouveautés réservées aux admins ni une version qui n'aurait rien d'autre à lui dire : en retard d'une seule version faite pour les admins, il n'a pas de fenêtre du tout.
 - **Quand** : en entrant au bureau, une fois l'interface en place. La fenêtre attend l'écran d'entrée (« Entrer »), puis le premier état du serveur, puis encore une demi-seconde (`WHATS_NEW_DELAY_MS`) : on voit d'abord qu'on est arrivé. Elle ne passe jamais devant la page de connexion ni devant l'écran d'entrée.
 - **La fermer** l'enregistre comme vue. On la ferme avec « C'est parti », la croix, Échap ou un clic sur le fond. L'enregistrement est optimiste : la fenêtre ne revient pas dans la page, et si `POST /api/me/release-seen` échoue, elle reviendra à la prochaine entrée.
-- **La revoir** : la ligne « Nouveautés » du menu « Moi » ouvre tout l'historique. Elle porte à droite le numéro de la version en cours (« v1.00 »). La fermer depuis là n'enregistre rien de plus.
-- « Tout l'historique » s'affiche aussi en bas de la fenêtre quand il y a plus de versions que celles qu'elle montre (pas encore le cas avec la seule 1.00).
+- **La revoir** : la ligne « Nouveautés » du menu « Moi » ouvre tout l'historique. Elle porte à droite le numéro de la version en cours (« v1.01 »). La fermer depuis là n'enregistre rien de plus.
+- « Tout l'historique » s'affiche aussi en bas de la fenêtre quand il y a plus de versions que celles qu'elle montre : depuis la 1.01, un compte d'avant la 1.00 ne voit que la 1.01, et ce bouton lui montre aussi la 1.00.
 
 ### La fenêtre
 

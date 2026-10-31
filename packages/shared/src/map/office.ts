@@ -2,26 +2,35 @@ import { decorItem } from '../decor/catalog';
 import { DESK_ROOMS, type DeskRoomSpec } from '../decor/placement';
 import { DEFAULT_FLOOR_THEME, DEFAULT_WALL_THEME } from '../decor/themes';
 import type { ZoneInput } from './build-tiled';
-import { MapCanvas, type Area } from './builder';
+import { MapCanvas, cellHash, type Area, type GardenGround } from './builder';
 import type { TiledMapJson } from './tiled-types';
 
-// La carte du bureau : 81 × 46 cases, dessinée par code (et non à la main) : les bureaux se répètent, et leur nombre, leur taille et leurs portes
-// doivent rester cohérents. Les murs horizontaux font 2 cases de haut, les verticaux 1. Le travail est au nord, les loisirs au sud, une place au
-// milieu ; deux rues (nord et sud) la traversent, reliées à l'est par un connecteur : pas de cul-de-sac.
+// La carte du bureau : 91 × 56 cases, dessinée par code (et non à la main) : les bureaux se répètent, et leur nombre, leur taille et leurs portes
+// doivent rester cohérents. Un bâtiment de 81 × 46 cases, aux murs noirs, posé à 5 cases du bord : un jardin en fait le tour (une haie au bord de la
+// carte, un chemin de dalles, des arbres, des buissons, des jardinières). Les murs horizontaux font 2 cases de haut, les verticaux 1.
 //
-//   y  0 ┌ murs du nord ─────────────────────────────────────────────────────────────────────────────────────────────────┐
-//   y  2 │ A5 · A1 · A2 │ place centrale : le café │ salle de réunion │ l'octogone (salle de combat)                       │
-//   y 11 ├ rue nord (y 11 à 14), qui traverse la place ──────────────────────────────────────────────────────────────────┤
-//   y 17 │ A6 · A3 · A4 │ place centrale : l'accueil (apparition) │ salle de conférence │ connecteur est                   │
-//   y 26 ├ rue sud (y 26 à 29) ─────────────────────────────────────────────────────────────────────────────────────────┤
-//   y 32 │ salle de sport │ salle de jeu │ détente et piscine                                                              │
-//   y 46 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+// Le bâtiment a ses coordonnées à lui (0, 0 = son coin nord-ouest, la case (5, 5) de la carte) : c'est dans celles-là que la carte est écrite.
+//
+//   y  0 ┌ jardin ┬ A5 · A1 · A2 · A3 · A4 · A6 : les six bureaux, portes au sud ──────────────────────────┬ jardin ┐
+//   y 10 │ terrasse ├ la rue des bureaux (y 11 à 13) ────────────────────────────────────────────────────┤ terrasse │
+//   y 14 ├ conférence │                        la cafétéria (le bar, le salon, les tables)              │ salle de jeux ┤
+//   y 30 ├ l'accueil  │ le hall d'entrée │ la salle de sport                                             │ salle de boxe ┤
+//   y 44 └────────────┴── l'entrée (x 27 à 30) ──┴──────────────────────────────────────────────────────┴───────────────┘
+//
+// Les deux angles du nord n'ont aucun mur : la rue des bureaux y débouche sur une terrasse en bois, et au-dessus, un jardin (à l'ouest un jardin naturel
+// et son bassin, à l'est un parterre à la française), relié au chemin du tour par des pas japonais.
 //
 // Les 6 places ont pour clé A1 à A6, écrite dans le nom des deux zones (la pièce `desk` et sa porte `door`) : c'est ce qui les relie, et ce qui
-// désigne la place dans la base. A1 à A4 font 9 × 7, A5 et A6 6 × 7 ; A1, A2 et A5 ont leur porte au sud, A3, A4 et A6 au nord, côté rue. Les petits
-// bureaux (A5, A6) sont tout à l'ouest de leur rangée, les grands à leur droite.
-export const OFFICE_WIDTH = 81;
-export const OFFICE_HEIGHT = 46;
+// désigne la place dans la base. A1 à A4 font 9 × 7, A5 et A6 6 × 7 (aux deux bouts de la rangée) ; toutes ont leur porte au sud, sur la rue.
+export const OFFICE_WIDTH = 91;
+export const OFFICE_HEIGHT = 56;
+
+// L'épaisseur du jardin autour du bâtiment, et le bâtiment.
+const B = 5;
+const BUILDING = { w: 81, h: 46 } as const;
+
+// Un rectangle du bâtiment, en cases de la carte.
+const area = (x: number, y: number, w: number, h: number): Area => ({ x: B + x, y: B + y, w, h });
 
 // Une place de bureau : sa clé, la pièce (en cases), la porte (2 × 2 : elle perce la bande de mur du côté de la rue) et le côté de la pièce où elle est.
 export interface OfficeDeskSlot {
@@ -33,14 +42,14 @@ export interface OfficeDeskSlot {
   walls: Array<{ x: number; y: number; part: 'top' | 'bottom' | 'stem' }>;
 }
 
-// Les six places, dans l'ordre de leur clé : où est la pièce, de quelle taille, et de quel côté est sa porte.
+// Les six places, dans l'ordre de leur clé : où est la pièce, de quelle taille, et de quel côté est sa porte. D'ouest en est : A5, A1, A2, A3, A4, A6.
 const DESKS: ReadonlyArray<{ key: string; x: number; y: number; spec: DeskRoomSpec; side: 'north' | 'south' }> = [
-  { key: 'A1', x: 9, y: 2, spec: DESK_ROOMS.standard, side: 'south' },
-  { key: 'A2', x: 20, y: 2, spec: DESK_ROOMS.standard, side: 'south' },
-  { key: 'A3', x: 9, y: 17, spec: DESK_ROOMS.standard, side: 'north' },
-  { key: 'A4', x: 20, y: 17, spec: DESK_ROOMS.standard, side: 'north' },
-  { key: 'A5', x: 1, y: 2, spec: DESK_ROOMS.compact, side: 'south' },
-  { key: 'A6', x: 1, y: 17, spec: DESK_ROOMS.compact, side: 'north' },
+  { key: 'A1', x: B + 21, y: B + 2, spec: DESK_ROOMS.standard, side: 'south' },
+  { key: 'A2', x: B + 31, y: B + 2, spec: DESK_ROOMS.standard, side: 'south' },
+  { key: 'A3', x: B + 41, y: B + 2, spec: DESK_ROOMS.standard, side: 'south' },
+  { key: 'A4', x: B + 51, y: B + 2, spec: DESK_ROOMS.standard, side: 'south' },
+  { key: 'A5', x: B + 14, y: B + 2, spec: DESK_ROOMS.compact, side: 'south' },
+  { key: 'A6', x: B + 61, y: B + 2, spec: DESK_ROOMS.compact, side: 'south' },
 ];
 
 function deskSlot({ key, x, y, spec, side }: (typeof DESKS)[number]): OfficeDeskSlot {
@@ -62,7 +71,7 @@ function deskSlot({ key, x, y, spec, side }: (typeof DESKS)[number]): OfficeDesk
 
 export const OFFICE_DESK_SLOTS: OfficeDeskSlot[] = DESKS.map(deskSlot);
 
-// Les ouvertures de la carte : les portes des bureaux, celles de trois salles (réunion, octogone, conférence) et les quatre arches des salles du sud.
+// Les ouvertures de la carte : les portes des bureaux, les passages des salles (dans un pan de mur, ou une bande), et l'entrée du bâtiment.
 // `room` est la pièce qu'elles ferment (la clé d'un bureau ou d'un lieu).
 export interface OfficeOpening extends Area {
   key: string;
@@ -72,37 +81,39 @@ export interface OfficeOpening extends Area {
 
 export const OFFICE_OPENINGS: OfficeOpening[] = [
   ...OFFICE_DESK_SLOTS.map((slot): OfficeOpening => ({ key: `door:${slot.key}`, kind: 'door', room: slot.key, ...slot.door })),
-  { key: 'door:meeting', kind: 'door', room: 'meeting', x: 57, y: 9, w: 2, h: 2 },
-  { key: 'door:arena', kind: 'door', room: 'arena', x: 72, y: 9, w: 2, h: 2 },
-  { key: 'door:conference', kind: 'door', room: 'conference', x: 68, y: 15, w: 3, h: 2 },
-  { key: 'arch:gym', kind: 'arch', room: 'gym', x: 6, y: 30, w: 2, h: 2 },
-  { key: 'arch:game', kind: 'arch', room: 'game', x: 23, y: 30, w: 4, h: 2 },
-  { key: 'arch:lounge-west', kind: 'arch', room: 'lounge', x: 44, y: 30, w: 4, h: 2 },
-  { key: 'arch:lounge-east', kind: 'arch', room: 'lounge', x: 66, y: 30, w: 4, h: 2 },
+  { key: 'arch:conference', kind: 'arch', room: 'conference', ...area(16, 21, 1, 2) },
+  { key: 'arch:game', kind: 'arch', room: 'game', ...area(57, 20, 1, 2) },
+  { key: 'arch:gym', kind: 'arch', room: 'gym', ...area(37, 30, 2, 2) },
+  { key: 'arch:arena', kind: 'arch', room: 'arena', ...area(57, 37, 1, 2) },
+  { key: 'arch:entrance', kind: 'arch', room: 'hall', ...area(27, 44, 4, 2) },
 ];
 
-export const OFFICE_SPAWN = { x: 40, y: 22 };
+// On arrive devant le comptoir de l'accueil.
+export const OFFICE_SPAWN = { x: B + 9, y: B + 36 };
 
 // Les lieux : l'intérieur de chaque pièce, ou l'espace qu'un lieu ouvert couvre.
-const PLAZA: Area = { x: 30, y: 2, w: 20, h: 28 };
-const CAFE: Area = { x: 32, y: 2, w: 16, h: 8 };
-const RECEPTION: Area = { x: 31, y: 15, w: 18, h: 11 };
-const STREET_N: Area = { x: 1, y: 11, w: 78, h: 4 };
-const STREET_S: Area = { x: 1, y: 26, w: 78, h: 4 };
-const STREET_E: Area = { x: 74, y: 11, w: 6, h: 19 };
-const MEETING: Area = { x: 51, y: 2, w: 14, h: 7 };
-const ARENA_ROOM: Area = { x: 66, y: 2, w: 14, h: 7 };
-// Le ring de l'octogone, au milieu de la salle contre le mur nord : le public se tient sur les côtés et sur la rangée du sud, devant la porte.
-export const OFFICE_RING: Area = { x: 68, y: 2, w: 10, h: 6 };
-const CONFERENCE: Area = { x: 51, y: 17, w: 22, h: 7 };
-const GYM: Area = { x: 1, y: 32, w: 12, h: 12 };
-const GAME: Area = { x: 14, y: 32, w: 22, h: 12 };
-const LOUNGE: Area = { x: 37, y: 32, w: 43, h: 12 };
-// La terrasse de la piscine : les 19 premières colonnes de la détente ; le bassin (14 × 5) y est posé.
-const TERRACE: Area = { x: LOUNGE.x, y: LOUNGE.y, w: 19, h: LOUNGE.h };
-const POOL: Area = { x: 39, y: 35, w: 14, h: 5 };
+const CONFERENCE = area(1, 16, 15, 12);
+const RECEPTION = area(1, 30, 22, 14);
+const HALL = area(23, 30, 11, 14);
+const CAFE = area(17, 14, 40, 16);
+const STREET = area(13, 11, 55, 3);
+const GAME = area(58, 16, 22, 12);
+const GYM = area(35, 32, 22, 12);
+const BOXING = area(58, 30, 22, 14);
+// Le ring de l'octogone, au milieu de la salle de boxe : le public est sur les bancs du sud.
+export const OFFICE_RING: Area = area(64, 32, 10, 7);
+// Les deux angles ouverts du nord (13 × 14 cases chacun) : le jardin (les 10 rangées du haut), puis la terrasse en bois où débouche la rue.
+const CORNERS = [{ x0: 0, x1: 12 }, { x0: 68, x1: 80 }] as const;
+const CORNER_GARDEN_H = 10;
+const CORNER_H = 14;
+const TERRACES = CORNERS.map((c) => area(c.x0, CORNER_GARDEN_H, c.x1 - c.x0 + 1, CORNER_H - CORNER_GARDEN_H));
+const CORNER_GARDENS = CORNERS.map((c) => area(c.x0, 0, c.x1 - c.x0 + 1, CORNER_GARDEN_H));
+// Le bassin du jardin de l'angle ouest.
+export const OFFICE_POND: Area = area(8, 4, 4, 3);
+// L'entrée du bâtiment, au sud du hall.
+const ENTRANCE = area(27, 44, 4, 2);
 
-const OUTER_WALL = 'gris-perle';
+const WALL = DEFAULT_WALL_THEME;
 
 export interface OfficeBuild {
   canvas: MapCanvas;
@@ -111,81 +122,58 @@ export interface OfficeBuild {
 }
 
 export function buildOffice(): OfficeBuild {
-  const c = new MapCanvas(OFFICE_WIDTH, OFFICE_HEIGHT, 'gris');
+  const c = new MapCanvas(OFFICE_WIDTH, OFFICE_HEIGHT, 'creme');
   const W = OFFICE_WIDTH;
   const H = OFFICE_HEIGHT;
 
-  // ---- Le sol ---------------------------------------------------------------------------------------------------------------
+  // ---- Le sol : crème partout dans le bâtiment, le parquet clair des bureaux, de la conférence, de la salle de jeux et des terrasses -------------
   const floorOf = (a: Area, id: string) => c.floor(a.x, a.y, a.w, a.h, id);
   for (const slot of OFFICE_DESK_SLOTS) floorOf(slot.room, DEFAULT_FLOOR_THEME);   // les occupants repeignent le leur
-  floorOf(PLAZA, 'marbre');
-  for (const street of [STREET_N, STREET_S, STREET_E]) floorOf(street, 'gris');   // les rues traversent la place
-  floorOf(CAFE, 'damier');
-  floorOf(MEETING, 'bleu-clair');
-  floorOf(ARENA_ROOM, 'beton');
-  floorOf(CONFERENCE, 'graphite');
-  floorOf(GYM, 'beton');
-  floorOf(GAME, 'parquet-brun');
-  floorOf(LOUNGE, 'parquet-clair');
-  floorOf(TERRACE, 'pierre');
+  floorOf(CONFERENCE, 'parquet-clair');
+  floorOf(GAME, 'parquet-clair');
+  floorOf(GYM, 'gris');
+  floorOf(BOXING, 'beton');
+  floorOf(area(34, 14, 11, 7), 'blanc');   // le coin du bar
+  for (const terrace of TERRACES) floorOf(terrace, 'parquet-clair');
 
-  // ---- Les murs -------------------------------------------------------------------------------------------------------------
-  // Le pourtour : les bandes du nord et du sud, les pans de l'ouest et de l'est.
-  c.vWall(0, 2, H - 3, OUTER_WALL);
-  c.vWall(W - 1, 2, H - 3, OUTER_WALL);
-  c.hWall(0, W - 1, 0, DEFAULT_WALL_THEME);
-  c.hWall(0, W - 1, H - 2, OUTER_WALL);
-
-  // Les six bureaux : chacun ses murs (les occupants les repeignent), et sa porte percée dans la bande du côté de la rue.
+  // ---- Les murs, tous noirs -------------------------------------------------------------------------------------------------------------
+  const hWall = (x0: number, x1: number, y: number) => c.hWall(B + x0, B + x1, B + y, WALL);
+  const vWall = (x: number, y0: number, y1: number) => c.vWall(B + x, B + y0, B + y1, WALL);
+  // Les six bureaux : chacun ses murs (les occupants les repeignent), sa porte percée dans la bande du sud. Leurs bandes du nord font celle du bâtiment.
   for (const slot of OFFICE_DESK_SLOTS) {
     for (const wall of slot.walls) {
-      if (wall.part === 'stem') c.vWall(wall.x, wall.y, wall.y, DEFAULT_WALL_THEME);
-      else if (wall.part === 'top') c.hWall(wall.x, wall.x, wall.y, DEFAULT_WALL_THEME);
+      if (wall.part === 'stem') c.vWall(wall.x, wall.y, wall.y, WALL);
+      else if (wall.part === 'top') c.hWall(wall.x, wall.x, wall.y, WALL);
     }
-    floorOf(slot.door, 'gris');
   }
+  // Le pourtour : la bande du sud, les pans de l'ouest et de l'est sous les angles ouverts.
+  hWall(0, BUILDING.w - 1, BUILDING.h - 2);
+  vWall(0, 16, BUILDING.h - 3);
+  vWall(BUILDING.w - 1, 16, BUILDING.h - 3);
+  // La salle de conférence et la salle de jeux, de part et d'autre de la cafétéria ; la salle de sport et la salle de boxe au sud.
+  hWall(0, 16, 14);
+  vWall(16, 16, 27);
+  hWall(0, 16, 28);
+  hWall(57, 80, 14);
+  vWall(57, 16, 27);
+  hWall(57, 80, 28);
+  hWall(34, 57, 30);
+  vWall(34, 32, 43);
+  vWall(57, 32, 43);
 
-  // La salle de réunion (bande au sud, pans à l'ouest et à l'est) et l'octogone, qui partage son pan est (des murs rouges : une salle de combat).
-  c.hWall(MEETING.x - 1, MEETING.x + MEETING.w, MEETING.y + MEETING.h, 'bleu-ciel');
-  c.vWall(MEETING.x - 1, MEETING.y, MEETING.y + MEETING.h - 1, 'bleu-ciel');
-  c.vWall(MEETING.x + MEETING.w, MEETING.y, MEETING.y + MEETING.h - 1, 'bleu-ciel');
-  c.hWall(ARENA_ROOM.x, ARENA_ROOM.x + ARENA_ROOM.w, ARENA_ROOM.y + ARENA_ROOM.h, 'rouge');
-  c.vWall(ARENA_ROOM.x + ARENA_ROOM.w, ARENA_ROOM.y, ARENA_ROOM.y + ARENA_ROOM.h - 1, 'rouge');
-
-  // La salle de conférence : bandes au nord et au sud, pans à l'ouest et à l'est.
-  c.hWall(CONFERENCE.x - 1, CONFERENCE.x + CONFERENCE.w, CONFERENCE.y - 2, 'anthracite');
-  c.hWall(CONFERENCE.x - 1, CONFERENCE.x + CONFERENCE.w, CONFERENCE.y + CONFERENCE.h, 'anthracite');
-  c.vWall(CONFERENCE.x - 1, CONFERENCE.y, CONFERENCE.y + CONFERENCE.h - 1, 'anthracite');
-  c.vWall(CONFERENCE.x + CONFERENCE.w, CONFERENCE.y, CONFERENCE.y + CONFERENCE.h - 1, 'anthracite');
-
-  // Les trois salles du sud : bande au nord (percée d'arches), bande au sud, pans entre elles. Chacune a ses murs.
-  for (const [room, theme] of [[GYM, 'anthracite'], [GAME, 'brun'], [LOUNGE, 'menthe']] as const) {
-    c.hWall(room.x - 1, room.x + room.w, room.y - 2, theme);
-    c.hWall(room.x - 1, room.x + room.w, room.y + room.h, theme);
-    c.vWall(room.x - 1, room.y, room.y + room.h - 1, theme);
-    c.vWall(room.x + room.w, room.y, room.y + room.h - 1, theme);
-  }
-
-  // Les ouvertures : plus de mur, plus d'obstacle, et un sol de rue sous les portes et les arches.
-  for (const o of OFFICE_OPENINGS) {
-    c.open(o.x, o.y, o.w, o.h);
-    floorOf(o, 'gris');
-  }
-
-  // La piscine.
-  c.pool(POOL.x, POOL.y, POOL.w, POOL.h);
+  // Les ouvertures : plus de mur, plus d'obstacle.
+  for (const o of OFFICE_OPENINGS) c.open(o.x, o.y, o.w, o.h);
 
   furnish(c);
+  plantGarden(c);
 
-  // ---- Les zones ------------------------------------------------------------------------------------------------------------
+  // ---- Les zones ------------------------------------------------------------------------------------------------------------------------
   c.zone({ type: 'spawn', x: OFFICE_SPAWN.x, y: OFFICE_SPAWN.y, w: 1, h: 1 });
   for (const [name, room] of [
-    ['Salle de réunion', MEETING],
-    ['Octogone', ARENA_ROOM],
     ['Salle de conférence', CONFERENCE],
+    ['Salle de jeux', GAME],
     ['Salle de sport', GYM],
-    ['Salle de jeu', GAME],
-    ['Détente et piscine', LOUNGE],
+    ['Salle de boxe', BOXING],
   ] as const) {
     c.zone({ type: 'private', name, ...room });
   }
@@ -194,220 +182,313 @@ export function buildOffice(): OfficeBuild {
     c.zone({ type: 'door', name: slot.key, x: slot.door.x, y: slot.door.y, w: slot.door.w, h: slot.door.h });
   }
 
-  // Les lieux, avec leur nom, leur ambiance par défaut, leur musique et leur destination.
-  c.place('plaza', 'Place centrale', PLAZA, { kind: 'open' });
-  c.place('cafe', 'Café', CAFE, { kind: 'open', scene: 'sunny', music: true });
+  // Les lieux, avec leur nom, leur ambiance par défaut, leur musique et leur destination. Le dehors (le jardin, les terrasses) n'a pas d'enceinte : la
+  // musique s'y tait, on y entend le jardin.
+  c.place('cafe', 'Cafétéria', CAFE, { kind: 'open', scene: 'sunny', music: true });
   c.place('reception', 'Accueil', RECEPTION, { kind: 'open', music: true });
-  c.place('street-n', 'Couloir', STREET_N, { kind: 'street' });
-  c.place('street-s', 'Couloir', STREET_S, { kind: 'street' });
-  c.place('street-e', 'Couloir', STREET_E, { kind: 'street' });
-  c.place('meeting', 'Salle de réunion', MEETING, { scene: 'focus', music: true });
-  c.place('arena', 'Octogone', ARENA_ROOM, { scene: 'quest', music: true });
+  c.place('hall', "Hall d'entrée", HALL, { kind: 'open' });
+  c.place('street', 'Couloir', STREET, { kind: 'street' });
   c.place('conference', 'Salle de conférence', CONFERENCE, { scene: 'drift', music: true });
+  c.place('game', 'Salle de jeux', GAME, { scene: 'dusk', music: true, destination: true });
   c.place('gym', 'Salle de sport', GYM, { scene: 'quest', music: true, destination: true });
-  c.place('game', 'Salle de jeu', GAME, { scene: 'dusk', music: true, destination: true });
-  c.place('lounge', 'Détente et piscine', LOUNGE, { scene: 'sunny', music: true });
+  c.place('arena', 'Salle de boxe', BOXING, { scene: 'quest', music: true });
+  c.place('terrace', 'Terrasse', TERRACES, { kind: 'outside' });
+  c.place('garden', 'Jardin', [{ x: 0, y: 0, w: W, h: B }, { x: 0, y: H - B, w: W, h: B }, { x: 0, y: B, w: B, h: H - 2 * B }, { x: W - B, y: B, w: B, h: H - 2 * B }, ...CORNER_GARDENS], {
+    kind: 'outside',
+  });
 
-  // Les enceintes (une par lieu qui a de la musique), la case devant la machine à café, les tables des jeux et leurs sièges, le ring de l'octogone.
-  c.speaker('cafe', 46, 3);
-  c.speaker('reception', 47, 24);
-  c.speaker('meeting', 64, 6);
-  c.speaker('conference', 52, 19);
-  c.speaker('gym', 12, 33);
-  c.speaker('game', 34, 33);
-  c.speaker('lounge', 79, 33);
-  c.speaker('arena', 79, 7);
-  c.coffee(40, 5);
-  c.table('chess', { x: 24, y: 35, w: 3, h: 2 });
-  c.seat('chess', 1, 25, 34);
-  c.seat('chess', 2, 25, 37);
-  c.table('backgammon', { x: 29, y: 35, w: 3, h: 2 });
-  c.seat('backgammon', 1, 30, 34);
-  c.seat('backgammon', 2, 30, 37);
-  c.table('connect4', { x: 24, y: 40, w: 3, h: 2 });
-  c.seat('connect4', 1, 25, 39);
-  c.seat('connect4', 2, 25, 42);
-  c.table('ludo', { x: 29, y: 40, w: 3, h: 3 });
-  c.seat('ludo', 1, 30, 39);
-  c.seat('ludo', 2, 32, 41);
-  c.seat('ludo', 3, 30, 43);
-  c.seat('ludo', 4, 28, 41);
+  // Les enceintes (une par lieu qui a de la musique), la case devant la machine à café, les tables des jeux et leurs sièges, le ring de l'octogone, le
+  // bassin.
+  const speaker = (place: string, x: number, y: number) => c.speaker(place, B + x, B + y);
+  speaker('conference', 15, 17);
+  speaker('cafe', 44, 15);
+  speaker('reception', 22, 30);
+  speaker('game', 78, 17);
+  speaker('gym', 56, 36);
+  speaker('arena', 79, 39);
+  c.coffee(B + 39, B + 20);
+  const table = (game: 'chess' | 'backgammon' | 'connect4' | 'ludo', x: number, y: number, w: number, h: number, seats: ReadonlyArray<readonly [number, number]>) => {
+    c.table(game, { x: B + x, y: B + y, w, h });
+    seats.forEach(([sx, sy], index) => c.seat(game, index + 1, B + sx, B + sy));
+  };
+  table('chess', 68, 19, 3, 2, [[69, 18], [69, 21]]);
+  table('backgammon', 73, 19, 3, 2, [[74, 18], [74, 21]]);
+  table('connect4', 68, 24, 3, 2, [[69, 23], [69, 26]]);
+  table('ludo', 73, 24, 3, 3, [[74, 23], [76, 25], [74, 27], [72, 25]]);
   c.arena(OFFICE_RING);
+  c.water(OFFICE_POND);
 
   // Quelques inscriptions au sol.
-  c.zone({ type: 'label', text: 'CAFÉ', x: 36, y: 9, w: 8, h: 1 });
-  c.zone({ type: 'label', text: 'ACCUEIL', x: 35, y: 25, w: 10, h: 1 });
-  c.zone({ type: 'label', text: 'SALLE DE RÉUNION', x: 52, y: 8, w: 12, h: 1 });
-  // L'interrupteur de la lumière : sur la face du mur nord de la rue (la rangée y 10, que l'on voit de la rue), entre la porte du grand bureau A2 et la
-  // place. Le client y pose la plaque. En dernier : les numéros des autres zones ne changent pas.
-  c.zone({ type: 'switch', x: 28, y: 10, w: 1, h: 1 });
-  // L'inscription de l'octogone, entre les fauteuils du public et la porte.
-  c.zone({ type: 'label', text: 'OCTOGONE', x: 70, y: 8, w: 4, h: 1 });
-  // Les trois administratrices de l'accueil, chacune sur la case de son poste (les réceptionnistes de l'accueil) : on vient leur parler (la touche E) pour
-  // confier une mission à quelqu'un, voir la boutique ou ses caractéristiques. Margot et Lucie aux deux bouts, Inès au milieu. En dernier, elles aussi.
-  c.clerk('margot', 39, 17);
-  c.clerk('ines', 40, 17);
-  c.clerk('lucie', 41, 17);
+  c.zone({ type: 'label', text: 'ACCUEIL', ...area(5, 34, 9, 1) });
+  c.zone({ type: 'label', text: 'CAFÉTÉRIA', ...area(36, 21, 7, 1) });
+  // L'interrupteur de la lumière : sur la face de la bande de mur des bureaux (la rangée que l'on voit de la rue), entre A1 et A2, au droit de leur pan
+  // commun : il n'est dans le dehors d'aucun des deux. Le client y pose la plaque.
+  c.zone({ type: 'switch', ...area(30, 10, 1, 1) });
+  // Les trois administratrices de l'accueil, chacune sur la case de son poste, derrière le comptoir : on vient leur parler (la touche E) pour confier une
+  // mission à quelqu'un, voir la boutique ou ses caractéristiques. Margot et Lucie aux deux bouts, Inès au milieu.
+  c.clerk('margot', B + 8, B + 33);
+  c.clerk('ines', B + 9, B + 33);
+  c.clerk('lucie', B + 10, B + 33);
 
   return { canvas: c, ascii: c.ascii(), zones: c.zones };
 }
 
-// Le mobilier de la carte : des éléments de la banque (packages/shared/src/decor) et des objets animés (packages/shared/src/props), posés par la case de
-// leur coin haut-gauche. Les bureaux n'en ont pas ici, ni la rangée de la rue devant eux (leur dehors) : leur déco est celle de leur occupant (DeskInfo),
-// dessinée par le client. Un élément mural se pose à la case de la pièce qu'il surplombe (un panneau d'un carreau, une rangée plus haut : à la rangée de
-// mur où il doit être).
+// Le mobilier du bâtiment : des éléments de la banque (packages/shared/src/decor : ceux des planches, et ceux de la carte seule, generated-plan.ts) et des
+// objets animés (packages/shared/src/props), posés par la case du coin haut-gauche de leur empreinte, en cases du bâtiment. Les bureaux n'en ont pas ici,
+// ni la rangée de la rue devant eux (leur dehors) : leur déco est celle de leur occupant (DeskInfo), dessinée par le client. Un élément mural se pose à la
+// case de la pièce qu'il surplombe.
 //
 // Les règles de l'agencement, pour que chaque pièce soit logique :
 // - un siège regarde ce qu'il sert : une chaise du côté nord d'une table est « de face », du côté sud « de dos » ; aux bouts, « vers la droite » à
-//   l'ouest, « vers la gauche » à l'est. Face à un écran ou à une cheminée, on voit le dos des sièges. Les sièges ne bloquent jamais le passage ;
-// - le comptoir de la machine à café est contre le mur, la machine dessus et la case où l'on se sert juste devant ;
-// - on ne pose pas un meuble dont la vue (de face, de dos, de profil) ne convient pas à l'endroit : mieux vaut rien.
+//   l'ouest, « vers la gauche » à l'est. Les sièges ne bloquent jamais le passage ;
+// - ce qui est posé sur un comptoir (la machine à café, une plante) l'est sur son plateau, et se dessine devant lui ;
+// - les plantes vont par groupes (un îlot de jardinières, deux plantes de part et d'autre d'une porte), pas une à une au hasard.
 function furnish(c: MapCanvas): void {
-  const at = (items: ReadonlyArray<readonly [string, number, number]>) => {
-    for (const [id, x, y] of items) c.put(id, x, y);
+  type Nudge = { offsetX?: number; offsetY?: number };
+  const put = (id: string, x: number, y: number, nudge: Nudge = {}) => c.put(id, B + x, B + y, nudge);
+  const at = (items: ReadonlyArray<readonly [string, number, number, Nudge?]>) => {
+    for (const [id, x, y, nudge] of items) put(id, x, y, nudge);
   };
   const props = (items: ReadonlyArray<readonly [string, number, number]>) => {
-    for (const [key, x, y] of items) c.prop(key, x, y);
+    for (const [key, x, y] of items) c.prop(key, B + x, B + y);
   };
 
-  // Les sièges d'une table : `north` (de face) et `south` (de dos) sur chacune des colonnes de `cols` (celles de la table par défaut ; une liste de sièges
-  // se partage les colonnes à tour de rôle), `west` (vers la droite) et `east` (vers la gauche) au milieu des bouts. La table est posée à (x, y), son
-  // empreinte au sol sous ses pieds.
-  type Seats = string | readonly string[];
-  const seatOf = (seats: Seats, index: number): string => (typeof seats === 'string' ? seats : seats[index % seats.length]!);
-  // `tuck` : de combien de pixels on abaisse les chaises du nord (des dossiers seuls, qui passent sous le bord de la table).
-  const table = (id: string, x: number, y: number, chairs: { north?: Seats; south?: Seats; west?: string; east?: string; cols?: readonly number[]; tuck?: number } = {}) => {
+  // Les sièges d'une table : `north` (de face) et `south` (de dos) sur chacune des colonnes de `cols`, `west` (vers la droite) et `east` (vers la
+  // gauche) au milieu des bouts. La table est posée à (x, y), son empreinte au sol sous ses pieds. `tuck` : de combien de pixels on abaisse les chaises
+  // du nord (des dossiers seuls, qui passent sous le bord de la table).
+  const table = (id: string, x: number, y: number, chairs: { north?: string; south?: string; west?: string; east?: string; cols: readonly number[]; tuck?: number }) => {
     const item = decorItem(id);
     if (!item) throw new Error(`Table inconnue : « ${id} ».`);
-    c.put(id, x, y);
-    const cols = chairs.cols ?? Array.from({ length: item.w }, (_, i) => x + i);
-    cols.forEach((col, index) => {
-      if (chairs.north) c.put(seatOf(chairs.north, index), col, y - 1, chairs.tuck ? { offsetY: chairs.tuck } : {});
-      if (chairs.south) c.put(seatOf(chairs.south, index), col, y + item.claim);
-    });
+    put(id, x, y);
+    for (const col of chairs.cols) {
+      if (chairs.north) put(chairs.north, col, y - 1, chairs.tuck ? { offsetY: chairs.tuck } : {});
+      if (chairs.south) put(chairs.south, col, y + item.claim);
+    }
     const middle = y + Math.floor((item.claim - 1) / 2);
-    if (chairs.west) c.put(chairs.west, x - 1, middle);
-    if (chairs.east) c.put(chairs.east, x + item.w, middle);
+    if (chairs.west) put(chairs.west, x - 1, middle);
+    if (chairs.east) put(chairs.east, x + item.w, middle);
   };
 
-  // Les rues : des arbustes entre les portes (jamais dans l'axe d'une porte ou d'une arche : ils la masqueraient), des fontaines à eau, deux bancs, et sur
-  // le connecteur est des casiers et de grandes plantes. Un panneau de sortie, vert, à chaque bout des deux rues (il éclaire la nuit).
-  // La rangée de la rue juste sous le mur sud d'un bureau, sur la largeur de sa pièce (y 11 devant A5, A1 et A2, y 26 devant A6, A3 et A4), n'est pas à la
-  // carte : c'est le dehors du bureau, que son occupant décore (ce qu'elle y posait est devenu son dehors par défaut, defaultDeskDecor). Sur la face de ce
-  // mur, la carte ne garde que le panneau de sortie et l'interrupteur de la lumière, que la déco ne recouvre pas.
-  at([
-    // La rue nord (y 11 à 14) : les portes du nord sont en x 3-4, 12-13, 23-24, 57-58 et 72-73 ; celles du sud en x 3-4, 12-13, 23-24 et 68-70. Entre A5 et
-    // A1, sur les deux pans de mur, un banc (deux rangées de profondeur : il ne tiendrait pas dans le dehors d'un bureau).
-    ['lr-12-0', 19, 11],
-    ['lr-12-0', 53, 11], ['lr-12-0', 68, 11],
-    ['of-12-15', 29, 11], ['of-12-15', 63, 11],
-    ['lr-12-0', 1, 14], ['lr-12-0', 9, 14], ['lr-12-0', 18, 14], ['lr-12-0', 28, 14],
-    ['lr-12-0', 52, 14], ['lr-12-0', 63, 14], ['lr-12-0', 74, 14],
-    ['ge-0-15', 7, 11], ['ge-2-15', 60, 11],
-    // La rue sud (y 26 à 29) : au nord, les portes ne s'ouvrent pas sur elle ; au sud, les arches des salles (x 6-7, 23-26, 44-47, 66-69).
-    ['lr-12-0', 29, 26], ['lr-12-0', 52, 26], ['lr-12-0', 62, 26],
-    ['of-12-15', 56, 26],
-    ['lr-12-0', 1, 29], ['lr-12-0', 10, 29], ['lr-12-0', 18, 29], ['lr-12-0', 30, 29], ['lr-12-0', 40, 29], ['lr-12-0', 49, 29], ['lr-12-0', 58, 29], ['lr-12-0', 72, 29],
-    // Le connecteur est : deux distributeurs contre le mur du nord (de part et d'autre du panneau de sortie), des plantes. Rien contre les murs de côté : un
-    // meuble qui regarde le sud n'a pas sa place contre un mur qui regarde l'ouest.
-    ['of-0-23', 74, 11], ['of-2-23', 78, 11],
-    ['lr-13-21', 74, 18], ['lr-13-21', 74, 25], ['lr-13-21', 78, 18], ['lr-13-21', 78, 25],
-    // Les panneaux de sortie : sur la face du mur, la rangée juste au-dessus du premier carreau de la rue, aux quatre bouts (la flèche vers l'extrémité).
-    ['mu-14-111-m', 1, 11], ['mu-14-111', 77, 11], ['mu-14-111-m', 1, 26], ['mu-14-111', 72, 26],
-  ]);
+  // ---- Les terrasses : sur chacune, deux parasols et leur chaise longue, le passage vers le jardin gardé au milieu.
+  at([['fi-0-19', 0, 11], ['fi-12-19', 8, 11], ['fi-0-22', 69, 11], ['fi-4-19', 76, 11]]);
 
-  // La place centrale : de grands palmiers aux angles.
-  at([['lr-13-0', 30, 3], ['lr-13-0', 48, 3], ['lr-13-0', 30, 8], ['lr-13-0', 48, 8]]);
-
-  // Le café : contre le mur nord, une rangée d'appareils (le réfrigérateur, deux distributeurs, la fontaine à eau) puis le comptoir de la machine à café, la
-  // machine dessus avec sa bouilloire et ses tasses ; on se sert juste devant, sur la case (40, 5). Quatre tables rondes de quatre places (deux chaises de
-  // face au nord, deux de dos au sud) de part et d'autre de l'allée qui mène au comptoir.
-  at([
-    ['ki-12-23', 33, 4], ['of-2-23', 34, 4], ['of-0-23', 36, 4], ['of-12-15', 38, 4],
-    ['cf-8-4', 39, 3],
-    ['ki-13-23', 41, 3],
-    ['lr-12-0', 44, 4],
-    ['ge-12-43', 34, 2], ['lr-0-28', 39, 2], ['lr-2-26', 41, 2], ['ge-12-43', 44, 2],
-  ]);
-  c.prop('coffee', 40, 3, { onTop: true, offsetY: 16 });
-  props([['amplifier-big', 46, 3]]);
-  table('ba-0-0', 33, 6, { north: ['ki-0-13', 'ki-3-13'], south: ['ki-0-12', 'ki-1-12'], tuck: 16 });
-  table('ba-0-3', 36, 6, { north: ['ki-1-13', 'ki-2-13'], south: ['ki-1-12', 'ki-0-11'], tuck: 16 });
-  table('ba-0-6', 42, 6, { north: ['ki-3-13', 'ki-0-13'], south: ['ki-0-11', 'ki-1-11'], tuck: 16 });
-  table('ba-0-0', 45, 6, { north: ['ki-2-13', 'ki-1-13'], south: ['ki-1-11', 'ki-0-12'], tuck: 16 });
-
-  // L'accueil : le comptoir, trois postes côte à côte (une réceptionniste blonde à chaque bout, une brune au milieu) et la grande horloge, des plantes de part et d'autre, le tapis sous le point d'apparition,
-  // et deux coins d'attente de chaque côté de l'axe : deux fauteuils face à face autour d'une table basse. Et l'enceinte.
-  props([['receptionist', 39, 17], ['receptionist-2', 40, 17], ['receptionist', 41, 17], ['grandfather-clock', 38, 17]]);
-  at([
-    ['lr-10-0', 35, 18], ['lr-10-0', 43, 18],
-    ['cf-0-8', 38, 21],
-    ['ba-2-33-m', 33, 20], ['of-6-18', 34, 19], ['ba-4-33', 35, 20],
-    ['ba-2-33-m', 44, 20], ['of-6-20', 45, 19], ['ba-4-33', 46, 20],
-    ['lr-13-21', 31, 15], ['lr-13-21', 46, 15], ['lr-13-0', 31, 24], ['lr-12-9', 43, 24],
-  ]);
-  props([['amplifier-big', 47, 24]]);
-
-  // La salle de réunion : l'écran et deux tableaux blancs au mur nord, face à la table ; la table (4 × 2 cases au sol), quatre chaises de dos au sud (elles
-  // regardent le mur et l'écran) et une de profil à chaque bout (vers la table) ; de chaque côté de l'écran, une bibliothèque.
-  at([['of-9-12', 53, 2], ['of-9-12', 61, 2], ['tv-10-1', 57, 2], ['cl-4-13', 51, 4], ['cl-4-13', 62, 4]]);
-  table('cf-0-1', 56, 4, { south: ['of-0-8', 'of-1-8'], west: 'of-5-8', east: 'of-4-8' });
-  at([['lr-12-9', 51, 8], ['lr-12-9', 64, 8]]);
-  props([['amplifier-big', 64, 6]]);
-
-  // La salle de conférence : l'écran géant et deux tableaux au mur nord, un pupitre devant ; deux rangées de chaises de dos (elles regardent l'écran),
-  // séparées par une allée, des plantes.
-  at([['tv-10-3', 58, 17], ['of-9-12', 54, 17], ['of-9-14', 66, 17], ['cl-14-14', 60, 19]]);
-  for (const y of [21, 23]) {
-    for (const x of [53, 55, 57, 59, 64, 66, 68, 70]) c.put((x + y) % 2 === 0 ? 'of-0-8' : 'of-1-8', x, y);
+  // ---- La salle de conférence : la grande table arrondie en bois miel, huit fauteuils de chaque côté et un à chaque bout, l'écran et deux tableaux
+  // au mur ; des plantes aux quatre coins et l'enceinte.
+  put('table-conference', 4, 21);
+  for (let x = 5; x <= 12; x++) {
+    put('chaise-conference-face', x, 20, { offsetY: 6 });
+    put('chaise-conference-dos', x, 23);
   }
-  at([['lr-13-21', 71, 17], ['lr-13-21', 51, 22]]);
-  props([['amplifier-big', 52, 19]]);
+  put('chaise-conference-droite', 3, 22, { offsetX: 6 });
+  put('chaise-conference-gauche', 13, 22, { offsetX: -6 });
+  at([['tv-10-3', 6, 16], ['of-9-12', 2, 16], ['of-9-14', 12, 16]]);
+  at([['plante-grande', 1, 17, { offsetX: -8 }], ['plante-bureau', 14, 17], ['grande-plante', 1, 27], ['palmier-pot', 13, 27, { offsetX: 5 }]]);
+  props([['amplifier-big', 15, 17]]);
 
-  // La salle de sport : des miroirs au mur, trois tapis de course alignés, deux sacs de frappe, des tapis de sol, des râteliers et des ballons.
-  at([['gy-4-21', 2, 32], ['gy-4-21', 9, 32], ['gy-6-23', 1, 32], ['gy-3-1', 5, 39], ['gy-3-4', 1, 37], ['gy-0-14', 1, 43], ['gy-3-14', 10, 43], ['gy-7-2', 7, 43], ['gy-7-0', 8, 41]]);
-  props([['treadmill', 2, 35], ['treadmill', 8, 35], ['treadmill', 10, 35], ['punching-bag-left', 2, 40], ['punching-bag-right', 10, 40], ['amplifier-big', 12, 33]]);
+  // ---- L'accueil : le comptoir en U en bois clair et ses trois réceptionnistes, l'horloge comtoise et un tableau au mur ; deux coins d'attente (un
+  // canapé et deux fauteuils sur un tapis, deux fauteuils coques autour d'une table ronde), des lampadaires, des plantes et des jardinières.
+  put('comptoir-accueil', 5, 32);
+  for (const [key, x] of [['receptionist-seule', 8], ['receptionist-2-seule', 9], ['receptionist-seule', 10]] as const) {
+    c.prop(key, B + x, B + 33, { onTop: true, offsetY: -10 });
+  }
+  props([['grandfather-clock', 3, 30], ['amplifier-big', 22, 30]]);
+  at([['of-9-14', 8, 30]]);
+  at([['palmier-pot', 1, 31, { offsetX: -9 }], ['plante-grande', 12, 31, { offsetX: 2 }], ['plante-bureau', 4, 32, { offsetX: 4 }], ['grande-plante', 14, 32]]);
+  at([['tapis-beige', 2, 37], ['canape-salon', 4, 38], ['table-basse-salon', 4, 39, { offsetY: -4 }], ['ba-2-33-m', 2, 39], ['ba-2-33', 6, 39]]);
+  at([['tapis-rond-greige', 13, 37], ['fauteuil-coque-1', 13, 38, { offsetX: 10 }], ['fauteuil-coque-2', 16, 38, { offsetX: -10 }], ['table-ronde-blanche', 14, 39, { offsetY: 6 }]]);
+  at([['lampadaire-1', 8, 38, { offsetX: 3 }], ['lampadaire-2', 18, 38, { offsetX: 3 }], ['grande-plante', 20, 35]]);
+  at([['plante-grande', 1, 43, { offsetX: -8 }], ['plante-musee', 8, 43], ['jardiniere-3', 10, 43], ['jardiniere-1', 12, 43], ['jardiniere-5', 19, 43], ['plante-bureau', 21, 43, { offsetX: 8 }]]);
+  // Une haie de jardinières entre l'accueil et le salon de la cafétéria, dans le prolongement du mur de la conférence.
+  at([['jardiniere-2', 17, 29], ['jardiniere-4', 19, 29], ['jardiniere-1', 21, 29]]);
 
-  // La salle de jeu : la cheminée au mur nord, devant elle un salon autour d'un grand tapis (deux fauteuils de profil face à face, une table basse, un
-  // canapé de dos qui regarde le feu), des bougies et des lampadaires ; au sud-est, les quatre tables de jeu, une chaise de face au nord et une de dos au sud.
-  at([
-    ['ge-12-21', 17, 34], ['of-6-18', 18, 35], ['ba-2-33-m', 15, 35], ['ba-2-33', 21, 35], ['of-0-19', 18, 37],
-    ['lr-12-9', 14, 33], ['lr-12-9', 35, 40], ['gy-7-12', 14, 42], ['gy-7-16', 16, 42],
-  ]);
-  table('ki-6-18', 24, 35, { north: 'ki-0-13', south: 'ki-0-12', cols: [25], tuck: 16 });
-  table('ki-6-18', 29, 35, { north: 'ki-3-13', south: 'ki-1-12', cols: [30], tuck: 16 });
-  table('ki-6-18', 24, 40, { north: 'ki-1-13', south: 'ki-0-11', cols: [25], tuck: 16 });
-  table('ge-0-5', 29, 40, { north: 'ki-2-13', south: 'ki-1-11', west: 'ki-4-11', east: 'ki-5-13', cols: [30], tuck: 16 });
-  props([['chimney', 19, 32], ['candle', 17, 33], ['candle', 22, 33], ['wall-candle', 15, 32], ['wall-candle', 28, 32], ['wall-candle', 33, 32], ['amplifier-big', 34, 33]]);
+  // ---- Le hall d'entrée : deux paillassons devant la porte, deux jardinières de part et d'autre, deux grandes plantes.
+  at([['paillasson', 27, 43], ['paillasson', 29, 43], ['jardiniere-5', 24, 43], ['jardiniere-3', 31, 43], ['grande-plante', 23, 31], ['palmier-pot', 32, 31, { offsetX: -5 }]]);
 
-  // La détente : sur la terrasse, la piscine et ses transats ; dans le salon, la télé sur son meuble entre deux bibliothèques, deux canapés de dos qui la
-  // regardent, des fauteuils de profil face à face, une table basse sur un tapis et l'aquarium ; dans le coin musique, un piano, une batterie, des guitares,
-  // un ampli et des pieds de micro.
-  at([
-    ['fi-12-16', 38, 33], ['fi-0-19', 49, 33],
-    ['fi-4-19', 39, 41], ['fi-8-19', 44, 41], ['fi-12-19', 49, 41],
-    ['lr-13-0', 37, 32], ['lr-13-0', 53, 32], ['lr-13-0', 37, 42], ['lr-13-0', 53, 42],
-  ]);
-  at([
-    ['cl-4-13', 56, 33], ['ba-6-47', 58, 33], ['cl-6-13', 63, 33],
-    ['ge-9-7', 59, 35], ['of-6-18', 60, 36], ['ba-2-33-m', 57, 36], ['ba-2-33', 63, 36],
-    ['of-0-19', 59, 38], ['of-0-19', 61, 38],
-    ['lr-13-21', 56, 41], ['lr-12-9', 66, 40],
-  ]);
-  at([
-    ['ge-12-21', 71, 38], ['ms-2-12', 77, 35], ['ms-2-4', 77, 38], ['ms-0-18', 72, 40],
-    ['ms-7-2', 71, 34], ['ms-10-2', 75, 34], ['ms-6-15', 71, 38], ['ms-7-15', 74, 38],
-  ]);
-  props([['fishtank', 66, 42], ['amplifier', 76, 40], ['amplifier-big', 79, 33]]);
+  // ---- La cafétéria : le bar en U blanc (derrière, le réfrigérateur, deux distributeurs et la fontaine à eau ; dessus, la machine à café, une plante et
+  // une coupe de fruits ; devant, cinq tabourets), un coin salon sur un tapis rond, six tables rondes de deux chaises, un îlot de jardinières.
+  at([['ki-12-23', 37, 16], ['of-2-23', 38, 16], ['of-10-38', 40, 15], ['of-12-15', 42, 16]]);
+  put('bar-cafeteria', 36, 18);
+  put('plante-comptoir', 37, 19, { offsetY: -27 });
+  c.prop('coffee', B + 39, B + 19, { onTop: true, offsetY: -27 });
+  put('coupe-fruits', 40, 19, { offsetY: -27 });
+  for (let x = 37; x <= 41; x++) put('tabouret-bar', x, 20);
+  at([['plante-grande', 34, 18, { offsetX: -6 }], ['plante-grande', 44, 18, { offsetX: -10 }]]);
+  props([['amplifier-big', 44, 15]]);
+  // Le salon : un canapé face au sud, deux fauteuils de profil face à face, une table basse, un canapé de dos, sur un grand tapis rond ; des plantes
+  // et un lampadaire autour.
+  at([['tapis-rond-beige', 19, 20], ['canape-salon', 22, 21], ['table-basse-salon', 22, 22, { offsetY: -6 }], ['ba-2-33-m', 20, 22], ['ba-2-33', 25, 22], ['of-0-19', 22, 23]]);
+  at([['grande-plante', 18, 21, { offsetX: -7 }], ['plante-bureau', 27, 20, { offsetX: 6 }], ['plante-haute', 27, 24, { offsetX: 4 }], ['lampadaire-1', 20, 20, { offsetX: 3 }]]);
+  // Les tables rondes en bois miel, une chaise de bistrot de chaque côté (de profil, vers la table).
+  for (const [x, y] of [[45, 21], [51, 21], [48, 25], [54, 25], [45, 28], [51, 28]] as const) {
+    put('ba-0-6', x, y);
+    put('chaise-bistrot-m', x - 1, y + 1, { offsetX: 6 });
+    put('chaise-bistrot', x + 2, y + 1, { offsetX: -6 });
+  }
+  at([['plante-bureau', 56, 16], ['grande-plante', 42, 29], ['palmier-pot', 55, 29, { offsetX: -9 }]]);
+  // L'îlot de jardinières, au milieu, entre le salon et les tables : un palmier à chaque bout.
+  at([['palmier-pot', 28, 26, { offsetX: -1 }], ['jardiniere-3', 29, 26], ['jardiniere-1', 31, 26], ['jardiniere-5', 33, 26], ['palmier-pot', 34, 26, { offsetX: 15 }]]);
 
-  // L'octogone : le ring (tracé par le client) contre le mur nord ; de chaque côté, un sac de frappe pour s'échauffer, et un pouf à l'ouest ; au
-  // sud, devant la porte, une rangée de fauteuils de dos (ils regardent le ring), l'allée de la porte laissée libre. L'enceinte dans le coin sud-est.
-  props([['punching-bag-left', 66, 3], ['punching-bag-right', 78, 3], ['amplifier-big', 79, 7]]);
+  // ---- La salle de jeux : la cheminée au mur nord, devant elle un salon autour d'un grand tapis (deux fauteuils de profil face à face, une table basse,
+  // un canapé de dos qui regarde le feu), des bougies et des lampadaires ; à l'est, les quatre tables de jeu, une chaise de face au nord et une de dos au
+  // sud (et aux deux bouts de celle des petits chevaux).
   at([
-    ['gy-7-14', 66, 5],
-    ['of-0-8', 66, 8], ['of-1-8', 67, 8], ['of-0-8', 68, 8], ['of-1-8', 69, 8],
-    ['of-1-8', 76, 8], ['of-0-8', 77, 8], ['of-1-8', 78, 8],
+    ['ge-12-21', 61, 18], ['of-6-18', 62, 19], ['ba-2-33-m', 59, 19], ['ba-2-33', 65, 19], ['of-0-19', 62, 21],
+    ['lr-12-9', 58, 17], ['lr-12-9', 79, 24], ['gy-7-12', 58, 26], ['gy-7-16', 60, 26],
   ]);
+  table('ki-6-18', 68, 19, { north: 'ki-0-13', south: 'ki-0-12', cols: [69], tuck: 16 });
+  table('ki-6-18', 73, 19, { north: 'ki-3-13', south: 'ki-1-12', cols: [74], tuck: 16 });
+  table('ki-6-18', 68, 24, { north: 'ki-1-13', south: 'ki-0-11', cols: [69], tuck: 16 });
+  table('ge-0-5', 73, 24, { north: 'ki-2-13', south: 'ki-1-11', west: 'ki-4-11', east: 'ki-5-13', cols: [74], tuck: 16 });
+  props([['chimney', 63, 16], ['candle', 61, 17], ['candle', 66, 17], ['wall-candle', 59, 16], ['wall-candle', 72, 16], ['wall-candle', 77, 16], ['amplifier-big', 78, 17]]);
+  at([['plante-grande', 76, 17, { offsetX: -4 }], ['grande-plante', 77, 27]]);
+
+  // ---- La salle de sport : des miroirs au mur, trois tapis de course, des machines, un banc, des haltères, des ballons, des plantes.
+  at([['gy-4-21', 40, 32], ['gy-4-21', 43, 32], ['gy-4-21', 46, 32], ['gy-4-21', 49, 32]]);
+  props([['treadmill', 40, 34], ['treadmill', 42, 34], ['treadmill', 44, 34], ['amplifier-big', 56, 36]]);
+  at([
+    ['gy-11-1', 47, 34], ['gy-13-1', 50, 34], ['gy-14-8', 53, 34],
+    ['gy-2-25', 44, 39], ['gy-0-14', 49, 43], ['gy-8-25', 53, 43], ['gy-15-0', 55, 41],
+    ['gy-4-30', 47, 39], ['gy-10-30', 50, 39], ['gy-9-16', 53, 39],
+    ['gy-7-2', 36, 43], ['gy-7-6', 38, 42],
+  ]);
+  at([['grande-plante', 55, 33], ['plante-grande', 35, 34], ['plante-bureau', 41, 43]]);
+
+  // ---- La salle de boxe : le ring de l'octogone (tracé par le client) au milieu ; de chaque côté, un sac de frappe et un pouf ; au sud, des bancs pour
+  // le public ; des plantes dans les coins, l'enceinte.
+  props([['punching-bag-left', 59, 31], ['punching-bag-right', 77, 31], ['amplifier-big', 79, 39]]);
+  at([['gy-7-14', 60, 36], ['gy-7-14', 76, 36]]);
+  for (const x of [61, 64, 71, 74]) put('banc-jardin', x, 41);
+  at([['grande-plante', 58, 43], ['plante-grande', 78, 43], ['plante-bureau', 78, 34, { offsetX: 8 }]]);
+}
+
+// Le jardin qui fait le tour du bâtiment, en cases de la carte. Du bâtiment vers le bord de la carte (la distance `d`) : une rangée de buissons fleuris
+// contre la façade (d = 1), le chemin de dalles (d = 2 et 3), une rangée de buissons et de fleurs (d = 4), la haie (d = 5). Des arbres au sud et sur les
+// côtés, de gros buissons au nord (le bord de la carte couperait une couronne), les jardinières du musée contre la façade sud, des bancs face au chemin,
+// une allée de dalles de l'entrée au bord de la carte. Les deux angles ouverts ont leur jardin à eux, reliés au chemin par des pas japonais.
+function plantGarden(c: MapCanvas): void {
+  const W = OFFICE_WIDTH;
+  const H = OFFICE_HEIGHT;
+  const inRect = (x: number, y: number) => x >= B && x < B + BUILDING.w && y >= B && y < B + BUILDING.h;
+  const inCorner = (x: number, y: number) => y >= B && y < B + CORNER_H && CORNERS.some((k) => x >= B + k.x0 && x <= B + k.x1);
+  const isTerrace = (x: number, y: number) => inCorner(x, y) && y >= B + CORNER_GARDEN_H;
+  const inBuilding = (x: number, y: number) => inRect(x, y) && (!inCorner(x, y) || isTerrace(x, y));
+  // La distance d'une case du tour au bâtiment (0 dedans).
+  const dist = (x: number, y: number) =>
+    Math.max(x < B ? B - x : x >= B + BUILDING.w ? x - (B + BUILDING.w - 1) : 0, y < B ? B - y : y >= B + BUILDING.h ? y - (B + BUILDING.h - 1) : 0);
+  const inAlley = (x: number, y: number) => y >= B + BUILDING.h && x >= ENTRANCE.x - 1 && x <= ENTRANCE.x + ENTRANCE.w;
+
+  // Les pas japonais des jardins des angles (en cases du bâtiment) : de la terrasse au chemin du tour, et autour du massif du parterre.
+  const stepping = new Set<string>();
+  const step = (cells: ReadonlyArray<readonly [number, number]>) => cells.forEach(([x, y]) => stepping.add(`${B + x},${B + y}`));
+  step([[6, 9], [6, 8], [6, 7], [5, 6], [5, 5], [5, 4], [6, 3], [6, 2], [6, 1], [6, 0], [6, -1], [4, 5], [3, 5], [2, 5], [1, 5], [0, 5], [-1, 5]]);
+  step([[74, -1], [74, 0], [74, 1], [74, 7], [74, 8], [74, 9], [77, 4], [78, 4], [79, 4], [80, 4], [81, 4]]);
+  for (let x = 72; x <= 76; x++) step([[x, 2], [x, 6]]);
+  for (let y = 3; y <= 5; y++) step([[72, y], [76, y]]);
+  const isPath = (x: number, y: number) => stepping.has(`${x},${y}`) || (!inRect(x, y) && (dist(x, y) === 2 || dist(x, y) === 3 || inAlley(x, y)));
+  // Une case du tour qui borde un angle ouvert : on y plante moins, pour que le jardin de l'angle et celui du tour n'en fassent qu'un.
+  const besideCorner = (x: number, y: number) =>
+    (y === B - 1 && CORNERS.some((k) => x >= B + k.x0 - 1 && x <= B + k.x1 + 1)) || ((x === B - 1 || x === B + BUILDING.w) && y >= B && y < B + CORNER_H);
+
+  // ---- Le sol : l'herbe (piquée de fleurs le long de la façade), les dalles du chemin, le bois des terrasses (posé avec le bâtiment).
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (inBuilding(x, y)) continue;
+      const h = cellHash(x, y);
+      const d = dist(x, y);
+      let ground: GardenGround = 'grass';
+      if (isPath(x, y)) ground = 'slab';
+      else if (inCorner(x, y)) ground = h % 4 === 0 ? 'meadow' : 'grass';
+      else if (d === 1) ground = 'flowers';
+      else if (d === 4 && h % 3 === 0) ground = 'meadow';
+      c.ground(x, y, ground);
+    }
+  }
+
+  // ---- Ce qui pousse : on retient les cases prises, pour ne rien poser deux fois au même endroit.
+  const taken = new Set<string>();
+  const take = (x: number, y: number, w = 1, h = 1) => {
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) taken.add(`${x + i},${y + j}`);
+  };
+  const put = (id: string, x: number, y: number, nudge: { offsetX?: number; offsetY?: number } = {}) => {
+    const item = decorItem(id)!;
+    c.put(id, x, y, nudge);
+    take(x, y, item.w, item.claim);
+  };
+  // Les buissons : nus, ou fleuris de l'une des trois couleurs ; plusieurs tirages de chacun.
+  const FLOWERED = ['rose', 'jaune', 'lilas'] as const;
+  const bush = (h: number, flowers?: number) => (flowers === undefined ? `buisson-${1 + (h % 3)}` : `buisson-${FLOWERED[flowers % 3]}-${1 + (h % 2)}`);
+  const bigBush = (h: number, flowers?: number) => (flowers === undefined ? `gros-buisson-${1 + (h % 2)}` : `gros-buisson-${FLOWERED[flowers % 3]}`);
+  // Une touffe de fleurs, un peu décalée dans sa case.
+  const flower = (x: number, y: number, h: number) => put(`fleur-${[1, 2, 3, 1][h % 4]}`, x, y, { offsetX: (h % 7) - 2, offsetY: -3 });
+
+  // Les arbres, au sud et sur les côtés : leur couronne fait trois cases ; elle arrête l'avatar, sauf au-dessus du chemin, qu'elle ombrage sans le couper.
+  for (const [x, y] of [
+    [1, H - 2], [W - 2, H - 2], [12, H - 2], [24, H - 2], [47, H - 2], [62, H - 2], [77, H - 2],
+    [1, 9], [1, 21], [1, 33], [1, 45], [W - 2, 9], [W - 2, 21], [W - 2, 33], [W - 2, 45],
+  ] as const) {
+    c.put(`arbre-${1 + (cellHash(x, y) % 4)}`, x - 1, y, { offsetY: 10 });
+    for (const cx of [x - 1, x, x + 1]) if (!isPath(cx, y)) c.block(cx, y, 1, 1);
+    take(x - 1, y, 3);
+  }
+  // De gros buissons au nord, un sur deux fleuri ; sur les côtés, entre les arbres.
+  for (let x = 1; x < W - 2; x += 5) put(bigBush(cellHash(x, 1), x % 2 ? Math.floor(x / 5) : undefined), x, 1);
+  for (const y of [4, 15, 27, 39]) {
+    put(bigBush(cellHash(0, y), y), 0, y);
+    put(bigBush(cellHash(W - 2, y), y + 1), W - 2, y);
+  }
+  // Contre la façade sud, les jardinières (comme sur la référence) ; des bancs face au chemin.
+  const planters = ['jardiniere-1', 'jardiniere-3', 'jardiniere-2', 'jardiniere-5', 'jardiniere-4', 'jardiniere-6'];
+  [1, 5, 9, 13, 17, 21, 33, 37, 41, 45, 49, 53, 57, 61, 65, 69, 73, 77].forEach((x, i) => put(planters[i % planters.length]!, B + x, B + BUILDING.h, { offsetY: -2 }));
+  for (const x of [2, 14, 35, 49, 64]) put('banc-jardin', B + x, B + BUILDING.h + 3);
+  // Le paillasson devant l'entrée, sur l'allée.
+  put('paillasson-entree', ENTRANCE.x, B + BUILDING.h);
+
+  // ---- Le jardin de l'angle ouest : un jardin naturel. Le bassin bordé de pierres, ses nénuphars et ses roseaux, un banc qui le regarde, trois massifs de
+  // fleurs, un gros buisson, des buissons le long du mur du bureau voisin, quelques fleurs.
+  const local = (x: number, y: number): [number, number] => [B + x, B + y];
+  put('bassin', OFFICE_POND.x, OFFICE_POND.y);
+  put('roseaux', ...local(7, 4), { offsetX: 11 });
+  put('roseaux', ...local(7, 6), { offsetX: 13, offsetY: -4 });
+  put('roseaux', ...local(11, 6), { offsetX: 15, offsetY: -2 });
+  put('banc-jardin', ...local(8, 8));
+  put('massif-1', ...local(0, 0));
+  put('massif-jaune', ...local(8, 0));
+  put('massif-rond-lilas', ...local(0, 7));
+  put('gros-buisson-rose', ...local(3, 8));
+  for (let y = 0; y <= 9; y++) put(bush(cellHash(y, 12), y % 3 === 1 ? 1 : undefined), ...local(12, y));
+  for (const [x, y] of [[4, 1], [7, 2], [3, 3], [9, 3], [11, 8], [4, 9], [1, 6], [7, 9], [10, 9]] as const) flower(...local(x, y), cellHash(x, y));
+
+  // ---- Le jardin de l'angle est : un parterre à la française. Un massif rond au centre et son buisson taillé, une allée de pas japonais en carré
+  // autour, quatre massifs aux angles, un banc à l'ouest, des buissons le long du mur du bureau voisin, quelques fleurs.
+  put('massif-rond-rouge', ...local(73, 3));
+  c.put('buisson-taille', ...local(74, 4), { offsetY: 6 });
+  put('massif-rose-1', ...local(69, 0));
+  put('massif-rose-2', ...local(77, 0));
+  put('massif-or-1', ...local(69, 6));
+  put('massif-or-2', ...local(77, 6));
+  put('banc-jardin', ...local(69, 4));
+  for (let y = 0; y <= 9; y++) put(bush(cellHash(y, 68), y % 3 === 2 ? 1 : undefined), ...local(68, y));
+  for (const [x, y] of [[72, 0], [76, 0], [72, 8], [76, 8], [80, 1], [80, 7], [79, 9], [71, 4]] as const) flower(...local(x, y), cellHash(x, y));
+
+  // ---- Le tour : la haie au bord de la carte, des buissons fleuris contre la façade, des buissons et des fleurs sur la rangée du bord du chemin.
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      if (inBuilding(x, y) || isPath(x, y) || inCorner(x, y) || taken.has(`${x},${y}`)) continue;
+      const d = dist(x, y);
+      const h = cellHash(x, y);
+      if (d === 5) put(y === 0 || y === H - 1 ? `haie-${1 + (h % 3)}` : `haie-cote-${1 + (h % 3)}`, x, y);
+      else if (d === 1 && besideCorner(x, y)) {
+        if (h % 4 === 0) put(bush(h, h % 3), x, y);
+        else if (h % 4 === 1) flower(x, y, h);
+      } else if (d === 1) {
+        if (h % 5 !== 0) put(bush(h, h % 3 === 0 ? undefined : h % 3), x, y);
+        else flower(x, y, h);
+      } else if (d === 4) {
+        if (h % 3 === 0) put(bush(h, h % 2 === 0 ? h % 3 : undefined), x, y);
+        else if (h % 3 === 1) flower(x, y, h);
+      }
+    }
+  }
 }
 
 // La carte telle que le serveur la charge, et son plan pour les tests.

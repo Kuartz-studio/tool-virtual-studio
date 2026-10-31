@@ -1,10 +1,11 @@
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { buildOfficeTiledMap, isWalkableTile, OFFICE_DESK_SLOTS, parseOfficeMap, placeByKey } from '../packages/shared/src/index';
+import { buildOfficeTiledMap, insideRing, isWalkableTile, OFFICE_DESK_SLOTS, parseOfficeMap, placeByKey } from '../packages/shared/src/index';
 import { deskSettingsButton, goToDeskButton, joinOffice, openDeskPanel, openJukebox, openPanel, selfAt } from './helpers';
 
 // La musique d'ambiance par endroit, sur la vraie carte (le second serveur des tests : playwright.config.ts) : en marchant d'un endroit à
 // l'autre, l'ambiance change, avec les vrais fichiers décodés par Chromium. Chaque lieu a l'ambiance que la carte lui donne (la propriété `scene` de sa
-// zone `place`, packages/shared/src/map/office.ts ; apps/client/src/audio/scene-at.ts la lit).
+// zone `place`, packages/shared/src/map/office.ts ; apps/client/src/audio/scene-at.ts la lit) ; le dehors (la terrasse, le jardin) n'a pas d'enceinte : la
+// musique s'y tait, on y entend la nature.
 
 // Les tests de ce fichier passent l'un après l'autre, dans un seul navigateur à la fois : plusieurs gens par test, des fichiers de plusieurs
 // Mo à décoder, et le reste de la suite qui tourne en même temps : étalés sur tous les processus, ils feraient dépasser leur délai à des tests
@@ -14,12 +15,16 @@ test.describe.configure({ mode: 'default' });
 const map = parseOfficeMap(buildOfficeTiledMap());
 const DECODE_TIMEOUT = 20_000;
 
-// Le milieu de la case praticable la plus proche de (column, row) : un meuble peut occuper celle qu'on vise.
+// Le ring de l'octogone, au milieu de la salle de boxe : sa cage arrête qui n'y combat pas, on ne se pose ni dedans ni contre elle.
+const nearRing = (x: number, y: number) => map.arena !== null && insideRing(map.arena, x, y, -map.tileSize / 2);
+
+// Le milieu de la case praticable la plus proche de (column, row), hors du ring : un meuble peut occuper celle qu'on vise.
 function spotNear(column: number, row: number): { x: number; y: number } {
   for (let radius = 0; radius < 8; radius++) {
     for (let dy = -radius; dy <= radius; dy++) {
       for (let dx = -radius; dx <= radius; dx++) {
-        if (isWalkableTile(map, column + dx, row + dy)) return { x: (column + dx) * 32 + 16, y: (row + dy) * 32 + 16 };
+        const spot = { x: (column + dx) * 32 + 16, y: (row + dy) * 32 + 16 };
+        if (isWalkableTile(map, column + dx, row + dy) && !nearRing(spot.x, spot.y)) return spot;
       }
     }
   }
@@ -61,19 +66,20 @@ async function teleport(page: Page, spot: { x: number; y: number }): Promise<voi
   await expect.poll(() => selfAt(page)).toMatchObject(spot);
 }
 
-// Les endroits de la grande carte : où se poser, l'ambiance qu'on y entend, et le nom du lieu que dit la puce en haut à gauche (office/where.ts :
-// le nom de la zone `place`, dans les deux cas).
-const PLACES: Array<[name: string, at: { x: number; y: number }, scene: string, place: string]> = [
+// Les endroits de la grande carte : où se poser, l'ambiance qu'on y entend (null : aucune, dehors), et le nom du lieu que dit la puce en haut à gauche
+// (office/where.ts : le nom de la zone `place`, « Couloir » pour la rue). Deux endroits qui se suivent n'ont jamais la même ambiance : chaque pas en change.
+const PLACES: Array<[name: string, at: { x: number; y: number }, scene: string | null, place: string]> = [
   ['la salle de conférence', spotIn('conference'), 'drift', 'Salle de conférence'],
-  ['le café', spotIn('cafe'), 'sunny', 'Café'],
-  ['la place centrale', spotNear(31, 5), 'lobby', 'Place centrale'],
-  ['la salle de réunion', spotIn('meeting'), 'focus', 'Salle de réunion'],
+  ['la cafétéria', spotIn('cafe'), 'sunny', 'Cafétéria'],
+  ['le hall d\'entrée', spotIn('hall'), 'lobby', 'Hall d\'entrée'],
   ['la salle de sport', spotIn('gym'), 'quest', 'Salle de sport'],
-  ['la salle de jeu', spotIn('game'), 'dusk', 'Salle de jeu'],
-  ['la détente et la piscine', spotIn('lounge'), 'sunny', 'Détente et piscine'],
+  ['la salle de jeux', spotIn('game'), 'dusk', 'Salle de jeux'],
+  ['la salle de boxe', spotIn('arena'), 'quest', 'Salle de boxe'],
   // Le bureau rendu est libre : « Place A3 ».
   ['un bureau', { x: (OFFICE_DESK_SLOTS[2]!.room.x + 4) * 32 + 16, y: (OFFICE_DESK_SLOTS[2]!.room.y + 3) * 32 + 16 }, 'focus', 'Place A3'],
-  ['la rue', spotNear(20, 12), 'lobby', 'Couloir'],
+  ['la terrasse', spotIn('terrace'), null, 'Terrasse'],
+  ['la rue', spotIn('street'), 'lobby', 'Couloir'],
+  ['le jardin', spotIn('garden'), null, 'Jardin'],
 ];
 
 const whereChip = (page: Page) => page.getByRole('group', { name: 'Lieu' });
@@ -94,7 +100,7 @@ test('chaque endroit a son ambiance : on y reste un moment, la musique change, e
   }
 });
 
-test('« Ici », dans Personnes, ne réunit que ceux du même lieu : deux personnes au café, l\'une part à la salle de conférence', async ({ browser }) => {
+test('« Ici », dans Personnes, ne réunit que ceux du même lieu : deux personnes à la cafétéria, l\'une part à la salle de conférence', async ({ browser }) => {
   test.slow();
   const contexts: BrowserContext[] = [];
   try {
@@ -106,11 +112,13 @@ test('« Ici », dans Personnes, ne réunit que ceux du même lieu : deux person
       return page;
     };
     const [a, b] = await Promise.all([arrive('Axelle'), arrive('Bruno')]);
-    // Leurs bureaux d'abord (les tests de personnalisation en cherchent de libres), puis chacun à un bout du café.
+    // Leurs bureaux d'abord (les tests de personnalisation en cherchent de libres), puis chacun à un bout de la cafétéria, sur sa rangée du milieu.
     await Promise.all([giveDeskBack(a), giveDeskBack(b)]);
-    await teleport(a, spotNear(33, 4));
-    await teleport(b, spotNear(46, 8));
-    await expect(whereChip(a)).toContainText('Café');
+    const cafe = placeByKey(map, 'cafe')!.rects[0]!;
+    const middleRow = Math.floor((cafe.y + cafe.height / 2) / 32);
+    await teleport(a, spotNear(Math.floor(cafe.x / 32) + 2, middleRow));
+    await teleport(b, spotNear(Math.floor((cafe.x + cafe.width) / 32) - 3, middleRow));
+    await expect(whereChip(a)).toContainText('Cafétéria');
 
     const people = await openPanel(a, 'Personnes');
     // Le panneau s'ouvre sur « Tout le bureau » : on passe sur « Ici ».

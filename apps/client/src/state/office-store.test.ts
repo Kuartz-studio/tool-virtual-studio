@@ -514,7 +514,7 @@ describe('zoom', () => {
   });
   const store = () => useOfficeStore.getState();
 
-  test('au départ, 100 % ; chaque cran fait 5 %, arrêté à 25 % et à 200 %', () => {
+  test('au départ, 100 % ; chaque cran fait 5 %, arrêté à 60 % et à 200 %', () => {
     expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
     store().stepZoom(1);
     expect(store().zoomPercent).toBe(105);
@@ -533,7 +533,7 @@ describe('zoom', () => {
     expect(store().zoomPercent).toBe(90);
     store().setZoomPercent(ZOOM_MIN_PERCENT);
     store().stepZoom(1, ZOOM_BUTTON_STEP);
-    expect(store().zoomPercent).toBe(30);
+    expect(store().zoomPercent).toBe(70);
   });
 
   test('setZoomPercent ramène un pourcentage hors bornes aux bornes, et un pourcentage entre deux crans au cran de 5 % le plus proche', () => {
@@ -554,11 +554,12 @@ describe('zoom', () => {
     expect(store().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
   });
 
-  // Le plancher de la vraie carte sur 1440 × 900 (33,48 %), puis sur 1920 × 1080 (43,96 %), tels que le jeu les donne (zoom.ts).
-  const FLOOR = (100 * 900) / 1792 / 1.5;
-  const HIGHER_FLOOR = (100 * 1920) / 2912 / 1.5;
+  // Le plancher de la vraie carte sur un téléphone de 390 × 844 (62,8 %), puis celui de la carte de développement sur 1440 × 900 (88,24 %), tels que le jeu
+  // les donne (zoom.ts).
+  const FLOOR = (100 * 844) / 1792 / 0.75;
+  const HIGHER_FLOOR = (100 * 1440) / 1088 / 1.5;
 
-  test('le plancher : 25 % avant le jeu ; ni la molette, ni les boutons, ni un pourcentage donné ne passent dessous', () => {
+  test('le plancher : 60 % avant le jeu ; ni la molette, ni les boutons, ni un pourcentage donné ne passent dessous', () => {
     expect(store().zoomFloor).toBe(ZOOM_MIN_PERCENT);
     store().setZoomFloor(FLOOR);
     expect(store().zoomFloor).toBe(FLOOR);
@@ -569,7 +570,7 @@ describe('zoom', () => {
     store().stepZoom(-1, ZOOM_BUTTON_STEP);
     expect(store().zoomPercent).toBe(FLOOR);
     store().stepZoom(1, ZOOM_BUTTON_STEP);
-    expect(store().zoomPercent).toBe(40);
+    expect(store().zoomPercent).toBe(70);
     store().setZoomPercent(ZOOM_MIN_PERCENT);
     expect(store().zoomPercent).toBe(FLOOR);
   });
@@ -581,9 +582,9 @@ describe('zoom', () => {
     expect(store().zoomPercent).toBe(HIGHER_FLOOR);
     store().setZoomFloor(FLOOR);
     expect(store().zoomPercent).toBe(HIGHER_FLOOR);
-    // Un cran de plus près depuis là : le cran suivant de la grille, 45 %.
+    // Un cran de plus près depuis là : le cran suivant de la grille, 90 %.
     store().stepZoom(1);
-    expect(store().zoomPercent).toBe(45);
+    expect(store().zoomPercent).toBe(90);
   });
 
   test('le même plancher, à chaque redimensionnement, ne change pas l\'état : aucun abonné n\'est prévenu', () => {

@@ -11,13 +11,13 @@ const pieces = () => screen.getAllByRole('button').map((button) => button.getAtt
 
 test('une mini-carte : un bouton par destination de la carte (la salle de sport, la salle de jeu), et aucun pour les autres pièces', () => {
   render(<PlacePicker map={office} value={undefined} onChange={() => undefined} />);
-  expect(pieces().sort()).toEqual(['Salle de jeu', 'Salle de sport']);
+  expect(pieces().sort()).toEqual(['Salle de jeux', 'Salle de sport']);
 });
 
 test('l\'emplacement choisi est enfoncé, les autres non', () => {
   render(<PlacePicker map={office} value="gym" onChange={() => undefined} />);
   expect(screen.getByRole('button', { name: 'Salle de sport' }).getAttribute('aria-pressed')).toBe('true');
-  expect(screen.getByRole('button', { name: 'Salle de jeu' }).getAttribute('aria-pressed')).toBe('false');
+  expect(screen.getByRole('button', { name: 'Salle de jeux' }).getAttribute('aria-pressed')).toBe('false');
 });
 
 test('un clic choisit la pièce ; un clic sur celle qui est choisie la retire (aucun emplacement : on ne bouge pas)', async () => {
@@ -28,14 +28,14 @@ test('un clic choisit la pièce ; un clic sur celle qui est choisie la retire (a
   rerender(<PlacePicker map={office} value="gym" onChange={onChange} />);
   await userEvent.click(screen.getByRole('button', { name: 'Salle de sport' }));
   expect(onChange).toHaveBeenLastCalledWith(undefined);
-  await userEvent.click(screen.getByRole('button', { name: 'Salle de jeu' }));
+  await userEvent.click(screen.getByRole('button', { name: 'Salle de jeux' }));
   expect(onChange).toHaveBeenLastCalledWith('game');
 });
 
 test('au clavier : Entrée et Espace choisissent, comme un clic', async () => {
   const onChange = vi.fn();
   render(<PlacePicker map={office} value={undefined} onChange={onChange} />);
-  screen.getByRole('button', { name: 'Salle de jeu' }).focus();
+  screen.getByRole('button', { name: 'Salle de jeux' }).focus();
   await userEvent.keyboard('{Enter}');
   await userEvent.keyboard(' ');
   expect(onChange).toHaveBeenCalledTimes(2);
@@ -62,7 +62,7 @@ test('le nom d\'une destination passe sur plusieurs lignes, aucune plus longue q
   render(<PlacePicker map={office} value={undefined} onChange={() => undefined} />);
   const lines = (name: string) => [...screen.getByRole('button', { name }).querySelectorAll('tspan')].map((line) => line.textContent);
   expect(lines('Salle de sport')).toEqual(['Salle de', 'sport']);
-  expect(lines('Salle de jeu')).toEqual(['Salle de', 'jeu']);
+  expect(lines('Salle de jeux')).toEqual(['Salle de', 'jeux']);
 });
 
 test('wrapLabel : on coupe aux espaces, une ligne ne dépasse pas la largeur donnée sauf un mot plus long qu\'elle', () => {

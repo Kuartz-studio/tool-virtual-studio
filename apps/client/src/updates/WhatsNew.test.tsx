@@ -49,15 +49,19 @@ describe('la fenêtre « Quoi de neuf ? » à l\'entrée', () => {
     const dialog = await screen.findByRole('dialog', { name: TITLE });
     expect(dialog.getAttribute('aria-modal')).toBe('true');
     expect(dialog.getAttribute('aria-describedby') && document.getElementById(dialog.getAttribute('aria-describedby')!)?.textContent).toBe(latest.tagline);
-    expect(dialog.textContent).toContain(`Version ${latest.version}, du 29 octobre 2026`);
-    // Rangées par genre : une liste nommée par le titre de son groupe, dans l'ordre Nouveautés, Améliorations, Corrections ; plus de « Et aussi ».
+    expect(dialog.textContent).toContain(`Version ${latest.version}, du 31 octobre 2026`);
+    // Rangées par genre : une liste nommée par le titre de son groupe, dans l'ordre Nouveautés, Améliorations, Suppressions (la 1.01 n'a pas de
+    // correction : pas de groupe vide) ; plus de « Et aussi ».
     const groups = within(dialog).getAllByRole('list').map((list) => list.getAttribute('aria-labelledby') && document.getElementById(list.getAttribute('aria-labelledby')!)?.textContent);
-    expect(groups).toEqual([fr.whatsNew.groups.new, fr.whatsNew.groups.improved, fr.whatsNew.groups.fixed]);
+    expect(groups).toEqual([fr.whatsNew.groups.new, fr.whatsNew.groups.improved, fr.whatsNew.groups.removed]);
     const news = within(dialog).getByRole('list', { name: fr.whatsNew.groups.new });
-    expect(within(news).getAllByRole('listitem')[0]?.textContent).toContain('Plein écran en réunion');
-    expect(within(dialog).getByRole('list', { name: fr.whatsNew.groups.fixed }).textContent).toContain('La pastille de ton portrait');
+    expect(within(news).getAllByRole('listitem')[0]?.textContent).toContain('Un nouveau bureau, avec jardin');
+    expect(within(dialog).getByRole('list', { name: fr.whatsNew.groups.removed }).textContent).toContain('Adieu la piscine');
     expect(dialog.textContent).not.toContain('Et aussi');
-    // Une seule version : pas de « Tout l'historique ».
+    // Un compte qui n'a rien vu ne voit que la version en cours ; « Tout l'historique » montre aussi la 1.00.
+    expect(dialog.textContent).not.toContain('Plein écran en réunion');
+    await userEvent.click(screen.getByRole('button', { name: fr.whatsNew.history }));
+    expect(dialog.textContent).toContain('Plein écran en réunion');
     expect(screen.queryByRole('button', { name: fr.whatsNew.history })).toBeNull();
   });
 
@@ -135,6 +139,9 @@ describe('la fenêtre « Quoi de neuf ? » à l\'entrée', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.ui.close }));
     await user.tab();
     expect(document.activeElement).toBe(region);
+    // Le pied : « Tout l'historique » (un compte qui n'a rien vu ne voit que la version en cours), puis « C'est parti ».
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.whatsNew.history }));
     await user.tab();
     expect(document.activeElement).toBe(screen.getByRole('button', { name: fr.whatsNew.done }));
   });

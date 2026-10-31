@@ -3,12 +3,12 @@ import { describe, expect, test } from 'vitest';
 import { enter, nextEvent, record, sleep, startTestServer, type ClientSocket, type TestServer } from './helpers/realtime';
 
 // Inviter quelqu'un dans son bureau, et rejoindre quelqu'un (le menu d'une personne, au clic droit), sur la grande carte (MAP_KEY=office) : le bureau A1 est la
-// pièce des cases x 9 à 17, y 2 à 8, sa porte (x 12 et 13, y 9 et 10) perce la bande de mur du sud. (11, 6) est un point de la pièce, (12, 12) le couloir, devant
-// la porte. Centre d'une case, en pixels.
+// pièce des cases x 26 à 34, y 7 à 13, sa porte (x 29 et 30, y 14 et 15) perce la bande de mur du sud. (28, 11) est un point de la pièce, (29, 17) la rue,
+// devant la porte. Centre d'une case, en pixels.
 const px = (tile: number) => tile * 32 + 16;
-const INSIDE = { x: px(11), y: px(6) };
-const OUTSIDE = { x: px(12), y: px(12) };
-const CORRIDOR = { x: px(24), y: px(12) };
+const INSIDE = { x: px(28), y: px(11) };
+const OUTSIDE = { x: px(29), y: px(17) };
+const CORRIDOR = { x: px(41), y: px(17) };
 // La carte des tests (celle du serveur) : pour savoir dans quelle zone quelqu'un se trouve.
 const map = parseOfficeMap(buildOfficeTiledMap());
 
@@ -165,12 +165,12 @@ describe('rejoindre quelqu\'un', () => {
 
   test('la personne est dans la rue, juste sous la fontaine du dehors de A1 (son dehors par défaut) : on n\'est jamais posé dans la fontaine', async () => {
     const srv = await startOffice();
-    const a = await person(srv, 'a@x.fr');   // A1, rien de réglé : son dehors par défaut, la fontaine en (10, 11)
+    const a = await person(srv, 'a@x.fr');   // A1, rien de réglé : son dehors par défaut, la fontaine en (27, 16)
     const b = await person(srv, 'b@x.fr');
-    await teleport(srv, b, { x: px(10), y: px(12) });
+    await teleport(srv, b, { x: px(27), y: px(17) });
     expect(await join(a.socket, b.id)).toEqual({ ok: true });
     // Des quatre cases voisines, la plus haute (la fontaine) est fermée : la suivante, à l'ouest.
-    expect(posOf(srv, a)).toEqual({ x: px(9), y: px(12) });
+    expect(posOf(srv, a)).toEqual({ x: px(26), y: px(17) });
   });
 
   test('une demande mal formée : invalid ; trop de demandes : rate_limited', async () => {

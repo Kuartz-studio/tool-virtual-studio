@@ -21,6 +21,7 @@ export * from './proximity/compute-groups';
 export * from './proximity/conversation-locks';
 export * from './decor/types';
 export * from './decor/generated';
+export * from './decor/generated-plan';
 export * from './props/catalog';
 export * from './decor/generated-themes';
 export * from './character/types';

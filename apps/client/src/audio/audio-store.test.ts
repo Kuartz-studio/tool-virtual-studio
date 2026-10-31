@@ -7,9 +7,15 @@ const BY = { id: 'u1', name: 'Alice' };
 const OFF: RoomMusic = { on: false, scene: null, by: BY, at: 1 };
 const QUEST: RoomMusic = { on: true, scene: 'quest', by: BY, at: 2 };
 
-// L'état dont le choix de l'ambiance dépend : les réglages de la personne, l'ambiance par défaut de l'endroit, et sa clé s'il a une enceinte.
-const wanted = (over: { prefs?: Partial<AudioPrefs>; place?: 'lobby' | 'focus' | 'sunny' | 'dusk' | 'drift' | 'quest'; placeKey?: string | null } = {}, music: Record<string, RoomMusic> = {}) =>
-  selectWantedScene({ prefs: { ...DEFAULT_AUDIO_PREFS, ...over.prefs }, place: over.place ?? 'dusk', placeKey: over.placeKey === undefined ? 'game' : over.placeKey }, music);
+// L'état dont le choix de l'ambiance dépend : les réglages de la personne, l'ambiance par défaut de l'endroit, sa clé s'il a une enceinte, et si l'on est dehors.
+const wanted = (
+  over: { prefs?: Partial<AudioPrefs>; place?: 'lobby' | 'focus' | 'sunny' | 'dusk' | 'drift' | 'quest'; placeKey?: string | null; outside?: boolean } = {},
+  music: Record<string, RoomMusic> = {},
+) =>
+  selectWantedScene(
+    { prefs: { ...DEFAULT_AUDIO_PREFS, ...over.prefs }, place: over.place ?? 'dusk', placeKey: over.placeKey === undefined ? 'game' : over.placeKey, outside: over.outside ?? false },
+    music,
+  );
 
 describe('selectWantedScene : ce qu\'on entend', () => {
   test('musique coupée : le silence, quoi que dise la pièce ou l\'ambiance choisie', () => {
@@ -45,6 +51,12 @@ describe('selectWantedScene : ce qu\'on entend', () => {
     expect(wanted({ place: 'lobby', placeKey: null }, { game: OFF, 'street-n': OFF })).toBe('lobby');
     expect(wanted({ place: 'focus', placeKey: null })).toBe('focus');
   });
+
+  test('dehors (le jardin, une terrasse), pas d\'enceinte : le silence, que la nature remplit ; la musique qu\'on a choisie (son casque) nous suit', () => {
+    expect(wanted({ place: 'lobby', placeKey: null, outside: true })).toBeNull();
+    expect(wanted({ place: 'lobby', placeKey: null, outside: true }, { garden: QUEST })).toBeNull();
+    expect(wanted({ place: 'lobby', placeKey: null, outside: true, prefs: { scene: 'sunny' } })).toBe('sunny');
+  });
 });
 
 describe('le magasin du son', () => {
@@ -57,6 +69,8 @@ describe('le magasin du son', () => {
     store.getState().setPlace('dusk', 'game');
     expect(store.getState()).toBe(before);
     store.getState().setPlace('dusk');
-    expect(store.getState()).toMatchObject({ place: 'dusk', placeKey: null });
+    expect(store.getState()).toMatchObject({ place: 'dusk', placeKey: null, outside: false });
+    store.getState().setPlace('lobby', null, true);
+    expect(store.getState()).toMatchObject({ place: 'lobby', placeKey: null, outside: true });
   });
 });

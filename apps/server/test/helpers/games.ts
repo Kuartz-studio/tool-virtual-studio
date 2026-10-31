@@ -21,9 +21,9 @@ import type { LadderEntry, LadderRecord } from '../../src/games/ladder-service';
 // La vraie carte du bureau : ses quatre tables de jeu (échecs, backgammon, Puissance 4 : deux chaises ; petits chevaux : quatre) et sa salle de jeu.
 export const officeMap = parseOfficeMap(buildOfficeTiledMap());
 
-// Un point dans la salle de jeu, et un autre bien ailleurs (l'accueil).
-export const IN_GAME_ROOM = { x: 800, y: 1216 };
-export const OUTSIDE = { x: 40 * 32 + 16, y: 22 * 32 + 16 };
+// Un point dans la salle de jeux, entre ses quatre tables, et un autre bien ailleurs (l'accueil).
+export const IN_GAME_ROOM = { x: 74 * 32, y: 27 * 32 };
+export const OUTSIDE = { x: 16 * 32 + 16, y: 41 * 32 + 16 };
 
 // Les trois jeux de la carte que les tests essaient avec le morpion : `connect4` sans nulle par accord, `chess` avec.
 export const tictactoe = makeTicTacToe('connect4');

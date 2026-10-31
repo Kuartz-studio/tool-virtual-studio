@@ -1,12 +1,15 @@
-import { CLOCK_ATLAS, CLOCK_ITEMS, DECOR_CATALOG, DECOR_CATEGORIES, DECOR_ITEMS, decorItem } from '@bureau/shared';
+import { CLOCK_ATLAS, CLOCK_ITEMS, DECOR_CATALOG, DECOR_CATEGORIES, DECOR_ITEMS, decorAtlasOf, decorItem } from '@bureau/shared';
 import { expect, test, vi } from 'vitest';
 import { bareFrameOf, decorAtlasImages, decorAtlasesLoaded, decorSprite, decorTextureKey, registerDecorFrames } from './decor-textures';
 
-test('un atlas par catégorie, à l\'adresse où le serveur les sert, et celui des horloges murales', () => {
+test('un atlas par catégorie, à l\'adresse où le serveur les sert, celui des horloges murales et celui de la carte seule', () => {
   const images = decorAtlasImages();
-  expect(images).toHaveLength(DECOR_CATEGORIES.length + 1);
+  expect(images).toHaveLength(DECOR_CATEGORIES.length + 2);
   expect(images[0]).toEqual({ key: 'decor:ecrans', url: '/assets/decor/ecrans.png' });
-  expect(images.at(-1)).toEqual({ key: 'decor:horloges', url: '/assets/decor/horloges.png' });
+  expect(images.slice(-2)).toEqual([
+    { key: 'decor:horloges', url: '/assets/decor/horloges.png' },
+    { key: 'decor:plan', url: '/assets/decor/plan.png' },
+  ]);
 });
 
 test('chaque élément devient une image nommée de sa clé dans l\'atlas de sa catégorie ; un atlas absent est laissé de côté', () => {
@@ -17,7 +20,7 @@ test('chaque élément devient une image nommée de sa clé dans l\'atlas de sa 
   };
   registerDecorFrames(textures as never);
   // Les horloges ont, en plus, leur cadran nu.
-  expect(added).toHaveLength(DECOR_CATALOG.filter((item) => item.cat !== 'plantes').length + CLOCK_ITEMS.length);
+  expect(added).toHaveLength(DECOR_CATALOG.filter((item) => decorAtlasOf(item) !== 'plantes').length + CLOCK_ITEMS.length);
   expect(added.some(([key]) => key === 'decor:plantes')).toBe(false);
   expect(decorAtlasesLoaded(textures as never)).toBe(false);
 });

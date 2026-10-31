@@ -4,6 +4,7 @@ import {
   insideRing,
   isSimBot,
   parseOfficeMap,
+  speedOf,
   type ActivityState,
   type Direction,
   type ArenaState,
@@ -24,7 +25,7 @@ import { chairOf } from '../../games/table-view';
 import { deskTitle } from '../../office/desks';
 import { emitOnBus, listenOnBus } from '../../net/office-connection';
 import { selectDeskOf, useOfficeStore } from '../../state/office-store';
-import { AutoWalk, cancelOnMoveKey, planDeskWalk } from '../auto-walk';
+import { AutoWalk, cancelOnMoveKey, planApproach, planDeskWalk, planWalkNear } from '../auto-walk';
 import { AVATAR_HEAD_PX, avatarAt } from '../avatar-hover';
 import { avatarObjectName } from '../avatars';
 import { coffeeTarget, MACHINE_EXCITED_MS, machineTimeScale } from '../coffee';
@@ -50,13 +51,14 @@ import { addMapSigns } from '../map-signs';
 import { MoveSender } from '../move-sender';
 import { speakerPlaying, speakerSprites, speakerTarget } from '../speakers';
 import { TeleportEffect } from '../teleport-effect';
+import { WalkMarker } from '../walk-marker';
 import { runningAt, spinningTreadmills, stepOffSpot, treadmillRun, type TreadmillRun } from '../treadmill';
 import { InteractionPrompt } from '../objects/InteractionPrompt';
 import { LocalPlayer } from '../objects/LocalPlayer';
 import { SpeakingBubbles } from '../objects/NameTag';
 import { RemotePlayer } from '../objects/RemotePlayer';
 import { prefersReducedMotion } from '../reduced-motion';
-import { cameraZoom, chooseZoom, clampFreeCenter, easeZoom, freeCameraReach, MAP_MARGIN_TILES, ZOOM_BUTTON_STEP, zoomFloorPercent, type Size, type ZoomGlide } from '../zoom';
+import { cameraBounds, cameraZoom, chooseZoom, clampToBounds, easeZoom, MAP_MARGIN_TILES, ZOOM_BUTTON_STEP, zoomFloorPercent, type Rect, type Size, type ZoomGlide } from '../zoom';
 import { SimDrag } from '../../sim/sim-drag';
 
 // La largeur du panneau de déco (à droite de l'écran), en pixels de l'écran : la pièce se centre dans le reste.
@@ -85,8 +87,9 @@ const clock = () => performance.now();
 // l'obscurité, trouée par les lampes, le feu et les écrans de la carte et des bureaux, et par un halo autour de chaque personne. Ce qu'on actionne
 // de près (la touche E, ou un clic) passe par un seul gestionnaire (Interactions), qui retient la cible la plus proche et dont l'étiquette
 // « [E] … » est unique. « Aller à mon
-// bureau » (`local:walk-to-desk`) fait marcher l'avatar tout seul jusqu'à sa place (AutoWalk), comme le ferait le clavier ; une touche de
-// déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à l'interface s'il marche. « Suivre » quelqu'un (`local:follow`, du menu
+// bureau » (`local:walk-to-desk`) fait marcher l'avatar tout seul jusqu'à sa place (AutoWalk), comme le ferait le clavier ; un double-clic sur le jeu ou sur
+// la carte du bureau (`local:walk-to`) l'y fait courir ; une touche de déplacement, `local:walk-cancel` ou un obstacle l'arrête, et `walk:state` dit à
+// l'interface s'il marche, et vers quoi. « Suivre » quelqu'un (`local:follow`, du menu
 // d'une personne) le fait marcher derrière elle, à une case (Follow), jusqu'à une touche de déplacement, son départ ou son saut ailleurs. Un clic droit sur un
 // avatar ouvre le menu de sa personne (le magasin : `personMenu`), à la place de celui du navigateur. Le serveur dit qui court sur son tapis de course
 // (`net:treadmill`, un mode pris sur son tapis) : chacun y court sur place, et le tapis tourne sous lui (treadmill.ts) ; une touche de déplacement, « Aller à mon
@@ -99,6 +102,10 @@ export class Office extends Scene {
   private directions: DirectionInput;
   // « Aller à mon bureau » : la marche automatique, qui prend la place du clavier tant qu'elle dure.
   private autoWalk: AutoWalk;
+  // Où va la marche automatique : à son bureau (le bouton du bureau s'enfonce), ou à un point montré d'un double-clic (la carte y met une marque).
+  private walkTarget: 'desk' | 'point' = 'desk';
+  // La marque de la case où l'on court (un anneau qui pulse, une gemme qui tourne), jusqu'à l'arrivée.
+  private walkMarker: WalkMarker;
   // « Suivre » quelqu'un : la marche automatique vers une personne qui bouge ; et la carte de cette marche (les meubles et les portes fermées en plus), refaite
   // quand les bureaux changent.
   private readonly follow = new Follow();
@@ -133,8 +140,8 @@ export class Office extends Scene {
   private editingRoom: Zone | null = null;
   // Le panneau d'une table de jeu aussi : la caméra est sur la table, dans la partie de l'écran qu'il laisse libre.
   private focusedTable: GameTable | null = null;
-  // La carte a été glissée à la souris : la caméra ne suit plus l'avatar, jusqu'à un double-clic ou jusqu'à ce qu'il se remette à marcher. Son
-  // centre reste dans la carte élargie de sa marge, au plus, sans que la carte quitte jamais l'écran (placeFreeCamera).
+  // La carte a été glissée à la souris : la caméra ne suit plus l'avatar, jusqu'à un double-clic ou jusqu'à ce qu'il se remette à marcher. Sa
+  // vue reste dans les bornes de la caméra, comme toujours (cameraBounds) : la carte élargie de sa marge.
   private cameraFree = false;
   // Le retour de la caméra à l'avatar en cours (followPlayer) : le décalage du suivi au départ, et le temps de jeu écoulé depuis, en ms.
   private recenter: { from: { x: number; y: number }; elapsed: number } | null = null;
@@ -294,7 +301,11 @@ export class Office extends Scene {
       () => emitOnBus(EventBus, 'local:arena', { type: 'attack', dir: this.player.movePayload().dir }),
     );
     // La marche automatique le dit à l'interface (`walk:state`) à chaque départ et à chaque arrêt ; une touche de déplacement l'interrompt, et arrête aussi de suivre.
-    this.autoWalk = new AutoWalk((walking) => emitOnBus(EventBus, 'walk:state', { walking }));
+    this.walkMarker = new WalkMarker(this);
+    this.autoWalk = new AutoWalk((walking) => {
+      if (!walking || this.walkTarget !== 'point') this.walkMarker.hide();
+      emitOnBus(EventBus, 'walk:state', { walking, to: this.walkTarget });
+    });
     const unbindWalkKeys = cancelOnMoveKey(this.autoWalk, this.directions);
     const unbindFollowKeys = this.directions.onPress(() => this.stopFollowing());
     // Elle fait aussi descendre de son tapis de course, même relâchée aussitôt (update ne verrait pas cette touche-là).
@@ -302,15 +313,17 @@ export class Office extends Scene {
 
     // Le zoom : la molette sur le jeu (et le pincement d'un pavé tactile, que le navigateur envoie comme Ctrl + molette, et qu'il ne doit
     // pas prendre pour le zoom de la page), et les touches + - 0. Le pourcentage est au magasin ; la caméra y glisse (glideZoom).
-    // La carte se fait glisser à la souris (la caméra quitte l'avatar), et un double-clic la recentre sur lui. Pas pendant l'éditeur de déco ni devant une
-    // table de jeu : la caméra y montre une pièce, ou une table. Elle glisse de ce que la souris a fait, rapporté au zoom, sans que son centre sorte de la
-    // carte élargie de sa marge, au plus (placeFreeCamera) : contre cette limite, elle s'arrête, et la souris continue seule.
+    // La carte se fait glisser à la souris (la caméra quitte l'avatar), et un double-clic y fait courir l'avatar en la recentrant sur lui. Pas pendant l'éditeur de déco ni devant une
+    // table de jeu : la caméra y montre une pièce, ou une table. Elle glisse de ce que la souris a fait, rapporté au zoom, sans que sa vue sorte de ses
+    // bornes (placeFreeCamera) : contre elles, elle s'arrête, et la souris continue seule.
     const unbindDrag = bindCameraDrag(this, {
       canDrag: () => this.editingRoom === null && this.focusedTable === null,
       onStart: () => {
         const camera = this.cameras.main;
         camera.panEffect.reset();
         camera.stopFollow();
+        // Un retour depuis une pièce ou une table, interrompu : les bornes reviennent tout de suite.
+        camera.useBounds = true;
         this.recenter = null;
         this.cameraFree = true;
       },
@@ -318,7 +331,7 @@ export class Office extends Scene {
         const { midPoint, zoom } = this.cameras.main;
         this.placeFreeCamera(midPoint.x - dx / zoom, midPoint.y - dy / zoom);
       },
-      onDoubleClick: () => this.recenterCamera(),
+      onDoubleClick: (clientX, clientY) => this.walkToPage(clientX, clientY),
     });
     const unbindWheel = bindWheelZoom(this.game.canvas, (steps) => useOfficeStore.getState().stepZoom(steps));
     const unbindZoomKeys = bindZoomKeys((step) => {
@@ -327,11 +340,14 @@ export class Office extends Scene {
       else store.stepZoom(step, ZOOM_BUTTON_STEP);
     });
 
-    // La caméra suit l'avatar, sans bornes : il reste au centre de l'écran partout sur la carte, au bord et dans les coins aussi, où l'on voit
-    // le fond du jeu au-delà de la carte, autant qu'il faut (depuis le 29 octobre ; avant, la caméra était tenue dans la carte et une marge de cinq
-    // cases, et l'avatar glissait hors du centre au bord du monde, surtout en dézoomant). Le décalage met le milieu de l'avatar au centre de
-    // l'écran, et non ses pieds (que suit la caméra : l'origine du sprite est aux pieds). `true` : startFollow règle camera.roundPixels, et le
-    // remettrait à false (c'est son défaut) malgré roundPixels de config.ts ; à lui seul, il n'arrondit pas le défilement (voir pixel-snap.ts).
+    // La caméra suit l'avatar, dans ses bornes : la carte élargie de cinq cases de chaque côté (cameraBounds). Il est au centre de l'écran, sauf près
+    // d'un bord, où elle s'arrête à cinq cases de fond et le laisse aller jusqu'au mur (du 29 au 31 octobre, elle n'avait pas de bornes : on voyait
+    // au bord jusqu'à la moitié de l'écran de fond). Phaser la tient dans ses bornes à chaque image, au suivi, à la caméra glissée, pendant un
+    // glissement de zoom. Le décalage met le milieu de l'avatar au centre de l'écran, et non ses pieds (que suit la caméra : l'origine du sprite est
+    // aux pieds). `true` : startFollow règle camera.roundPixels, et le remettrait à false (c'est son défaut) malgré roundPixels de config.ts ; à lui
+    // seul, il n'arrondit pas le défilement (voir pixel-snap.ts).
+    const bounds = this.cameraBounds();
+    this.cameras.main.setBounds(bounds.x, bounds.y, bounds.width, bounds.height);
     this.cameras.main.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
     this.scale.on(Scale.Events.RESIZE, this.layoutCamera);
     this.events.on(Scenes.Events.POST_UPDATE, this.afterPhysics, this);
@@ -369,6 +385,7 @@ export class Office extends Scene {
         if (remote) this.progressEffects.levelUp(this.aboveHead(remote.position), t(fr.progress.levelShort, { level }), clock());
       }),
       listenOnBus(EventBus, 'local:walk-to-desk', () => this.walkToDesk()),
+      listenOnBus(EventBus, 'local:walk-to', ({ x, y, near }) => this.walkTo({ x, y }, near === true)),
       listenOnBus(EventBus, 'local:walk-cancel', () => this.autoWalk.cancel()),
       listenOnBus(EventBus, 'local:follow', ({ id }) => (id === null ? this.stopFollowing() : this.startFollowing(id))),
       useOfficeStore.subscribe((state, previous) => {
@@ -442,6 +459,7 @@ export class Office extends Scene {
       unbindClerks();
       this.prompt.destroy();
       this.teleportEffect.destroy();
+      this.walkMarker.destroy();
       this.progressEffects.destroy();
       this.lighting.destroy();
       this.deskLayer.destroy();
@@ -464,8 +482,8 @@ export class Office extends Scene {
   // À chaque image : la direction que demande le clavier devient la vitesse et l'animation de l'avatar, et les autres avatars
   // glissent vers leurs dernières positions reçues. L'état de l'avatar local part après la physique (afterPhysics).
   //
-  // « Aller à mon bureau » prend la place du clavier tant que la marche dure : elle donne la direction, toujours à la vitesse de la marche (jamais
-  // en courant). L'avatar l'applique comme celle du clavier : murs, meubles, animations et positions envoyées sont les mêmes.
+  // La marche automatique prend la place du clavier tant qu'elle dure : elle donne la direction, à la vitesse de la marche vers son bureau, en courant
+  // vers un point montré d'un double-clic. L'avatar l'applique comme celle du clavier : murs, meubles, animations et positions envoyées sont les mêmes.
   //
   // Sur son tapis de course, l'avatar y court sur place ; une touche de déplacement enfoncée l'en fait descendre, devant le tapis, d'où il repart à cette image
   // même.
@@ -473,16 +491,23 @@ export class Office extends Scene {
     const now = clock();
     if (this.directions.current() !== null) this.stepOffTreadmill();
     const run = this.runningNow();
-    const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now);
-    const followStep = autoDirection === null ? this.followStep(now) : null;
+    // Le pas de cette image (la vitesse fois sa durée) : la marche automatique s'en sert pour ne pas zigzaguer autour de sa ligne (AutoWalk.update).
+    const delta = this.game.loop.delta;
+    const autoDirection = this.autoWalk.update({ x: this.player.x, y: this.player.y }, now, (speedOf(this.autoWalk.sprinting, false) * delta) / 1000);
+    const followStep = autoDirection === null ? this.followStep(now, delta) : null;
     // Pendant le compte à rebours, les combattants attendent dans leur coin : le clavier ne les déplace pas.
     // La carte avait été glissée ailleurs : l'avatar se remet en marche, la caméra revient à lui.
     if (this.cameraFree && (autoDirection !== null || followStep !== null || this.directions.current() !== null)) this.recenterCamera();
     this.player.setRunning(run?.depth ?? null);
     if (run !== null) this.player.run();
     else if (this.arenaRole() === 'waiting') this.player.step(null);
-    else if (autoDirection !== null) this.player.step(autoDirection);
-    else if (followStep !== null) this.player.step(followStep.dir, followStep.sprint);
+    else if (autoDirection !== null) {
+      this.snapFeet(this.autoWalk.snap);
+      this.player.step(autoDirection, this.autoWalk.sprinting);
+    } else if (followStep !== null) {
+      this.snapFeet(followStep.snap);
+      this.player.step(followStep.dir, followStep.sprint);
+    }
     else this.player.step(this.directions.current(), this.directions.sprinting(), this.boosted());
     this.player.tick(now);
     // Les horloges murales et les sols et les murs qui bougent : l'heure du navigateur (Date.now), et non celle du jeu, qui ne dit pas l'heure qu'il est.
@@ -490,6 +515,7 @@ export class Office extends Scene {
     this.decorLayer.tickTiles(Date.now());
     this.shakeMachine(now);
     this.teleportEffect.tick(now);
+    this.walkMarker.tick(now);
     this.progressEffects.tick(now);
     this.arena?.tick(now, this.game.loop.delta);
     for (const remote of this.remotes.values()) {
@@ -554,8 +580,14 @@ export class Office extends Scene {
     if (reason) emitOnBus(EventBus, 'follow:lost', { id, name: this.followName, reason });
   }
 
-  // Une image de « Suivre » : la direction à prendre, et s'il faut courir ; null hors de cette marche, ou à côté de la personne suivie.
-  private followStep(now: number): { dir: Direction; sprint: boolean } | null {
+  // Pose les pieds de l'avatar sur la ligne de la marche automatique, avant le pas de l'image (AutoWalk.snap) ; null : ils y sont déjà.
+  private snapFeet(at: { x: number; y: number } | null): void {
+    if (at !== null) this.player.placeAt(at.x, at.y);
+  }
+
+  // Une image de « Suivre » : la direction à prendre, s'il faut courir et où poser les pieds ; null hors de cette marche, ou à côté de la personne suivie.
+  // `delta` : la durée de l'image (ms).
+  private followStep(now: number, delta: number): { dir: Direction; sprint: boolean; snap: { x: number; y: number } | null } | null {
     const id = this.follow.id;
     if (id === null) return null;
     const remote = this.remotes.get(id);
@@ -563,7 +595,7 @@ export class Office extends Scene {
       this.stopFollowing('left');
       return null;
     }
-    const step = this.follow.update(this.followWalkMap(), { x: this.player.x, y: this.player.y }, remote.position, now);
+    const step = this.follow.update(this.followWalkMap(), { x: this.player.x, y: this.player.y }, remote.position, now, delta);
     if (step === 'blocked') {
       this.stopFollowing('blocked');
       return null;
@@ -584,12 +616,20 @@ export class Office extends Scene {
   // L'avatar à ce point de la page (celui d'un clic droit), le sien compris : le point est ramené au canevas, puis à la carte. Lu sur l'événement lui-même, pas
   // sur le pointeur de Phaser, qui n'a peut-être pas vu la souris arriver là. null : aucun, ou les autres sont cachés.
   private avatarAtPage(clientX: number, clientY: number): string | null {
+    const point = this.worldAtPage(clientX, clientY);
+    if (point === null) return null;
+    const avatars = [{ id: this.selfId, ...this.feet() }, ...(this.othersVisible ? [...this.remotes.values()].map((remote) => ({ id: remote.id, ...remote.position })) : [])];
+    return avatarAt(point, avatars);
+  }
+
+  // Le point de la carte (en pixels) sous ce point de la page : ramené au canevas, puis à la carte par la caméra. null : un canevas sans taille.
+  private worldAtPage(clientX: number, clientY: number): { x: number; y: number } | null {
     const canvas = this.game.canvas.getBoundingClientRect();
     if (canvas.width === 0 || canvas.height === 0) return null;
     const x = ((clientX - canvas.left) * this.scale.width) / canvas.width;
     const y = ((clientY - canvas.top) * this.scale.height) / canvas.height;
-    const avatars = [{ id: this.selfId, ...this.feet() }, ...(this.othersVisible ? [...this.remotes.values()].map((remote) => ({ id: remote.id, ...remote.position })) : [])];
-    return avatarAt(this.cameras.main.getWorldPoint(x, y), avatars);
+    const { x: worldX, y: worldY } = this.cameras.main.getWorldPoint(x, y);
+    return { x: worldX, y: worldY };
   }
 
   // Quel avatar la souris survole-t-elle, à cette image (les avatars bougent, la caméra aussi) ? Quand cela change, l'interface le sait (`avatar:hover`),
@@ -708,12 +748,13 @@ export class Office extends Scene {
   }
 
   // L'éditeur de déco s'ouvre : la caméra quitte l'avatar et va à la pièce, qu'elle place dans la partie de l'écran que le panneau du bureau
-  // laisse libre (il est à droite).
+  // laisse libre (il est à droite). Sans ses bornes : une pièce au bord de la carte va elle aussi là où le panneau la laisse voir.
   private focusRoom(room: Zone): void {
     this.editingRoom = room;
     this.cameraFree = false;
     this.recenter = null;
     const camera = this.cameras.main;
+    camera.useBounds = false;
     camera.stopFollow();
     camera.pan(...this.roomFocus(room, camera.zoom), 450, 'Sine.easeInOut', true);
   }
@@ -731,15 +772,10 @@ export class Office extends Scene {
     this.followPlayer();
   }
 
-  // La caméra libre (la carte glissée à la souris) se centre en ce point, ramené dans la carte élargie de sa marge, ou de moins si la vue au
-  // plus près (200 %) en perdait la carte : il en reste toujours une case à l'écran, à tout zoom (freeCameraReach, clampFreeCenter). Elle n'a
-  // pas de bornes de Phaser (camera.setBounds tiendrait la vue entière, et non son centre, et pousserait aussi la caméra qui suit l'avatar) : le
-  // centre se règle ici, à chaque glissement et à chaque mise en page. Pas à chaque zoom : la limite tient déjà au plus près.
+  // La caméra libre (la carte glissée à la souris) se centre en ce point, ramené dans ses bornes (centerOn les applique) : à chaque glissement et
+  // à chaque mise en page. Le zoom n'a rien à y régler : Phaser la tient dans ses bornes à chaque image.
   private placeFreeCamera(x: number, y: number): void {
-    const { width, height } = this.scale.gameSize;
-    const { map, margin } = this.cameraArea();
-    const center = clampFreeCenter({ x, y }, map, freeCameraReach({ width, height }, margin, this.tilemap.tileWidth));
-    this.cameras.main.centerOn(center.x, center.y);
+    this.cameras.main.centerOn(x, y);
   }
 
   // Il se ferme (ou le panneau de la table de jeu) : la caméra revient à l'avatar, en RECENTER_MS (Sine.easeInOut). Elle le suit dès le départ,
@@ -747,6 +783,8 @@ export class Office extends Scene {
   // l'écran (stepRecenter, à chaque image). Elle va ainsi là où il est à chaque image, sans retard : il peut marcher pendant ce retour (c'est
   // même ce qui le lance, après avoir fait glisser la carte). Un glissement de Phaser (camera.pan) visait l'endroit où il était au départ, et
   // le suivi, repris à l'arrivée, la posait d'un coup sur lui : 350 ms de marche, 112 px de carte (168 px de l'écran à 100 %) en une image.
+  // Depuis une pièce ou une table, la caméra est sans bornes : le retour vise la vue bornée (clampToBounds), et les bornes reviennent à l'arrivée,
+  // sans rien déplacer.
   private followPlayer(): void {
     this.editingRoom = null;
     this.focusedTable = null;
@@ -766,9 +804,18 @@ export class Office extends Scene {
     recenter.elapsed += this.game.loop.delta;
     const progress = Math.min(1, recenter.elapsed / RECENTER_MS);
     const eased = (1 - Math.cos(Math.PI * progress)) / 2;
+    const camera = this.cameras.main;
     const middle = this.player.displayHeight / 2;
-    this.cameras.main.setFollowOffset(recenter.from.x * (1 - eased), recenter.from.y + (middle - recenter.from.y) * eased);
-    if (progress === 1) this.recenter = null;
+    // Le décalage ordinaire, plus ce que les bornes retrancheraient au centre sur l'avatar (rien quand elles sont là : Phaser les applique déjà).
+    const { width, height } = this.scale.gameSize;
+    const wanted = { x: this.player.x, y: this.player.y - middle };
+    const bounded = camera.useBounds ? wanted : clampToBounds(wanted, { width: width / camera.zoom, height: height / camera.zoom }, this.cameraBounds());
+    const end = { x: wanted.x - bounded.x, y: middle + wanted.y - bounded.y };
+    camera.setFollowOffset(recenter.from.x + (end.x - recenter.from.x) * eased, recenter.from.y + (end.y - recenter.from.y) * eased);
+    if (progress < 1) return;
+    this.recenter = null;
+    camera.useBounds = true;
+    camera.setFollowOffset(0, middle);
   }
 
   // Les tables de jeu de la carte : une cible de la touche E devant chacune (« [E] Échecs : jouer »), qui demande l'ouverture de son panneau ; un clic sur la table fait de même,
@@ -814,6 +861,8 @@ export class Office extends Scene {
     this.cameraFree = false;
     this.recenter = null;
     const camera = this.cameras.main;
+    // Sans ses bornes, comme devant une pièce (focusRoom) : sur un téléphone, la table monte au-dessus du panneau, même au sud de la carte.
+    camera.useBounds = false;
     camera.stopFollow();
     camera.pan(...tableFocus(table.rect, camera.zoom, this.scale.gameSize), 450, 'Sine.easeInOut', true);
   }
@@ -835,7 +884,36 @@ export class Office extends Scene {
     const desk = selectDeskOf({ desks }, selfId);
     const room = desk ? this.officeMap.zones.find((zone) => zone.type === 'desk' && deskKey(zone) === desk.key) : undefined;
     const feet = { x: this.player.x, y: this.player.y };
+    this.walkTarget = 'desk';
     this.autoWalk.start(desk && room ? planDeskWalk(this.followWalkMap(), room, desk.items, feet) : null, feet, clock());
+  }
+
+  // Courir jusqu'à ce point de la carte (`local:walk-to`, un double-clic sur la carte du bureau, ou sur le jeu : walkToPage) : par le plus court chemin, autour des
+  // meubles et des portes qui nous sont fermées (la carte de la marche de « Suivre »), jusqu'à sa case, ou la case atteignable la plus proche (dans un mur, un
+  // meuble, un bureau fermé) ; `near` : c'est quelqu'un, on s'arrête à une case de lui. On cesse de suivre qui l'on suivait, et l'on descend de son tapis.
+  private walkTo(to: { x: number; y: number }, near: boolean): void {
+    this.stopFollowing();
+    this.stepOffTreadmill();
+    const feet = { x: this.player.x, y: this.player.y };
+    const map = this.followWalkMap();
+    this.walkTarget = 'point';
+    const route = near ? planApproach(map, feet, to) : planWalkNear(map, feet, to);
+    const now = clock();
+    this.autoWalk.start(route, feet, now, true);
+    if (this.autoWalk.walking && route) this.walkMarker.show(route[route.length - 1]!, now);
+  }
+
+  // Un double-clic sur le jeu : la caméra revient à l'avatar, qui court là où l'on a double-cliqué (à côté de la personne, si c'est quelqu'un ; sur soi, nulle
+  // part). Pas pendant l'éditeur de déco ni devant une table de jeu, qui tiennent la caméra.
+  private walkToPage(clientX: number, clientY: number): void {
+    if (this.editingRoom !== null || this.focusedTable !== null) return;
+    this.recenterCamera();
+    const point = this.worldAtPage(clientX, clientY);
+    if (point === null) return;
+    const id = this.avatarAtPage(clientX, clientY);
+    if (id === this.selfId) return;
+    const remote = id === null ? undefined : this.remotes.get(id);
+    this.walkTo(remote ? remote.position : point, remote !== undefined);
   }
 
   // L'avatar bute contre la porte fermée d'un bureau : on dit à qui il appartient, et comment toquer (ou qu'on n'y est plus le bienvenu).
@@ -932,6 +1010,7 @@ export class Office extends Scene {
     this.recenter = null;
     const camera = this.cameras.main;
     camera.panEffect.reset();
+    camera.useBounds = true;
     camera.startFollow(this.player, true, 1, 1, 0, this.player.displayHeight / 2);
     camera.centerOn(this.player.x, this.player.y - this.player.displayHeight / 2);
   }
@@ -1111,8 +1190,8 @@ export class Office extends Scene {
   //
   // La caméra libre garde son centre : Phaser, qui vient de donner au canevas sa nouvelle taille (son gestionnaire de caméras est abonné avant
   // nous), a gardé le défilement, ce qui déplacerait le centre de la moitié de ce que le canevas a gagné. Le centre de la dernière image
-  // (midPoint, que setSize ne touche pas) est remis au centre, ramené dans sa limite, qui dépend du canevas (freeCameraReach) : un canevas
-  // plus petit peut la resserrer. Celle qui suit l'avatar s'y remet seule, à l'image suivante.
+  // (midPoint, que setSize ne touche pas) est remis au centre, ramené dans ses bornes. Celle qui suit l'avatar s'y remet seule, à l'image
+  // suivante.
   private layoutCamera = (): void => {
     const { width, height } = this.scale.gameSize;
     const { map, margin } = this.cameraArea();
@@ -1125,10 +1204,15 @@ export class Office extends Scene {
     if (this.cameraFree) this.placeFreeCamera(this.cameras.main.midPoint.x, this.cameras.main.midPoint.y);
   };
 
-  // La carte, en pixels, et sa marge de chaque côté (MAP_MARGIN_TILES cases) : la référence du dézoom maximal, et la limite du centre de la
-  // caméra libre, au plus (freeCameraReach).
+  // La carte, en pixels, et sa marge de chaque côté (MAP_MARGIN_TILES cases) : les bornes de la caméra (cameraBounds), et la référence du dézoom
+  // maximal (zoomFloorPercent).
   private cameraArea(): { map: Size; margin: number } {
     return { map: { width: this.tilemap.widthInPixels, height: this.tilemap.heightInPixels }, margin: MAP_MARGIN_TILES * this.tilemap.tileWidth };
+  }
+
+  private cameraBounds(): Rect {
+    const { map, margin } = this.cameraArea();
+    return cameraBounds(map, margin);
   }
 
   // Le zoom que la caméra doit avoir : celui du pourcentage choisi, pour la taille du canevas.
@@ -1159,7 +1243,7 @@ export class Office extends Scene {
   // Sauf devant la pièce que l'éditeur montre, ou la table de jeu : on la recentre, le panneau n'occupant pas la même part de la carte à un
   // autre zoom. Pendant le glissement qui l'y conduit (camera.pan), c'est l'arrivée du glissement qui change : le pan reprend sa course vers le
   // nouveau point à l'image suivante, alors qu'un centerOn la poserait tout de suite à l'arrivée, et le pan l'en retirerait à l'image d'après.
-  // Sans bornes, elle arrive au point exact, même pour une pièce ou une table au bord de la carte.
+  // Sans bornes pendant ce temps (focusRoom, syncGameFocus), elle arrive au point exact, même pour une pièce ou une table au bord de la carte.
   private applyZoom(zoom: number): void {
     const { width, height } = this.scale.gameSize;
     const camera = this.cameras.main;

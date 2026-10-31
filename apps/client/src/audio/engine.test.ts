@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, test } from 'vitest';
 import { createFakeAudio, type FakeAudio, FakeBuffer, type FakeSource } from '../test/fake-audio';
-import { SCENES, SFX } from './catalog';
+import { NATURE, SCENES, SFX } from './catalog';
 import { AudioEngine, DUCK_LEVEL, levelToGain, MUSIC_FADE_S, MUSIC_STOP_FADE_S } from './engine';
+import { NATURE_LOOP_MARGIN_S, SILENT_NATURE, type NatureMix } from './nature';
 
 // Laisse aller jusqu'au bout les téléchargements et décodages (des promesses) que le moteur a lancés.
 const settle = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -407,4 +408,43 @@ test('dispose ferme le contexte : plus de son', async () => {
   expect(engine.getSnapshot()).toEqual({ status: 'locked', playing: null });
   engine.playSfx('click');
   expect(audio.context.sources.filter((s) => !s.loop)).toHaveLength(0);
+});
+
+describe('la nature', () => {
+  const POND: NatureMix = { ...SILENT_NATURE, outside: true, water: { open: 1, wall: 0, pan: -0.3 }, birds: 1, wind: 1 };
+
+  test('rien n\'est créé tant qu\'il n\'y a rien à entendre ; puis l\'eau tourne en boucle sur sa période (entre les marges du fichier), par le volume des effets', async () => {
+    await startEngine();
+    engine.setNature(SILENT_NATURE);
+    expect(audio.context.gains).toHaveLength(3);
+
+    engine.setNature(POND);
+    await settle();
+    const water = audio.context.sources.filter((source) => (source.buffer as FakeBuffer).url === '/assets/audio/nature/water.ogg');
+    expect(water).toHaveLength(1);
+    for (const source of water) {
+      expect(source.loop).toBe(true);
+      expect(source.loopStart).toBe(NATURE_LOOP_MARGIN_S);
+      expect(source.loopEnd).toBeCloseTo(NATURE_LOOP_MARGIN_S + NATURE.water.seconds, 9);
+    }
+    // La nature sort sur le circuit des effets, et lui seul.
+    const out = audio.context.gains[3]!;
+    expect(out.connections.has(buses().sfx)).toBe(true);
+    expect(audio.context.gains.filter((gain) => gain.connections.has(buses().sfx))).toEqual([out]);
+  });
+
+  test('les effets coupés la font taire (en fondu) ; rallumés, elle revient', async () => {
+    await startEngine();
+    engine.setNature(POND);
+    await settle();
+    // Les gains du lecteur, dans l'ordre : sa sortie, l'eau, l'eau à l'air libre, à travers le mur, les insectes, les oiseaux, le vent.
+    const [, , open, , , birds] = audio.context.gains.slice(3);
+    expect(open!.gain.value).toBe(1);
+    expect(birds!.gain.value).toBe(1);
+    engine.setSfxEnabled(false);
+    expect(open!.gain.value).toBe(0);
+    expect(birds!.gain.value).toBe(0);
+    engine.setSfxEnabled(true);
+    expect(open!.gain.value).toBe(1);
+  });
 });

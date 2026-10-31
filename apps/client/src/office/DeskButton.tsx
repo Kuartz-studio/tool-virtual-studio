@@ -22,9 +22,9 @@ export function DeskButton({ panels }: { panels: PanelControls }) {
   const hasDesk = useMemo(() => Boolean(selectDeskOf({ desks }, selfId)), [desks, selfId]);
   const inside = useInMyDesk();
 
-  // Le jeu dit quand l'avatar part, et quand il s'arrête (arrivé, interrompu, bloqué).
+  // Le jeu dit quand l'avatar part, et quand il s'arrête (arrivé, interrompu, bloqué). Une course vers un point (un double-clic) n'est pas pour son bureau.
   const [walking, setWalking] = useState(false);
-  useEffect(() => listenOnBus(EventBus, 'walk:state', (state) => setWalking(state.walking)), []);
+  useEffect(() => listenOnBus(EventBus, 'walk:state', (state) => setWalking(state.walking && state.to !== 'point')), []);
 
   if (!hasDesk) return null;
 

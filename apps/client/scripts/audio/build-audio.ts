@@ -1,18 +1,27 @@
-// Range les sons dans l'appli : `pnpm --filter @bureau/client gen:audio [boucles d'Abstraction] [effets] [boucles pirates]`.
+// Range les sons dans l'appli : `pnpm --filter @bureau/client gen:audio [boucles d'Abstraction] [effets] [boucles pirates]`, ou les effets seulement :
+// `pnpm --filter @bureau/client gen:audio --effets [effets]` (les boucles ne sont pas refaites, leurs mesures restent celles du fichier généré), ou la nature
+// seulement : `pnpm --filter @bureau/client gen:audio --nature [effets]` (ni les boucles ni les effets ne sont refaits).
 //   public/assets/audio/music/   une boucle par ambiance, en .ogg (Vorbis) et en .m4a (AAC, pour Safari)
 //   public/assets/audio/sfx/     un .wav par effet sonore
+//   public/assets/audio/nature/  les bruits de la nature (l'eau, les insectes, les oiseaux, le vent), en .ogg et en .m4a comme la musique
 //   src/audio/measured.generated.ts   le volume de chacun, mesuré, pour que toutes les ambiances sonnent aussi fort, et tous les effets de même
 // Les boucles et les effets ne sont pas copiés tels quels : ce script les lit là où ils sont (leurs dossiers de téléchargement), garde
 // ce qu'il faut, et ce qu'il écrit est commité. Il a besoin de ffmpeg et de ffprobe, et de sox pour encoder les boucles .wav en Vorbis (ffmpeg
 // n'a souvent que son encodeur Vorbis expérimental, de piètre qualité).
 //   - Boucles : « Music Loop Bundle » d'Abstraction, dossier MUSIC_SRC ; « Pirate Music Pack Vol. 2 », ses versions Loop, dossier PIRATE_MUSIC_SRC.
-//   - Effets : « 400 Sounds Pack », dossier SFX_SRC.
+//   - Effets : « 400 Sounds Pack », dossier SFX_SRC ; la nature y prend l'eau et le vent, et fabrique le reste.
 // Le dossier se donne en argument, ou par la variable d'environnement ; à défaut, celui du dossier Téléchargements.
 import { execFileSync, spawnSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { homedir, tmpdir } from 'node:os';
 import { extname, join, relative, resolve } from 'node:path';
 import type { MusicScene } from '@bureau/shared';
+import { MEASURED_MUSIC, MEASURED_NATURE, MEASURED_SFX } from '../../src/audio/measured.generated';
+import { NATURE_LOOP_MARGIN_S } from '../../src/audio/nature';
+import { birdsong } from './birdsong';
+import { INSECTS_SECONDS, nightInsects } from './night-insects';
+import { POND_BED_SECONDS, POND_SECONDS, pond } from './pond';
+import { crossfadeLoop, normalizePeak, peakOf, SAMPLE_RATE, withLoopMargins, writeWav } from './synth';
 
 export const AUDIO_DIR = resolve(import.meta.dirname, '../../public/assets/audio');
 export const MEASURED_FILE = resolve(import.meta.dirname, '../../src/audio/measured.generated.ts');
@@ -53,8 +62,13 @@ export const VORBIS_QUALITY = 5;
 export const AAC_BITRATE = '160k';
 
 // Les effets : l'identifiant de l'effet (le nom du fichier) et son fichier dans le pack (dossier/nom). Les petits bruits de l'interface
-// viennent de son dossier UI, les jingles des événements de Musical Effects (tous au vibraphone, pour rester de la même famille), les portes et
-// les serrures de Environment, le café, l'élan et la téléportation de Other, les dés et les pions de Card and Board.
+// viennent de son dossier UI, les jingles des événements de Musical Effects (tous au vibraphone, pour rester de la même famille), les portes et les
+// serrures de Environment, le café, l'élan et la téléportation de Other, les dés et les pions de Card and Board, la carte du bureau qu'on déplie et qu'on
+// replie de Items ; le survol et le double-clic qui envoie l'avatar quelque part, deux petits chocs mats de Materials (un bouchon, du carton), étouffés
+// (SFX_MUFFLES) : ceux de UI, l'un remonté de très bas, l'autre très aigu, étaient « agressifs, pas agréables du tout » (Andrea, le 31 octobre) ; la gemme
+// qui tourne sur la case où l'on court, une note de boîte à musique de Musical Effects, adoucie elle aussi ; la voix de l'administratrice de l'accueil, qui
+// parle pendant que sa réplique s'écrit, un petit « bip » de Retro, étouffé ; une fenêtre qui se ferme, un livre qu'on referme de Items, étouffé. La carte
+// qui se déplie (« un peu violente ») et se replie est adoucie de même.
 export const SFX_SOURCES = {
   click: 'UI/select_2.wav',
   'toggle-on': 'UI/toggle_on.wav',
@@ -87,6 +101,13 @@ export const SFX_SOURCES = {
   xp: 'Items/gem_collect.wav',
   'level-up': 'Musical Effects/vibraphone_level_complete.wav',
   coins: 'Items/coins_gather_medium.wav',
+  'map-open': 'Items/map_open.wav',
+  'map-close': 'Items/map_close.wav',
+  waypoint: 'Materials/cardboard_hit.wav',
+  hover: 'Materials/cork_stabbed.wav',
+  gem: 'Musical Effects/music_box_chime_quick.wav',
+  voice: 'Retro/menu_blip.wav',
+  'modal-close': 'Items/book_close.wav',
 } as const;
 
 // Les effets trop longs pour ce qu'ils annoncent : écourtés à `seconds`, avec une extinction sur les `fadeSeconds` dernières secondes. Les
@@ -94,6 +115,43 @@ export const SFX_SOURCES = {
 export const SFX_TRIMS: Partial<Record<keyof typeof SFX_SOURCES, { seconds: number; fadeSeconds: number }>> = {
   win: { seconds: 3.5, fadeSeconds: 0.8 },
 };
+
+// Les effets qu'on étouffe : un passe-bas (deux fois, pour une pente plus raide) à `lowpassHz`, et une attaque adoucie sur `attackSeconds`, pour qu'un bruit
+// qui revient souvent (le survol) reste doux.
+export const SFX_MUFFLES: Partial<Record<keyof typeof SFX_SOURCES, { lowpassHz: number; attackSeconds: number }>> = {
+  hover: { lowpassHz: 1100, attackSeconds: 0.006 },
+  waypoint: { lowpassHz: 1400, attackSeconds: 0.004 },
+  gem: { lowpassHz: 3500, attackSeconds: 0.012 },
+  voice: { lowpassHz: 1800, attackSeconds: 0.004 },
+  'modal-close': { lowpassHz: 1800, attackSeconds: 0.004 },
+  'map-open': { lowpassHz: 2400, attackSeconds: 0.03 },
+  'map-close': { lowpassHz: 2400, attackSeconds: 0.02 },
+};
+
+// La nature (src/audio/nature.ts) : le vent vient du dossier Environment du « 400 Sounds Pack » (celui des effets), mono dans un fichier stéréo ; l'eau
+// du bassin, les insectes de la nuit et le chant des oiseaux sont fabriqués (pond.ts, night-insects.ts, birdsong.ts) : seul, le ruissellement continu du
+// pack faisait penser à tout autre chose qu'un bassin (il n'est plus qu'un filet lointain sous le clapotis : `bed`), le pack n'a pas d'insectes, et
+// « Birds SFX » (Cinematic Sound Effects) est un vol d'oiseaux qui s'envole, pas un chant. `loop` : une boucle, de cette période (s, un multiple de 10 ms,
+// pour tomber juste en échantillons). Le vent est lu par coups, les oiseaux par phrases.
+export const NATURE_SOURCES = {
+  water: { synth: 'pond', bed: 'Environment/water_babbling_loop.wav', loop: POND_SECONDS },
+  insects: { synth: 'insects', loop: INSECTS_SECONDS },
+  birds: { synth: 'birds' },
+  wind: { file: 'Environment/ambient_wind.wav' },
+  // Deux motos qui passent à 90 km/h sur une route (BigSoundBank n° 906, enregistrée dehors, effet Doppler compris), rangée à côté du pack.
+  moto: { file: '../BigSoundBank/0906-2-motorcycle-passing.wav' },
+} as const;
+
+type NatureSoundId = keyof typeof NATURE_SOURCES;
+
+// Ils sont mono (le lecteur les place dans la stéréo) : un débit plus petit que la musique suffit.
+export const NATURE_VORBIS_QUALITY = 4;
+export const NATURE_AAC_BITRATE = '80k';
+
+// Le filtre ffmpeg qui étouffe un effet.
+export function muffleFilter({ lowpassHz, attackSeconds }: { lowpassHz: number; attackSeconds: number }): string {
+  return `lowpass=f=${lowpassHz},lowpass=f=${lowpassHz},afade=t=in:d=${attackSeconds}`;
+}
 
 // Le filtre ffmpeg d'une extinction sur la fin d'un son écourté.
 export function fadeOutFilter({ seconds, fadeSeconds }: { seconds: number; fadeSeconds: number }): string {
@@ -116,6 +174,8 @@ export interface Measured {
 export interface MeasuredAudio {
   music: Record<keyof typeof MUSIC_SOURCES, Measured>;
   sfx: Record<keyof typeof SFX_SOURCES, Measured>;
+  // seconds : pour une boucle, sa période (le fichier a ses marges en plus).
+  nature: Record<NatureSoundId, Measured>;
 }
 
 // ---- Mesures --------------------------------------------------------------------------------------------------------------------
@@ -151,6 +211,12 @@ const round = (value: number, digits: number): number => Math.round(value * 10 *
 export function musicGain({ loudness, peak }: { loudness: number; peak: number }): number {
   const correction = Math.min(MUSIC_TARGET_LUFS - loudness, MAX_PEAK_DB - peak);
   return round(fromDb(correction), 3);
+}
+
+// Le gain d'un bruit de la nature : au même volume intégré que les ambiances, sans limite de pic. Elle ne joue jamais près du maximum (ses niveaux,
+// NATURE_LEVELS dans src/audio/nature.ts, sont tous à -12 dB ou moins), et l'eau qui bouillonne ou le vent, très crêtés, resteraient sinon bien trop bas.
+export function natureGain(loudness: number): number {
+  return round(fromDb(MUSIC_TARGET_LUFS - loudness), 3);
 }
 
 // Le gain d'un effet : son moment le plus fort à SFX_TARGET_RMS_DB, sans que son pic dépasse MAX_PEAK_DB.
@@ -194,8 +260,8 @@ function requireFile(path: string): string {
 }
 
 // La commande sox qui encode une boucle en Ogg Vorbis, sans étiquettes (pas même le « Processed by SoX » qu'il écrit d'ordinaire).
-export function vorbisArgs(source: string, ogg: string): string[] {
-  return [source, '--comment', '', '-C', String(VORBIS_QUALITY), ogg];
+export function vorbisArgs(source: string, ogg: string, quality = VORBIS_QUALITY): string[] {
+  return [source, '--comment', '', '-C', String(quality), ogg];
 }
 
 // Une ambiance, en deux copies. L'ogg : une boucle déjà en Vorbis est recopiée sans sa pochette ni ses étiquettes (le flux audio tel quel, donc le son
@@ -213,16 +279,67 @@ function buildMusic(id: keyof typeof MUSIC_SOURCES, musicDirs: Record<MusicPack,
   return { gain: musicGain(parseLoudness(analyse(source, 'ebur128=peak=true'))), seconds: duration(ogg) };
 }
 
-// Un effet : le .wav du pack, tel quel ; ou écourté avec une extinction (SFX_TRIMS). Le volume est mesuré sur le fichier qu'on range.
+// Un effet : le .wav du pack, tel quel ; ou étouffé (SFX_MUFFLES), ou écourté avec une extinction (SFX_TRIMS). Le volume est mesuré sur le fichier qu'on range.
 function buildSfx(id: keyof typeof SFX_SOURCES, sfxDir: string): Measured {
   const source = requireFile(join(sfxDir, SFX_SOURCES[id]));
   const dir = join(AUDIO_DIR, 'sfx');
   mkdirSync(dir, { recursive: true });
   const wav = join(dir, `${id}.wav`);
   const trim = SFX_TRIMS[id];
-  if (trim) ffmpeg(['-i', source, '-t', String(trim.seconds), '-af', fadeOutFilter(trim), '-c:a', 'pcm_s16le', wav]);
+  const muffle = SFX_MUFFLES[id];
+  const filters = [muffle && muffleFilter(muffle), trim && fadeOutFilter(trim)].filter((filter): filter is string => Boolean(filter));
+  if (filters.length > 0) ffmpeg(['-i', source, ...(trim ? ['-t', String(trim.seconds)] : []), '-af', filters.join(','), '-c:a', 'pcm_s16le', wav]);
   else copyFileSync(source, wav);
   return { gain: sfxGain(parseLevels(analyse(wav, 'astats=metadata=0:reset=0'))), seconds: duration(wav) };
+}
+
+// Un son, en mono à SAMPLE_RATE, tel que ffmpeg le décode.
+function decodeMono(file: string): Float32Array {
+  const bytes = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', String(SAMPLE_RATE), '-f', 'f32le', '-'], { maxBuffer: 1 << 28 });
+  return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+}
+
+// Le son d'un bruit de la nature, mono : fabriqué, ou lu dans le pack (et, pour une boucle, sa période sans raccord). Le mono de ffmpeg (les deux côtés
+// additionnés, à -3 dB chacun) et le fondu de la boucle peuvent dépasser le maximum : le pic est alors ramené à MAX_PEAK_DB.
+function natureSamples(id: NatureSoundId, sfxDir: string): Float32Array {
+  const source: { file?: string; synth?: string; bed?: string; loop?: number } = NATURE_SOURCES[id];
+  if (source.synth === 'pond') return pond(undefined, crossfadeLoop(decodeMono(requireFile(join(sfxDir, source.bed ?? ''))), Math.round(POND_BED_SECONDS * SAMPLE_RATE)));
+  if (source.synth === 'insects') return nightInsects();
+  if (source.synth === 'birds') return birdsong();
+  const decoded = decodeMono(requireFile(join(sfxDir, source.file ?? '')));
+  const samples = source.loop === undefined ? decoded : crossfadeLoop(decoded, Math.round(source.loop * SAMPLE_RATE));
+  return peakOf(samples) > fromDb(MAX_PEAK_DB) ? normalizePeak(samples, MAX_PEAK_DB) : samples;
+}
+
+// Un bruit de la nature, en deux copies comme la musique : l'ogg (Vorbis, par sox) et l'AAC pour Safari. Une boucle est rangée avec ses marges
+// (withLoopMargins) ; sa durée mesurée est sa période, au millième de seconde, qui doit tomber juste en échantillons (le lecteur boucle dessus). Le volume
+// est mesuré sur ce qu'on range.
+function buildNature(id: NatureSoundId, sfxDir: string, scratch: string): Measured {
+  const samples = natureSamples(id, sfxDir);
+  const loop = 'loop' in NATURE_SOURCES[id];
+  const seconds = round(samples.length / SAMPLE_RATE, 3);
+  if (loop && Math.abs(seconds * SAMPLE_RATE - samples.length) > 1e-6) throw new Error(`La boucle ${id} ne tombe pas juste : ${samples.length} échantillons.`);
+  const wav = join(scratch, `${id}.wav`);
+  writeWav(wav, loop ? withLoopMargins(samples, Math.round(NATURE_LOOP_MARGIN_S * SAMPLE_RATE)) : samples);
+  const dir = join(AUDIO_DIR, 'nature');
+  mkdirSync(dir, { recursive: true });
+  execFileSync('sox', vorbisArgs(wav, join(dir, `${id}.ogg`), NATURE_VORBIS_QUALITY), { stdio: ['ignore', 'ignore', 'inherit'] });
+  ffmpeg(['-i', wav, '-map_metadata', '-1', '-c:a', 'aac', '-b:a', NATURE_AAC_BITRATE, '-movflags', '+faststart', join(dir, `${id}.m4a`)]);
+  return { gain: natureGain(parseLoudness(analyse(wav, 'ebur128=peak=true')).loudness), seconds };
+}
+
+function buildAllNature(sfxDir: string, log: (line: string) => void): MeasuredAudio['nature'] {
+  const scratch = mkdtempSync(join(tmpdir(), 'bureau-nature-'));
+  try {
+    const nature = {} as MeasuredAudio['nature'];
+    for (const id of Object.keys(NATURE_SOURCES) as NatureSoundId[]) {
+      nature[id] = buildNature(id, sfxDir, scratch);
+      log(`nature ${id} : ${nature[id].seconds} s, gain ${nature[id].gain}`);
+    }
+    return nature;
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 }
 
 // Le fichier généré : les gains et les durées, que lit src/audio/catalog.ts.
@@ -243,7 +360,17 @@ export function renderMeasuredSource(measured: MeasuredAudio): string {
     rows(measured.sfx),
     '} as const;',
     '',
+    'export const MEASURED_NATURE = {',
+    rows(measured.nature),
+    '} as const;',
+    '',
   ].join('\n');
+}
+
+function writeMeasured(measured: MeasuredAudio): MeasuredAudio {
+  mkdirSync(resolve(MEASURED_FILE, '..'), { recursive: true });
+  writeFileSync(MEASURED_FILE, renderMeasuredSource(measured));
+  return measured;
 }
 
 export function generateAudio(musicDirs: Record<MusicPack, string>, sfxDir: string, log: (line: string) => void = () => {}): MeasuredAudio {
@@ -252,21 +379,40 @@ export function generateAudio(musicDirs: Record<MusicPack, string>, sfxDir: stri
     music[id] = buildMusic(id, musicDirs);
     log(`ambiance ${id} : ${music[id].seconds} s, gain ${music[id].gain}`);
   }
+  return generateSfx(music, sfxDir, log, buildAllNature(sfxDir, log));
+}
+
+// Les effets seulement : `music` (et `nature`) sont les mesures des boucles (et de la nature), reprises telles quelles dans le fichier généré.
+export function generateSfx(
+  music: MeasuredAudio['music'],
+  sfxDir: string,
+  log: (line: string) => void = () => {},
+  nature: MeasuredAudio['nature'] = MEASURED_NATURE,
+): MeasuredAudio {
   const sfx = {} as MeasuredAudio['sfx'];
   for (const id of Object.keys(SFX_SOURCES) as Array<keyof typeof SFX_SOURCES>) {
     sfx[id] = buildSfx(id, sfxDir);
     log(`effet ${id} : ${sfx[id].seconds} s, gain ${sfx[id].gain}`);
   }
-  const measured = { music, sfx };
-  mkdirSync(resolve(MEASURED_FILE, '..'), { recursive: true });
-  writeFileSync(MEASURED_FILE, renderMeasuredSource(measured));
-  return measured;
+  return writeMeasured({ music, sfx, nature });
+}
+
+// La nature seulement : les mesures des boucles et des effets sont reprises telles quelles.
+export function generateNature(sfxDir: string, log: (line: string) => void = () => {}): MeasuredAudio {
+  return writeMeasured({ music: MEASURED_MUSIC, sfx: MEASURED_SFX, nature: buildAllNature(sfxDir, log) });
 }
 
 // `tsx scripts/audio/build-audio.ts` s'exécute directement ; importé par un test, ce module n'écrit rien.
 if (/[\\/]build-audio\.[cm]?[jt]s$/.test(process.argv[1] ?? '')) {
-  const [abstraction, sfx, pirate] = process.argv.slice(2);
-  const musicDirs = { abstraction: resolve(abstraction ?? defaultMusicSource('abstraction')), pirate: resolve(pirate ?? defaultMusicSource('pirate')) };
-  generateAudio(musicDirs, resolve(sfx ?? defaultSfxSource()), (line) => console.log(line));
+  const args = process.argv.slice(2);
+  if (args[0] === '--effets') {
+    generateSfx(MEASURED_MUSIC, resolve(args[1] ?? defaultSfxSource()), (line) => console.log(line));
+  } else if (args[0] === '--nature') {
+    generateNature(resolve(args[1] ?? defaultSfxSource()), (line) => console.log(line));
+  } else {
+    const [abstraction, sfx, pirate] = args;
+    const musicDirs = { abstraction: resolve(abstraction ?? defaultMusicSource('abstraction')), pirate: resolve(pirate ?? defaultMusicSource('pirate')) };
+    generateAudio(musicDirs, resolve(sfx ?? defaultSfxSource()), (line) => console.log(line));
+  }
   console.log(`Écrit dans ${relative(process.cwd(), AUDIO_DIR)} et ${relative(process.cwd(), MEASURED_FILE)}.`);
 }

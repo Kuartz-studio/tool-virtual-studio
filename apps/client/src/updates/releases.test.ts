@@ -2,7 +2,7 @@ import { CURRENT_RELEASE, compareReleases, isReleaseVersion } from '@bureau/shar
 import { describe, expect, test } from 'vitest';
 import { entriesFor, formatReleaseDate, groupsFor, hasNotesFor, releasesToShow, RELEASE_KINDS, RELEASE_TEXT_MAX, RELEASE_TITLE_MAX, RELEASES, type Release } from './releases';
 
-// Des notes inventées, pour les règles de releasesToShow (les vraies n'ont qu'une version pour l'instant) : une nouveauté chacune, pour tout le monde.
+// Des notes inventées, pour les règles de releasesToShow (les vraies n'ont que deux versions pour l'instant) : une nouveauté chacune, pour tout le monde.
 const note = (version: string): Release => ({
   version,
   date: '2026-10-29',

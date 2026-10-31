@@ -1,5 +1,5 @@
 import { join } from 'node:path';
-import { FLOOR_THEMES, POOL_TILES, SHOP_WALL_THEMES, TILE_ANIMATIONS, TILESET, WALL_THEMES } from '@bureau/shared';
+import { FLOOR_THEMES, GARDEN_TILES, POOL_TILES, SHOP_WALL_THEMES, TILE_ANIMATIONS, TILESET, WALL_THEMES } from '@bureau/shared';
 import { describe, expect, test } from 'vitest';
 import { BLACK_FLOOR_PICKS, BLACK_WALL_PICKS, DARKEST, blacken, isWallFrame, luminance } from './black-themes';
 import { ASSETS_DIR } from './build-assets';
@@ -65,8 +65,10 @@ describe('les sols et les murs noirs du jeu de tuiles', () => {
     expect(SHOP_WALL_THEMES.map((wall): string => wall.id).filter((id) => wallIds.has(id))).toEqual([]);
   });
 
-  test('leurs tuiles sont les dernières du jeu de tuiles : celles d\'avant gardent leur numéro (la carte, la piscine, la boutique, les murs qui bougent)', () => {
-    expect(gids).toEqual(range(TILESET.tileCount - 15, TILESET.tileCount));
+  test('leurs tuiles viennent après toutes les autres, et le sol du jardin après elles : celles d\'avant gardent leur numéro (la carte, la piscine, la boutique, les murs qui bougent)', () => {
+    const garden = Object.values(GARDEN_TILES).flat();
+    expect(garden).toEqual(range(TILESET.tileCount - garden.length + 1, TILESET.tileCount));
+    expect(gids).toEqual(range(Math.min(...garden) - 16, Math.min(...garden) - 1));
     expect(FLOOR_THEMES.filter((theme) => !floorIds.has(theme.id)).map((floor) => floor.gid)).toEqual(range(1, 22));
     expect(WALL_THEMES.filter((theme) => !wallIds.has(theme.id)).flatMap((wall) => [wall.top, wall.bottom, wall.stem])).toEqual(range(23, 82));
     expect(Object.values(POOL_TILES)).toEqual(range(83, 91));

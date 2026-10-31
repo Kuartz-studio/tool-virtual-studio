@@ -19,4 +19,6 @@ export const PROP_LIST: readonly Prop[] = [
   { key: "candle", sheet: "/assets/props/candle.png", frameWidth: 32, frameHeight: 64, frames: 3, fps: 6, loop: true, w: 1, h: 2, claim: 1, solid: false, light: "candle" },
   { key: "wall-candle", sheet: "/assets/props/wall-candle.png", frameWidth: 32, frameHeight: 64, frames: 3, fps: 6, loop: true, w: 1, h: 2, claim: 0, solid: false, light: "candle" },
   { key: "fishtank", sheet: "/assets/props/fishtank.png", frameWidth: 64, frameHeight: 64, frames: 8, fps: 6, loop: true, w: 2, h: 2, claim: 1, solid: true, light: "water" },
+  { key: "receptionist-seule", sheet: "/assets/props/receptionist-seule.png", frameWidth: 32, frameHeight: 64, frames: 7, fps: 5, loop: true, w: 1, h: 2, claim: 1, solid: false },
+  { key: "receptionist-2-seule", sheet: "/assets/props/receptionist-2-seule.png", frameWidth: 32, frameHeight: 64, frames: 7, fps: 5, loop: true, w: 1, h: 2, claim: 1, solid: false },
 ];

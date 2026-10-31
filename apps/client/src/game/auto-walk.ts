@@ -15,8 +15,9 @@ import {
 } from '@bureau/shared';
 import type { DirectionInput } from './input';
 
-// « Aller à mon bureau » : l'avatar marche tout seul jusqu'à sa place. Ce fichier n'importe pas Phaser : il choisit la case où l'on s'arrête
-// (deskTarget), calcule le trajet (planWalk, planDeskWalk) et dit, image après image, la direction à prendre (AutoWalk). La scène la donne à
+// « Aller à mon bureau » : l'avatar marche tout seul jusqu'à sa place ; un double-clic sur le jeu ou sur la carte du bureau : il y court. Ce fichier
+// n'importe pas Phaser : il choisit la case où l'on s'arrête (deskTarget), calcule le trajet (planWalk, planDeskWalk, planWalkNear) et dit, image après
+// image, la direction à prendre (AutoWalk). La scène la donne à
 // l'avatar comme celle du clavier (LocalPlayer.step) : même vitesse, mêmes animations, mêmes positions envoyées au serveur, qui ne voit aucune
 // différence avec une personne qui marche.
 
@@ -127,6 +128,15 @@ export function planApproach(map: OfficeMap, from: Point, to: Point): Point[] | 
   return cornersOf(straighten(map, steps)).map((t) => centerOf(map, t));
 }
 
+// Le trajet de `from` au point `to` qu'on a montré (un double-clic) : jusqu'à sa case, ou, s'il est dans un mur, un meuble ou une pièce où l'on ne va pas, jusqu'à
+// la case atteignable la plus proche de lui (findPath). null : `from` est sur une case bloquante. Un seul point : on y est déjà.
+export function planWalkNear(map: OfficeMap, from: Point, to: Point): Point[] | null {
+  const found = findPath(map, from, to, { diagonals: false });
+  if (found === null) return null;
+  const steps = [tileOf(map, from), ...found.path.map((p) => tileOf(map, p))].filter((t, i, all) => i === 0 || !sameTile(t, all[i - 1]!));
+  return cornersOf(straighten(map, steps)).map((t) => centerOf(map, t));
+}
+
 // La pièce d'un bureau, en cases de la carte : son coin haut-gauche et sa taille. Le décor des occupants n'existe que dans les pièces que la
 // carte décrit avec une porte (DecorLayer) : les autres cartes (celle de développement) n'ont pas de meubles.
 function roomTiles(map: OfficeMap, room: Zone): { tx: number; ty: number; width: number; height: number; decorated: boolean } {
@@ -206,6 +216,8 @@ interface Walk {
   anchorAt: number;
   // L'heure de la dernière image.
   lastAt: number;
+  // Il y court (un double-clic), au lieu d'y marcher (« Aller à mon bureau »).
+  sprint: boolean;
 }
 
 // La marche automatique : suit un trajet en disant, à chaque image, la direction à prendre. Elle ne bouge rien elle-même : la scène lit la
@@ -214,9 +226,15 @@ interface Walk {
 // Chaque tronçon (d'un point du trajet au suivant) est suivi sur la ligne des centres de case : s'il en est loin (au départ, l'avatar est n'importe
 // où dans sa case), on s'y remet d'abord, puis on avance jusqu'au point. L'avatar ne tourne pas en rond : un point dépassé est atteint.
 //
+// Un pas d'une image peut être plus long que ces marges : en courant (8 px à 60 images par seconde), et deux fois plus sur une machine qui n'en dessine que
+// 30. L'avatar passerait alors d'un côté à l'autre de la ligne sans jamais y tomber, en zigzag, et ses positions en biais finiraient par couper l'angle
+// d'un mur, que le serveur refuse. À moins d'un pas de la ligne, il s'y pose donc (`snap`, que la scène applique avant de le faire avancer), et il
+// tourne à un angle dès qu'il en est à moins d'un demi-pas.
+//
 // Elle s'arrête (et le dit, `onState(false)`) à l'arrivée, à l'appel de cancel(), et si les pieds ne bougent plus depuis STUCK_MS.
 export class AutoWalk {
   private walk: Walk | null = null;
+  private snapTo: Point | null = null;
 
   // `onState` : dit si l'avatar marche tout seul, à chaque départ, et à chaque arrêt ou chemin introuvable.
   constructor(private readonly onState: (walking: boolean) => void) {}
@@ -225,15 +243,25 @@ export class AutoWalk {
     return this.walk !== null;
   }
 
+  // Court-il ? Faux hors marche.
+  get sprinting(): boolean {
+    return this.walk?.sprint ?? false;
+  }
+
   // Le point de passage où l'avatar va, ou null hors marche.
   get waypoint(): Point | null {
     return this.walk === null ? null : this.walk.route[this.walk.next]!;
   }
 
-  // Part sur ce trajet, depuis ces pieds. null (chemin introuvable) ou un seul point (on y est) : l'avatar ne bouge pas, et la marche en cours,
-  // s'il y en avait une, s'arrête.
-  start(route: readonly Point[] | null, feet: Point, now: number): void {
-    this.walk = route !== null && route.length > 1 ? { route, next: 1, anchor: { x: feet.x, y: feet.y }, anchorAt: now, lastAt: now } : null;
+  // Où poser les pieds avant le pas de cette image (sur la ligne du tronçon, voir update), ou null : ils y sont déjà, ou il n'y a pas de pas.
+  get snap(): Point | null {
+    return this.snapTo;
+  }
+
+  // Part sur ce trajet, depuis ces pieds, en courant si `sprint`. null (chemin introuvable) ou un seul point (on y est) : l'avatar ne bouge pas, et la
+  // marche en cours, s'il y en avait une, s'arrête.
+  start(route: readonly Point[] | null, feet: Point, now: number, sprint = false): void {
+    this.walk = route !== null && route.length > 1 ? { route, next: 1, anchor: { x: feet.x, y: feet.y }, anchorAt: now, lastAt: now, sprint } : null;
     this.onState(this.walk !== null);
   }
 
@@ -242,8 +270,11 @@ export class AutoWalk {
     if (this.walk !== null) this.stop();
   }
 
-  // Une image : la direction que prend l'avatar, d'après ses pieds (px, en nombres décimaux), ou null (pas de marche, ou elle vient de s'arrêter).
-  update(feet: Point, now: number): Direction | null {
+  // Une image : la direction que prend l'avatar, d'après ses pieds (px, en nombres décimaux) et le pas qu'il fera pendant cette image (`step`, px : sa
+  // vitesse fois la durée de l'image ; 0, les marges seules), ou null (pas de marche, ou elle vient de s'arrêter). À moins d'un pas de la ligne du
+  // tronçon, `snap` dit où le poser sur elle.
+  update(feet: Point, now: number, step = 0): Direction | null {
+    this.snapTo = null;
     const walk = this.walk;
     if (walk === null) return null;
 
@@ -258,6 +289,8 @@ export class AutoWalk {
       return null;
     }
 
+    const reach = Math.max(REACH_PX, step / 2);
+    const lane = Math.max(LANE_PX, step);
     for (; walk.next < walk.route.length; walk.next++) {
       const [from, to] = [walk.route[walk.next - 1]!, walk.route[walk.next]!];
       const horizontal = from.y === to.y;
@@ -265,8 +298,9 @@ export class AutoWalk {
       // Ce qu'il reste à faire sur le tronçon (négatif : on a dépassé le point), et l'écart à la ligne des centres (de quel côté est-elle ?).
       const remaining = (horizontal ? to.x - feet.x : to.y - feet.y) * sign;
       const aside = horizontal ? to.y - feet.y : to.x - feet.x;
-      if (remaining <= REACH_PX) continue;
-      if (Math.abs(aside) > LANE_PX) return horizontal ? (aside < 0 ? 'up' : 'down') : aside < 0 ? 'left' : 'right';
+      if (remaining <= reach) continue;
+      if (Math.abs(aside) > lane) return horizontal ? (aside < 0 ? 'up' : 'down') : aside < 0 ? 'left' : 'right';
+      if (aside !== 0) this.snapTo = horizontal ? { x: feet.x, y: to.y } : { x: to.x, y: feet.y };
       return horizontal ? (sign > 0 ? 'right' : 'left') : sign > 0 ? 'down' : 'up';
     }
     this.stop();
@@ -275,6 +309,7 @@ export class AutoWalk {
 
   private stop(): void {
     this.walk = null;
+    this.snapTo = null;
     this.onState(false);
   }
 }

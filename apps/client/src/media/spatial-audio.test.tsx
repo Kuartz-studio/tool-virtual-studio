@@ -9,8 +9,8 @@ import { AUDIBLE_GAIN, SPATIAL_AUDIO_HZ, useSpatialAudio, volumesFor } from './s
 
 const map = parseOfficeMap(buildTiledMap({ ...OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
 const tile = (n: number) => n * TILE_SIZE;
-// Un point du couloir au nord (espace ouvert) : y 12, x en cases.
-const corridor = (x: number) => ({ x: tile(x), y: tile(12) });
+// Un point de la rue des bureaux (espace ouvert, d'une terrasse à l'autre) : y 17, x en cases depuis la colonne 14.
+const corridor = (x: number) => ({ x: tile(14 + x), y: tile(17) });
 
 const player = (id: string, at: { x: number; y: number }): PublicPlayer => ({
   id,
@@ -33,7 +33,7 @@ describe('volumesFor', () => {
   });
 
   test('dans un bureau, tout le monde est à plein volume, même loin', () => {
-    const inRoom = { x: tile(4) + 16, y: tile(3) + 16 };
+    const inRoom = { x: tile(21) + 16, y: tile(9) + 16 };   // dans le bureau A5
     expect(volumesFor(map, inRoom, [{ id: 'far' }], () => corridor(60))).toEqual({ far: 1 });
   });
 
@@ -42,7 +42,7 @@ describe('volumesFor', () => {
   });
 
   test('arrondi à deux décimales', () => {
-    const [volume] = Object.values(volumesFor(map, corridor(4), [{ id: 'a' }], () => ({ x: tile(4) + tile(10) + 7, y: tile(12) })));
+    const [volume] = Object.values(volumesFor(map, corridor(4), [{ id: 'a' }], () => ({ x: corridor(4).x + tile(10) + 7, y: corridor(4).y })));
     expect(Math.round(volume! * 100) / 100).toBe(volume);
   });
 

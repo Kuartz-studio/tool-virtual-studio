@@ -98,6 +98,9 @@ export const LIGHT_EMITTERS: Readonly<Record<string, LightEmitter>> = {
   'lr-13-9': floorLamp(44),
   'lr-12-12': floorLamp(44),
   'lr-13-12': floorLamp(44),
+  // Ceux de l'accueil et du salon de la cafétéria (la carte seule : generated-plan.ts), l'abat-jour en haut de l'image.
+  'lampadaire-1': floorLamp(40),
+  'lampadaire-2': floorLamp(40),
   // Les lampes articulées : la tête, en haut de l'image. Chaque bureau par défaut en a une (of-11-15).
   'of-11-15': DESK_LAMP,
   'of-10-16': DESK_LAMP,

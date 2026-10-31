@@ -1,16 +1,18 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { buildOfficeTiledMap, parseOfficeMap } from '../packages/shared/src/index';
 import { giveDeskBack, joinOffice, officeBar, teleportTo } from './helpers';
 
 // L'accueil, sur la vraie carte (le second serveur des tests : playwright.config.ts) : trois administratrices derrière le comptoir (Margot, Inès, Lucie,
-// cases 39 à 41 de la rangée 17), à qui l'on parle de deux cases au plus (la touche E). Auprès d'elles, on confie une mission à quelqu'un, qui la reçoit dans sa
+// cases 13 à 15 de la rangée 38), à qui l'on parle de deux cases au plus (la touche E). Auprès d'elles, on confie une mission à quelqu'un, qui la reçoit dans sa
 // liste, la termine, et monte de niveau (tout le bureau le voit) ; on y trouve aussi la boutique.
 
 // Un seul navigateur à la fois : plusieurs personnes, et le reste de la suite qui tourne sur ce serveur (les tests de personnalisation cherchent un bureau libre).
 test.describe.configure({ mode: 'default' });
 
-const px = (tile: number) => tile * 32 + 16;
-// Devant Inès, de l'autre côté du comptoir.
-const AT_DESK = { x: px(40), y: px(18) };
+const map = parseOfficeMap(buildOfficeTiledMap());
+// Devant Inès, de l'autre côté du comptoir : la case sous la sienne (la carte dit où elle se tient).
+const ines = map.clerks.find((clerk) => clerk.name === 'ines')!;
+const AT_DESK = { x: ines.x, y: ines.y + map.tileSize };
 
 const contexts: BrowserContext[] = [];
 test.afterEach(async () => {

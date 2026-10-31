@@ -14,8 +14,8 @@ const OFFICE_URL = `http://localhost:${OFFICE_PORT}`;
 
 // Les tests qui veulent la vraie carte : la personnalisation (six bureaux libres), la musique par endroit (les zones de la grande carte), la
 // lumière (l'interrupteur de la rue nord), les portes vitrées des bureaux, le café (la machine du bar), la musique de chaque pièce, l'accueil
-// (ses administratrices) et le menu d'une personne (suivre, rejoindre, inviter dans son bureau).
-const OFFICE_SPECS = /(personnalisation|musique-lieux|musique-pieces|lumiere|portes|cafe|modes|octogone|camera|accueil|suivre)\.spec\.ts/;
+// (ses administratrices), le menu d'une personne (suivre, rejoindre, inviter dans son bureau) et la carte du bureau (ses pièces).
+const OFFICE_SPECS = /(personnalisation|musique-lieux|musique-pieces|lumiere|portes|cafe|modes|octogone|camera|accueil|suivre|carte)\.spec\.ts/;
 
 // Les jeux de la salle de jeu, eux aussi sur la vraie carte (ses tables). Le spec de la plateforme (invitations, sièges, « prêt ») passe d'abord ; ceux des quatre jeux (une table
 // chacun : une partie jouée à deux navigateurs) viennent ensuite, et ne touchent qu'à leur table.

@@ -1,4 +1,4 @@
-import { buildOfficeTiledMap, parseOfficeMap, placeByKey, type InitPayload, type PublicPlayer, type RoomMusic } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, placeByKey, type InitPayload, type OfficeMap, type Place, type PublicPlayer, type RoomMusic } from '@bureau/shared';
 import { act, fireEvent, render } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { EventBus } from '../game/EventBus';
@@ -12,7 +12,11 @@ import { DUCK_LEVEL, AudioEngine } from './engine';
 import { DEFAULT_AUDIO_PREFS } from './prefs';
 
 const map = parseOfficeMap(buildOfficeTiledMap());
-const px = (tile: number) => tile * map.tileSize + map.tileSize / 2;
+// Le milieu d'un lieu de la carte (son premier rectangle), en pixels.
+const middleOf = (key: string) => {
+  const rect = placeByKey(map, key)!.rects[0]!;
+  return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+};
 
 const me: PublicPlayer = { id: 'moi', name: 'Moi', avatarKey: null, x: map.spawn.x, y: map.spawn.y, dir: 'down', moving: false, status: 'available', media: { mic: false, cam: false, screen: false } };
 const init: InitPayload = { self: me, players: [], mapKey: 'office', chatHistory: [], desks: [], closedDesks: [], deskBans: [] };
@@ -25,7 +29,13 @@ const settle = () => act(() => vi.advanceTimersByTimeAsync(1));
 const gesture = () => act(() => void fireEvent.pointerDown(document.body));
 // Le navigateur laisse démarrer le son.
 const allow = () => act(() => audio.context.run());
-const musicNow = () => audio.context.sources.filter((source) => source.loop && source.stoppedAt === null).map((source) => (source.buffer as { url: string }).url);
+// Les boucles qui jouent : la musique, et celles de la nature (l'eau, les insectes).
+const loopsNow = (kind: 'music' | 'nature') =>
+  audio.context.sources
+    .filter((source) => source.loop && source.stoppedAt === null)
+    .map((source) => (source.buffer as { url: string }).url)
+    .filter((url) => url.includes(`/${kind}/`));
+const musicNow = () => loopsNow('music');
 
 // Le geste, puis le navigateur qui laisse démarrer le son, puis les chargements.
 async function startSound(): Promise<void> {
@@ -122,19 +132,19 @@ describe('la musique', () => {
 
 describe('le lieu', () => {
   // Le bureau est affiché : le jeu a lu la carte, et le serveur a placé la personne.
-  function enterOffice(x: number, y: number): void {
+  function enterOffice(at: { x: number; y: number }): void {
     act(() => {
-      useOfficeStore.getState().applyInit({ ...init, self: { ...me, x, y } });
+      useOfficeStore.getState().applyInit({ ...init, self: { ...me, x: at.x, y: at.y } });
       useOfficeStore.getState().setOfficeMap(map);
     });
   }
-  const walkTo = (tx: number, ty: number) => act(() => emitOnBus(EventBus, 'local:move', { x: px(tx), y: px(ty), dir: 'down', moving: true } as never));
+  const walkTo = (at: { x: number; y: number }) => act(() => emitOnBus(EventBus, 'local:move', { x: at.x, y: at.y, dir: 'down', moving: true } as never));
 
   test('à l\'arrivée, l\'ambiance de l\'endroit où l\'on apparaît, tout de suite', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    // La salle de jeu, au sud : le crépuscule.
-    enterOffice(px(20), px(38));
+    // La salle de jeu : le crépuscule.
+    enterOffice(middleOf('game'));
     await settle();
     expect(useAudioStore.getState().place).toBe('dusk');
     expect(musicNow()).toContain('/assets/audio/music/dusk.ogg');
@@ -143,11 +153,11 @@ describe('le lieu', () => {
   test('on change de pièce : l\'ambiance ne change qu\'après un moment dans la nouvelle', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterOffice(map.spawn.x, map.spawn.y);
+    enterOffice(map.spawn);
     expect(useAudioStore.getState().place).toBe('lobby');
 
     // La salle de conférence : l'étrange et le planant.
-    walkTo(54, 20);
+    walkTo(middleOf('conference'));
     await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS - 1));
     expect(useAudioStore.getState().place).toBe('lobby');
     await act(() => vi.advanceTimersByTimeAsync(1));
@@ -159,10 +169,10 @@ describe('le lieu', () => {
   test('traverser une pièce sans s\'y arrêter ne change pas la musique', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterOffice(map.spawn.x, map.spawn.y);
-    walkTo(54, 20);
+    enterOffice(map.spawn);
+    walkTo(middleOf('conference'));
     await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS / 2));
-    walkTo(40, 22);
+    walkTo(map.spawn);
     await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS * 3));
     expect(useAudioStore.getState().place).toBe('lobby');
   });
@@ -170,10 +180,80 @@ describe('le lieu', () => {
   test('quitter le bureau (la carte est retirée) : retour à la salle d\'attente', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterOffice(px(20), px(38));
+    enterOffice(middleOf('game'));
     expect(useAudioStore.getState().place).toBe('dusk');
     act(() => useOfficeStore.getState().setOfficeMap(null));
     expect(useAudioStore.getState().place).toBe('lobby');
+  });
+});
+
+// Le dehors : un jardin (lieu `outside`) avec son bassin, à côté d'un hall. Une petite carte à part : celle du bureau peut changer, pas ce qu'on vérifie.
+describe('dehors, la nature', () => {
+  const tile = (n: number) => n * map.tileSize;
+  const place = (key: string, kind: Place['kind'], x: number): Place => ({
+    key,
+    label: key,
+    kind,
+    rects: [{ x: tile(x), y: 0, width: tile(12), height: tile(12) }],
+    scene: 'lobby',
+    music: false,
+    destination: false,
+  });
+  const garden: OfficeMap = {
+    ...map,
+    zones: [],
+    places: [place('garden', 'outside', 0), place('hall', 'room', 12)],
+    waters: [{ x: tile(1), y: tile(4), width: tile(3), height: tile(3) }],
+    spawn: { x: tile(18), y: tile(6) },
+  };
+  const walkTo = (x: number, y: number) => act(() => emitOnBus(EventBus, 'local:move', { x, y, dir: 'down', moving: true } as never));
+  const natureFetched = () => audio.fetched.filter((url) => url.includes('/nature/'));
+
+  test('sortir au jardin : la musique se tait (pas d\'enceinte), l\'eau du bassin et les oiseaux s\'entendent ; rentrer ramène la musique', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    act(() => {
+      useOfficeStore.getState().applyInit({ ...init, self: { ...me, x: garden.spawn.x, y: garden.spawn.y } });
+      useOfficeStore.getState().setOfficeMap(garden);
+    });
+    await settle();
+    // Dans le hall, loin du bassin, le jour : la musique, rien de la nature.
+    expect(musicNow()).toEqual(['/assets/audio/music/lobby.ogg']);
+    expect(natureFetched()).toEqual([]);
+
+    // Au bord du bassin : l'eau tout de suite, les oiseaux et le vent se chargent ; la musique attend PLACE_SETTLE_MS, puis se tait.
+    walkTo(tile(5), tile(5));
+    await settle();
+    expect(loopsNow('nature')).toEqual(['/assets/audio/nature/water.ogg']);
+    expect(natureFetched()).toEqual(expect.arrayContaining(['/assets/audio/nature/birds.ogg', '/assets/audio/nature/wind.ogg']));
+    expect(useAudioStore.getState().outside).toBe(false);
+    await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS));
+    expect(useAudioStore.getState().outside).toBe(true);
+    expect(musicNow()).toEqual([]);
+
+    // La nuit tombe (la lumière s'éteint) : les insectes.
+    act(() => useOfficeStore.getState().setLights({ level: 'off', by: null, at: 1 }));
+    await settle();
+    expect(loopsNow('nature')).toContain('/assets/audio/nature/insects.ogg');
+
+    // Rentrer : la musique revient.
+    walkTo(tile(18), tile(6));
+    await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS));
+    await settle();
+    expect(musicNow()).toEqual(['/assets/audio/music/lobby.ogg']);
+  });
+
+  test('les effets coupés font taire la nature avec eux', async () => {
+    render(<AudioDirector engine={engine} />);
+    await startSound();
+    act(() => useAudioStore.getState().setPrefs({ sfxOn: false }));
+    act(() => {
+      useOfficeStore.getState().applyInit({ ...init, self: { ...me, x: tile(5), y: tile(5) } });
+      useOfficeStore.getState().setOfficeMap(garden);
+    });
+    await settle();
+    expect(natureFetched()).toEqual([]);
+    expect(loopsNow('nature')).toEqual([]);
   });
 });
 
@@ -185,11 +265,6 @@ describe('la musique de chaque pièce', () => {
   const QUEST: RoomMusic = { on: true, scene: 'quest', by: BY, at: 2 };
   const url = (scene: string) => `/assets/audio/music/${scene}.ogg`;
 
-  // Le milieu d'un lieu de la carte, en pixels.
-  const middleOf = (key: string) => {
-    const rect = placeByKey(map, key)!.rects[0]!;
-    return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-  };
   // On arrive à cet endroit : le serveur dit où l'on est et, dans son init, la musique des pièces déjà réglées (un init la remplace toute).
   const enterAt = (at: { x: number; y: number }, music: Record<string, RoomMusic> = {}) =>
     act(() => {
@@ -277,17 +352,17 @@ describe('la musique de chaque pièce', () => {
   test('deux pièces de même ambiance par défaut : passer de l\'une à l\'autre change la pièce dont on entend la musique, après PLACE_SETTLE_MS', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    // La salle de réunion et un bureau jouent la même ambiance (« focus ») ; celle de la salle est coupée, pas celle du bureau.
-    enterAt(middleOf('meeting'), { meeting: OFF });
+    // La salle de sport et l'octogone jouent la même ambiance (« quest ») ; celle de la salle de sport est coupée, pas celle de l'octogone.
+    enterAt(middleOf('gym'), { gym: OFF });
     await settle();
     expect(musicNow()).toEqual([]);
-    expect(useAudioStore.getState().placeKey).toBe('meeting');
+    expect(useAudioStore.getState().placeKey).toBe('gym');
 
-    walkTo(middleOf('desk:A1'));
+    walkTo(middleOf('arena'));
     await act(() => vi.advanceTimersByTimeAsync(PLACE_SETTLE_MS));
     await settle();
-    expect(useAudioStore.getState().placeKey).toBe('desk:A1');
-    expect(musicNow()).toEqual([url('focus')]);
+    expect(useAudioStore.getState().placeKey).toBe('arena');
+    expect(musicNow()).toEqual([url('quest')]);
   });
 
   test('une pièce éteinte ne l\'est que pour elle : la pièce d\'à côté joue sa musique', async () => {
@@ -313,7 +388,7 @@ describe('la musique de chaque pièce', () => {
   test('un endroit sans enceinte (la rue) joue toujours son ambiance par défaut : un état qui traîne n\'y change rien', async () => {
     render(<AudioDirector engine={engine} />);
     await startSound();
-    enterAt(middleOf('street-n'), { 'street-n': OFF });
+    enterAt(middleOf('street'), { street: OFF });
     await settle();
     expect(musicNow()).toEqual([url('lobby')]);
     expect(useAudioStore.getState().placeKey).toBeNull();

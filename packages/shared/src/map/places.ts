@@ -14,14 +14,15 @@ export interface Rect {
 
 // Un lieu du bureau, tel que la carte le dit (zone `place`) ou tel que le calcul le déduit (un bureau, zone `desk`) :
 // - key : son identifiant (`cafe`, `game`, `desk:A1`) ; label : son nom affiché ;
-// - kind : `room` (une pièce), `open` (un espace ouvert comme la place centrale), `street` (un couloir), `desk` (le bureau d'une personne) ;
-// - rects : ce qu'il couvre, en pixels (un seul rectangle pour l'instant) ;
+// - kind : `room` (une pièce), `open` (un espace ouvert comme la cafétéria), `street` (un couloir), `outside` (le dehors : le jardin, les terrasses),
+//   `desk` (le bureau d'une personne) ;
+// - rects : ce qu'il couvre, en pixels (un rectangle, ou plusieurs pour un lieu qui fait le tour du bâtiment, le jardin) ;
 // - scene : l'ambiance musicale par défaut ; music : on peut en régler la musique (il a une enceinte) ;
 // - destination : un mode peut y envoyer quelqu'un (la salle de sport).
 export interface Place {
   key: string;
   label: string;
-  kind: 'room' | 'open' | 'street' | 'desk';
+  kind: 'room' | 'open' | 'street' | 'outside' | 'desk';
   rects: Rect[];
   scene: MusicScene;
   music: boolean;
@@ -73,6 +74,23 @@ export function placeAt(map: OfficeMap, x: number, y: number): Place | null {
       best = place;
       bestArea = area;
     }
+  }
+  return best;
+}
+
+// Ce point (en pixels) est-il dehors : dans un lieu `outside` (le jardin, une terrasse) ?
+export function isOutside(map: OfficeMap, x: number, y: number): boolean {
+  return placeAt(map, x, y)?.kind === 'outside';
+}
+
+// La distance (en pixels) de ce point à l'étendue d'eau la plus proche (zones `water`), 0 dedans ; null si la carte n'a pas d'eau.
+export function distanceToWater(map: OfficeMap, x: number, y: number): number | null {
+  let best: number | null = null;
+  for (const rect of map.waters ?? []) {
+    const dx = Math.max(rect.x - x, 0, x - (rect.x + rect.width));
+    const dy = Math.max(rect.y - y, 0, y - (rect.y + rect.height));
+    const distance = Math.hypot(dx, dy);
+    if (best === null || distance < best) best = distance;
   }
   return best;
 }

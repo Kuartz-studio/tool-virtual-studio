@@ -329,7 +329,7 @@ describe('la barre', () => {
     expect(panels.show).toHaveBeenLastCalledWith('character', button(fr.me.chip));
     await user.click(button('Plus'));
     const more = screen.getAllByRole('menuitem').map((line) => line.getAttribute('aria-label') ?? line.textContent);
-    expect(more).toEqual([fr.decor.toggle, fr.shop.toggle, fr.zoom.reset]);
+    expect(more).toEqual([fr.officeMap.toggle, fr.decor.toggle, fr.shop.toggle, fr.zoom.reset]);
   });
 
   test('le menu « Moi » est dans la barre, et parle à la socket de la page : Disponible, puis un mode', async () => {

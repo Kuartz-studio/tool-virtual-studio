@@ -8957,3 +8957,333 @@ button.desk-place:disabled {
     animation: none;
   }
 }
+
+/* La carte du bureau (OfficePlan, touche M) : un plan schématique dans une fenêtre posée en bas à droite, au-dessus de la barre, d'où elle se déplie. Ses
+   couleurs sont celles de la couche, donc de la lumière du bureau : claire allumée ou tamisée, sombre éteinte (les jetons de `.office-ui[data-theme='night']`).
+   Le jardin en fond, l'eau, les terrasses en bois ; le bâtiment au sol clair (ses couloirs), cerné d'un mur foncé ouvert à l'entrée ; dedans, les pièces en
+   rectangles un peu plus soutenus que les espaces ouverts, séparées d'un trait fin, leur nom en grandes capitales resserrées ; les bureaux fermés hachurés avec
+   un cadenas rouge, chacun en tête ronde avec son nom au-dessus ; soi à la couleur de l'accent, avec ce qu'on entend en pointillés (un cercle dehors, la pièce
+   dedans). */
+.plan {
+  --plan-garden: #dce8d1;
+  --plan-deck: #eddcc3;
+  --plan-water: #b5d8ec;
+  --plan-floor: var(--surface);
+  --plan-open: color-mix(in srgb, var(--text) 2.5%, var(--surface));
+  --plan-room: color-mix(in srgb, var(--text) 6%, var(--surface));
+  --plan-line: color-mix(in srgb, var(--text) 16%, transparent);
+  --plan-wall: color-mix(in srgb, var(--text) 78%, transparent);
+  --plan-label: color-mix(in srgb, var(--text) 46%, transparent);
+  --plan-garden-label: #5f8155;
+  --plan-deck-label: #96764d;
+  --plan-hatch: color-mix(in srgb, var(--text) 11%, transparent);
+  --plan-self: var(--accent);
+  --plan-lock: var(--danger);
+
+  position: absolute;
+  right: var(--bar-gap);
+  bottom: calc(var(--bar-gap) * 2 + var(--bar-size));
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(700px, calc(100% - 2 * var(--bar-gap)));
+  padding: 10px 12px 12px;
+  color: var(--text);
+  pointer-events: auto;
+  background: var(--surface);
+  border-radius: var(--radius-pop);
+  outline: none;
+  box-shadow: var(--shadow-pop);
+  transform-origin: bottom right;
+  animation: plan-unfold var(--dur-pop) var(--ease-out);
+}
+
+/* La nuit, un jardin, un bois et une eau sombres, que les noms clairs du soir lisent encore. */
+.office-ui[data-theme='night'] .plan {
+  --plan-garden: #1c2720;
+  --plan-deck: #2e2820;
+  --plan-water: #24485a;
+  --plan-garden-label: #8fb183;
+  --plan-deck-label: #c4a57d;
+}
+
+.plan-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+  padding-left: 4px;
+}
+
+.plan-head > svg.lucide {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--text-muted);
+}
+
+.plan-head h2 {
+  margin: 0;
+  font-size: var(--text-s);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.plan-help {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin: 0 0 0 auto;
+  overflow: hidden;
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.plan-help kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font: inherit;
+  font-weight: var(--weight-semibold);
+  color: var(--text-soft);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+}
+
+.plan-frame {
+  position: relative;
+  align-self: center;
+  width: min(100%, calc((100dvh - var(--bar-size) - 3 * var(--bar-gap) - 120px) * var(--plan-ratio)));
+  aspect-ratio: var(--plan-ratio);
+  cursor: pointer;
+  user-select: none;
+  background: var(--surface-soft);
+  border-radius: 12px;
+}
+
+/* Une carte avec un dehors : le fond est le jardin, le bâtiment posé dessus. */
+.plan-frame[data-garden] {
+  background: var(--plan-garden);
+}
+
+.plan-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.plan-deck {
+  fill: var(--plan-deck);
+}
+
+.plan-water {
+  fill: var(--plan-water);
+}
+
+.plan-floor {
+  fill: var(--plan-floor);
+}
+
+.plan-room {
+  fill: var(--plan-room);
+  stroke: var(--plan-line);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.plan-room[data-kind='open'] {
+  fill: var(--plan-open);
+}
+
+.plan-room[data-locked] {
+  stroke: color-mix(in srgb, var(--plan-lock) 40%, transparent);
+}
+
+/* Les murs du dehors, d'un trait plein ; les bouts carrés ferment les angles. */
+.plan-walls {
+  fill: none;
+  stroke: var(--plan-wall);
+  stroke-width: 2.5px;
+  stroke-linecap: square;
+  vector-effect: non-scaling-stroke;
+}
+
+.plan-hatch-ground {
+  fill: var(--plan-room);
+}
+
+.plan-hatch-line {
+  stroke: var(--plan-hatch);
+  stroke-width: 5;
+}
+
+.plan-table {
+  fill: color-mix(in srgb, var(--text) 11%, var(--surface));
+  stroke: var(--plan-line);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.plan-hearing {
+  fill: color-mix(in srgb, var(--plan-self) 7%, transparent);
+  stroke: color-mix(in srgb, var(--plan-self) 60%, transparent);
+  stroke-width: 1.25px;
+  stroke-dasharray: 5 5;
+  vector-effect: non-scaling-stroke;
+}
+
+.plan-label {
+  font-weight: 650;
+  font-stretch: 75%;
+  letter-spacing: 0.02em;
+  text-anchor: middle;
+  fill: var(--plan-label);
+}
+
+.plan-label[data-kind='outside'] {
+  fill: var(--plan-garden-label);
+}
+
+.plan-label[data-kind='deck'] {
+  fill: var(--plan-deck-label);
+}
+
+.plan-range {
+  position: absolute;
+  aspect-ratio: 1;
+  pointer-events: none;
+  background: radial-gradient(circle, color-mix(in srgb, var(--plan-self) 9%, transparent), transparent 70%);
+  border: 1.25px dashed color-mix(in srgb, var(--text) 28%, transparent);
+  border-radius: 50%;
+  translate: -50% -50%;
+  transition:
+    left 200ms linear,
+    top 200ms linear;
+}
+
+.plan-lock {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  color: var(--plan-lock);
+  pointer-events: none;
+  translate: -50% -50%;
+}
+
+.plan-lock svg.lucide {
+  width: 15px;
+  height: 15px;
+}
+
+.plan-person {
+  position: absolute;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  translate: -50% -50%;
+  transition:
+    left 200ms linear,
+    top 200ms linear;
+}
+
+.plan-person[data-self] {
+  z-index: 2;
+}
+
+.plan-name {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  max-width: 120px;
+  padding: 0 6px;
+  overflow: hidden;
+  font-size: 10.5px;
+  font-weight: var(--weight-semibold);
+  line-height: 15px;
+  color: var(--surface);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--text) 82%, transparent);
+  border-radius: var(--radius-pill);
+}
+
+.plan-person[data-self] .plan-name {
+  background: var(--plan-self);
+}
+
+.plan-head .portrait {
+  --dot-ring: var(--surface);
+
+  background: var(--surface-sunk);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 3px color-mix(in srgb, var(--text) 14%, transparent),
+    0 3px 8px rgb(15 18 30 / 25%);
+}
+
+.plan-head .portrait-image {
+  border-radius: 50%;
+}
+
+.plan-person[data-self] .plan-head .portrait {
+  box-shadow:
+    0 0 0 2px var(--plan-self),
+    0 0 0 6px color-mix(in srgb, var(--plan-self) 22%, transparent),
+    0 3px 8px rgb(15 18 30 / 25%);
+}
+
+.plan-pin {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+  background: var(--plan-self);
+  border-radius: 50%;
+  translate: -50% -50%;
+}
+
+/* L'endroit où l'on court pulse, comme la marque du jeu (WalkMarker). */
+.plan-pin::after {
+  position: absolute;
+  inset: -2px;
+  content: '';
+  border: 2px solid var(--plan-self);
+  border-radius: 50%;
+  animation: plan-pulse 1s var(--ease-out) infinite;
+}
+
+@keyframes plan-pulse {
+  to {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+@keyframes plan-unfold {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan {
+    animation: none;
+  }
+
+  .plan-person,
+  .plan-range {
+    transition: none;
+  }
+
+  .plan-pin::after {
+    animation: none;
+  }
+}

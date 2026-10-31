@@ -17,7 +17,7 @@ import {
   type Zone,
 } from '@bureau/shared';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
-import { AutoWalk, REACH_PX, STUCK_MS, cancelOnMoveKey, deskTarget, deskWalkMap, planDeskWalk, planWalk } from './auto-walk';
+import { AutoWalk, REACH_PX, STUCK_MS, cancelOnMoveKey, deskTarget, deskWalkMap, planDeskWalk, planWalk, planWalkNear } from './auto-walk';
 import { followWalkMap } from './follow';
 import { bindKeyboard, DirectionInput } from './input';
 
@@ -134,6 +134,32 @@ describe('planWalk : le trajet, de case en case', () => {
   });
 });
 
+// Un double-clic (sur le jeu, sur la carte du bureau) : on court jusqu'au point montré, ou au plus près de lui quand on ne peut pas y aller.
+describe('planWalkNear : jusqu\'au point montré, ou au plus près', () => {
+  test('une case libre : le même trajet que planWalk', () => {
+    const map = grid(['......', '..##..', '......']);
+    expect(planWalkNear(map, cell(0, 0), cell(5, 2))).toEqual(planWalk(map, cell(0, 0), cell(5, 2)));
+  });
+
+  test('un point dans un mur : la case libre la plus proche de lui', () => {
+    const map = grid(['.....', '.....', '#####']);
+    const route = planWalkNear(map, cell(0, 0), cell(3, 2))!;
+    expect(route.at(-1)).toEqual(cell(3, 1));
+  });
+
+  test('de l\'autre côté d\'un mur sans passage : jusqu\'au mur, au plus près du point', () => {
+    const map = grid(['..#..', '..#..', '..#..']);
+    const route = planWalkNear(map, cell(0, 1), cell(4, 1))!;
+    expect(route.at(-1)).toEqual(cell(1, 1));
+  });
+
+  test('hors de la carte : au bord, au plus près ; le départ dans un mur : null', () => {
+    const map = open(4, 3);
+    expect(planWalkNear(map, cell(0, 0), { x: 900, y: 40 })!.at(-1)).toEqual(cell(3, 1));
+    expect(planWalkNear(grid(['#.', '..']), cell(0, 0), cell(1, 1))).toBeNull();
+  });
+});
+
 describe('AutoWalk : suivre le trajet', () => {
   const route = [cell(1, 1), cell(6, 1), cell(6, 4)];
   let states: boolean[];
@@ -141,6 +167,17 @@ describe('AutoWalk : suivre le trajet', () => {
   beforeEach(() => {
     states = [];
     walk = new AutoWalk((walking) => states.push(walking));
+  });
+
+  test('on y court (un double-clic) ou on y marche (son bureau) : sprinting le dit, faux hors marche', () => {
+    expect(walk.sprinting).toBe(false);
+    walk.start(route, cell(1, 1), 0, true);
+    expect(walk.sprinting).toBe(true);
+    walk.start(route, cell(1, 1), 0);
+    expect(walk.sprinting).toBe(false);
+    walk.start(route, cell(1, 1), 0, true);
+    walk.cancel();
+    expect(walk.sprinting).toBe(false);
   });
 
   test('au départ : le premier point de passage, et la direction de son tronçon', () => {
@@ -184,6 +221,31 @@ describe('AutoWalk : suivre le trajet', () => {
     expect(walk.update({ x: cell(1, 1).x, y: cell(1, 1).y - 10 }, 10)).toBe('down');
     // À 4 px ou moins : c'est la voie.
     expect(walk.update({ x: cell(1, 1).x, y: cell(1, 1).y + 4 }, 20)).toBe('right');
+  });
+
+  test('en courant sur une machine lente (16 px par image) : posé sur la voie à moins d\'un pas d\'elle, il tourne à l\'angle sans zigzaguer, et arrive', () => {
+    const step = 16;
+    // 9 px sous la voie et 5 px plus loin que le centre de sa case : sans se poser, un pas de 16 px passerait d'un côté à l'autre de chaque ligne.
+    let feet: Point = { x: cell(1, 1).x + 5, y: cell(1, 1).y + 9 };
+    walk.start(route, feet, 0, true);
+    const directions: Direction[] = [];
+    for (let now = 0; now < 3000; now += 33) {
+      const dir = walk.update(feet, now, step);
+      if (dir === null) break;
+      directions.push(dir);
+      feet = walk.snap ?? feet;
+      feet = { x: feet.x + (dir === 'right' ? step : dir === 'left' ? -step : 0), y: feet.y + (dir === 'down' ? step : dir === 'up' ? -step : 0) };
+    }
+    expect(directions.filter((dir, i) => dir !== directions[i - 1])).toEqual(['right', 'down']);
+    expect(walk.walking).toBe(false);
+    expect(Math.abs(feet.x - cell(6, 4).x)).toBe(0);
+    expect(Math.abs(feet.y - cell(6, 4).y)).toBeLessThanOrEqual(step / 2);
+    // Sans pas (les marges seules) : à 4 px ou moins de la voie, il s'y pose ; au-delà, il y revient en marchant.
+    walk.start(route, cell(1, 1), 0);
+    expect(walk.update({ x: cell(1, 1).x, y: cell(1, 1).y + 3 }, 0)).toBe('right');
+    expect(walk.snap).toEqual(cell(1, 1));
+    expect(walk.update({ x: cell(1, 1).x, y: cell(1, 1).y + 6 }, 10)).toBe('up');
+    expect(walk.snap).toBeNull();
   });
 
   test('à l\'arrivée : plus de direction, la marche s\'arrête et le dit, une fois', () => {
@@ -433,25 +495,26 @@ describe('planDeskWalk : de là où l\'on est jusqu\'à son bureau', () => {
 
   test('les meubles solides de son dehors, dans la rue, sont des murs pour le trajet : on contourne la rangée de fontaines jusqu\'à sa porte', () => {
     const zone = room('A1');
-    // Des fontaines sur toute la rangée du dehors (y 11 de la carte), sauf devant la porte (colonnes 3 et 4 de la pièce) : on arrive par la rue, plus bas.
+    // Des fontaines sur toute la rangée du dehors (y 16 de la carte), sauf devant la porte (colonnes 3 et 4 de la pièce, x 29 et 30) : on arrive par la rue,
+    // plus bas.
     const items = [...DEFAULT_DESK_ITEMS, ...[0, 1, 2, 5, 6, 7, 8].map((x) => ({ id: 'of-12-15', x, y: 9 }))];
     const map = deskWalkMap(office, zone, items);
-    expect(isWalkableTile(map, 9, 11)).toBe(false);
-    expect(isWalkableTile(map, 12, 11)).toBe(true);
-    expect(isWalkableTile(office, 9, 11)).toBe(true);
-    const route = planDeskWalk(office, zone, items, cell(10, 13))!;
+    expect(isWalkableTile(map, 26, 16)).toBe(false);
+    expect(isWalkableTile(map, 29, 16)).toBe(true);
+    expect(isWalkableTile(office, 26, 16)).toBe(true);
+    const route = planDeskWalk(office, zone, items, cell(27, 18))!;
     expect(route.at(-1)).toEqual(deskTarget(office, zone, items));
     expectStraightAndFree(map, route);
   });
 
   test('ceux qu\'un autre a posés devant sa pièce aussi : la scène part de la carte de la marche de « Suivre », où sont les meubles de tous les bureaux', () => {
-    // Devant A2 (x 20 à 28, y 11), deux fontaines à l'ouest (x 20 et 21) ; on part de la case voisine, x 22, pour aller à son bureau, A1, à l'ouest.
+    // Devant A2 (x 36 à 44, y 16), deux fontaines à l'ouest (x 36 et 37) ; on part de la case voisine, x 38, pour aller à son bureau, A1, à l'ouest.
     const fountains = [0, 1].map((x) => ({ id: 'of-12-15', x, y: 9 }));
     const base = followWalkMap(office, [{ key: 'A1', items: [...DEFAULT_DESK_ITEMS] }, { key: 'A2', items: fountains }], []);
-    const throughFountains = (route: Point[]) => walkedTiles(route).some(({ tx, ty }) => ty === 11 && (tx === 20 || tx === 21));
-    // Sans elles, le plus court chemin longe le mur, sur la rangée 11.
-    expect(throughFountains(planDeskWalk(office, room('A1'), DEFAULT_DESK_ITEMS, cell(22, 11))!)).toBe(true);
-    const route = planDeskWalk(base, room('A1'), DEFAULT_DESK_ITEMS, cell(22, 11))!;
+    const throughFountains = (route: Point[]) => walkedTiles(route).some(({ tx, ty }) => ty === 16 && (tx === 36 || tx === 37));
+    // Sans elles, le plus court chemin longe le mur, sur la rangée 16.
+    expect(throughFountains(planDeskWalk(office, room('A1'), DEFAULT_DESK_ITEMS, cell(38, 16))!)).toBe(true);
+    const route = planDeskWalk(base, room('A1'), DEFAULT_DESK_ITEMS, cell(38, 16))!;
     expect(route.at(-1)).toEqual(deskTarget(office, room('A1'), DEFAULT_DESK_ITEMS));
     expectStraightAndFree(deskWalkMap(base, room('A1'), DEFAULT_DESK_ITEMS), route);
     expect(throughFountains(route)).toBe(false);

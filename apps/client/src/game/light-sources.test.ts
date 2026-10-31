@@ -9,8 +9,8 @@ const placed = (id: string, x: number, y: number) => {
   return { id, x, y, w: item.w * TILE_SIZE, h: item.h * TILE_SIZE };
 };
 
-// Les lampadaires, les lampes articulées (et les postes portables avec la leur), les lampes de chevet.
-const FLOOR_LAMPS = ['lr-12-9', 'lr-11-9', 'lr-13-9', 'lr-12-12', 'lr-13-12'];
+// Les lampadaires (dont les deux de la carte seule), les lampes articulées (et les postes portables avec la leur), les lampes de chevet.
+const FLOOR_LAMPS = ['lr-12-9', 'lr-11-9', 'lr-13-9', 'lr-12-12', 'lr-13-12', 'lampadaire-1', 'lampadaire-2'];
 const DESK_LAMPS = ['of-11-15', 'of-10-16', 'of-11-17', 'of-11-19', 'of-11-21', 'of-11-23', 'of-8-26', 'of-14-26'];
 const BEDSIDE_LAMPS = ['lr-14-7', 'lr-15-7', 'lr-14-9', 'lr-15-9', 'lr-14-13', 'lr-15-13'];
 const LAMPS = [...FLOOR_LAMPS, ...DESK_LAMPS, ...BEDSIDE_LAMPS];

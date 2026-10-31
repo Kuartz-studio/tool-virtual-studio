@@ -10,7 +10,7 @@ import { cutNetwork, enter, nextEvent, nextInit, record, slowDatabase, sleep, st
 vi.setConfig({ testTimeout: 20_000 });
 
 const OFFICE = { env: { MAP_KEY: 'office', E2E: '1' }, gameDefinitions: TEST_GAMES } as const;
-const IN_ROOM = { x: 800, y: 1216 };
+const IN_ROOM = { x: 74 * 32, y: 27 * 32 };   // la salle de jeux, entre ses quatre tables
 
 async function person(srv: TestServer, email: string) {
   return enter(srv, await srv.inviteAndLogin(email));
@@ -224,8 +224,8 @@ describe('les invitations', () => {
     expect(Math.abs(there.y - correction.y)).toBeLessThanOrEqual(1);
     const alice = srv.realtime.world.get(a.id)!;
     expect(Math.hypot(there.x - alice.x, there.y - alice.y)).toBeGreaterThanOrEqual(64);
-    expect(there.x).toBeGreaterThanOrEqual(448);
-    expect(there.y).toBeGreaterThanOrEqual(1024);
+    expect(there.x).toBeGreaterThanOrEqual(63 * 32);   // la salle de jeux : x 63 à 84, y 21 à 32
+    expect(there.y).toBeGreaterThanOrEqual(21 * 32);
     await waitFor(() => seenByA.table()?.chairs[1]?.userId === b.id);
     expect(seenByA.table()!.chairs.map((chair) => chair?.userId)).toEqual([a.id, b.id]);
   });

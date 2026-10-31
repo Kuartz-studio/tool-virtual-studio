@@ -96,16 +96,16 @@ describe('l\'état de la lumière', () => {
     expect(await changed).toMatchObject({ level: 'off' });
   });
 
-  test('la grande carte du bureau (office) : l\'interrupteur de la rue, case (28, 10), s\'actionne depuis la rue et pas depuis l\'accueil', async () => {
+  test('la grande carte du bureau (office) : l\'interrupteur de la rue des bureaux, case (35, 15), s\'actionne depuis la rue et pas depuis l\'accueil', async () => {
     const srv = await startTestServer({ env: { MAP_KEY: 'office', E2E: '1' } });
-    expect(srv.map.switches).toEqual([{ x: 28 * 32 + 16, y: 10 * 32 + 16 }]);
+    expect(srv.map.switches).toEqual([{ x: 35 * 32 + 16, y: 15 * 32 + 16 }]);
     const a = await person(srv, 'a@x.fr');   // à l'accueil, à l'autre bout de la carte
     const seen = record(a.socket);
     a.socket.emit('lights:set', { level: 'off' });
     await sleep(150);
     expect(seen.names()).not.toContain('lights:changed');
 
-    await teleport(srv, a, { x: 27 * 32 + 16, y: 12 * 32 + 16 });   // la rue, 2 cases au sud-ouest de la plaque
+    await teleport(srv, a, { x: 34 * 32 + 16, y: 17 * 32 + 16 });   // la rue, 2 cases au sud-ouest de la plaque
     const changed = nextEvent(a.socket, 'lights:changed');
     a.socket.emit('lights:set', { level: 'off' });
     expect(await changed).toMatchObject({ level: 'off', by: { id: a.id } });

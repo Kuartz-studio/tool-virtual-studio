@@ -1,4 +1,4 @@
-import { DESK_PLACE_PREFIX, roomSceneOf, type MusicSetPayload, type OfficeMap, type RoomMusic } from '@bureau/shared';
+import { DESK_PLACE_PREFIX, isOutside, roomSceneOf, type MusicSetPayload, type OfficeMap, type RoomMusic } from '@bureau/shared';
 import { useEffect, useRef, useState, type Ref } from 'react';
 import { useAudioStore } from '../audio/audio-store';
 import type { SceneId } from '../audio/catalog';
@@ -33,14 +33,16 @@ export interface RoomMusicView {
   ask(request: Omit<MusicSetPayload, 'place'>): void;
 }
 
-// L'ambiance par défaut de l'endroit où sont les pieds.
+// L'ambiance par défaut de l'endroit où sont les pieds, et s'ils sont dehors (le jardin, une terrasse : pas d'enceinte, la musique s'y tait).
 const readScene = (x: number, y: number, map: OfficeMap): SceneId => soundAt(map, x, y).scene;
+const readOutside = (x: number, y: number, map: OfficeMap): boolean => isOutside(map, x, y);
 
 // Ce qu'on sait de la musique de l'endroit où l'on est, et ce qu'on y peut ; null sans carte (le jeu n'est pas encore là). Partout où il y a une enceinte on
 // peut la changer, sauf dans le bureau d'un autre (son propriétaire seul y touche) ou dans un bureau libre (personne).
 export function useRoomMusic(): RoomMusicView | null {
   const key = useMusicPlace();
   const defaultScene = useFeetValue(readScene);
+  const outside = useFeetValue(readOutside) === true;
   const place = usePlace();
   const selfId = useOfficeStore((s) => s.selfId);
   const desks = useOfficeStore((s) => s.desks);
@@ -53,14 +55,14 @@ export function useRoomMusic(): RoomMusicView | null {
   const ownerId = owner?.ownerId ?? null;
   const allowed = key !== null && (deskKey === null || (ownerId !== null && ownerId === selfId));
   let reason: string | null = null;
-  if (key === null) reason = fr.roomMusic.locked.noSpeaker;
+  if (key === null) reason = outside ? fr.roomMusic.locked.outside : fr.roomMusic.locked.noSpeaker;
   else if (!allowed) reason = ownerId === null ? fr.roomMusic.locked.freeDesk : t(fr.roomMusic.locked.desk, { name: owner?.ownerName ?? '' });
 
   return {
     key,
     place: place ?? '',
     defaultScene,
-    scene: key === null ? defaultScene : roomSceneOf({ scene: defaultScene, music: true }, state),
+    scene: key === null ? (outside ? null : defaultScene) : roomSceneOf({ scene: defaultScene, music: true }, state),
     state,
     allowed,
     reason,

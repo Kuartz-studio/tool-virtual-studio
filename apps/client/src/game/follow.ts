@@ -1,4 +1,4 @@
-import { FOLLOW_GAP_TILES, TILE_SIZE, furnitureTiles, type DeskInfo, type Direction, type OfficeMap, type Point } from '@bureau/shared';
+import { FOLLOW_GAP_TILES, TILE_SIZE, furnitureTiles, speedOf, type DeskInfo, type Direction, type OfficeMap, type Point } from '@bureau/shared';
 import { AutoWalk, planApproach } from './auto-walk';
 
 // « Suivre » quelqu'un (le menu d'une personne, au clic droit) : la marche automatique (auto-walk.ts), vers une cible qui bouge. L'avatar va jusqu'à la case
@@ -29,8 +29,9 @@ export function followWalkMap(map: OfficeMap, desks: ReadonlyArray<Pick<DeskInfo
   return { ...map, blocked };
 }
 
-// Ce que rend une image : la direction à prendre (et s'il faut courir), rien (on est à côté d'elle), ou `blocked` (plus de chemin jusqu'à elle).
-export type FollowStep = { dir: Direction; sprint: boolean } | null | 'blocked';
+// Ce que rend une image : la direction à prendre, s'il faut courir et où poser les pieds avant le pas (AutoWalk.snap), rien (on est à côté d'elle), ou
+// `blocked` (plus de chemin jusqu'à elle).
+export type FollowStep = { dir: Direction; sprint: boolean; snap: Point | null } | null | 'blocked';
 
 export class Follow {
   private target: { id: string; tile: number; plannedAt: number; walking: boolean } | null = null;
@@ -51,8 +52,9 @@ export class Follow {
     this.target = null;
   }
 
-  // Une image : la direction, d'après la carte de la marche (followWalkMap), ses pieds et ceux de la personne suivie (en pixels).
-  update(map: OfficeMap, feet: Point, goal: Point, now: number): FollowStep {
+  // Une image : la direction, d'après la carte de la marche (followWalkMap), ses pieds et ceux de la personne suivie (en pixels), et la durée de l'image
+  // (`delta`, ms), qui donne la longueur du pas (AutoWalk.update).
+  update(map: OfficeMap, feet: Point, goal: Point, now: number, delta = 0): FollowStep {
     const target = this.target;
     if (target === null) return null;
     const gap = Math.hypot(goal.x - feet.x, goal.y - feet.y);
@@ -69,8 +71,9 @@ export class Follow {
       target.plannedAt = now;
       this.walk.start(route, feet, now);
     }
-    const dir = this.walk.update(feet, now);
+    const sprint = gap > FOLLOW_SPRINT_PX;
+    const dir = this.walk.update(feet, now, (speedOf(sprint, false) * delta) / 1000);
     target.walking = dir !== null;
-    return dir === null ? null : { dir, sprint: gap > FOLLOW_SPRINT_PX };
+    return dir === null ? null : { dir, sprint, snap: this.walk.snap };
   }
 }

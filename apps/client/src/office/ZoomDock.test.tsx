@@ -30,19 +30,19 @@ test('le milieu écrit le pourcentage du moment, et le suit', () => {
   act(() => useOfficeStore.getState().stepZoom(3));
   expect(readout()).toBe('115 %');
   act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MIN_PERCENT));
-  expect(readout()).toBe('25 %');
+  expect(readout()).toBe('60 %');
 });
 
 test('un clic sur le pourcentage rétablit 100 %', async () => {
   const user = userEvent.setup();
   render(<ZoomDock />);
-  act(() => useOfficeStore.getState().setZoomPercent(60));
+  act(() => useOfficeStore.getState().setZoomPercent(70));
   await user.click(button(fr.zoom.reset));
   expect(percent()).toBe(ZOOM_DEFAULT_PERCENT);
   expect(readout()).toBe('100 %');
 });
 
-test('+ rapproche de 10 % jusqu\'à 200 %, où il s\'éteint ; − éloigne de 10 % jusqu\'à 25 %, où il s\'éteint', async () => {
+test('+ rapproche de 10 % jusqu\'à 200 %, où il s\'éteint ; − éloigne de 10 % jusqu\'à 60 %, où il s\'éteint', async () => {
   const user = userEvent.setup();
   render(<ZoomDock />);
   await user.click(button(fr.zoom.in));
@@ -56,23 +56,23 @@ test('+ rapproche de 10 % jusqu\'à 200 %, où il s\'éteint ; − éloigne de 1
   act(() => useOfficeStore.getState().resetZoom());
   await user.click(button(fr.zoom.out));
   expect(percent()).toBe(90);
-  act(() => useOfficeStore.getState().setZoomPercent(30));
+  act(() => useOfficeStore.getState().setZoomPercent(70));
   await user.click(button(fr.zoom.out));
   expect(percent()).toBe(ZOOM_MIN_PERCENT);
   expect(button(fr.zoom.out).disabled).toBe(true);
   expect(button(fr.zoom.in).disabled).toBe(false);
 });
 
-test('depuis 25 %, + repasse par les dizaines : 30, 40 … jusqu\'à 100 %', async () => {
+test('depuis 60 %, + repasse par les dizaines : 70, 80, 90, 100 %', async () => {
   const user = userEvent.setup();
   render(<ZoomDock />);
   act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MIN_PERCENT));
   const seen: number[] = [];
-  for (let i = 0; i < 8; i++) {
+  for (let i = 0; i < 4; i++) {
     await user.click(button(fr.zoom.in));
     seen.push(percent());
   }
-  expect(seen).toEqual([30, 40, 50, 60, 70, 80, 90, 100]);
+  expect(seen).toEqual([70, 80, 90, 100]);
 });
 
 test('le niveau vient du magasin : un changement venu d\'ailleurs (molette, clavier) s\'y voit', () => {
@@ -86,15 +86,15 @@ test('le niveau vient du magasin : un changement venu d\'ailleurs (molette, clav
 test('au plancher que le jeu a calculé, − s\'éteint, et le pourcentage s\'écrit arrondi au pour-cent', async () => {
   const user = userEvent.setup();
   render(<ZoomDock />);
-  // Le plancher de la vraie carte sur 1440 × 900 : 33,48 %.
-  act(() => useOfficeStore.getState().setZoomFloor((100 * 900) / 1792 / 1.5));
-  act(() => useOfficeStore.getState().setZoomPercent(40));
+  // Le plancher de la vraie carte sur un téléphone de 390 × 844 : 62,8 %.
+  act(() => useOfficeStore.getState().setZoomFloor((100 * 844) / 1792 / 0.75));
+  act(() => useOfficeStore.getState().setZoomPercent(70));
   await user.click(button(fr.zoom.out));
-  expect(readout()).toBe('33 %');
+  expect(readout()).toBe('63 %');
   expect(button(fr.zoom.out).disabled).toBe(true);
-  // + repart sur la grille de 10 : 40 %.
+  // + repart sur la grille de 10 : 70 %.
   await user.click(button(fr.zoom.in));
-  expect(readout()).toBe('40 %');
+  expect(readout()).toBe('70 %');
   expect(button(fr.zoom.out).disabled).toBe(false);
 });
 

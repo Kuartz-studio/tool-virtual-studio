@@ -8,13 +8,14 @@ import type { TiledLayer, TiledMapJson, TiledObject, TiledObjectLayer, TiledTile
 // Les types de zones du calque `zones` :
 // - spawn : l'apparition ; private : une pièce isolée (salle de réunion) ; desk et door : un bureau et sa porte (même nom) ; label : un texte
 //   écrit au sol ; switch : l'interrupteur de la lumière ;
-// - place : un lieu (nom = sa clé ; propriétés label, kind `room` `open` ou `street`, scene, music, destination) ;
+// - place : un lieu (nom = sa clé ; propriétés label, kind `room` `open` `street` ou `outside`, scene, music, destination) ;
 // - coffee : la case, 1 × 1, devant la machine à café ; speaker : l'enceinte, 1 × 1 (nom = la clé du lieu qu'elle règle, qui a de la musique) ;
 // - game : la table d'un jeu (nom = chess, backgammon, connect4 ou ludo) ; seat : une chaise, 1 × 1 (nom = `<jeu>:<n>`, n à partir de 1) ;
 // - sign : un panneau (propriété text) ;
 // - arena : le ring de l'octogone (une seule zone : arena/arena.ts) ;
-// - clerk : une administratrice de l'accueil, 1 × 1, la case où elle se tient (nom = sa clé : margot, ines…), à qui l'on parle (touche E).
-export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch', 'place', 'coffee', 'speaker', 'game', 'seat', 'sign', 'arena', 'clerk'] as const;
+// - clerk : une administratrice de l'accueil, 1 × 1, la case où elle se tient (nom = sa clé : margot, ines…), à qui l'on parle (touche E) ;
+// - water : une étendue d'eau (le bassin du jardin) : le client fait entendre l'eau, de plus en plus fort à mesure qu'on s'en approche.
+export const ZONE_TYPES = ['spawn', 'private', 'desk', 'door', 'label', 'switch', 'place', 'coffee', 'speaker', 'game', 'seat', 'sign', 'arena', 'clerk', 'water'] as const;
 export type ZoneType = (typeof ZONE_TYPES)[number];
 
 // Les zones dont les propriétés Tiled sont gardées (`Zone.properties`) : celles qui en portent.
@@ -23,7 +24,7 @@ const ZONES_WITH_PROPERTIES: readonly ZoneType[] = ['place', 'sign'];
 // Les quatre jeux de la salle de jeu : les noms des zones `game` de la carte. Une seule liste, que la plateforme des jeux réexporte.
 export const GAME_IDS = ['chess', 'backgammon', 'connect4', 'ludo'] as const;
 export type GameId = (typeof GAME_IDS)[number];
-const PLACE_KINDS = ['room', 'open', 'street'] as const;
+const PLACE_KINDS = ['room', 'open', 'street', 'outside'] as const;
 
 // Un rectangle du calque `zones`, en pixels.
 export interface Zone {
@@ -73,6 +74,8 @@ export interface OfficeMap {
   // Ce que le calque `objets` accroche aux murs (ses éléments muraux : les panneaux de sortie…) : le rectangle de chaque image sur la face du mur, en
   // pixels. La déco du dehors d'un bureau ne les recouvre pas (deskRoomSpecOf). Absent : la carte n'en accroche aucun (celles des tests, écrites à la main).
   wallItems?: Rect[];
+  // Les étendues d'eau (zones `water`), en pixels, dans l'ordre de la carte. Absent : la carte n'en a pas (celles des tests, écrites à la main).
+  waters?: Rect[];
 }
 
 // Pourquoi une carte est refusée :
@@ -135,6 +138,7 @@ export function parseOfficeMap(json: TiledMapJson): OfficeMap {
     arena: readArena(zones),
     clerks: readClerks(zones, tileSize),
     wallItems: readWallItems(layers, tileSize),
+    waters: zones.filter((z) => z.type === 'water').map((zone) => ({ x: zone.x, y: zone.y, width: zone.width, height: zone.height })),
   };
   if (!isWalkablePoint(map, map.spawn.x, map.spawn.y)) {
     throw new MapError(
@@ -309,37 +313,49 @@ const labelOf = (zone: Zone): string => `Zone n° ${zone.id}${zone.name ? ` (« 
 const isFlag = (value: unknown): boolean => value === true || value === 1 || value === '1' || value === 'true';
 
 // Les lieux : une zone `place` par lieu, avec son nom (la clé, unique), son label, son genre (`room` par défaut), sa scène musicale (`lobby` par
-// défaut), et ses drapeaux music et destination.
+// défaut), et ses drapeaux music et destination. Un lieu qui n'est pas un rectangle (le jardin, qui fait le tour du bâtiment) est fait de plusieurs
+// zones de même clé et de mêmes propriétés : leurs rectangles s'ajoutent.
 function readPlaces(zones: Zone[]): Place[] {
   const places: Place[] = [];
-  const keys = new Set<string>();
   for (const zone of zones.filter((z) => z.type === 'place')) {
     const where = labelOf(zone);
     if (zone.name === null) throw new MapError('bad_zone', `${where} : un lieu (zone place) doit avoir un nom : c'est sa clé.`);
     if (zone.name.startsWith('desk:')) throw new MapError('bad_zone', `${where} : la clé « ${zone.name} » est réservée aux bureaux (« desk: » au début).`);
-    if (keys.has(zone.name)) throw new MapError('bad_zone', `${where} : deux lieux portent la clé « ${zone.name} ». Elle doit être unique.`);
-    keys.add(zone.name);
-    const label = readText(zone.properties?.label);
-    if (label === null) throw new MapError('bad_zone', `${where} : ce lieu n'a pas de propriété « label » (son nom affiché).`);
-    const kind = readText(zone.properties?.kind) ?? 'room';
-    if (!(PLACE_KINDS as readonly string[]).includes(kind)) {
-      throw new MapError('bad_zone', `${where} : le genre « ${kind} » est inconnu. Genres possibles : ${PLACE_KINDS.join(', ')}.`);
+    const place = readPlace(zone, zone.name, where);
+    const same = places.find((other) => other.key === place.key);
+    if (!same) {
+      places.push(place);
+      continue;
     }
-    const scene = readText(zone.properties?.scene) ?? 'lobby';
-    if (!(MUSIC_SCENES as readonly string[]).includes(scene)) {
-      throw new MapError('bad_zone', `${where} : la scène « ${scene} » est inconnue. Scènes possibles : ${MUSIC_SCENES.join(', ')}.`);
+    const settings = ({ rects: _, ...rest }: Place) => JSON.stringify(rest);
+    if (settings(same) !== settings(place)) {
+      throw new MapError('bad_zone', `${where} : deux lieux portent la clé « ${zone.name} » sans avoir les mêmes propriétés. Une clé ne désigne qu'un lieu.`);
     }
-    places.push({
-      key: zone.name,
-      label,
-      kind: kind as Place['kind'],
-      rects: [{ x: zone.x, y: zone.y, width: zone.width, height: zone.height }],
-      scene: scene as MusicScene,
-      music: isFlag(zone.properties?.music),
-      destination: isFlag(zone.properties?.destination),
-    });
+    same.rects.push(...place.rects);
   }
   return places;
+}
+
+function readPlace(zone: Zone, key: string, where: string): Place {
+  const label = readText(zone.properties?.label);
+  if (label === null) throw new MapError('bad_zone', `${where} : ce lieu n'a pas de propriété « label » (son nom affiché).`);
+  const kind = readText(zone.properties?.kind) ?? 'room';
+  if (!(PLACE_KINDS as readonly string[]).includes(kind)) {
+    throw new MapError('bad_zone', `${where} : le genre « ${kind} » est inconnu. Genres possibles : ${PLACE_KINDS.join(', ')}.`);
+  }
+  const scene = readText(zone.properties?.scene) ?? 'lobby';
+  if (!(MUSIC_SCENES as readonly string[]).includes(scene)) {
+    throw new MapError('bad_zone', `${where} : la scène « ${scene} » est inconnue. Scènes possibles : ${MUSIC_SCENES.join(', ')}.`);
+  }
+  return {
+    key,
+    label,
+    kind: kind as Place['kind'],
+    rects: [{ x: zone.x, y: zone.y, width: zone.width, height: zone.height }],
+    scene: scene as MusicScene,
+    music: isFlag(zone.properties?.music),
+    destination: isFlag(zone.properties?.destination),
+  };
 }
 
 // Une zone d'une case sur une case (une enceinte, la case de la machine à café, un siège) : son centre, en pixels.

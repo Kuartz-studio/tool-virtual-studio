@@ -6,9 +6,9 @@ export type FloorThemeId = (typeof FLOOR_THEMES)[number]['id'];
 export type WallThemeId = (typeof WALL_THEMES)[number]['id'] | (typeof SHOP_WALL_THEMES)[number]['id'];
 export type WallTheme = (typeof WALL_THEMES)[number] | (typeof SHOP_WALL_THEMES)[number];
 
-// Ce qu'une pièce de bureau a tant que son occupant n'a rien choisi.
+// Ce qu'une pièce de bureau a tant que son occupant n'a rien choisi : le parquet clair, et les murs noirs de tout le bâtiment.
 export const DEFAULT_FLOOR_THEME = 'parquet-clair';
-export const DEFAULT_WALL_THEME = 'creme';
+export const DEFAULT_WALL_THEME = 'noir-mat';
 
 export function floorTheme(id: string): (typeof FLOOR_THEMES)[number] | undefined {
   return FLOOR_THEMES.find((theme) => theme.id === id);

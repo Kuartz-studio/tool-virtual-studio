@@ -2,7 +2,7 @@ import type { MusicScene } from '../audio/scenes';
 import { TILE_SIZE } from '../constants';
 import { decorItem } from '../decor/catalog';
 import { footprintOf } from '../decor/placement';
-import { FLOOR_THEMES, POOL_TILES, TILESET, WALL_THEMES } from '../decor/generated-themes';
+import { FLOOR_THEMES, GARDEN_TILES, POOL_TILES, TILESET, WALL_THEMES } from '../decor/generated-themes';
 import { propByKey } from '../props/catalog';
 import { zoneObject, type ZoneInput } from './build-tiled';
 import type { GameId } from './parse-map';
@@ -18,7 +18,12 @@ export interface DecorObject {
   y: number;
   // De combien de pixels on abaisse son image, sans toucher à son empreinte ni à sa profondeur (une chaise rentrée sous sa table).
   offsetY?: number;
+  // De combien de pixels on la pousse vers la droite (vers la gauche si négatif), de même : une plante calée contre un mur, un fauteuil au bout d'une table.
+  offsetX?: number;
 }
+
+// Le sol du jardin : l'herbe nue, l'herbe à une fleur, celle à trois fleurs, les dalles du chemin (GARDEN_TILES).
+export type GardenGround = keyof typeof GARDEN_TILES;
 
 // Un objet animé posé : sa clé (props/catalog.ts) et la case du coin haut-gauche de son empreinte ; `depth`, quand il est posé sur un meuble : la
 // profondeur d'affichage qui le met devant celui-ci, et `offsetY` de combien de pixels on abaisse son image (pour qu'il pose sur le plateau du meuble).
@@ -39,7 +44,7 @@ export interface Area {
 }
 
 export interface PlaceOptions {
-  kind?: 'room' | 'open' | 'street';
+  kind?: 'room' | 'open' | 'street' | 'outside';
   scene?: MusicScene;
   music?: boolean;
   destination?: boolean;
@@ -50,6 +55,15 @@ const floorGid = (id: string): number => {
   if (!theme) throw new Error(`Sol inconnu : « ${id} ».`);
   return theme.gid;
 };
+
+// Un nombre tiré de la position d'une case, toujours le même : pour varier ce qui se répète (le tirage d'herbe d'une case). Bien mélangé : ses bits du
+// bas ne suivent pas ceux de x et y (sans quoi le tirage d'herbe reviendrait toutes les 8 cases, et les arbres espacés de 12 seraient tous les mêmes).
+export function cellHash(x: number, y: number): number {
+  let h = Math.imul(x, 73856093) ^ Math.imul(y, 19349663);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b);
+  return (h ^ (h >>> 16)) >>> 0;
+}
 
 const wallTiles = (id: string) => {
   const theme = WALL_THEMES.find((t) => t.id === id);
@@ -85,6 +99,12 @@ export class MapCanvas {
   floor(x: number, y: number, w: number, h: number, id: string): void {
     const gid = floorGid(id);
     for (let yy = y; yy < y + h; yy++) for (let xx = x; xx < x + w; xx++) this.floors[this.index(xx, yy)] = gid;
+  }
+
+  // Une case du jardin : un des tirages de ce sol, choisi par la position de la case (toujours le même pour la même case).
+  ground(x: number, y: number, kind: GardenGround): void {
+    const tiles = GARDEN_TILES[kind];
+    this.floors[this.index(x, y)] = tiles[cellHash(x, y) % tiles.length]!;
   }
 
   // Un mur horizontal de x0 à x1 compris : deux rangées, y et y + 1.
@@ -124,8 +144,9 @@ export class MapCanvas {
 
   // Un meuble de la banque, posé là : ses cases bloquent s'il est solide. Un meuble posé sur un mur ou sur un autre meuble solide est une
   // erreur de dessin : elle se voit tout de suite, à la construction.
-  // `offsetY` : de combien de pixels on abaisse l'image, pour qu'elle passe sous le bord de la table qui la cache à moitié.
-  put(id: string, x: number, y: number, options: { offsetY?: number } = {}): void {
+  // `offsetY` : de combien de pixels on abaisse l'image, pour qu'elle passe sous le bord de la table qui la cache à moitié ; `offsetX`, de combien on la
+  // pousse vers la droite. L'empreinte et la profondeur restent celles de la case.
+  put(id: string, x: number, y: number, options: { offsetX?: number; offsetY?: number } = {}): void {
     const item = decorItem(id);
     if (!item) throw new Error(`Élément inconnu : « ${id} ».`);
     const f = footprintOf(item, { x, y });
@@ -141,7 +162,7 @@ export class MapCanvas {
     } else if (item.kind !== 'wall') {
       for (let xx = f.x; xx < f.x + f.w; xx++) this.index(xx, f.y);   // au moins dans la carte
     }
-    this.decor.push({ id, x, y, ...(options.offsetY ? { offsetY: options.offsetY } : {}) });
+    this.decor.push({ id, x, y, ...(options.offsetY ? { offsetY: options.offsetY } : {}), ...(options.offsetX ? { offsetX: options.offsetX } : {}) });
   }
 
   // Un objet animé (props/catalog.ts), posé par la case du coin haut-gauche de son empreinte : les `claim` rangées du bas de son image, dont le haut
@@ -183,15 +204,20 @@ export class MapCanvas {
     return bottom;
   }
 
-  // Un lieu (zone `place`) : sa clé, son nom affiché, son rectangle et ses réglages (genre `room` par défaut, ambiance `lobby`, sans musique ni
-  // destination). La lecture de la carte (parse-map) refuse deux lieux de même clé.
-  place(key: string, label: string, area: Area, options: PlaceOptions = {}): void {
+  // Un lieu (zone `place`) : sa clé, son nom affiché, son ou ses rectangles et ses réglages (genre `room` par défaut, ambiance `lobby`, sans musique
+  // ni destination). Plusieurs rectangles font plusieurs zones de même clé, que la lecture de la carte (parse-map) réunit en un lieu.
+  place(key: string, label: string, area: Area | readonly Area[], options: PlaceOptions = {}): void {
     const props: Record<string, string | number | boolean> = { label };
     if (options.kind !== undefined) props.kind = options.kind;
     if (options.scene !== undefined) props.scene = options.scene;
     if (options.music) props.music = true;
     if (options.destination) props.destination = true;
-    this.zones.push({ type: 'place', name: key, ...area, props });
+    for (const rect of 'x' in area ? [area] : area) this.zones.push({ type: 'place', name: key, ...rect, props: { ...props } });
+  }
+
+  // Une étendue d'eau (zone `water`) : le client y fait entendre l'eau. Elle ne bloque rien : c'est le dessin qui pose ses obstacles.
+  water(area: Area): void {
+    this.zones.push({ type: 'water', ...area });
   }
 
   // La case, devant la machine à café, où l'on se tient pour en prendre un.
@@ -290,11 +316,15 @@ export class MapCanvas {
     const objects: TiledObject[] = this.decor.map((placed, index) => {
       const item = decorItem(placed.id)!;
       const f = footprintOf(item, placed);
+      const nudges = [
+        ...(placed.offsetY ? [{ name: 'offsetY', type: 'int', value: placed.offsetY }] : []),
+        ...(placed.offsetX ? [{ name: 'offsetX', type: 'int', value: placed.offsetX }] : []),
+      ];
       return {
         height: f.h * TILE_SIZE,
         id: index + 1,
         name: placed.id,
-        ...(placed.offsetY ? { properties: [{ name: 'offsetY', type: 'int', value: placed.offsetY }] } : {}),
+        ...(nudges.length > 0 ? { properties: nudges } : {}),
         rotation: 0,
         type: 'decor',
         visible: true,

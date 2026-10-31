@@ -67,7 +67,7 @@ const isCurrent = (element: HTMLElement) => element.getAttribute('aria-current')
 
 describe('qui peut régler la musique, et où', () => {
   test('dans une rue, un lieu sans enceinte : pas de bouton', () => {
-    enterAt(middleOf('street-n'));
+    enterAt(middleOf('street'));
     const { container } = render(<RoomMusicButton />);
     expect(container.firstChild).toBeNull();
   });
@@ -96,12 +96,12 @@ describe('qui peut régler la musique, et où', () => {
   });
 
   test('on le suit de pièce en pièce : le bouton apparaît en entrant dans une salle à enceinte et disparaît en la quittant', () => {
-    enterAt(middleOf('street-n'));
+    enterAt(middleOf('street'));
     const { container } = render(<RoomMusicButton />);
     expect(container.firstChild).toBeNull();
     walkTo('gym');
     expect(button()).toBeTruthy();
-    walkTo('street-n');
+    walkTo('street');
     expect(container.firstChild).toBeNull();
   });
 });
@@ -127,10 +127,14 @@ describe('la carte, là où l\'on ne peut pas changer la musique', () => {
     enterAt(middleOf('desk:A3'), { desks: [desk('A3', null)] });
     render(<CardHarness />);
     expect(screen.getByText(fr.roomMusic.locked.freeDesk)).toBeTruthy();
-    walkTo('street-n');
+    walkTo('street');
     expect(screen.getByText(fr.roomMusic.locked.noSpeaker)).toBeTruthy();
     // La rue joue la salle d'attente, sa musique de toujours.
     expect(screen.getByRole('region', { name: fr.roomMusic.title }).textContent).toContain(fr.sound.scenes.lobby.title);
+    // Dehors, pas d'enceinte non plus, mais pas de musique : le jardin.
+    walkTo('garden');
+    expect(screen.getByText(fr.roomMusic.locked.outside)).toBeTruthy();
+    expect(screen.getByRole('region', { name: fr.roomMusic.title }).textContent).not.toContain(fr.sound.scenes.lobby.title);
   });
 
   test('sans carte du bureau : rien', () => {
@@ -258,7 +262,7 @@ describe('la fenêtre', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     expect(document.activeElement).toBe(button());
     await open();
-    walkTo('street-n');
+    walkTo('street');
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 });

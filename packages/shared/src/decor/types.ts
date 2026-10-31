@@ -48,6 +48,9 @@ export interface DecorItem {
   atlas?: string;
   // Il faut l'avoir acheté (la progression du serveur le sait) pour le poser dans sa pièce.
   price?: number;
+  // Réservé à la carte (le jardin, les meubles composés de la carte : decor/generated-plan.ts) : le sélecteur ne le propose pas, et la déco d'un bureau
+  // ne peut pas le poser (checkDecor le dit inconnu).
+  mapOnly?: boolean;
 }
 
 // Un élément posé dans la pièce d'un bureau : `x` et `y` sont la position du coin haut-gauche de son empreinte, en cases au dixième près (2.5 : au

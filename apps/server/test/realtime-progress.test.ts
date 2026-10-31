@@ -3,11 +3,11 @@ import request from 'supertest';
 import { describe, expect, test } from 'vitest';
 import { enter, nextEvent, record, sleep, startTestServer, type TestServer } from './helpers/realtime';
 
-// L'accueil de la grande carte (MAP_KEY=office) : les administratrices sont sur la rangée 17 (Margot en 39, Inès en 40, Lucie en 41), on se tient devant elles.
-// Centre d'une case, en pixels.
+// L'accueil de la grande carte (MAP_KEY=office) : les administratrices sont derrière le comptoir, sur la rangée 38 (Margot en 13, Inès en 14, Lucie en 15) ; on
+// se tient devant elles, de l'autre côté du comptoir. Loin d'elles : le hall d'entrée. Centre d'une case, en pixels.
 const px = (tile: number) => tile * 32 + 16;
-const AT_DESK = { x: px(40), y: px(18) };
-const FAR = { x: px(40), y: px(30) };
+const AT_DESK = { x: px(14), y: px(39) };
+const FAR = { x: px(30), y: px(45) };
 
 async function person(srv: TestServer, email: string) {
   const cookie = await srv.inviteAndLogin(email);

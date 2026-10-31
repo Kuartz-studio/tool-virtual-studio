@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Locator, type Page } from '@playwright/test';
+import { buildOfficeTiledMap, isWalkableTile, parseOfficeMap } from '../packages/shared/src/index';
 import { avatarsOf, enterOffice, expectInOffice, joinOffice, openPanel, playerSeenBy, selfAt, signIn, WALK_TIMEOUT, type Account } from './helpers';
 import { TEST_AVATAR_KEY } from './pixels';
 
@@ -138,6 +139,7 @@ test('la déco du bureau : le sol et les murs se règlent, s\'enregistrent, et s
   await again.getByRole('tab', { name: 'Murs et sol' }).click();
   await expect(again.getByRole('button', { name: 'Noyer' })).toHaveAttribute('aria-pressed', 'true');
   await expect(again.getByRole('button', { name: 'Bleu ciel' })).toHaveAttribute('aria-pressed', 'true');
+  await giveBack(a.page);
 });
 
 test('la déco du bureau : le sélecteur de matière filtre les sols et les murs, et un sol et un mur noirs, gratuits, s\'enregistrent', async ({ browser }) => {
@@ -192,6 +194,7 @@ test('la déco du bureau : un élément pris en main se pose dans la pièce, et 
   await expect(panel.getByRole('button', { name: 'Enregistrer' })).toBeDisabled();
   await panel.getByRole('button', { name: 'Fermer l\'éditeur de déco' }).click();
   await expect(panel).toHaveCount(0);
+  await giveBack(a.page);
 });
 
 test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'enregistre et se retrouve après un rechargement', async ({ browser }) => {
@@ -259,6 +262,7 @@ test('la déco du bureau : un clic dans la pièce pose l\'élément tenu, il s\'
   await openPanel(a.page, 'Mon bureau');
   await a.page.getByRole('button', { name: 'Décorer mon bureau' }).click();
   await expect(a.page.getByRole('complementary', { name: 'Décorer mon bureau' }).getByText(`${initial + 1} / 80 éléments`)).toBeVisible();
+  await giveBack(a.page);
 });
 
 test('la déco du bureau : un pot devant sa pièce, sur la rangée de la rue, s\'enregistre et se retrouve après un rechargement', async ({ browser }) => {
@@ -304,22 +308,28 @@ test('la déco du bureau : un pot devant sa pièce, sur la rangée de la rue, s\
   await giveBack(a.page);
 });
 
-// Seuls les gros meubles arrêtent : dans la rue nord, loin des bureaux (devant eux, la rangée de la rue est leur dehors, que chacun décore), un arbuste
-// (68, 11) se traverse, et la fontaine à eau (63, 11) qui le suit arrête (le test « les fontaines à eau » de office.test.ts garde ces deux positions).
-// On part à droite de l'arbuste, on marche vers la gauche.
-test('la marche : une petite plante se traverse, un gros meuble arrête', async ({ browser }) => {
+// Seuls les gros meubles arrêtent : à la cafétéria, à l'est du bar, une grande plante en pot (cases 49 et 50 de la rangée 23) se traverse, et le bar qui la
+// suit (jusqu'à la case 47) arrête. On part à droite de la plante (case 51), on marche vers la gauche.
+const map = parseOfficeMap(buildOfficeTiledMap());
+const PLANT = { left: 49 * 32, right: 51 * 32 };
+const BAR_RIGHT = 48 * 32;
+const ROW = 23;
+test('la marche : une plante en pot se traverse, un gros meuble arrête', async ({ browser }) => {
   test.slow();   // l'arrivée marche jusqu'au bureau libre, qui peut être à l'autre bout de la carte : 30 s ne suffisent pas sur une machine chargée
+  // La carte le dit d'abord (elle a pu changer) : les cases de la plante et celle d'avant le bar sont libres, le bar bloque.
+  expect([49, 50, 48, 47].map((column) => isWalkableTile(map, column, ROW))).toEqual([true, true, true, false]);
   const a = await arrive(browser, 'Alma');
-  await a.page.evaluate(() => window.__office!.teleport(70 * 32 + 16, 11 * 32 + 16));
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(70 * 32 + 16);
+  const start = { x: PLANT.right + 16, y: ROW * 32 + 16 };
+  await a.page.evaluate(({ x, y }) => window.__office!.teleport(x, y), start);
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBe(start.x);
 
   await a.page.keyboard.down('ArrowLeft');
-  // L'arbuste occupe les x de 2176 à 2208 : l'avatar le traverse, puis bute contre la fontaine (bord droit à 2048, plus la demi-largeur du corps).
-  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeLessThan(2170);
+  // La plante occupe les x de 1568 à 1632 : l'avatar la traverse, puis bute contre le bar (bord droit à 1536, plus la demi-largeur du corps).
+  await expect.poll(async () => (await selfAt(a.page)).x, { timeout: WALK_TIMEOUT }).toBeLessThan(PLANT.left - 6);
   await a.page.waitForTimeout(800);
   await a.page.keyboard.up('ArrowLeft');
   const stopped = (await selfAt(a.page)).x;
-  expect(stopped).toBeGreaterThanOrEqual(2048 + 9);
-  expect(stopped).toBeLessThan(2170);
+  expect(stopped).toBeGreaterThanOrEqual(BAR_RIGHT + 9);
+  expect(stopped).toBeLessThan(PLANT.left - 6);
 });
 

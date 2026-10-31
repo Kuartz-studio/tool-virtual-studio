@@ -4,13 +4,13 @@ import { layoutDecor } from './decor-layout';
 import { stepAnimationScale } from './step-animation';
 import { offersTreadmill, RUN_IN_PLACE_SCALE, runningAt, spinningTreadmills, stepOffSpot, treadmillKey, treadmillRun } from './treadmill';
 
-// La grande carte : le bureau A1 est la pièce standard, dont le coin haut-gauche est la case (9, 2). Un tapis posé en (1, 2) de sa pièce a son empreinte de
-// (320, 128) à (384, 192) en pixels, ses pieds sur la bande en (352, 167), et la case libre devant lui est celle de (336, 208) (packages/shared/test/treadmill.test.ts).
+// La grande carte : le bureau A1 est la pièce standard, dont le coin haut-gauche est la case (26, 7). Un tapis posé en (1, 2) de sa pièce a son empreinte de
+// (864, 288) à (928, 352) en pixels, ses pieds sur la bande en (896, 327), et la case libre devant lui est celle de (880, 368) (packages/shared/test/treadmill.test.ts).
 const map = parseOfficeMap(buildOfficeTiledMap());
 const ref = (x: number, y: number, desk = 'A1') => ({ desk, x, y });
 const treadmill = (x: number, y: number): PlacedItem => ({ id: TREADMILL_ID, x, y });
 const sport: Pick<ActivityState, 'place'> = { place: 'gym' };
-const BELT = { x: 352, y: 167 };
+const BELT = { x: 896, y: 327 };
 
 describe('le choix dans le menu « Moi »', () => {
   test('un mode qui conduit à la salle de sport, avec un tapis de course dans sa propre pièce : « Mon tapis de course » est proposé', () => {
@@ -37,8 +37,8 @@ describe('la course', () => {
     const run = treadmillRun(map, ref(1, 2))!;
     expect(run.belt).toEqual(BELT);
     // L'image du tapis : la profondeur du bas de son empreinte, le pied de la bande au-dessus.
-    const [image] = layoutDecor([{ id: TREADMILL_ID, x: 9 + 1, y: 2 + 2 }]);
-    expect(image!.depth).toBe(192);
+    const [image] = layoutDecor([{ id: TREADMILL_ID, x: 26 + 1, y: 7 + 2 }]);
+    expect(image!.depth).toBe(352);
     expect(run.depth).toBeGreaterThan(image!.depth);
     expect(run.belt.y).toBeLessThan(image!.depth);
     // Un tapis d'un bureau que la carte n'a pas, ou aucun : pas de course.
@@ -55,17 +55,17 @@ describe('la course', () => {
   test('on court tant que les pieds sont sur la bande (au pixel près) ; ailleurs, ou sans course dite par le serveur, non', () => {
     const run = treadmillRun(map, ref(1, 2));
     expect(runningAt(run, BELT)).toBe(run);
-    expect(runningAt(run, { x: 353, y: 166 })).toBe(run);
-    expect(runningAt(run, { x: 336, y: 208 })).toBeNull();
+    expect(runningAt(run, { x: 897, y: 326 })).toBe(run);
+    expect(runningAt(run, { x: 880, y: 368 })).toBeNull();
     expect(runningAt(null, BELT)).toBeNull();
   });
 
   test('descendre : la case libre devant le tapis, d\'après la déco de sa pièce telle que le serveur l\'a dite, loin des autres', () => {
     const desks = [{ key: 'A1', items: [treadmill(1, 2)] }];
-    expect(stepOffSpot(map, ref(1, 2), desks, [])).toEqual({ x: 336, y: 208 });
-    expect(stepOffSpot(map, ref(1, 2), desks, [{ x: 336, y: 208 }])).toEqual({ x: 368, y: 208 });
+    expect(stepOffSpot(map, ref(1, 2), desks, [])).toEqual({ x: 880, y: 368 });
+    expect(stepOffSpot(map, ref(1, 2), desks, [{ x: 880, y: 368 }])).toEqual({ x: 912, y: 368 });
     // Un meuble juste au sud du tapis : à côté de lui, jamais dans le meuble.
-    expect(stepOffSpot(map, ref(1, 2), [{ key: 'A1', items: [treadmill(1, 2), { id: 'of-7-28', x: 1, y: 4 }] }], [])).toEqual({ x: 304, y: 176 });
+    expect(stepOffSpot(map, ref(1, 2), [{ key: 'A1', items: [treadmill(1, 2), { id: 'of-7-28', x: 1, y: 4 }] }], [])).toEqual({ x: 848, y: 336 });
     // Un bureau que la carte n'a pas : nulle part.
     expect(stepOffSpot(map, ref(1, 2, 'Z9'), desks, [])).toBeNull();
   });
@@ -80,11 +80,11 @@ describe('le tapis qui tourne', () => {
   test('il tourne dès que quelqu\'un y court tel qu\'on le dessine ; pas avant que son avatar soit sur la bande, plus dès qu\'il en est descendu', () => {
     const run = treadmillRun(map, ref(1, 2));
     // Le serveur la dit sur ce tapis, mais son avatar (dessiné avec du retard) est encore à sa place d'avant : il ne tourne pas encore.
-    expect(spinningTreadmills([runningAt(run, { x: 500, y: 300 })])).toEqual(new Set());
+    expect(spinningTreadmills([runningAt(run, { x: 1044, y: 460 })])).toEqual(new Set());
     // Dessinée sur la bande : il tourne.
     expect(spinningTreadmills([runningAt(run, BELT)])).toEqual(new Set(['A1:10:20']));
     // Un pas hors du tapis : il s'arrête, sans attendre que le serveur le dise.
-    expect(spinningTreadmills([runningAt(run, { x: 336, y: 208 })])).toEqual(new Set());
+    expect(spinningTreadmills([runningAt(run, { x: 880, y: 368 })])).toEqual(new Set());
   });
 
   test('chaque tapis une fois, quel que soit le nombre de ceux qu\'on voit ; ceux où personne ne court restent fixes', () => {

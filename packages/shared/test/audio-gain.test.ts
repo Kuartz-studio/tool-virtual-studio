@@ -60,14 +60,14 @@ describe('audioGain : le volume selon la distance', () => {
 
 describe('gainBetween : dans un bureau rien ne change', () => {
   const map = parseOfficeMap(buildTiledMap({ ...OFFICE, tileset: { name: 'dev', image: 'tiles.png' } }));
-  const inRoom = { x: tile(4) + 16, y: tile(3) + 16 };                  // dans le bureau A1
-  const hall = { x: tile(60), y: tile(20) };                              // dans la salle de conférence
-  const farOpen = { x: tile(30), y: tile(15) };                           // espace ouvert (la place centrale), loin
-  const nearOpen = { x: tile(30), y: tile(12) };                          // espace ouvert (la rue nord)
+  const inRoom = { x: tile(21) + 16, y: tile(9) + 16 };                 // dans le bureau A5
+  const hall = { x: tile(12), y: tile(26) };                              // dans la salle de conférence
+  const farOpen = { x: tile(40), y: tile(20) };                           // espace ouvert (la cafétéria), loin
+  const nearOpen = { x: tile(40), y: tile(17) };                          // espace ouvert (la rue des bureaux)
 
   test('soi-même dans une zone : plein volume, même d\'une personne très loin', () => {
     expect(gainBetween(map, inRoom, farOpen)).toBe(1);
-    expect(gainBetween(map, hall, { x: tile(60), y: tile(40) })).toBe(1);
+    expect(gainBetween(map, hall, { x: tile(80), y: tile(45) })).toBe(1);
   });
 
   test('dans un espace ouvert : le volume baisse avec la distance', () => {
@@ -91,37 +91,37 @@ describe('le calcul des groupes avec la règle du bureau (OPEN_SPACE_GROUPING)',
   };
 
   test('on rejoint ceux qu\'on pourrait entendre (moins de 14 cases), même en marchant', () => {
-    const s = settle([p('a', tile(30), tile(12), true), p('b', tile(30) + tile(10), tile(12), true)]);
+    const s = settle([p('a', tile(30), tile(17), true), p('b', tile(30) + tile(10), tile(17), true)]);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
   });
 
   test('au-delà de 14 cases : pas de groupe ; les liens se font de proche en proche', () => {
-    expect(settle([p('a', tile(10), tile(12)), p('b', tile(10) + tile(15), tile(12))]).assignment).toEqual({ a: null, b: null });
-    // Dans le couloir, qui est un espace ouvert de bout en bout.
-    const chain = settle([p('a', tile(4), tile(12)), p('b', tile(14), tile(12)), p('c', tile(24), tile(12))]);
+    expect(settle([p('a', tile(20), tile(17)), p('b', tile(20) + tile(15), tile(17))]).assignment).toEqual({ a: null, b: null });
+    // Dans la rue des bureaux, qui est un espace ouvert de bout en bout.
+    const chain = settle([p('a', tile(20), tile(17)), p('b', tile(30), tile(17)), p('c', tile(40), tile(17))]);
     expect(chain.assignment).toEqual({ a: 'g1', b: 'g1', c: 'g1' });
   });
 
   test('on reste dans le groupe une case au-delà (hystérésis) : à 14,5 cases, ensemble tant qu\'ils l\'étaient', () => {
-    const together = [p('a', tile(10), tile(12)), p('b', tile(10) + tile(10), tile(12))];
+    const together = [p('a', tile(20), tile(17)), p('b', tile(20) + tile(10), tile(17))];
     let s = settle(together);
-    const apart = [p('a', tile(10), tile(12)), p('b', tile(10) + tile(14) + 16, tile(12))];
+    const apart = [p('a', tile(20), tile(17)), p('b', tile(20) + tile(14) + 16, tile(17))];
     s = computeGroups(apart, office, s, 1000, OPEN_SPACE_GROUPING);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
-    const gone = [p('a', tile(10), tile(12)), p('b', tile(10) + tile(16), tile(12))];
+    const gone = [p('a', tile(20), tile(17)), p('b', tile(20) + tile(16), tile(17))];
     s = computeGroups(gone, office, s, 1250, OPEN_SPACE_GROUPING);
     s = computeGroups(gone, office, s, 1750, OPEN_SPACE_GROUPING);
     expect(s.assignment).toEqual({ a: null, b: null });
   });
 
   test('une salle ou un bureau : toujours tout le monde, quelle que soit la distance (la règle des zones ne change pas)', () => {
-    // La salle de conférence, d'un bout à l'autre de ses 22 cases.
-    const s = settle([p('a', tile(52), tile(18)), p('b', tile(71), tile(22))]);
+    // La salle de conférence, d'un coin à l'autre.
+    const s = settle([p('a', tile(7), tile(22)), p('b', tile(19), tile(31))]);
     expect(s.assignment).toEqual({ a: 'g1', b: 'g1' });
     expect(s.groups.g1?.zoneId).not.toBeNull();
-    // La détente aussi : d'un bout à l'autre de ses 43 cases, de la piscine au coin musique.
-    const lounge = settle([p('a', tile(38), tile(33)), p('b', tile(79), tile(42))]);
-    expect(lounge.assignment).toEqual({ a: 'g1', b: 'g1' });
+    // La salle de boxe aussi : d'un bout à l'autre de ses 22 cases.
+    const boxing = settle([p('a', tile(64), tile(36)), p('b', tile(83), tile(47))]);
+    expect(boxing.assignment).toEqual({ a: 'g1', b: 'g1' });
   });
 
   test('la carte de développement : le tout petit bureau s\'entend déjà d\'un bout à l\'autre', () => {

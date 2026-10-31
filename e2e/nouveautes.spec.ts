@@ -31,8 +31,8 @@ test('« Quoi de neuf ? » une fois en entrant, puis plus, et sur demande depuis
 
   const dialog = whatsNew(page);
   await expect(dialog).toBeVisible();
-  await expect(dialog).toContainText('v1.00 · 29 octobre 2026');
-  await expect(dialog).toContainText('Plein écran en réunion');
+  await expect(dialog).toContainText('v1.01 · 31 octobre 2026');
+  await expect(dialog).toContainText('Un nouveau bureau, avec jardin');
   await expect(dialog.getByRole('button', { name: 'C\'est parti' })).toBeFocused();
 
   // Le clavier reste dans la fenêtre : l'avatar ne marche pas derrière.
@@ -55,7 +55,7 @@ test('« Quoi de neuf ? » une fois en entrant, puis plus, et sur demande depuis
   await expect(whatsNew(page)).toHaveCount(0);
 
   // La revoir quand on veut : « Nouveautés » dans le menu « Moi », qui porte le numéro de la version. Échap la ferme.
-  await (await meMenuEntry(page, 'Nouveautés, version 1.00')).click();
+  await (await meMenuEntry(page, 'Nouveautés, version 1.01')).click();
   await expect(whatsNew(page)).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(whatsNew(page)).toHaveCount(0);

@@ -199,28 +199,28 @@ describe('« Ici » sur la grande carte', () => {
     act(() => useOfficeStore.getState().setOfficeMap(office));
   };
 
-  test('au café, aux deux bouts : ensemble ; celui du couloir : ailleurs', () => {
+  test('à la cafétéria, aux deux bouts : ensemble ; celui du couloir : ailleurs', () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arriveInOffice(
-      [player('bob', 'Bob', 'available', spot(33, 3)), player('zoe', 'Zoé', 'available', spot(30, 12))],
-      player('moi', 'Moi', 'available', spot(46, 8)),
+      [player('bob', 'Bob', 'available', spot(23, 24)), player('zoe', 'Zoé', 'available', spot(30, 17))],
+      player('moi', 'Moi', 'available', spot(60, 33)),
     );
-    render(<PeoplePanel place="Café" onClose={() => {}} />);
+    render(<PeoplePanel place="Cafétéria" onClose={() => {}} />);
     showHere();
     expect(namesIn(group(/^Ici/))).toEqual(['Moi', 'Bob']);
     expect(tab(/^Ici/).textContent).toBe('Ici 2');
-    expect(sub('moi')?.textContent).toBe('Café');
-    expect(sub('bob')?.textContent).toBe('Café');
+    expect(sub('moi')?.textContent).toBe('Cafétéria');
+    expect(sub('bob')?.textContent).toBe('Cafétéria');
   });
 
-  test('« Tout le bureau » dit le lieu de chacun : le café, l\'accueil, le couloir', async () => {
+  test('« Tout le bureau » dit le lieu de chacun : la cafétéria, l\'accueil, le couloir', async () => {
     fakeApi({ 'GET /api/members': () => json(200, MEMBERS) });
     arriveInOffice(
-      [player('bob', 'Bob', 'available', spot(40, 22)), player('zoe', 'Zoé', 'available', spot(30, 12))],
-      player('moi', 'Moi', 'available', spot(35, 7)),
+      [player('bob', 'Bob', 'available', spot(16, 41)), player('zoe', 'Zoé', 'available', spot(30, 17))],
+      player('moi', 'Moi', 'available', spot(40, 28)),
     );
-    render(<PeoplePanel place="Café" onClose={() => {}} />);
-    expect(sub('moi')?.textContent).toBe('Café');
+    render(<PeoplePanel place="Cafétéria" onClose={() => {}} />);
+    expect(sub('moi')?.textContent).toBe('Cafétéria');
     expect(sub('bob')?.textContent).toBe('Accueil');
     expect(sub('zoe')?.textContent).toBe('Couloir');
   });

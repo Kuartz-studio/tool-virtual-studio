@@ -6,6 +6,7 @@
 import { join } from 'node:path';
 import type { TilePhase } from '@bureau/shared';
 import { BLACK_FLOOR_PICKS, BLACK_WALL_PICKS, blacken, isWallFrame } from './black-themes';
+import { grass, slab } from './garden-art';
 import { Img, readImage, type Rgba } from './image';
 import { sameImage } from './pixel-art';
 import { SHOP_WALL_PICKS, drawShopWall, drawnWallMotion, isPackWall, type ShopWallTiles } from './shop-walls';
@@ -88,11 +89,22 @@ export const TILE = 32;
 export const POOL_NAMES = ['fill', 'n', 's', 'w', 'e', 'nw', 'ne', 'sw', 'se'] as const;
 export type PoolName = (typeof POOL_NAMES)[number];
 
+// Le sol du jardin (garden-art.ts), en plusieurs tirages chacun pour que l'herbe ne se répète pas : l'herbe nue, l'herbe piquée d'une fleur des prés,
+// celle qui en a trois (le long du bâtiment), et les dalles du chemin. La carte choisit un tirage par case.
+export const GARDEN_GROUNDS = {
+  grass: { count: 8, draw: (n: number) => grass(n) },
+  meadow: { count: 4, draw: (n: number) => grass(100 + n, 1) },
+  flowers: { count: 4, draw: (n: number) => grass(200 + n, 3) },
+  slab: { count: 6, draw: (n: number) => slab(n) },
+} as const;
+export type GardenGround = keyof typeof GARDEN_GROUNDS;
+
 export interface TilesetBuild {
   image: Img;
   floors: Array<{ id: string; label: string; gid: number }>;
   walls: Array<{ id: string; label: string; top: number; bottom: number; stem: number }>;
   pool: Record<PoolName, number>;
+  garden: Record<GardenGround, number[]>;
   // Les murs de la boutique (shop-walls.ts), avec leur prix en kuartzons.
   shopWalls: Array<{ id: string; label: string; price: number; top: number; bottom: number; stem: number }>;
   // Les tuiles qui bougent (celles des murs de la boutique) : pour une tuile de base, ses images (la base d'abord), leur durée, leur décalage
@@ -218,10 +230,15 @@ export function buildTileset(source: string): TilesetBuild {
     walls.push({ id, label, top: add(top!), bottom: add(bottom!), stem: add(stem!) });
   }
 
+  // Le sol du jardin, après tout le reste, pour la même raison.
+  const garden = Object.fromEntries(
+    Object.entries(GARDEN_GROUNDS).map(([name, ground]) => [name, Array.from({ length: ground.count }, (_, n) => add(ground.draw(n)))]),
+  ) as Record<GardenGround, number[]>;
+
   const rows = Math.ceil(tiles.length / TILESET_COLUMNS);
   const image = new Img(TILESET_COLUMNS * TILE, rows * TILE);
   tiles.forEach((tile, index) => image.paste(tile, (index % TILESET_COLUMNS) * TILE, Math.floor(index / TILESET_COLUMNS) * TILE, false));
-  return { image, floors, walls, pool, shopWalls, animations, tileCount: tiles.length };
+  return { image, floors, walls, pool, garden, shopWalls, animations, tileCount: tiles.length };
 }
 
 // Les lignes d'animation de ces tuiles de base (une seule, ou le haut et le bas d'une face, qui bougent ensemble) : chaque image rendue devient une tuile,
@@ -255,6 +272,7 @@ export function renderThemesSource(build: TilesetBuild): string {
     .map((w) => `  { id: ${JSON.stringify(w.id)}, label: ${JSON.stringify(w.label)}, top: ${w.top}, bottom: ${w.bottom}, stem: ${w.stem} },`)
     .join('\n');
   const pool = POOL_NAMES.map((name) => `${name}: ${build.pool[name]}`).join(', ');
+  const garden = Object.entries(build.garden).map(([name, gids]) => `${name}: [${gids.join(', ')}]`).join(', ');
   const shopWalls = build.shopWalls
     .map((w) => `  { id: ${JSON.stringify(w.id)}, label: ${JSON.stringify(w.label)}, top: ${w.top}, bottom: ${w.bottom}, stem: ${w.stem}, price: ${w.price} },`)
     .join('\n');
@@ -278,6 +296,10 @@ ${walls}
 
 // Les tuiles de la piscine : le fond d'eau, les bords et les coins.
 export const POOL_TILES = { ${pool} } as const;
+
+// Le sol du jardin (apps/client/scripts/assets/garden-art.ts) : plusieurs tirages de chaque, la carte en choisit un par case. L'herbe nue, l'herbe à une
+// fleur des prés, celle à trois fleurs, les dalles du chemin.
+export const GARDEN_TILES = { ${garden} } as const;
 
 // Les murs de la boutique (apps/client/scripts/assets/shop-walls.ts) : comme les autres, avec leur prix en kuartzons. Il faut les avoir achetés pour les
 // poser dans sa pièce.

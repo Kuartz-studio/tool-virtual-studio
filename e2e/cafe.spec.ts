@@ -1,19 +1,23 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
+import { buildOfficeTiledMap, parseOfficeMap, placeByKey } from '../packages/shared/src/index';
 import { giveDeskBack, joinOffice, playerSeenBy, restingAt, selfAt, teleportTo, WALK_TIMEOUT } from './helpers';
 
-// Le café, sur la vraie carte (le second serveur des tests : playwright.config.ts). La machine est au bar du café, sur le mur nord de la salle (case 40, 3) ;
-// on se sert de l'autre côté du bar, sur la case (40, 5). Se servir (la touche E, à deux cases au plus) donne 30 s de vitesse doublée : le serveur la laisse
-// faire, tout le bureau voit une tasse fumante au-dessus de la tête, et celui qui l'a prise voit la pastille compter.
+// Le café, sur la vraie carte (le second serveur des tests : playwright.config.ts). La machine est sur le bar de la cafétéria (case 44, 24) ; on se sert
+// devant le bar, sur la case (44, 25). Se servir (la touche E, à deux cases au plus) donne 30 s de vitesse doublée : le serveur la laisse faire, tout le
+// bureau voit une tasse fumante au-dessus de la tête, et celui qui l'a prise voit la pastille compter.
 
 // Un seul navigateur à la fois : plusieurs personnes, et le reste de la suite qui tourne sur ce serveur (les tests de personnalisation cherchent un bureau libre).
 test.describe.configure({ mode: 'default' });
 
-const px = (tile: number) => tile * 32 + 16;
-const AT_MACHINE = { x: px(40), y: px(5) };
-// À trois cases de la machine : un pas trop loin (la portée est de deux).
-const TOO_FAR = { x: px(40), y: px(8) };
-// Le bout ouest de la rue du milieu (rangée 12) : 79 cases libres vers l'est, de quoi courir à 960 px/s pendant 2,5 s.
-const STREET_WEST = { x: px(3), y: px(12) };
+const map = parseOfficeMap(buildOfficeTiledMap());
+// La case où l'on se sert (la carte la donne : le centre de la case devant la machine).
+const AT_MACHINE = map.coffees[0]!;
+// À trois cases de là : un pas trop loin (la portée est de deux).
+const TOO_FAR = { x: AT_MACHINE.x, y: AT_MACHINE.y + 3 * map.tileSize };
+// Le bout ouest de la rue des bureaux, sur sa rangée du milieu (la 17) : libre jusqu'au jardin de l'est, plus de 70 cases, de quoi courir à 960 px/s pendant
+// plus de 2 s.
+const street = placeByKey(map, 'street')!.rects[0]!;
+const STREET_WEST = { x: street.x + map.tileSize / 2, y: street.y + street.height / 2 };
 
 const contexts: BrowserContext[] = [];
 test.afterEach(async () => {
@@ -69,8 +73,8 @@ test('se servir à la machine : la vitesse du café, une tasse chez tous, la pas
   // Le compte à rebours avance.
   await expect(pill(alice)).toHaveText(/^(2[0-9]) s$/, { timeout: 15_000 });
 
-  // Elle court à 640 px/s, 960 avec Maj en plus, et le serveur la laisse faire : Bruno la voit avancer, et elle n'est pas recalée. La rue du milieu est assez
-  // longue pour tenir la course (le bar, lui, n'a que 12 cases libres de ce côté).
+  // Elle court à 640 px/s, 960 avec Maj en plus, et le serveur la laisse faire : Bruno la voit avancer, et elle n'est pas recalée. La rue des bureaux est assez
+  // longue pour tenir la course (la cafétéria, elle, n'a qu'une vingtaine de cases libres à l'est du bar).
   await teleportTo(alice, STREET_WEST);
   const x0 = (await selfAt(alice)).x;
   await alice.keyboard.down('ArrowRight');

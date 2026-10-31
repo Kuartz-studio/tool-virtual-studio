@@ -2,7 +2,8 @@ import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type R
 import { displayZoomPercent } from '../game/zoom';
 import { fr, t } from '../i18n/fr';
 import { selectDeskOf, useOfficeStore } from '../state/office-store';
-import { ChatIcon, DecorIcon, FlaskIcon, MissionsIcon, MoreIcon, ShieldIcon, ShopIcon, UsersIcon, ZoomResetIcon } from './icons';
+import { ChatIcon, DecorIcon, FlaskIcon, MapIcon, MissionsIcon, MoreIcon, ShieldIcon, ShopIcon, UsersIcon, ZoomResetIcon } from './icons';
+import { useMapStore } from './map-store';
 import type { PanelControls } from './panels';
 import { IconButton } from './ui/IconButton';
 import { Popover } from './ui/Popover';
@@ -22,12 +23,14 @@ interface MoreEntry {
   disabled?: boolean;
   // Elle ouvre un panneau, qui prend le focus ; les autres le rendent au bouton « Plus ».
   panel?: boolean;
+  // Muette (`none`) : ce qu'elle ouvre a son propre bruit (la carte du bureau).
+  sfx?: 'none';
   run(opener: HTMLElement | null): void;
 }
 
 // Le dock de droite : les missions (avec la pastille de celles reçues et pas encore vues), le chat (avec la pastille de ses messages non lus), les
-// personnes (avec le compte de celles en ligne), et le menu « Plus » : la déco du bureau, la boutique, l'Admin (pour un admin), le Bac à sable (du faux live),
-// et la vue de départ du zoom.
+// personnes (avec le compte de celles en ligne), et le menu « Plus » : la carte du bureau (touche M), la déco du bureau, la boutique, l'Admin (pour un admin),
+// le Bac à sable (du faux live), et la vue de départ du zoom.
 // Le menu suit le motif « menu button » : il s'ouvre au-dessus du bouton, le focus va à la première ligne ; ↓ ↑ Début Fin passent de l'une à
 // l'autre, Entrée ou Espace choisit, Échap ferme et rend le focus au bouton.
 export function SocialDock({ panels }: { panels: PanelControls }) {
@@ -47,7 +50,9 @@ export function SocialDock({ panels }: { panels: PanelControls }) {
   const unread = panels.open === 'chat' ? 0 : panels.unread;
   const chatLabel = unread > 0 ? `${fr.chat.toggle}, ${t(unread === 1 ? fr.chat.unreadOne : fr.chat.unreadMany, { count: unread })}` : fr.chat.toggle;
 
+  const hasMap = useOfficeStore((state) => state.officeMap !== null);
   const own: MoreEntry[] = [
+    { key: 'map', label: fr.officeMap.toggle, name: fr.officeMap.toggle, icon: <MapIcon />, hint: fr.officeMap.shortcut, disabled: !hasMap, panel: true, sfx: 'none', run: (opener) => useMapStore.getState().show(opener) },
     { key: 'decor', label: fr.decor.toggle, icon: <DecorIcon />, disabled: !panels.ready || !hasDesk, panel: true, run: (opener) => panels.show('decor', opener) },
     { key: 'shop', label: fr.shop.toggle, icon: <ShopIcon />, disabled: !panels.ready, panel: true, run: (opener) => panels.show('shop', opener) },
     ...(panels.admin ? [{ key: 'admin', label: fr.admin.toggle, icon: <ShieldIcon />, panel: true, run: (opener: HTMLElement | null) => panels.show('admin', opener) }] : []),
@@ -164,6 +169,7 @@ export function SocialDock({ panels }: { panels: PanelControls }) {
               tabIndex={-1}
               className="menu-item"
               aria-label={entry.name}
+              data-sfx={entry.sfx}
               disabled={entry.disabled}
               onClick={() => choose(entry)}
             >

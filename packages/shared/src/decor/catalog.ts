@@ -1,10 +1,12 @@
 import { CLOCK_ITEMS } from './clocks';
 import { DECOR_ITEMS } from './generated';
+import { PLAN_ITEMS } from './generated-plan';
 import { DECOR_CATEGORIES, type DecorCategoryId, type DecorItem } from './types';
 
 // Toute la banque : les éléments du pack (generated.ts, que `gen:assets` écrit) et les horloges murales, écrites à la main (clocks.ts). Les horloges
 // d'abord : elles ouvrent « Déco & murs », où on les trouve sans chercher. Le reste du code passe par ces fonctions, jamais par DECOR_ITEMS seul.
-export const DECOR_CATALOG: readonly DecorItem[] = [...CLOCK_ITEMS, ...DECOR_ITEMS];
+// En dernier, ceux de la carte seule (generated-plan.ts : le jardin, les meubles composés), que le sélecteur ne montre pas.
+export const DECOR_CATALOG: readonly DecorItem[] = [...CLOCK_ITEMS, ...DECOR_ITEMS, ...PLAN_ITEMS];
 
 const BY_ID: ReadonlyMap<string, DecorItem> = new Map(DECOR_CATALOG.map((item) => [item.id, item]));
 
@@ -17,9 +19,9 @@ export function isDecorId(id: string): boolean {
   return BY_ID.has(id);
 }
 
-// Les éléments d'une catégorie, dans l'ordre de la banque.
+// Les éléments d'une catégorie qu'on peut poser dans un bureau, dans l'ordre de la banque (sans ceux de la carte seule).
 export function decorItemsOf(category: DecorCategoryId): DecorItem[] {
-  return DECOR_CATALOG.filter((item) => item.cat === category);
+  return DECOR_CATALOG.filter((item) => item.cat === category && !item.mapOnly);
 }
 
 export function decorCategoryLabel(category: DecorCategoryId): string {

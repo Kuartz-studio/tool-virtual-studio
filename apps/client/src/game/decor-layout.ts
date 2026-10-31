@@ -7,8 +7,10 @@ export interface PlacedAt {
   id: string;
   x: number;
   y: number;
-  // De combien de pixels on abaisse l'image (une chaise rentrée sous sa table) : l'empreinte et la profondeur restent celles de sa case.
+  // De combien de pixels on abaisse l'image (une chaise rentrée sous sa table), ou on la pousse vers la droite (`offsetX`, une plante calée contre un
+  // mur) : l'empreinte et la profondeur restent celles de sa case.
   offsetY?: number;
+  offsetX?: number;
 }
 
 // Un objet d'un calque de la carte, tel que Phaser le donne : sa position en pixels, et ses propriétés Tiled (la liste de { name, value }, ou une table).
@@ -27,12 +29,22 @@ export interface MapObject extends MapObjectProperties {
 }
 
 // Les éléments que la carte pose : le nom de chaque objet du calque `objets` est la clé de l'élément, sa position (en pixels) le coin haut-gauche de son
-// empreinte ; sa propriété `offsetY`, quand la carte en donne une, le décalage de son image. Ce que la banque ne connaît pas est laissé de côté.
+// empreinte ; ses propriétés `offsetY` et `offsetX`, quand la carte en donne, le décalage de son image. Ce que la banque ne connaît pas est laissé de
+// côté.
 export function placedFromObjects(objects: readonly MapObject[]): PlacedAt[] {
   return objects.flatMap((object) => {
     if (!object.name || !decorItem(object.name)) return [];
     const offsetY = namedProperty(object, 'offsetY');
-    return [{ id: object.name, x: Math.round((object.x ?? 0) / TILE_SIZE), y: Math.round((object.y ?? 0) / TILE_SIZE), ...(typeof offsetY === 'number' && offsetY !== 0 ? { offsetY } : {}) }];
+    const offsetX = namedProperty(object, 'offsetX');
+    return [
+      {
+        id: object.name,
+        x: Math.round((object.x ?? 0) / TILE_SIZE),
+        y: Math.round((object.y ?? 0) / TILE_SIZE),
+        ...(typeof offsetY === 'number' && offsetY !== 0 ? { offsetY } : {}),
+        ...(typeof offsetX === 'number' && offsetX !== 0 ? { offsetX } : {}),
+      },
+    ];
   });
 }
 
@@ -65,7 +77,7 @@ export function layoutDecor(placed: readonly PlacedAt[]): Drawn[] {
   });
   const objects = known.filter(({ item }) => item.kind === 'object');
   return known.map(({ entry, item, footprint }) => {
-    const left = toPixels(entry.x);
+    const left = toPixels(entry.x) + (entry.offsetX ?? 0);
     const footBottom = toPixels(footprint.y + footprint.h);
     const nudge = entry.offsetY ?? 0;
     if (item.kind === 'wall') return { placed: entry, item, left, bottom: toPixels(entry.y) + nudge, depth: DECOR_DEPTH.wall, footprint };

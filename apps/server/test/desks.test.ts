@@ -35,15 +35,16 @@ describe('les places de la carte', () => {
       else expect(slot.exit.y, `sortie de ${slot.key}`).toBeLessThan(slot.door!.y);
       expect(isWalkablePoint(map, slot.exit.x, slot.exit.y), `sortie de ${slot.key}`).toBe(true);
     }
-    // Les portes de A5, A1 et A2 sont au sud (cases 3-4, 12-13 et 23-24, au centre de la porte) : on sort vers le bas, dans la rue nord. Celles de A6, A3 et A4
-    // sont au nord de leur pièce : on sort vers le haut, dans la même rue. Les petits bureaux (A5, A6) sont tout à l'ouest de leur rangée.
+    // Les six portes sont au sud (centrées sur les cases 22, 30, 40, 50, 60 et 69) : on sort vers le bas, dans la rue des bureaux (rangée 16). Les petits
+    // bureaux (A5, A6) sont aux deux bouts de la rangée.
     const exit = (key: string) => slots.find((slot) => slot.key === key)!.exit;
-    expect(exit('A5')).toEqual({ x: 4 * 32, y: 368 });
-    expect(exit('A1')).toEqual({ x: 13 * 32, y: 368 });
-    expect(exit('A2')).toEqual({ x: 24 * 32, y: 368 });
-    expect(exit('A6')).toEqual({ x: 4 * 32, y: 15 * 32 - 16 });
-    expect(exit('A3')).toEqual({ x: 13 * 32, y: 15 * 32 - 16 });
-    expect(exit('A4')).toEqual({ x: 24 * 32, y: 15 * 32 - 16 });
+    const street = 16 * 32 + 16;
+    expect(exit('A5')).toEqual({ x: 22 * 32, y: street });
+    expect(exit('A1')).toEqual({ x: 30 * 32, y: street });
+    expect(exit('A2')).toEqual({ x: 40 * 32, y: street });
+    expect(exit('A3')).toEqual({ x: 50 * 32, y: street });
+    expect(exit('A4')).toEqual({ x: 60 * 32, y: street });
+    expect(exit('A6')).toEqual({ x: 69 * 32, y: street });
   });
 });
 
@@ -495,18 +496,16 @@ describe('des pièces de tailles différentes', () => {
       A5: { width: 6, height: 7, door: { side: 'south', x: 2, width: 2 } },
       A6: { width: 6, height: 7, door: { side: 'north', x: 2, width: 2 } },
     });
-    // Les places de la grande carte : quatre standard (A3 et A4 ont leur porte au nord), deux compactes (A6 a sa porte au nord), chacune avec son dehors ;
-    // devant A2, l'interrupteur de la lumière est sur la face du mur (la carte de ce test n'a pas de calque d'objets : pas de panneau de sortie devant A5, A6).
-    const standardNorth = { ...DESK_ROOMS.standard, door: { ...DESK_ROOMS.standard.door, side: 'north' as const } };
-    const compactNorth = { ...DESK_ROOMS.compact, door: { ...DESK_ROOMS.compact.door, side: 'north' as const } };
+    // Les places de la grande carte : quatre standard, deux compactes (A5 et A6, aux deux bouts), toutes la porte au sud, chacune avec son dehors. Aucune n'a
+    // l'interrupteur de la lumière sur son mur : il est entre A1 et A2, au droit de leur pan commun.
     const outside = { fixtures: [] };
     expect(Object.fromEntries(deskSlots(map).map((slot) => [slot.key, slot.room]))).toEqual({
       A1: { ...DESK_ROOMS.standard, outside },
-      A2: { ...DESK_ROOMS.standard, outside: { fixtures: [{ x: 8, y: 8, w: 1, h: 1 }] } },
-      A3: { ...standardNorth, outside },
-      A4: { ...standardNorth, outside },
+      A2: { ...DESK_ROOMS.standard, outside },
+      A3: { ...DESK_ROOMS.standard, outside },
+      A4: { ...DESK_ROOMS.standard, outside },
       A5: { ...DESK_ROOMS.compact, outside },
-      A6: { ...compactNorth, outside },
+      A6: { ...DESK_ROOMS.compact, outside },
     });
   });
 
@@ -522,30 +521,28 @@ describe('des pièces de tailles différentes', () => {
     expect(service.get('A1')?.items.filter((item) => item.y === 9)).toEqual([]);
   });
 
-  test('le dehors refusé : un meuble solide devant sa porte, une horloge sur l\'interrupteur, un bureau trop profond pour la rangée', async () => {
+  test('le dehors refusé : un meuble solide devant sa porte, un bureau trop profond pour la rangée ; un élément de la carte seule, inconnu', async () => {
     const { service } = await setup();
     await service.claim('ana', 'Ana', 'A1');
-    await service.claim('bob', 'Bob', 'A2');
     const front = (id: string, x: number) => ({ ...CUSTOM_DECOR, items: [{ id, x, y: 9 }] });
     expect(await service.setDecor('ana', front('of-12-15', 3))).toEqual({ ok: false, error: 'bad_decor', reason: 'blocks_door' });
-    expect(await service.setDecor('bob', front('horloge-ronde', 8))).toEqual({ ok: false, error: 'bad_decor', reason: 'overlap' });
     expect(await service.setDecor('ana', front('of-7-28', 5))).toEqual({ ok: false, error: 'bad_decor', reason: 'out_of_room' });
-    // L'horloge à côté de l'interrupteur, la fontaine à côté de la porte : permis.
-    expect(await service.setDecor('bob', front('horloge-ronde', 7))).toMatchObject({ ok: true });
+    expect(await service.setDecor('ana', front('jardiniere-1', 6))).toEqual({ ok: false, error: 'bad_decor', reason: 'unknown_item' });
+    // La fontaine à côté de la porte : permis.
     expect(await service.setDecor('ana', front('of-12-15', 2))).toMatchObject({ ok: true });
   });
 
-  test('un dehors qui ne tient plus dans le bureau de l\'autre rangée (sa porte y donne sur la rue) : le poste par défaut, decorUnfit, rien d\'effacé', async () => {
+  test('un dehors qui ne tient plus dans un bureau compact (trop étroit pour lui) : le poste par défaut, decorUnfit, rien d\'effacé', async () => {
     const { db, service } = await setup();
     await service.claim('ana', 'Ana', 'A3');
-    // En bas, la porte est au nord : une fontaine dans l'axe de la colonne 3, côté rue sud, ne gêne rien.
-    const below: DeskDecor = { ...CUSTOM_DECOR, items: [...CUSTOM_DECOR.items, { id: 'of-12-15', x: 3, y: 9 }] };
-    expect(await service.setDecor('ana', below)).toMatchObject({ ok: true });
-    await service.claim('ana', 'Ana', 'A1');
-    expect(service.get('A1')).toMatchObject({ ownerId: 'ana', ...defaultSetupOf('A1'), decorUnfit: true });
-    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...below }]);
+    // Une fontaine dehors, colonne 8 : dans la largeur d'une pièce standard (9 cases), pas d'une compacte (6).
+    const wide: DeskDecor = { ...CUSTOM_DECOR, items: [...CUSTOM_DECOR.items, { id: 'of-12-15', x: 8, y: 9 }] };
+    expect(await service.setDecor('ana', wide)).toMatchObject({ ok: true });
+    await service.claim('ana', 'Ana', 'A6');
+    expect(service.get('A6')).toMatchObject({ ownerId: 'ana', ...defaultSetupOf('A6'), decorUnfit: true });
+    expect(await db.select().from(deskSetup)).toMatchObject([{ ownerId: 'ana', ...wide }]);
     await service.claim('ana', 'Ana', 'A4');
-    expect(service.get('A4')).toMatchObject(below);
+    expect(service.get('A4')).toMatchObject(wide);
     expect(service.get('A4')?.decorUnfit).toBeUndefined();
   });
 

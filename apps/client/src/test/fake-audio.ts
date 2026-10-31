@@ -56,19 +56,37 @@ export class FakeGain extends FakeNode {
   readonly gain = new FakeParam(1);
 }
 
+// Une place dans la stéréo (StereoPannerNode), et un filtre (BiquadFilterNode) : ceux de la nature (audio/nature-player.ts).
+export class FakePanner extends FakeNode {
+  readonly pan = new FakeParam(0);
+}
+
+export class FakeFilter extends FakeNode {
+  type = 'lowpass';
+  readonly frequency = new FakeParam(350);
+  readonly Q = new FakeParam(1);
+}
+
 export class FakeSource extends FakeNode {
   buffer: FakeBuffer | null = null;
   loop = false;
+  loopStart = 0;
+  loopEnd = 0;
   readonly playbackRate = new FakeParam(1);
   startedAt: number | null = null;
+  // D'où il part dans le son, et combien il en joue (start(when, offset, duration)) ; null : du début, jusqu'au bout.
+  startOffset: number | null = null;
+  startDuration: number | null = null;
   stoppedAt: number | null = null;
   onended: (() => void) | null = null;
 
-  start(when: number): void {
+  start(when: number, offset?: number, duration?: number): void {
     this.startedAt = when;
+    this.startOffset = offset ?? null;
+    this.startDuration = duration ?? null;
   }
 
-  stop(when: number): void {
+  stop(when = 0): void {
     this.stoppedAt = when;
   }
 
@@ -88,6 +106,8 @@ export class FakeContext {
   readonly destination = new FakeNode();
   readonly gains: FakeGain[] = [];
   readonly sources: FakeSource[] = [];
+  readonly panners: FakePanner[] = [];
+  readonly filters: FakeFilter[] = [];
   readonly listeners: Array<() => void> = [];
   resumeCalls = 0;
   closed = false;
@@ -107,6 +127,18 @@ export class FakeContext {
     const source = new FakeSource();
     this.sources.push(source);
     return source;
+  }
+
+  createStereoPanner(): FakePanner {
+    const panner = new FakePanner();
+    this.panners.push(panner);
+    return panner;
+  }
+
+  createBiquadFilter(): FakeFilter {
+    const filter = new FakeFilter();
+    this.filters.push(filter);
+    return filter;
   }
 
   async decodeAudioData(bytes: ArrayBuffer): Promise<FakeBuffer> {

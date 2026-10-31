@@ -19,7 +19,20 @@ export const RELEASE_TEXT_MAX = 56;
 
 // Les icônes des notes, par le nom de ce qu'elles montrent : office/icons.tsx (ReleaseIcon) les fait correspondre à celles de Lucide. Une note qui veut
 // une autre icône l'ajoute là-bas, et ici.
-export type ReleaseIconName = 'fullscreen' | 'zoom' | 'admin' | 'whatsNew' | 'statusDot' | 'treadmill' | 'decor' | 'blackTiles';
+export type ReleaseIconName =
+  | 'fullscreen'
+  | 'zoom'
+  | 'admin'
+  | 'whatsNew'
+  | 'statusDot'
+  | 'treadmill'
+  | 'decor'
+  | 'blackTiles'
+  | 'garden'
+  | 'map'
+  | 'run'
+  | 'music'
+  | 'pool';
 
 export interface ReleaseEntry {
   kind: ReleaseKind;
@@ -41,6 +54,19 @@ export interface Release {
 }
 
 export const RELEASES: readonly Release[] = [
+  {
+    version: '1.01',
+    date: '2026-10-31',
+    tagline: 'Le bureau déménage : un nouveau plan, un jardin tout autour, et une carte pour t\'y retrouver.',
+    entries: [
+      { kind: 'new', icon: 'garden', title: 'Un nouveau bureau, avec jardin', text: 'Terrasses, bassin, chants d\'oiseaux : va prendre l\'air.' },
+      { kind: 'new', icon: 'map', title: 'La carte du bureau', text: 'Touche M : vois d\'un coup d\'œil où est chacun.' },
+      { kind: 'new', icon: 'run', title: 'Double-clic pour y aller', text: 'Sur le jeu ou la carte : ton avatar y court tout seul.' },
+      { kind: 'improved', icon: 'music', title: 'La musique reste à l\'intérieur', text: 'Dehors, pas d\'enceinte : tu n\'entends que le jardin.' },
+      { kind: 'improved', icon: 'zoom', title: 'Une caméra mieux cadrée', text: 'Au bord du bureau, elle ne file plus dans le vide.' },
+      { kind: 'removed', icon: 'pool', title: 'Adieu la piscine', text: 'Et une seule salle pour se réunir : la conférence.' },
+    ],
+  },
   {
     version: '1.00',
     date: '2026-10-29',

@@ -2,10 +2,12 @@ import { AUDIO_SILENT_DISTANCE_PX, DEFAULT_ROOM_MUSIC, type ChatMessage, type De
 import { EventEmitter } from 'eventemitter3';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { emitOnBus } from '../net/office-connection';
+import { useMapStore } from '../office/map-store';
 import { createOfficeStore } from '../state/office-store';
 import type { SfxId } from './catalog';
 import type { SfxOptions } from './engine';
-import { bindSfx, COFFEE_BOOST_DELAY_MS, LOST_AFTER_MS, uiSoundFor } from './sfx-events';
+import { SPIN_MS } from '../game/walk-marker';
+import { bindSfx, COFFEE_BOOST_DELAY_MS, GEM_DELAY_MS, GEM_TURN, hoverControlOf, LOST_AFTER_MS, uiSoundFor, VOICE_RATES } from './sfx-events';
 
 const player = (id: string, over: Partial<PublicPlayer> = {}): PublicPlayer => ({
   id,
@@ -483,5 +485,79 @@ describe('les portes des bureaux', () => {
     locked.getState().applyInit({ ...init(player('moi'), []), desks: [desk({ locked: true })] });
     expect(heard).toEqual(['welcome']);
     off();
+  });
+});
+
+describe('la carte du bureau, le double-clic, le survol', () => {
+  test('la carte qui se déplie, puis se replie (la touche M, sa ligne du menu, sa croix, un clic à côté : c\'est elle qui sonne)', () => {
+    useMapStore.getState().show(null);
+    useMapStore.getState().hide();
+    expect(ids()).toEqual(['map-open', 'map-close']);
+  });
+
+  test('un double-clic envoie l\'avatar quelque part : un point posé, la note de la gemme, puis la même tout bas à chaque tour ; à l\'arrivée, plus rien', () => {
+    emitOnBus(bus, 'walk:state', { walking: true, to: 'point' });
+    expect(played).toEqual([['waypoint'], ['gem', { delayMs: GEM_DELAY_MS }]]);
+    vi.advanceTimersByTime(2 * SPIN_MS);
+    expect(played.slice(2)).toEqual([
+      ['gem', { ...GEM_TURN, delayMs: GEM_DELAY_MS }],
+      ['gem', { ...GEM_TURN, delayMs: GEM_DELAY_MS }],
+    ]);
+    emitOnBus(bus, 'walk:state', { walking: false, to: 'point' });
+    vi.advanceTimersByTime(3 * SPIN_MS);
+    expect(played).toHaveLength(4);
+  });
+
+  test('« Aller à mon bureau » (son bouton sonne déjà) : ni point ni gemme ; un nouveau double-clic en route repart d\'une seule gemme', () => {
+    emitOnBus(bus, 'walk:state', { walking: true, to: 'desk' });
+    vi.advanceTimersByTime(2 * SPIN_MS);
+    expect(ids()).toEqual([]);
+    emitOnBus(bus, 'walk:state', { walking: true, to: 'point' });
+    vi.advanceTimersByTime(SPIN_MS / 2);
+    emitOnBus(bus, 'walk:state', { walking: true, to: 'point' });
+    vi.advanceTimersByTime(SPIN_MS);
+    expect(ids()).toEqual(['waypoint', 'gem', 'waypoint', 'gem', 'gem']);
+  });
+
+  test('le survol à la souris dans la fenêtre de l\'accueil : un bruit par commande qu\'on survole ; ses enfants, une commande inactive, ailleurs, au doigt : rien', () => {
+    document.body.innerHTML =
+      '<div data-sfx-hover><button id="a"><span id="a-in">A</span></button><button id="b">B</button><button id="c" disabled>C</button><p id="t">texte</p></div><button id="out">hors</button>';
+    const over = (id: string, pointerType = 'mouse') => document.getElementById(id)!.dispatchEvent(Object.assign(new Event('pointerover', { bubbles: true }), { pointerType }));
+    for (const id of ['a', 'a-in', 'b', 'c', 't', 'b', 'out']) over(id);
+    over('a', 'touch');
+    expect(ids()).toEqual(['hover', 'hover', 'hover']);
+    expect(hoverControlOf(document.getElementById('a-in'))).toBe(document.getElementById('a'));
+    expect([hoverControlOf(document.getElementById('c')), hoverControlOf(document.getElementById('out')), hoverControlOf(null)]).toEqual([null, null, null]);
+  });
+});
+
+describe('l\'accueil et les fenêtres', () => {
+  test('l\'administratrice parle : un petit bip de sa voix, chacun à une hauteur entre les deux bornes', () => {
+    for (let i = 0; i < 5; i++) emitOnBus(bus, 'clerk:voice');
+    expect(ids()).toEqual(['voice', 'voice', 'voice', 'voice', 'voice']);
+    for (const [, options] of played) {
+      expect(options!.rate).toBeGreaterThanOrEqual(VOICE_RATES.min);
+      expect(options!.rate).toBeLessThanOrEqual(VOICE_RATES.max);
+    }
+  });
+
+  test('une fenêtre data-sfx-modal qui quitte la page (elle-même, ou ce qui la contient) : le bruit de fermeture ; une autre, rien', async () => {
+    const settle = async () => {
+      for (let i = 0; i < 3; i++) await Promise.resolve();
+    };
+    document.body.innerHTML = '<div id="wrap"><div role="dialog" data-sfx-modal id="modal">Inès</div></div><div id="other" role="dialog">autre</div>';
+    await settle();
+    document.getElementById('other')!.remove();
+    await settle();
+    expect(ids()).toEqual([]);
+    document.getElementById('modal')!.remove();
+    await settle();
+    expect(ids()).toEqual(['modal-close']);
+    document.body.innerHTML = '<section id="panel"><div data-sfx-modal></div></section>';
+    await settle();
+    played = [];
+    document.getElementById('panel')!.remove();
+    await settle();
+    expect(ids()).toEqual(['modal-close']);
   });
 });

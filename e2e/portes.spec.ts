@@ -1,6 +1,6 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import { OFFICE_DESK_SLOTS, buildOfficeTiledMap, deskKey, parseOfficeMap, zoneAt } from '../packages/shared/src/index';
-import { joinOffice, openDeskPanel, selfAt } from './helpers';
+import { giveDeskBack, joinOffice, openDeskPanel, selfAt } from './helpers';
 
 // Les portes vitrées des bureaux, sur la vraie carte (le second serveur des tests : playwright.config.ts) : le propriétaire ferme sa porte (elle se ferme chez
 // tous, avec le bruit du verrou et de la porte), l'autre bute contre elle, y toque, le propriétaire le laisse entrer, puis rouvre la porte.
@@ -15,11 +15,13 @@ test.afterEach(async () => {
   await Promise.all(contexts.splice(0).map((context) => context.close()));
 });
 
-async function arrive(browser: Browser, name: string): Promise<Page> {
+// Chacun reçoit un bureau en arrivant, s'il en reste un des six : qui n'a pas besoin du sien le rend tout de suite, pour les specs qui passent après sur ce serveur.
+async function arrive(browser: Browser, name: string, desk: 'kept' | 'given back' = 'kept'): Promise<Page> {
   const context = await browser.newContext();
   contexts.push(context);
   const page = await context.newPage();
   await joinOffice(page, name);
+  if (desk === 'given back') await giveDeskBack(page);
   return page;
 }
 
@@ -34,7 +36,7 @@ async function teleport(page: Page, spot: { x: number; y: number }): Promise<voi
 test('le propriétaire ferme sa porte : elle se ferme chez tous, l\'autre bute, toque, est laissé entrer, et la porte s\'ouvre devant lui', async ({ browser }) => {
   test.slow();
   const alice = await arrive(browser, 'Alice');
-  const bruno = await arrive(browser, 'Bruno');
+  const bruno = await arrive(browser, 'Bruno', 'given back');
 
   // La place d'Alice : celle du bureau où elle se trouve une fois arrivée chez elle (le serveur donne la première place libre).
   const panel = await openDeskPanel(alice);
@@ -92,4 +94,9 @@ test('le propriétaire ferme sa porte : elle se ferme chez tous, l\'autre bute, 
   await expect.poll(async () => (await doorsOf(alice))[key], { timeout: 10_000 }).toBe('open');
   await expect.poll(async () => (await doorsOf(bruno))[key], { timeout: 10_000 }).toBe('open');
   await expect.poll(() => sfxOf(alice)).toContain('unlock');
+
+  // Alice rend son bureau (elle y est : pas de marche), pour les specs qui cherchent une place libre.
+  await panel.getByRole('button', { name: 'Rendre mon bureau' }).click();
+  await panel.getByRole('button', { name: 'Oui, le rendre' }).click();
+  await expect(panel.getByText('Tu n\'as pas de bureau.')).toBeVisible();
 });

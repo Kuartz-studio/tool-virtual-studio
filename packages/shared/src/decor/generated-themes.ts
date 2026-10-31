@@ -1,7 +1,7 @@
 // Généré par `pnpm --filter @bureau/client gen:assets` (apps/client/scripts/assets/tileset.ts) : ne pas modifier à la main.
 
 // Le jeu de tuiles de la carte : public/assets/tiles/office.png (16 colonnes de cases de 32 px), cité par la carte.
-export const TILESET = { name: 'office', image: '../tiles/office.png', columns: 16, tileCount: 334 } as const;
+export const TILESET = { name: 'office', image: '../tiles/office.png', columns: 16, tileCount: 356 } as const;
 
 // Les sols qu'on peut choisir pour une pièce (et ceux de la carte) : le numéro de leur tuile dans le jeu de tuiles.
 export const FLOOR_THEMES = [
@@ -63,6 +63,10 @@ export const WALL_THEMES = [
 
 // Les tuiles de la piscine : le fond d'eau, les bords et les coins.
 export const POOL_TILES = { fill: 83, n: 84, s: 85, w: 86, e: 87, nw: 88, ne: 89, sw: 90, se: 91 } as const;
+
+// Le sol du jardin (apps/client/scripts/assets/garden-art.ts) : plusieurs tirages de chaque, la carte en choisit un par case. L'herbe nue, l'herbe à une
+// fleur des prés, celle à trois fleurs, les dalles du chemin.
+export const GARDEN_TILES = { grass: [335, 336, 337, 338, 339, 340, 341, 342], meadow: [343, 344, 345, 346], flowers: [347, 348, 349, 350], slab: [351, 352, 353, 354, 355, 356] } as const;
 
 // Les murs de la boutique (apps/client/scripts/assets/shop-walls.ts) : comme les autres, avec leur prix en kuartzons. Il faut les avoir achetés pour les
 // poser dans sa pièce.

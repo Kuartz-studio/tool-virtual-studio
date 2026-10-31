@@ -1,10 +1,11 @@
-import type { DeskInfo, PublicPlayer } from '@bureau/shared';
+import { buildOfficeTiledMap, parseOfficeMap, type DeskInfo, type PublicPlayer } from '@bureau/shared';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { ZOOM_DEFAULT_PERCENT, ZOOM_MIN_PERCENT } from '../game/zoom';
 import { fr } from '../i18n/fr';
 import { useOfficeStore } from '../state/office-store';
+import { useMapStore } from './map-store';
 import type { PanelControls } from './panels';
 import { SocialDock } from './SocialDock';
 
@@ -67,21 +68,41 @@ describe('le menu « Plus »', () => {
     expect(more().getAttribute('aria-expanded')).toBe('false');
   });
 
-  test('un membre y trouve la déco, la boutique et le zoom ; un admin y ajoute Admin ; le faux live, le Bac à sable', async () => {
+  test('un membre y trouve la carte, la déco, la boutique et le zoom ; un admin y ajoute Admin ; le faux live, le Bac à sable', async () => {
     const user = userEvent.setup();
     const { unmount } = renderDock();
     await user.click(more());
-    expect(entryNames()).toEqual([fr.decor.toggle, fr.shop.toggle, fr.zoom.reset]);
+    expect(entryNames()).toEqual([fr.officeMap.toggle, fr.decor.toggle, fr.shop.toggle, fr.zoom.reset]);
     unmount();
 
     const admin = renderDock({ admin: true });
     await user.click(more());
-    expect(entryNames()).toEqual([fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.zoom.reset]);
+    expect(entryNames()).toEqual([fr.officeMap.toggle, fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.zoom.reset]);
     admin.unmount();
 
     renderDock({ admin: true, sim: true });
     await user.click(more());
-    expect(entryNames()).toEqual([fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.sim.toggle, fr.zoom.reset]);
+    expect(entryNames()).toEqual([fr.officeMap.toggle, fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.sim.toggle, fr.zoom.reset]);
+  });
+
+  test('« Carte » (touche M) ouvre la carte du bureau, une fois le jeu là, depuis le bouton « Plus »', async () => {
+    const user = userEvent.setup();
+    renderDock();
+    await user.click(more());
+    expect((entry(fr.officeMap.toggle) as HTMLButtonElement).disabled).toBe(true);
+    expect(entry(fr.officeMap.toggle).querySelector('.menu-hint')?.textContent).toBe('M');
+    await user.click(more());
+    act(() => useOfficeStore.getState().setOfficeMap(parseOfficeMap(buildOfficeTiledMap())));
+    await user.click(more());
+    await user.click(entry(fr.officeMap.toggle));
+    // Des comparaisons directes : un élément du DOM comparé champ à champ (toMatchObject) parcourt tout happy-dom, sans fin.
+    expect(useMapStore.getState().open).toBe(true);
+    expect(useMapStore.getState().from).toBe(more());
+    expect(screen.queryByRole('menu')).toBeNull();
+    act(() => {
+      useMapStore.getState().hide();
+      useOfficeStore.getState().setOfficeMap(null);
+    });
   });
 
   test('un choix de panneau le demande à la coque, depuis le bouton « Plus », et ferme le menu', async () => {
@@ -139,7 +160,7 @@ describe('le menu « Plus »', () => {
     renderDock();
     act(() => useOfficeStore.getState().setZoomPercent(ZOOM_MIN_PERCENT));
     await user.click(more());
-    expect(entry(fr.zoom.reset).textContent).toContain('25 %');
+    expect(entry(fr.zoom.reset).textContent).toContain(`${ZOOM_MIN_PERCENT} %`);
     await user.click(entry(fr.zoom.reset));
     expect(useOfficeStore.getState().zoomPercent).toBe(ZOOM_DEFAULT_PERCENT);
     // Rien n'ouvre de panneau : le focus revient au bouton.

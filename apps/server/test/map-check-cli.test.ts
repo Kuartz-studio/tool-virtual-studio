@@ -53,24 +53,25 @@ test('map:check sur la carte de développement : résumé en français (zones pa
 }, 60_000);
 
 // La carte que le serveur charge en production (MAP_KEY=office) : le JSON généré dans le client doit rester lisible par le code du serveur.
-test('map:check sur la grande carte du bureau : 81 × 46 cases, 6 bureaux avec leur porte, 6 salles, 12 lieux, apparition à l\'accueil, code 0', async () => {
+test('map:check sur la grande carte du bureau : 91 × 56 cases, 6 bureaux avec leur porte, 4 salles, 10 lieux, le bassin, apparition à l\'accueil, code 0', async () => {
   const run = await runCommand([OFFICE_MAP]);
   expect(run.code, run.stderr).toBe(0);
   expect(run.stderr).toBe('');
   expect(run.stdout).toMatch(/^Carte valide : \.\.\/client\/public\/assets\/maps\/office\.json$/m);
-  expect(run.stdout).toMatch(/Taille : 81 × 46 cases de 32 px/);
+  expect(run.stdout).toMatch(/Taille : 91 × 56 cases de 32 px/);
   expect(run.stdout).toMatch(/^\s+desk : 6$/m);
   expect(run.stdout).toMatch(/^\s+door : 6$/m);
-  expect(run.stdout).toMatch(/^\s+private : 6$/m);   // la réunion, l'octogone, la conférence, le sport, le jeu, la détente
+  expect(run.stdout).toMatch(/^\s+private : 4$/m);   // la conférence, les jeux, le sport, la boxe
   expect(run.stdout).toMatch(/^\s+spawn : 1$/m);
-  expect(run.stdout).toMatch(/^\s+switch : 1$/m);   // l'interrupteur de la lumière, dans la rue nord
-  expect(run.stdout).toMatch(/^\s+place : 12$/m);
-  expect(run.stdout).toMatch(/^\s+speaker : 8$/m);   // une enceinte par lieu qui a de la musique
+  expect(run.stdout).toMatch(/^\s+switch : 1$/m);   // l'interrupteur de la lumière, sur la rue des bureaux
+  expect(run.stdout).toMatch(/^\s+place : 16$/m);   // 10 lieux, dont le jardin (6 rectangles) et les terrasses (2)
+  expect(run.stdout).toMatch(/^\s+speaker : 6$/m);   // une enceinte par lieu qui a de la musique
   expect(run.stdout).toMatch(/^\s+coffee : 1$/m);
   expect(run.stdout).toMatch(/^\s+game : 4$/m);
   expect(run.stdout).toMatch(/^\s+seat : 10$/m);
-  expect(run.stdout).toMatch(/^\s+arena : 1$/m);   // le ring de l'octogone
-  expect(run.stdout).toMatch(/Point d'apparition : x = 1296, y = 720 \(case 40, 22\)/);
+  expect(run.stdout).toMatch(/^\s+arena : 1$/m);   // le ring de l'octogone, dans la salle de boxe
+  expect(run.stdout).toMatch(/^\s+water : 1$/m);   // le bassin du jardin
+  expect(run.stdout).toMatch(/Point d'apparition : x = 464, y = 1328 \(case 14, 41\)/);
 }, 60_000);
 
 test('map:check refuse une carte invalide : code 1, le code de MapError et un message en français, rien sur la sortie normale', async () => {

@@ -1,11 +1,15 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from '@playwright/test';
-import { holdUntilStopped, joinOffice, selfAt, teleportTo, waitForOffice } from './helpers';
+import { buildOfficeTiledMap, parseOfficeMap } from '../packages/shared/src/index';
+import { giveDeskBack, holdUntilStopped, joinOffice, selfAt, teleportTo, waitForOffice } from './helpers';
 
-// L'octogone (la salle de combat de la vraie carte) : deux combattants et une spectatrice, chacun dans son navigateur. Le ring couvre les cases 68 à 77
-// en largeur, 2 à 7 en hauteur (2176 à 2496 px, 64 à 256 px) ; la rangée 8, devant la porte, est au public.
+// L'octogone (le ring de la salle de boxe de la vraie carte) : deux combattants et une spectatrice, chacun dans son navigateur. Le ring couvre les cases 69 à 78
+// en largeur, 37 à 43 en hauteur (2208 à 2528 px, 1184 à 1408 px) ; au sud, jusqu'aux bancs, la salle est au public.
 
-const IN_ROOM = { x: 2320, y: 280 };
-const RING = { left: 2176, top: 64, right: 2496, bottom: 256 };
+const map = parseOfficeMap(buildOfficeTiledMap());
+const ring = map.arena!;
+const RING = { left: ring.x, top: ring.y, right: ring.x + ring.width, bottom: ring.y + ring.height };
+// Dans la salle, juste sous le ring, au milieu de sa largeur : la case (73, 44).
+const IN_ROOM = { x: ring.x + ring.width / 2 - map.tileSize / 2, y: RING.bottom + map.tileSize / 2 };
 // Les pieds sont-ils dans le rectangle du ring (la cage est à l'intérieur) ?
 const inRing = ({ x, y }: { x: number; y: number }) => x > RING.left && x < RING.right && y > RING.top && y < RING.bottom;
 
@@ -19,6 +23,8 @@ async function arrive(browser: Browser, name: string): Promise<{ page: Page; id:
   contexts.push(context);
   const page = await context.newPage();
   await joinOffice(page, name);
+  // Chacun reçoit un bureau en arrivant : on le rend tout de suite, pour les specs qui en cherchent un de libre sur ce serveur (il n'y en a que six).
+  await giveDeskBack(page);
   await waitForOffice(page);
   await teleportTo(page, IN_ROOM);
   return { page, id: (await selfAt(page)).id };
@@ -28,7 +34,8 @@ const card = (page: Page) => page.getByRole('region', { name: 'Octogone' });
 const hpOf = (page: Page, corner: 'Coin rouge' | 'Coin bleu') => card(page).getByRole('meter', { name: corner });
 
 test('deux combattants armés, une spectatrice : choix des armes, Start, une flèche, des coups d\'épée, un K.O.', async ({ browser }) => {
-  test.setTimeout(90_000);
+  // Trois arrivées, chacune avec la marche jusqu'à son bureau pour le rendre, puis le combat : plus que 90 s sur une machine chargée.
+  test.setTimeout(180_000);
   const a = await arrive(browser, 'Rocky');
   const b = await arrive(browser, 'Apollo');
   const c = await arrive(browser, 'Adrienne');

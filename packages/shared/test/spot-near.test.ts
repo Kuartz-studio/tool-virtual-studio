@@ -73,23 +73,23 @@ describe('furnitureTiles', () => {
 });
 
 describe('le dehors des bureaux, dans la rue', () => {
-  // La grande carte : la rangée du dehors de A1 est la rue nord (y 11), celle de A3 la rue sud (y 26) ; leurs pièces commencent en x 9.
+  // La grande carte : la rangée du dehors des six bureaux est la première de la rue (y 16) ; la pièce de A1 commence en x 26, celle de A3 en x 46.
   const big = parseOfficeMap(buildOfficeTiledMap());
   const index = (tx: number, ty: number) => ty * big.widthTiles + tx;
   const fountain = { id: 'of-12-15', x: 6, y: 9 };
   const pot = { id: 'of-6-10', x: 7, y: 9 };
 
-  test('un meuble solide du dehors bloque sa case de la rue, devant un bureau du haut comme devant un bureau du bas ; un pot non', () => {
-    expect([...furnitureTiles(big, [{ key: 'A1', items: [fountain, pot] }])]).toEqual([index(15, 11)]);
-    expect([...furnitureTiles(big, [{ key: 'A3', items: [fountain, pot] }])]).toEqual([index(15, 26)]);
+  test('un meuble solide du dehors bloque sa case de la rue, devant chaque bureau ; un pot non', () => {
+    expect([...furnitureTiles(big, [{ key: 'A1', items: [fountain, pot] }])]).toEqual([index(32, 16)]);
+    expect([...furnitureTiles(big, [{ key: 'A3', items: [fountain, pot] }])]).toEqual([index(52, 16)]);
   });
 
   test('une téléportation, un « Rejoindre » le contournent : spotNear ne pose personne dans la fontaine, mais juste à côté', () => {
     const furniture = furnitureTiles(big, [{ key: 'A1', items: [fountain] }]);
     const blocked = (tx: number, ty: number) => furniture.has(index(tx, ty));
-    expect(spotNear(big, at(15, 11), { includeStart: true })).toEqual(at(15, 11));
-    const spot = spotNear(big, at(15, 11), { blocked, includeStart: true })!;
-    expect(spot).not.toEqual(at(15, 11));
-    expect(Math.abs(spot.x - at(15, 11).x) + Math.abs(spot.y - at(15, 11).y)).toBe(32);
+    expect(spotNear(big, at(32, 16), { includeStart: true })).toEqual(at(32, 16));
+    const spot = spotNear(big, at(32, 16), { blocked, includeStart: true })!;
+    expect(spot).not.toEqual(at(32, 16));
+    expect(Math.abs(spot.x - at(32, 16).x) + Math.abs(spot.y - at(32, 16).y)).toBe(32);
   });
 });

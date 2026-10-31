@@ -1,4 +1,4 @@
-import { placeAt, zoneAt, type OfficeMap } from '@bureau/shared';
+import { isOutside, placeAt, zoneAt, type OfficeMap } from '@bureau/shared';
 import type { SceneId } from './catalog';
 
 // L'ambiance que demande un endroit du bureau : celle que la carte donne à son lieu (la propriété `scene` de la zone `place`, packages/shared/src/map).
@@ -13,11 +13,12 @@ export const OUTSIDE_SCENE: SceneId = 'lobby';
 // Où l'on est pour le son : l'ambiance par défaut de l'endroit où sont les pieds (x, y), en pixels (sceneAt), et la clé de la pièce dont on y règle la musique : le lieu de
 // la carte qui contient le point (le plus petit : le café dans la place), s'il a une enceinte, un bureau compris (`desk:A1`) ; sinon null (la rue, la place,
 // un mur : leur ambiance par défaut joue toujours). La musique elle-même, réglée par ceux qui sont dans la pièce, est au magasin du bureau (selectWantedScene).
-export function soundAt(map: OfficeMap | null, x: number, y: number): { scene: SceneId; key: string | null } {
+// `outside` : les pieds sont dehors (un lieu `outside` : le jardin, une terrasse), où il n'y a pas d'enceinte : la musique du lieu s'y tait, la nature s'entend.
+export function soundAt(map: OfficeMap | null, x: number, y: number): { scene: SceneId; key: string | null; outside: boolean } {
   const scene = sceneAt(map, x, y);
-  if (map === null) return { scene, key: null };
+  if (map === null) return { scene, key: null, outside: false };
   const place = placeAt(map, x, y);
-  return { scene, key: place !== null && place.music ? place.key : null };
+  return { scene, key: place !== null && place.music ? place.key : null, outside: isOutside(map, x, y) };
 }
 
 // L'ambiance de l'endroit où sont les pieds (x, y), en pixels. Une carte qui ne déclare aucun lieu (celle des tests) n'a que la concentration, partout ;

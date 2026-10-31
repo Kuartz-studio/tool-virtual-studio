@@ -4,7 +4,7 @@
 // C'est la seule source de la version en cours : le serveur l'enregistre sur le compte quand la fenêtre est fermée (POST /api/me/release-seen), et la
 // donne aux comptes créés à partir de maintenant ; le client la compare à la dernière version vue pour savoir s'il montre la fenêtre. Publier une
 // version, c'est monter ce numéro ET ajouter sa note dans apps/client/src/updates/releases.ts (un test vérifie que les deux vont ensemble).
-export const CURRENT_RELEASE = '1.00';
+export const CURRENT_RELEASE = '1.01';
 
 // La forme d'un numéro : un majeur sans zéro inutile (1, 2, 10…), un point, deux chiffres.
 const RELEASE_PATTERN = /^(0|[1-9]\d*)\.(\d{2})$/;

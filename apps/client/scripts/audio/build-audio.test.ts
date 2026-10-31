@@ -4,12 +4,16 @@ import {
   MAX_PEAK_DB,
   MUSIC_SOURCES,
   MUSIC_TARGET_LUFS,
+  NATURE_SOURCES,
+  SFX_MUFFLES,
   SFX_SOURCES,
   SFX_TARGET_RMS_DB,
   SFX_TRIMS,
   VORBIS_QUALITY,
   fadeOutFilter,
+  muffleFilter,
   musicGain,
+  natureGain,
   parseLevels,
   parseLoudness,
   renderMeasuredSource,
@@ -81,6 +85,11 @@ describe('les gains', () => {
     expect(db(sfxGain({ peak: -0.5, rmsPeak: -3 }))).toBeCloseTo(-12, 1);
   });
 
+  test('un bruit de la nature est ramené au volume des ambiances, sans limite de pic : il joue toujours bien en dessous du maximum', () => {
+    expect(db(natureGain(-25.1))).toBeCloseTo(MUSIC_TARGET_LUFS + 25.1, 1);
+    expect(natureGain(-12)).toBeLessThan(1);
+  });
+
   test('un effet ne dépasse jamais le pic permis, même si son niveau RMS demanderait plus', () => {
     // Un son très bref et très doux dont le pic est proche du RMS : le gain s'arrête au pic.
     const gain = sfxGain({ peak: -4, rmsPeak: -30 });
@@ -92,16 +101,27 @@ test('le fichier généré : un tableau par genre, les noms avec un tiret entre 
   const source = renderMeasuredSource({
     music: { focus: { gain: 0.759, seconds: 53.333 } } as never,
     sfx: { click: { gain: 3.413, seconds: 0.177 }, 'toggle-on': { gain: 0.546, seconds: 0.476 } } as never,
+    nature: { water: { gain: 1, seconds: 3.7 } } as never,
   });
   expect(source).toContain('export const MEASURED_MUSIC = {\n  focus: { gain: 0.759, seconds: 53.333 },\n} as const;');
   expect(source).toContain("  'toggle-on': { gain: 0.546, seconds: 0.476 },");
   expect(source).toContain('  click: { gain: 3.413, seconds: 0.177 },');
+  expect(source).toContain('export const MEASURED_NATURE = {\n  water: { gain: 1, seconds: 3.7 },\n} as const;');
   expect(source.startsWith('// Généré par')).toBe(true);
+});
+
+test('la nature : le vent vient du dossier Environment du pack, l\'eau du bassin, les insectes et les oiseaux sont fabriqués ; une boucle tombe juste en échantillons', () => {
+  expect(Object.keys(NATURE_SOURCES).sort()).toEqual(['birds', 'insects', 'moto', 'water', 'wind']);
+  expect(NATURE_SOURCES).toMatchObject({ water: { synth: 'pond', bed: 'Environment/water_babbling_loop.wav' }, wind: { file: 'Environment/ambient_wind.wav' }, insects: { synth: 'insects' }, birds: { synth: 'birds' } });
+  // Un multiple de 10 ms : 441 échantillons tout ronds.
+  for (const source of Object.values(NATURE_SOURCES)) {
+    if ('loop' in source) expect(Math.abs(source.loop * 100 - Math.round(source.loop * 100))).toBeLessThan(1e-9);
+  }
 });
 
 test('les ambiances et les effets listés sont ceux que le catalogue connaît', () => {
   expect(Object.keys(MUSIC_SOURCES).sort()).toEqual([...MUSIC_SCENES].sort());
-  expect(Object.keys(SFX_SOURCES)).toHaveLength(29);
+  expect(Object.keys(SFX_SOURCES)).toHaveLength(36);
 });
 
 test('les boucles d\'Abstraction sont des .ogg recopiés ; les pirates, les versions « Loop » en .wav, encodées en Vorbis par sox, sans étiquettes', () => {
@@ -145,5 +165,20 @@ describe('les effets écourtés', () => {
   test('le filtre d\'extinction commence à la durée moins le temps d\'extinction', () => {
     expect(fadeOutFilter({ seconds: 3.5, fadeSeconds: 0.8 })).toBe('afade=t=out:st=2.7:d=0.8');
     expect(fadeOutFilter({ seconds: 3, fadeSeconds: 0.3 })).toBe('afade=t=out:st=2.7:d=0.3');
+  });
+});
+
+describe('les effets étouffés', () => {
+  test('le survol, le double-clic, la gemme, la voix de l\'accueil, la fenêtre qui se ferme et la carte : un passe-bas bien en dessous de l\'aigu, une attaque adoucie', () => {
+    expect(Object.keys(SFX_MUFFLES).sort()).toEqual(['gem', 'hover', 'map-close', 'map-open', 'modal-close', 'voice', 'waypoint']);
+    for (const { lowpassHz, attackSeconds } of Object.values(SFX_MUFFLES)) {
+      expect(lowpassHz).toBeLessThanOrEqual(4000);
+      expect(attackSeconds).toBeGreaterThan(0);
+      expect(attackSeconds).toBeLessThanOrEqual(0.03);
+    }
+  });
+
+  test('le filtre : deux passe-bas à la suite, puis l\'attaque', () => {
+    expect(muffleFilter({ lowpassHz: 1100, attackSeconds: 0.006 })).toBe('lowpass=f=1100,lowpass=f=1100,afade=t=in:d=0.006');
   });
 });

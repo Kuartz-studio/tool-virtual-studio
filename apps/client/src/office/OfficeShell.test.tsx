@@ -785,7 +785,7 @@ describe('le panneau Admin', () => {
     renderShell({ role: 'admin' });
     await user.click(moreButton());
     const names = screen.getAllByRole('menuitem').map((item) => item.getAttribute('aria-label') ?? item.textContent);
-    expect(names).toEqual([fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.zoom.reset]);
+    expect(names).toEqual([fr.officeMap.toggle, fr.decor.toggle, fr.shop.toggle, fr.admin.toggle, fr.zoom.reset]);
   });
 
   test('fermé au départ, sans rien demander au serveur ; la ligne l\'ouvre (le panneau a son id), Fermer le ferme', async () => {
